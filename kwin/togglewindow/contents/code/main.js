@@ -2,18 +2,18 @@
  * This script defines shortcuts to toggle the focus on specific applications.
 */
 
-function toggleFocus(desktopFileName) {
-    var allClients = workspace.clientList();
-    var client = allClients.find((client) => client.desktopFileName == desktopFileName);
+function toggleFocus(resourceClass) {
+    var allWindows = workspace.windowList();
+    var appWindow = allWindows.find((win) => win.resourceClass == resourceClass);
 
-    if (client === undefined)
+    if (appWindow === undefined)
         return;
 
-    if (client.active) {
-        client.minimized = true;
+    if (appWindow.active) {
+        appWindow.minimized = true;
     }
     else {
-        workspace.activeClient = client;
+        workspace.activeWindow = appWindow;
     }
 }
 
@@ -23,5 +23,5 @@ registerShortcut(
 );
 registerShortcut(
     "ToggleFirefox", "ToggleFirefox", "Meta+F",
-    () => toggleFocus("firefox")
+    () => toggleFocus("org.mozilla.firefox")
 );

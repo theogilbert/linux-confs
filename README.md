@@ -40,7 +40,7 @@ To install the Kwin script, follow these steps:
 git clone https://github.com/theogilbert/confs/
 
 # Install the script
-kpackagetool5 --type=KWin/Script -i confs/kwin/togglewindow
+kpackagetool6 --type=KWin/Script -i confs/kwin/togglewindow
 ```
 
 #### Contributing
@@ -49,7 +49,7 @@ If you have modified these scripts, you can apply your modifications by followin
 
 1. Update the script in the KWin registry
     ```shell
-    kpackagetool5 --type=KWin/Script -u confs/kwin/togglewindow
+    kpackagetool6 --type=KWin/Script -u confs/kwin/togglewindow
     ```
 2. Open the `KWin Scripts` window.
 3. Uncheck the `Toggle Focus` script and click on Apply.
@@ -60,5 +60,5 @@ If you encounter issues after applying your modifications, you can troubleshoot 
 You can then view these logs through `journalctl`:
 
 ```shell
-journalctl -f QT_CATEGORY=js QT_CATEGORY=kwin_scripting
+journalctl -f
 ```

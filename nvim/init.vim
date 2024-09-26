@@ -32,3 +32,18 @@ endif
 inoremap <Tab> <Esc>
 vnoremap <Tab> <Esc>
 
+set wrap!
+set number
+
+inoremap <Tab> <Esc>
+vnoremap <Tab> <Esc>
+
+set statusline=
+set statusline +=%1*\ %n\ %*      " buffer number
+set statusline +=%4*%<%F%*        " full path
+set statusline +=%2*%m%*          " modified flag 
+set statusline +=%1*\ %=%l%*     " current line
+set statusline +=%1*/%L%*         " total line
+set statusline +=%2*\ col=%v%*    " column number
+set statusline +=%1*\ char=0x%B%* " char under cursor
+set statusline +=%1*\ off=0x%O%* " char offset in bytes

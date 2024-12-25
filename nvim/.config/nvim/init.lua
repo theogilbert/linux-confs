@@ -4,3 +4,4 @@
 require("settings")
 require("keymaps")
 require("macros")
+require("plugins")

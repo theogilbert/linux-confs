@@ -2,3 +2,4 @@
 
 -- These files are present under ./lua/
 require("settings")
+require("macros")

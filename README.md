@@ -16,9 +16,7 @@ Simply copy these scripts to your home directory.
 
 ### Neovim
 
-#### Installation
-
-Copy the `nvim` directory to `~/.config`.
+See [this documentation](./nvim/README.md) for more details.
 
 ### Kwin
 

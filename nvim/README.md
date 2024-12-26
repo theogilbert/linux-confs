@@ -21,3 +21,9 @@ To install this configuration:
 
 The `sainnhe/sonokai` plugin adds an improved colorscheme.
 
+### mini.statusline
+
+The `echasnovski/mini.nvim` repository includes a `mini.statusline` plugin.
+
+This plugin defines a statusline.
+

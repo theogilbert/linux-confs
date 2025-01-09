@@ -1,5 +1,9 @@
 -- This NVIM configuration file is deeply inspired from kickstart.nvim.
 
+-- Disable Python provider for rplugins:
+-- I do not use Python rplugins, and the provider takes a long time to load.
+vim.g.loaded_python3_provider = 0
+
 vim.opt.shiftwidth = 4
 vim.opt.smarttab = true
 vim.opt.expandtab = true

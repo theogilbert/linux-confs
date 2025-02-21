@@ -4,6 +4,8 @@
 -- I do not use Python rplugins, and the provider takes a long time to load.
 vim.g.loaded_python3_provider = 0
 
+vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg'}
+
 vim.opt.shiftwidth = 4
 vim.opt.smarttab = true
 vim.opt.expandtab = true

@@ -48,6 +48,7 @@ wk.add({
 	{ "<leader>sf", desc = "[S]earch stuff in [F]ile" },
 	{ "<leader>sw", desc = "[S]earch stuff in [W]orkspace" },
 	{ "<leader>e", desc = "File [E]xplorer" },
+	{ "<leader>o", desc = "Toggle [O]ptions" },
 })
 
 local cmp = require("cmp")

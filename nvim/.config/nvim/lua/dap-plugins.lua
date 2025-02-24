@@ -1,4 +1,9 @@
--- au FileType dap-repl lua require('dap.ext.autocompl').attach() 
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "dap-repl",
+  callback = function()
+    require('dap.ext.autocompl').attach()
+  end
+})
 
 local dap = require('dap')
 dap.adapters.python = function(cb, config)

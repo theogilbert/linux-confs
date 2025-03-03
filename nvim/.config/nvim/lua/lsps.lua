@@ -1,30 +1,59 @@
+local lspconfig = require("lspconfig")
+
 vim.lsp.handlers["textDocument/publishDiagnostics"] = vim.lsp.with(vim.lsp.diagnostic.on_publish_diagnostics, {
-	virtual_text = false,
+	virtual_text = true,
 	underline = true,
 	signs = true,
 })
+vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { focusable = false })
 
-local diagnosticHoverGroup = vim.api.nvim_create_augroup("DiagnosticHover", {})
-vim.api.nvim_clear_autocmds({ group = diagnosticHoverGroup })
-vim.api.nvim_create_autocmd({ "CursorHold" }, {
-	pattern = { "*.py" },
-	group = diagnosticHoverGroup,
-	callback = function(_)
-		vim.diagnostic.open_float()
-	end,
-})
+local cursorHoverGroup = vim.api.nvim_create_augroup("CursorHover", {})
+
+vim.api.nvim_clear_autocmds({ group = cursorHoverGroup })
 vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	pattern = { "*.py" },
-	group = diagnosticHoverGroup,
+	group = cursorHoverGroup,
 	callback = function(_)
 		vim.lsp.buf.signature_help()
 	end,
 })
 
+vim.keymap.set("n", "K", function()
+    local buf = vim.api.nvim_get_current_buf()
+    local diagnostics = vim.diagnostic.get(buf, { lnum = vim.api.nvim_win_get_cursor(0)[1] - 1 })
+
+    if vim.tbl_isempty(diagnostics) then
+        -- No diagnostics, just show hover
+        vim.lsp.buf.hover()
+    else
+        -- Capture LSP hover text
+        vim.lsp.buf_request(buf, "textDocument/hover", vim.lsp.util.make_position_params(), function(_, result)
+            -- Show both hover and diagnostics in one window
+            local contents = {}
+
+            if result and result.contents then
+                local hover_text = vim.lsp.util.convert_input_to_markdown_lines(result.contents)
+                vim.list_extend(contents, hover_text)
+            end
+
+            -- Add a separator
+            table.insert(contents, " ")
+
+            -- Add diagnostics
+            for _, diag in ipairs(diagnostics) do
+                table.insert(contents, " " .. diag.message) -- Add a warning icon (nerdfont required)
+            end
+
+            -- Show everything in a floating window
+            vim.lsp.util.open_floating_preview(contents, "markdown", { border = "rounded" })
+        end)
+    end
+end, { silent = true })
+
 local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
 -- TODO update this so that it only applies on python files
-require("lspconfig").basedpyright.setup({
+lspconfig.basedpyright.setup({
 	settings = {
 		basedpyright = {
 			disableOrganizeImports = true, -- Using Ruff
@@ -41,7 +70,7 @@ require("lspconfig").basedpyright.setup({
 
 local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
 
-require("lspconfig").ruff.setup({
+lspconfig.ruff.setup({
 	trace = "verbose",
 	capabilities = capabilities,
 	on_attach = function(client, bufnr)

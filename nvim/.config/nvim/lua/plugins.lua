@@ -14,7 +14,7 @@ require("mini.statusline").setup({})
 --    if I ever encounter performance issues, look into it.
 
 vim.cmd("packadd! sonokai")
-vim.g.sonokai_style = "atlantis"
+vim.g.sonokai_style = "shusia"
 vim.cmd.colorscheme("sonokai")
 
 -- fzf-lua

@@ -87,3 +87,26 @@ lspconfig.ruff.setup({
 		end
 	end,
 })
+
+require('lspconfig')['yamlls'].setup{
+    on_attach = on_attach,
+    filetypes = { "yaml", "yml" },
+    flags = { debounce_test_changes = 150 },
+    settings = {
+        yaml = {
+            format = {
+                enable = true,
+                singleQuote = true,
+                printWidth = 120,
+            },
+            hover = true,
+            completion = true,
+            validate = true,
+            schemas = {
+                -- TODO add schemas in ~/.local, and link them here withotu hardcoded path
+            },
+        },
+    }
+}
+
+lspconfig.ts_ls.setup{}

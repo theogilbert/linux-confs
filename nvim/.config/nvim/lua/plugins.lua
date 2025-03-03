@@ -18,6 +18,8 @@ vim.g.sonokai_style = "shusia"
 vim.cmd.colorscheme("sonokai")
 
 -- fzf-lua
+local actions = require("fzf-lua").actions
+
 require("fzf-lua").setup({
 	desc = "Custom FZF profile",
 	winopts = { preview = { default = "bat" } },
@@ -39,6 +41,15 @@ require("fzf-lua").setup({
 			["ctrl-q"] = "select-all+accept",
 		},
 	},
+        actions = {
+            files = {
+                ["enter"] = actions.file_edit_or_qf,
+                ["ctrl-u"] = actions.file_split,
+                ["ctrl-v"] = actions.file_vsplit,
+                ["ctrl-t"] = actions.file_tabedit,
+                ["alt-q"] = actions.file_sel_to_qf,
+            }
+        }
 })
 
 -- Which key

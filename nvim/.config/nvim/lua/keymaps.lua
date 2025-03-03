@@ -31,7 +31,7 @@ vim.keymap.set("n", "<leader>sk", fzflua.keymaps, { desc = "[S]earch [K]eymaps" 
 vim.keymap.set("n", "<leader>sW", fzflua.grep_cWORD, { desc = "[S]earch current [W]ord" })
 vim.keymap.set("n", "<leader>sg", fzflua.live_grep, { desc = "[S]earch by [G]rep" })
 vim.keymap.set("n", "<leader>sr", fzflua.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
-vim.keymap.set("n", "<leader>so", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
+vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
 vim.keymap.set("n", "<leader>ss", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [S]ymbols" })
 vim.keymap.set("n", "<leader>sc", function()
 	fzflua.lsp_live_workspace_symbols({ fzf_opts = { ["--query"] = "!Class" } })

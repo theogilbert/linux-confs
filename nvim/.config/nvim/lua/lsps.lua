@@ -57,6 +57,7 @@ lspconfig.basedpyright.setup({
 	settings = {
 		basedpyright = {
 			disableOrganizeImports = true, -- Using Ruff
+                        typeCheckingMode = "strict",
 		},
 		python = {
 			analysis = {

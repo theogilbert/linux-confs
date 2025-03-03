@@ -58,6 +58,11 @@ vim.keymap.set("n", "<leader>ef", api.tree.open, { desc = "File [E]xplorer - [F]
 vim.keymap.set("n", "<leader>er", api.tree.reload, { desc = "File [E]xplorer - [R]eload" })
 vim.keymap.set("n", "<leader>ec", focus_current_file, { desc = "File [E]xplorer - Focus [C]urrent file" })
 
+vim.keymap.set("n", "<leader>lr", function()
+    vim.cmd("LspRestart")
+end, { desc = "[L]SP - [R]estart" })
+vim.keymap.set("n", "<leader>ldp", vim.diagnostic.goto_prev, { desc = "[L]SP - [D]iagnostics - [P]revious" })
+vim.keymap.set("n", "<leader>ldn", vim.diagnostic.goto_next, { desc = "[L]SP - [D]iagnostics - [N]ext" })
 local dap = require("dap")
 vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint, { desc = "Toggle [B]reakpoint" })
 vim.keymap.set("n", "<leader>dc", dap.continue, { desc = "[C]ontinue" })

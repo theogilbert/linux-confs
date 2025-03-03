@@ -66,6 +66,8 @@ wk.add({
 	{ "<leader>e", desc = "File [E]xplorer" },
 	{ "<leader>o", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },
+	{ "<leader>l", desc = "[L]SP actions" },
+	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
 })
 
 local cmp = require("cmp")

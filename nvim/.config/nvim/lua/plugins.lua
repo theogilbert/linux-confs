@@ -61,10 +61,13 @@ wk.setup {
 }
 wk.add({
 	{ "<leader>s", desc = "[S]earch" },
+	{ "<leader>sv", desc = "[S]earch stuff in [V]im" },
 	{ "<leader>sf", desc = "[S]earch stuff in [F]ile" },
+	{ "<leader>sl", desc = "[S]earch stuff in [L]SP" },
 	{ "<leader>sw", desc = "[S]earch stuff in [W]orkspace" },
+	{ "<leader>sG", desc = "[S]earch stuff in [G]it" },
 	{ "<leader>e", desc = "File [E]xplorer" },
-	{ "<leader>o", desc = "Toggle [O]ptions" },
+	{ "<leader>O", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },
 	{ "<leader>l", desc = "[L]SP actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },

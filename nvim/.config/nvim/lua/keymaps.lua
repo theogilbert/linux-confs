@@ -13,29 +13,26 @@ function toggleGutter()
     vim.opt.number = not isGutterDisplayed
     vim.opt.signcolumn = isGutterDisplayed and "no" or "yes"
 end
-vim.keymap.set("n", "<Leader>on", toggleGutter, { desc = "Toggle [O]ption [N]umber" })
+vim.keymap.set("n", "<Leader>On", toggleGutter, { desc = "Toggle [O]ption [N]umber" })
 
 function toggleMouse()
     toggledSettings = vim.opt.mouse:get().a and "" or "a"
     vim.opt.mouse = toggledSettings
 end
-vim.keymap.set("n", "<Leader>om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
+vim.keymap.set("n", "<Leader>Om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
 
 -- Diagnostic keymaps
 --
 
 local fzflua = require("fzf-lua")
 
-vim.keymap.set("n", "<leader>sh", fzflua.helptags, { desc = "[S]earch [H]elp" })
-vim.keymap.set("n", "<leader>sk", fzflua.keymaps, { desc = "[S]earch [K]eymaps" })
+vim.keymap.set("n", "<leader>svh", fzflua.helptags, { desc = "[S]earch [V]im [H]elp" })
+vim.keymap.set("n", "<leader>svk", fzflua.keymaps, { desc = "[S]earch [V]im [K]eymaps" })
+
 vim.keymap.set("n", "<leader>sW", fzflua.grep_cWORD, { desc = "[S]earch current [W]ord" })
 vim.keymap.set("n", "<leader>sg", fzflua.live_grep, { desc = "[S]earch by [G]rep" })
 vim.keymap.set("n", "<leader>sr", fzflua.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
 vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
-vim.keymap.set("n", "<leader>ss", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [S]ymbols" })
-vim.keymap.set("n", "<leader>sc", function()
-	fzflua.lsp_live_workspace_symbols({ fzf_opts = { ["--query"] = "!Class" } })
-end, { desc = "[S]earch [C]lasses" })
 
 vim.keymap.set("n", "<leader>sli", fzflua.lsp_incoming_calls, { desc = "[S]earch [L]SP [I]ncoming files" })
 vim.keymap.set("n", "<leader>sla", fzflua.lsp_code_actions, { desc = "[S]earch [L]SP code [A]ctions" })
@@ -45,7 +42,13 @@ vim.keymap.set("n", "<leader>sfd", fzflua.lsp_document_diagnostics, { desc = "[S
 vim.keymap.set("n", "<leader>sfs", fzflua.lsp_document_symbols, { desc = "[S]earch [F]ile [S]ymbols" })
 
 vim.keymap.set("n", "<leader>swd", fzflua.lsp_workspace_diagnostics, { desc = "[S]earch [W]orkspace [D]iagnostics" })
-vim.keymap.set("n", "<leader>swf", fzflua.files, { desc = "[S]earch [Workspace] [F]iles" })
+vim.keymap.set("n", "<leader>sws", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [W]orkspace [S]ymbols" })
+vim.keymap.set("n", "<leader>swf", fzflua.files, { desc = "[S]earch [W]orkspace [F]iles" })
+vim.keymap.set("n", "<leader>o", fzflua.files, { desc = "Search Workspace Files" })
+
+vim.keymap.set("n", "<leader>sGc", fzflua.git_bcommits, { desc = "[S]earch [G]it buffer [C]ommits" })
+vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it buffer [B]lame" })
+
 
 local api = require("nvim-tree.api")
 

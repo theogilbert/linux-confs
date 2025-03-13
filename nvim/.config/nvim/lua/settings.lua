@@ -17,8 +17,10 @@ vim.opt.foldlevelstart = 20
 
 vim.opt.wildmode = "list:longest"
 
+-- take time to minimize diff in diffmode. Other algorithims are 'patience' and 'histogram'
+vim.opt.diffopt = "internal,filler,closeoff,algorithm:minimal"
+
 -- Set <space> as the leader key
--- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
@@ -66,7 +68,6 @@ vim.opt.updatetime = 250
 -- Sync clipboard between OS and Neovim.
 -- Schedule the setting after 'UiEnter' because it can increase startup-time.
 -- Remove this option if you want your clipboard to remain independant.
--- See `:help 'clipboard'`
 vim.schedule(function()
     vim.opt.clipboard = "unnamedplus"
 end)

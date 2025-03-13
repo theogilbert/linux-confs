@@ -110,6 +110,7 @@ vim.g.loaded_netrwPlugin = 1
 -- optionally enable 24-bit colour
 vim.opt.termguicolors = true
 
--- OR setup with some options
-require("nvim-tree").setup({})
+-- Default nvim-tree config.
+-- Options can be provided to the plugin.
+require("nvim-tree").setup()
 

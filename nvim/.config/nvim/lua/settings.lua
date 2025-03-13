@@ -63,6 +63,14 @@ vim.opt.updatetime = 250
 -- Displays which-key popup sooner
 -- vim.opt.timeoutlen = 300
 
+-- Sync clipboard between OS and Neovim.
+-- Schedule the setting after 'UiEnter' because it can increase startup-time.
+-- Remove this option if you want your clipboard to remain independant.
+-- See `:help 'clipboard'`
+vim.schedule(function()
+    vim.opt.clipboard = "unnamedplus"
+end)
+
 -- Configure how new splits should be opened
 vim.opt.splitbelow = true
 

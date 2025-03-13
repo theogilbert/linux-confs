@@ -70,6 +70,7 @@ wk.add({
 	{ "<leader>O", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },
 	{ "<leader>l", desc = "[L]SP actions" },
+	{ "<leader>t", desc = "[T]ests actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
 })
 
@@ -116,4 +117,13 @@ vim.opt.termguicolors = true
 -- Default nvim-tree config.
 -- Options can be provided to the plugin.
 require("nvim-tree").setup()
+
+require("neotest").setup({
+  adapters = {
+    require("neotest-python")({
+        dap = { justMyCode = false },
+        pytest_discover_instances = true,
+    })
+  }
+})
 

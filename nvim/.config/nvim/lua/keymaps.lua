@@ -43,6 +43,7 @@ vim.keymap.set("n", "<leader>sfs", fzflua.lsp_document_symbols, { desc = "[S]ear
 
 vim.keymap.set("n", "<leader>swd", fzflua.lsp_workspace_diagnostics, { desc = "[S]earch [W]orkspace [D]iagnostics" })
 vim.keymap.set("n", "<leader>sws", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [W]orkspace [S]ymbols" })
+vim.keymap.set("n", "<leader>k", fzflua.lsp_live_workspace_symbols, { desc = "Search Workspace Symbols" })
 vim.keymap.set("n", "<leader>swf", fzflua.files, { desc = "[S]earch [W]orkspace [F]iles" })
 vim.keymap.set("n", "<leader>o", fzflua.files, { desc = "Search Workspace Files" })
 

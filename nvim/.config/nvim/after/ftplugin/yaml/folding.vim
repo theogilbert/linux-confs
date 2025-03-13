@@ -1,3 +1,5 @@
+" Source: https://github.com/pedrohdz/vim-yaml-folds/blob/master/after/ftplugin/yaml/folding.vim
+"
 function! YamlFolds()
   let previous_level = indent(prevnonblank(v:lnum - 1)) / &shiftwidth
   let current_level = indent(v:lnum) / &shiftwidth

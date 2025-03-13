@@ -103,7 +103,7 @@ require('lspconfig')['yamlls'].setup{
             completion = true,
             validate = true,
             schemas = {
-                [vim.fn.stdpath("data") .. "schemas/yaml/gitlab-ci.json"] = {
+                [vim.fn.stdpath("data") .. "/schemas/yaml/gitlab-ci.json"] = {
                     "/.gitlab-ci.yml",
                     "/.gitlab-ci.yaml",
                 }

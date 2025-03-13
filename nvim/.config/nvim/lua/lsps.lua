@@ -103,7 +103,10 @@ require('lspconfig')['yamlls'].setup{
             completion = true,
             validate = true,
             schemas = {
-                -- TODO add schemas in ~/.local, and link them here withotu hardcoded path
+                [vim.fn.stdpath("data") .. "schemas/yaml/gitlab-ci.json"] = {
+                    "/.gitlab-ci.yml",
+                    "/.gitlab-ci.yaml",
+                }
             },
         },
     }

@@ -1,0 +1,138 @@
+*wordmotion.txt* More useful word motions for Vim
+
+INTRODUCTION					*wordmotion*
+
+This is one word under Vim's definition:
+>
+	CamelCaseACRONYMWords_underscore1234
+	^
+<
+With this plugin, this becomes six words:
+>
+	CamelCaseACRONYMWords_underscore1234
+	^    ^   ^      ^     ^         ^
+<
+WORDS						*wordmotion-words*
+
+A `word` is any of the following:
+
+- An uppercase letter followed by one or more lowercase letters
+- One or more uppercase letters that does not immediately precede
+  a lowercase letter
+- One or more uppercase letters
+- One or more lowercase letters
+- A valid hex color code
+- A valid hex literal
+- A valid octal literal
+- A valid binary literal
+- One or more numeric digits
+- One or more of other characters
+- An empty line
+
+A `WORD` is any sequence of non-space characters separated by spaces.
+
+MAPPINGS					*wordmotion-mappings*
+
+<plug>WordMotion_w				*wordmotion-w*
+{prefix}w		[count] `word`s forward. |exclusive| motion.
+
+<Plug>WordMotion_e				*wordmotion-e*
+{prefix}e		Forward to the end of `word` [count] |inclusive|.
+			Does not stop in an empty line.
+
+<Plug>WordMotion_b				*wordmotion-b*
+{prefix}b		[count] `word`s backward. |exclusive| motion.
+
+<Plug>WordMotion_ge				*wordmotion-ge*
+{prefix}ge		Backward to the end of `word` [count] |inclusive|.
+
+<Plug>WordMotion_aw				*wordmotion-aw*
+a{prefix}w		"a `word`", select [count] `word`s (see |wordmotion-word|).
+			Leading or trailing white space is included, but not
+			counted.
+			When used in Visual linewise mode "aw" switches to
+			Visual characterwise mode.
+
+<Plug>WordMotion_iw				*wordmotion-iw*
+i{prefix}w		"inner `word`", select [count] `word`s
+			(see |wordmotion-word|).
+			White space between `word`s is counted too.
+			When used in Visual linewise mode "iw" switches to
+			Visual characterwise mode.
+
+<Plug>WordMotion_<C-R><C-W>			*wordmotion-c_<C-R>_<C-W>*
+CTRL-R CTRL-W		Insert the `word` under the cursor
+			(see |wordmotion-word|).
+
+<Plug>WordMotion_W				*wordmotion-W*
+{prefix}W		[count] `WORD`s forward. |exclusive| motion.
+
+<Plug>WordMotion_E				*wordmotion-E*
+{prefix}E		Forward to the end of `WORD` [count] |inclusive|.
+			Does not stop in an empty line.
+
+<Plug>WordMotion_B				*wordmotion-B*
+{prefix}B		[count] `WORD`s backward. |exclusive| motion.
+
+<Plug>WordMotion_gE				*wordmotion-gE*
+{prefix}gE		Backward to the end of `WORD` [count] |inclusive|.
+
+<Plug>WordMotion_aW				*wordmotion-aW*
+a{prefix}W		"a `WORD`", select [count] `WORD`s (see |wordmotion-word|).
+			Leading or trailing white space is included, but not
+			counted.
+			When used in Visual linewise mode "aW" switches to
+			Visual characterwise mode.
+
+<Plug>WordMotion_iW				*wordmotion-iW*
+i{prefix}W		"inner `WORD`", select [count] `WORD`s
+			(see |wordmotion-word|).
+			White space between `WORD`s is counted too.
+			When used in Visual linewise mode "iW" switches to
+			Visual characterwise mode.
+
+<Plug>WordMotion_<C-R><C-A>			*wordmotion-c_<C-R>_<C-A>*
+<C-R><C-A>		Insert the `WORD` under the cursor
+			(see |wordmotion-word|).
+
+CUSTOMIZATION					*wordmotion-customization*
+
+Default `word` mappings are `w`, `b`, `e`, `ge`, `aw`, `iw`, and `<C-R><C-W>`.
+
+Default `WORD` mappings are `W`, `B`, `E`, `gE`, `aW`, `iW`, and `<C-R><C-A>`.
+
+						*g:wordmotion_prefix*
+Use |g:wordmotion_prefix| to apply a common prefix to each of the default word
+motion mappings.
+
+						*g:wordmotion_mappings*
+Use |g:wordmotion_mappings| to individually replace the default word motion
+mappings. |g:wordmotion_mappings| is a dictionary where the keys are the
+default mappings and the values are the mappings that you want to replace them
+with. Unspecified entries will still use the default mappings. Entries set to
+an empty string will be disabled.
+
+						*g:wordmotion_nomap*
+Use |g:wordmotion_nomap| to disable all of the default mappings. You can
+create your own mappings to the |<Plug>WordMotion_| internal mappings. Since
+there are multiple modes involved for many of the mappings, it's probably more
+convenient to use |g:wordmotion_prefix| or |g:wordmotion_mappings|.
+
+						*g:wordmotion_spaces*
+Use |g:wordmotion_spaces| to designate extra space characters.
+|g:wordmotion_spaces| is a list where each item is a regular expression for
+a character that you want to treat as a space. You have to make sure the regex
+matches a single character. You can use lookaheads and lookbehinds for
+context-sensitive space characters.
+
+By default, these are treated as spaces in addition to the actual space
+characters:
+1. hyphens (`-`) between between alphabetic characters
+2. underscores (`_`) between alphanumeric characters
+
+						*g:wordmotion_uppercase_spaces*
+Use |g:wordmotion_uppercase_spaces| to designate extra space characters for
+uppercase motions. These are separate from |g:wordmotion_spaces|. There are
+no extra space characters for uppercase motions by default.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

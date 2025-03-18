@@ -120,4 +120,5 @@ vim.keymap.set("n", "<leader>du", dap.up, { desc = "Move [U]p the stack" })
 vim.keymap.set("n", "<leader>dd", dap.down, { desc = "Move [D]own the stack" })
 vim.keymap.set("n", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("v", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
+vim.keymap.set("v", "<leader>df", dap.focus_frame, { desc = "[F]ocus current frame" })
 

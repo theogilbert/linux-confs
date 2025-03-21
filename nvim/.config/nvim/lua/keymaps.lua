@@ -100,11 +100,12 @@ vim.keymap.set("n", "<leader>ef", api.tree.open, { desc = "File [E]xplorer - [F]
 vim.keymap.set("n", "<leader>er", api.tree.reload, { desc = "File [E]xplorer - [R]eload" })
 vim.keymap.set("n", "<leader>ec", focus_current_file, { desc = "File [E]xplorer - Focus [C]urrent file" })
 
-vim.keymap.set("n", "<leader>lr", function()
+vim.keymap.set("n", "<leader>lR", function()
     vim.cmd("LspRestart")
 end, { desc = "[L]SP - [R]estart" })
 vim.keymap.set("n", "<leader>ldp", vim.diagnostic.goto_prev, { desc = "[L]SP - [D]iagnostics - [P]revious" })
 vim.keymap.set("n", "<leader>ldn", vim.diagnostic.goto_next, { desc = "[L]SP - [D]iagnostics - [N]ext" })
+vim.keymap.set("n", "<leader>lr", vim.lsp.buf.rename, { desc = "[L]SP - [R]ename symbol under cursor" })
 
 local dap = require("dap")
 local dapui = require("dapui")

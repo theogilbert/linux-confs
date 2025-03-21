@@ -127,3 +127,6 @@ require("neotest").setup({
   }
 })
 
+-- Change the definition of a WORD in vim-wordmotion plugin
+vim.g.wordmotion_uppercase_spaces = '[,(){}\\[\\]]'
+

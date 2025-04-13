@@ -21,6 +21,9 @@ function toggleMouse()
 end
 vim.keymap.set("n", "<Leader>Om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
 
+vim.keymap.set("n", "<Leader>m", function()
+    vim.cmd("MaximizerToggle!")
+end, { desc = "Toggle [M]aximize the window" })
 -- Diagnostic keymaps
 --
 

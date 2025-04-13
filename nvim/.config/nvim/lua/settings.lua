@@ -12,6 +12,8 @@ vim.opt.expandtab = true
 vim.opt.tabstop = 8
 vim.opt.softtabstop = 0
 
+vim.opt.completeopt = 'menuone,noinsert,preview'
+
 -- When opening a new window with vsplit, open the new window on the right
 vim.opt.splitright = true
 

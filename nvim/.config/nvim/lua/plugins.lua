@@ -106,6 +106,7 @@ cmp.setup({
 		{ name = "path" },
 	}),
 })
+require("cmp").setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" })
 
 -- disable netrw at the very start of your init.lua
 vim.g.loaded_netrw = 1

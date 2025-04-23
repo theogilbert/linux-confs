@@ -60,7 +60,29 @@ dap.configurations.python = {
 }
 
 local dapui = require('dapui')
-dapui.setup()
+dapui.setup({
+    layouts = { {
+        elements = { {
+            id = "scopes",
+            size = 0.5
+          }, {
+            id = "watches",
+            size = 0.25
+          }, {
+            id = "stacks",
+            size = 0.25
+          }},
+        position = "left",
+        size = 40
+      }, {
+        elements = { {
+            id = "repl",
+            size = 1
+          }},
+        position = "bottom",
+        size = 10
+      } },
+})
 
 dap.listeners.before.attach.dapui_config = function()
   dapui.open()

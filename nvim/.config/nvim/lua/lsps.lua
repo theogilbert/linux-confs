@@ -14,7 +14,7 @@ vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	pattern = { "*.py" },
 	group = cursorHoverGroup,
 	callback = function(_)
-		vim.lsp.buf.signature_help()
+            vim.lsp.buf.signature_help({focusable= false, anchor_bias= "above"})
 	end,
 })
 

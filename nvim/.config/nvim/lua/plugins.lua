@@ -73,8 +73,13 @@ wk.add({
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
 })
 
+-- https://www.reddit.com/r/neovim/comments/tsq4z8/completion_with_nvimcmp_for_daprepl/
 local cmp = require("cmp")
 cmp.setup({
+        enabled = function()
+          return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt"
+              or require("cmp_dap").is_dap_buffer()
+        end,
         preselect = cmp.PreselectMode.None,
 	snippet = {
 		-- REQUIRED - you must specify a snippet engine
@@ -150,7 +155,13 @@ cmp.setup.cmdline(':', {
   matching = { disallow_symbol_nonprefix_matching = false }
 })
 
-cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" })
+cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" }, {
+  sources = cmp.config.sources({
+    { name = 'dap' }
+  }, {
+    { name = 'path' }
+  }),
+})
 
 -- disable netrw at the very start of your init.lua
 vim.g.loaded_netrw = 1

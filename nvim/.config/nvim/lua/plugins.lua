@@ -8,7 +8,6 @@ require("mini.statusline").setup({})
 
 -- TODO add <leader>l keymaps for lsp related operations ([L]sp operations)
 -- TODO add a shortcut to search not all symbols but simply classes
--- TODO configure cmp to start cmp only after 2 or 3 letters, not just one
 -- TODO there exists a nvim plugin which is able to optimize linting/formatting operations
 --    it works by only submitting modified regions to the linter.
 --    if I ever encounter performance issues, look into it.
@@ -96,17 +95,62 @@ cmp.setup({
 		["<C-f>"] = cmp.mapping.scroll_docs(4),
 		["<C-Space>"] = cmp.mapping.complete(),
 		["<C-e>"] = cmp.mapping.abort(),
+		["<C-c>"] = cmp.mapping.abort(),
+                ["<Esc>"] = cmp.mapping.abort(),
 		["<CR>"] = cmp.mapping.confirm({ select = false }),
 	}),
 	sources = cmp.config.sources({
-		{ name = "nvim_lsp" },
 		{ name = "nvim_lsp_signature_help" },
-	}, {
-		{ name = "buffer" },
+		{ name = "nvim_lsp" },
 		{ name = "path" },
+		{ name = "buffer" },
 	}),
+        completion = {
+            autocomplete = false
+        },
+        experimental = {
+            ghost_text = true
+        }
 })
-require("cmp").setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" })
+
+
+-- define a timer to activate delayed auto-complete after 500ms
+local cmp_timer = nil
+vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
+    pattern = "*",
+    callback = function()
+        if cmp_timer then
+            vim.loop.timer_stop(cmp_timer)
+            cmp_timer = nil
+        end
+
+        cmp_timer = vim.loop.new_timer()
+        cmp_timer:start(500, 0, vim.schedule_wrap(function()
+            cmp.complete({ reason = cmp.ContextReason.Auto })
+        end))
+    end
+})
+
+-- `/` cmdline setup.
+cmp.setup.cmdline('/', {
+  mapping = cmp.mapping.preset.cmdline(),
+  sources = {
+    { name = 'buffer' }
+  }
+})
+
+-- `:` cmdline setup.
+cmp.setup.cmdline(':', {
+  mapping = cmp.mapping.preset.cmdline(),
+  sources = cmp.config.sources({
+    { name = 'path' }
+  }, {
+    { name = 'cmdline' }
+  }),
+  matching = { disallow_symbol_nonprefix_matching = false }
+})
+
+cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" })
 
 -- disable netrw at the very start of your init.lua
 vim.g.loaded_netrw = 1

@@ -52,7 +52,6 @@ end, { silent = true })
 
 local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
--- TODO update this so that it only applies on python files
 lspconfig.basedpyright.setup({
 	settings = {
 		basedpyright = {

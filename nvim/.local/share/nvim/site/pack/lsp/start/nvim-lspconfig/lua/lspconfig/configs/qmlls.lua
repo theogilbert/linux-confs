@@ -1,19 +1,19 @@
-local util = require 'lspconfig.util'
-
 return {
   default_config = {
     cmd = { 'qmlls' },
     filetypes = { 'qml', 'qmljs' },
     root_dir = function(fname)
-      return util.find_git_ancestor(fname)
+      return vim.fs.dirname(vim.fs.find('.git', { path = fname, upward = true })[1])
     end,
     single_file_support = true,
   },
   docs = {
     description = [[
-https://github.com/qt/qtdeclarative
+https://doc.qt.io/qt-6/qtqml-tooling-qmlls.html
 
-LSP implementation for QML (autocompletion, live linting, etc. in editors),
+> QML Language Server is a tool shipped with Qt that helps you write code in your favorite (LSP-supporting) editor.
+
+Source in the [QtDeclarative repository](https://code.qt.io/cgit/qt/qtdeclarative.git/)
         ]],
   },
 }

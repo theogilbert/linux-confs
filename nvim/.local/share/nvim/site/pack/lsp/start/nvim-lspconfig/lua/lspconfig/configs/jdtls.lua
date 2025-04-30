@@ -2,25 +2,25 @@ local util = require 'lspconfig.util'
 local handlers = require 'vim.lsp.handlers'
 
 local env = {
-  HOME = vim.loop.os_homedir(),
+  HOME = vim.uv.os_homedir(),
   XDG_CACHE_HOME = os.getenv 'XDG_CACHE_HOME',
   JDTLS_JVM_ARGS = os.getenv 'JDTLS_JVM_ARGS',
 }
 
 local function get_cache_dir()
-  return env.XDG_CACHE_HOME and env.XDG_CACHE_HOME or util.path.join(env.HOME, '.cache')
+  return env.XDG_CACHE_HOME and env.XDG_CACHE_HOME or env.HOME .. '/.cache'
 end
 
 local function get_jdtls_cache_dir()
-  return util.path.join(get_cache_dir(), 'jdtls')
+  return get_cache_dir() .. '/jdtls'
 end
 
 local function get_jdtls_config_dir()
-  return util.path.join(get_jdtls_cache_dir(), 'config')
+  return get_jdtls_cache_dir() .. '/config'
 end
 
 local function get_jdtls_workspace_dir()
-  return util.path.join(get_jdtls_cache_dir(), 'workspace')
+  return get_jdtls_cache_dir() .. '/workspace'
 end
 
 local function get_jdtls_jvm_args()

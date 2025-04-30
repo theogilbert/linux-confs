@@ -7,7 +7,7 @@ end
 
 local function ds_pinyin_lsp_off(bufnr)
   bufnr = util.validate_bufnr(bufnr)
-  local ds_pinyin_lsp_client = util.get_active_client_by_name(bufnr, 'ds_pinyin_lsp')
+  local ds_pinyin_lsp_client = vim.lsp.get_clients({ bufnr = bufnr, name = 'ds_pinyin_lsp' })[1]
   if ds_pinyin_lsp_client then
     ds_pinyin_lsp_client.notify('$/turn/completion', {
       ['completion_on'] = false,
@@ -19,7 +19,7 @@ end
 
 local function ds_pinyin_lsp_on(bufnr)
   bufnr = util.validate_bufnr(bufnr)
-  local ds_pinyin_lsp_client = util.get_active_client_by_name(bufnr, 'ds_pinyin_lsp')
+  local ds_pinyin_lsp_client = vim.lsp.get_clients({ bufnr = bufnr, name = 'ds_pinyin_lsp' })[1]
   if ds_pinyin_lsp_client then
     ds_pinyin_lsp_client.notify('$/turn/completion', {
       ['completion_on'] = true,
@@ -33,7 +33,9 @@ return {
   default_config = {
     cmd = { bin_name },
     filetypes = { 'markdown', 'org' },
-    root_dir = util.find_git_ancestor,
+    root_dir = function(fname)
+      return vim.fs.dirname(vim.fs.find('.git', { path = fname, upward = true })[1])
+    end,
     single_file_support = true,
     init_options = {
       completion_on = true,

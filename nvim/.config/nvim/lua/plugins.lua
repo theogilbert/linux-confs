@@ -40,24 +40,24 @@ require("fzf-lua").setup({
 			["ctrl-q"] = "select-all+accept",
 		},
 	},
-        actions = {
-            files = {
-                ["enter"] = actions.file_edit_or_qf,
-                ["ctrl-b"] = actions.file_split,
-                ["ctrl-v"] = actions.file_vsplit,
-                ["ctrl-t"] = actions.file_tabedit,
-                ["alt-q"] = actions.file_sel_to_qf,
-            }
-        }
+	actions = {
+		files = {
+			["enter"] = actions.file_edit_or_qf,
+			["ctrl-b"] = actions.file_split,
+			["ctrl-v"] = actions.file_vsplit,
+			["ctrl-t"] = actions.file_tabedit,
+			["alt-q"] = actions.file_sel_to_qf,
+		},
+	},
 })
 
 -- Which key
 local wk = require("which-key")
-wk.setup {
-    trigger_blacklist = {
-        n = { '"' }
-    }
-}
+wk.setup({
+	trigger_blacklist = {
+		n = { '"' },
+	},
+})
 wk.add({
 	{ "<leader>s", desc = "[S]earch" },
 	{ "<leader>sv", desc = "[S]earch stuff in [V]im" },
@@ -76,11 +76,10 @@ wk.add({
 -- https://www.reddit.com/r/neovim/comments/tsq4z8/completion_with_nvimcmp_for_daprepl/
 local cmp = require("cmp")
 cmp.setup({
-        enabled = function()
-          return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt"
-              or require("cmp_dap").is_dap_buffer()
-        end,
-        preselect = cmp.PreselectMode.None,
+	enabled = function()
+		return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt" or require("cmp_dap").is_dap_buffer()
+	end,
+	preselect = cmp.PreselectMode.None,
 	snippet = {
 		-- REQUIRED - you must specify a snippet engine
 		expand = function(args)
@@ -111,12 +110,12 @@ cmp.setup({
 		{ name = "path" },
 		{ name = "buffer" },
 	}),
-        completion = {
-            autocomplete = false
-        },
-        experimental = {
-            ghost_text = true
-        }
+	completion = {
+		autocomplete = false,
+	},
+	experimental = {
+		ghost_text = true,
+	},
 	sorting = {
 		priority_weight = 1,
 		comparators = {
@@ -135,45 +134,49 @@ cmp.setup({
 -- define a timer to activate delayed auto-complete after 300ms
 local cmp_timer = nil
 vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
-    pattern = "*",
-    callback = function()
-        if cmp_timer then
-            vim.loop.timer_stop(cmp_timer)
-            cmp_timer = nil
-        end
+	pattern = "*",
+	callback = function()
+		if cmp_timer then
+			vim.loop.timer_stop(cmp_timer)
+			cmp_timer = nil
+		end
 
-        cmp_timer = vim.loop.new_timer()
-        cmp_timer:start(300, 0, vim.schedule_wrap(function()
-            cmp.complete({ reason = cmp.ContextReason.Auto })
-        end))
-    end
+		cmp_timer = vim.loop.new_timer()
+		cmp_timer:start(
+			300,
+			0,
+			vim.schedule_wrap(function()
+				cmp.complete({ reason = cmp.ContextReason.Auto })
+			end)
+		)
+	end,
 })
 
 -- `/` cmdline setup.
-cmp.setup.cmdline('/', {
-  mapping = cmp.mapping.preset.cmdline(),
-  sources = {
-    { name = 'buffer' }
-  }
+cmp.setup.cmdline("/", {
+	mapping = cmp.mapping.preset.cmdline(),
+	sources = {
+		{ name = "buffer" },
+	},
 })
 
 -- `:` cmdline setup.
-cmp.setup.cmdline(':', {
-  mapping = cmp.mapping.preset.cmdline(),
-  sources = cmp.config.sources({
-    { name = 'path' }
-  }, {
-    { name = 'cmdline' }
-  }),
-  matching = { disallow_symbol_nonprefix_matching = false }
+cmp.setup.cmdline(":", {
+	mapping = cmp.mapping.preset.cmdline(),
+	sources = cmp.config.sources({
+		{ name = "path" },
+	}, {
+		{ name = "cmdline" },
+	}),
+	matching = { disallow_symbol_nonprefix_matching = false },
 })
 
 cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" }, {
-  sources = cmp.config.sources({
-    { name = 'dap' }
-  }, {
-    { name = 'path' }
-  }),
+	sources = cmp.config.sources({
+		{ name = "dap" },
+	}, {
+		{ name = "path" },
+	}),
 })
 
 -- disable netrw at the very start of your init.lua
@@ -188,14 +191,13 @@ vim.opt.termguicolors = true
 require("nvim-tree").setup()
 
 require("neotest").setup({
-  adapters = {
-    require("neotest-python")({
-        dap = { justMyCode = false },
-        pytest_discover_instances = true,
-    })
-  }
+	adapters = {
+		require("neotest-python")({
+			dap = { justMyCode = false },
+			pytest_discover_instances = true,
+		}),
+	},
 })
 
 -- Change the definition of a WORD in vim-wordmotion plugin
-vim.g.wordmotion_uppercase_spaces = '[,(){}\\[\\]]'
-
+vim.g.wordmotion_uppercase_spaces = "[,(){}\\[\\]]"

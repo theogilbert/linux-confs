@@ -8,21 +8,21 @@ vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 -- If the number column is displayed, hide it and hide the sign column
 -- Otherwise, display both.
 function toggleGutter()
-    isGutterDisplayed = vim.opt.number:get()
+	isGutterDisplayed = vim.opt.number:get()
 
-    vim.opt.number = not isGutterDisplayed
-    vim.opt.signcolumn = isGutterDisplayed and "no" or "yes"
+	vim.opt.number = not isGutterDisplayed
+	vim.opt.signcolumn = isGutterDisplayed and "no" or "yes"
 end
 vim.keymap.set("n", "<Leader>On", toggleGutter, { desc = "Toggle [O]ption [N]umber" })
 
 function toggleMouse()
-    toggledSettings = vim.opt.mouse:get().a and "" or "a"
-    vim.opt.mouse = toggledSettings
+	toggledSettings = vim.opt.mouse:get().a and "" or "a"
+	vim.opt.mouse = toggledSettings
 end
 vim.keymap.set("n", "<Leader>Om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
 
 vim.keymap.set("n", "<Leader>m", function()
-    vim.cmd("MaximizerToggle!")
+	vim.cmd("MaximizerToggle!")
 end, { desc = "Toggle [M]aximize the window" })
 -- Diagnostic keymaps
 --
@@ -56,40 +56,40 @@ vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it bu
 local neotest = require("neotest")
 
 vim.keymap.set("n", "<leader>tr", function()
-    neotest.run.run({ extra_args = { "-vv" }})
-    -- TODO automatically focus floating window on failure
+	neotest.run.run({ extra_args = { "-vv" } })
+	-- TODO automatically focus floating window on failure
 end, { desc = "[T]ests - [R]un Nearest" })
 vim.keymap.set("n", "<leader>tl", function()
-    neotest.run.run_last()
+	neotest.run.run_last()
 end, { desc = "[T]ests - Run [L]ast" })
 vim.keymap.set("n", "<leader>ta", function()
-    neotest.run.run(vim.fn.expand("%"))
+	neotest.run.run(vim.fn.expand("%"))
 end, { desc = "[t]ests - run [a]ll in file" })
 vim.keymap.set("n", "<leader>tw", function()
-    neotest.run.run({ suite = true })
-    neotest.summary.open()
+	neotest.run.run({ suite = true })
+	neotest.summary.open()
 end, { desc = "[t]ests - run all in [w]orkspace" })
 vim.keymap.set("n", "<leader>td", function()
-    neotest.run.run({strategy = "dap"})
+	neotest.run.run({ strategy = "dap" })
 end, { desc = "[T]ests - [D]ebug Nearest" })
 vim.keymap.set("n", "<leader>to", function()
-    neotest.output_panel.toggle()
+	neotest.output_panel.toggle()
 end, { desc = "[T]ests - Toggle [O]utput" })
 vim.keymap.set("n", "<leader>ts", function()
-    neotest.summary.toggle()
-    local win = vim.fn.bufwinid("Neotest Summary")
-    if win > -1 then
-        vim.api.nvim_set_current_win(win)
-    end
+	neotest.summary.toggle()
+	local win = vim.fn.bufwinid("Neotest Summary")
+	if win > -1 then
+		vim.api.nvim_set_current_win(win)
+	end
 end, { desc = "[T]ests - Toggle [S]ummary" })
 vim.keymap.set("n", "<leader>tp", function()
-    neotest.jump.prev({ status = "failed" })
+	neotest.jump.prev({ status = "failed" })
 end, { desc = "[T]ests - [P]revious failed test" })
 vim.keymap.set("n", "<leader>tn", function()
-    neotest.jump.next({ status = "failed" })
+	neotest.jump.next({ status = "failed" })
 end, { desc = "[T]ests - [N]ext failed test" })
 vim.keymap.set("n", "<leader>tT", function()
-    neotest.run.stop()
+	neotest.run.stop()
 end, { desc = "[T]ests - [T]erminate test session" })
 
 local api = require("nvim-tree.api")
@@ -104,7 +104,7 @@ vim.keymap.set("n", "<leader>er", api.tree.reload, { desc = "File [E]xplorer - [
 vim.keymap.set("n", "<leader>ec", focus_current_file, { desc = "File [E]xplorer - Focus [C]urrent file" })
 
 vim.keymap.set("n", "<leader>lR", function()
-    vim.cmd("LspRestart")
+	vim.cmd("LspRestart")
 end, { desc = "[L]SP - [R]estart" })
 vim.keymap.set("n", "<leader>ldp", vim.diagnostic.goto_prev, { desc = "[L]SP - [D]iagnostics - [P]revious" })
 vim.keymap.set("n", "<leader>ldn", vim.diagnostic.goto_next, { desc = "[L]SP - [D]iagnostics - [N]ext" })
@@ -130,4 +130,3 @@ vim.keymap.set("n", "<leader>dd", dap.down, { desc = "Move [D]own the stack" })
 vim.keymap.set("n", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("v", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("n", "<leader>df", dap.focus_frame, { desc = "[F]ocus current frame" })
-

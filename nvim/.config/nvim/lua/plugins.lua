@@ -102,6 +102,9 @@ cmp.setup({
 		["<C-e>"] = cmp.mapping.abort(),
 		["<CR>"] = cmp.mapping.confirm({ select = false }),
 	}),
+	matching = {
+		disallow_prefix_unmatching = true,
+	},
 	sources = cmp.config.sources({
 		{ name = "nvim_lsp_signature_help" },
 		{ name = "nvim_lsp" },
@@ -114,8 +117,20 @@ cmp.setup({
         experimental = {
             ghost_text = true
         }
-})
+	sorting = {
+		priority_weight = 1,
+		comparators = {
+			function(entry1, entry2)
+				kind_ret = cmp.config.compare.kind(entry1, entry2)
+				if kind_ret ~= nil then
+					return kind_ret
+				end
 
+				return cmp.config.compare.length(entry1, entry2)
+			end,
+		},
+	},
+})
 
 -- define a timer to activate delayed auto-complete after 300ms
 local cmp_timer = nil

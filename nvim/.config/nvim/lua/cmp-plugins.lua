@@ -59,7 +59,7 @@ cmp.setup({
 	enabled = function()
                 return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt" or require("cmp_dap").is_dap_buffer()
 	end,
-	preselect = cmp.PreselectMode.None,
+	preselect = cmp.PreselectMode.Item,
 	snippet = {
 		expand = function(args)
                     vim.snippet.expand(args.body) -- For native neovim snippets (Neovim v0.10+)

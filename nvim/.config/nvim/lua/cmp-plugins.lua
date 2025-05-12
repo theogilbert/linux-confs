@@ -66,9 +66,6 @@ cmp.setup({
 	completion = {
 		autocomplete = false,
 	},
-	experimental = {
-		ghost_text = true,
-	},
 	sorting = {
 		priority_weight = 1,
 		comparators = {

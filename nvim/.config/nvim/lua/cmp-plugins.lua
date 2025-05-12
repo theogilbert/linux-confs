@@ -1,3 +1,5 @@
+local cmp = require("cmp")
+local types = require("cmp.types")
 
 function deprioritize_private(entry1, entry2)
     function private_level(entry)
@@ -26,11 +28,33 @@ function deprioritize_private(entry1, entry2)
     return level_1 < level_2
 end
 
+local custom_kind_priority = {
+    [types.lsp.CompletionItemKind.Variable] = types.lsp.CompletionItemKind.Method,
+    [types.lsp.CompletionItemKind.Module] = types.lsp.CompletionItemKind.Method,
+    [types.lsp.CompletionItemKind.Snippet] = 0,
+    [types.lsp.CompletionItemKind.Keyword] = 0,
+    [types.lsp.CompletionItemKind.Text] = 100,
+}
+
+function custom_lsp_kind_comparator(entry1, entry2)
+    function custom_lsp_kind(kind)
+        return custom_kind_priority[kind] or kind
+    end
+
+    local kind1 = custom_lsp_kind(entry1:get_kind())
+    local kind2 = custom_lsp_kind(entry2:get_kind())
+
+    if kind1 == kind2 then
+        return nil
+    else
+        return kind1 < kind2
+    end
+end
+
 -- TODO:
 -- https://www.reddit.com/r/neovim/comments/tsq4z8/completion_with_nvimcmp_for_daprepl/
 -- https://github.com/rcarriga/cmp-dap/tree/master
 -- setlocal completeopt=menuone,popup,noinsert
-local cmp = require("cmp")
 cmp.setup({
 	enabled = function()
 		return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt" or require("cmp_dap").is_dap_buffer()
@@ -70,7 +94,7 @@ cmp.setup({
 		priority_weight = 1,
 		comparators = {
                     deprioritize_private,
-                    cmp.config.compare.kind,
+                    custom_lsp_kind_comparator,
 		},
 	},
 })

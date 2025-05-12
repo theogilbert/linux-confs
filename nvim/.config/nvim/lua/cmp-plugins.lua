@@ -1,0 +1,128 @@
+
+function deprioritize_private(entry1, entry2)
+    function private_level(entry)
+        if vim.bo.filetype ~= "python" then
+            return 0
+        end
+
+        if string.sub(entry.completion_item.label, 1, 2) == "__" then
+            return 2
+        elseif string.sub(entry.completion_item.label, 1, 1) == "_" then
+            return 1
+        end
+
+        return 0
+    end
+
+    level_1 = private_level(entry1)
+    print("Private level of entry " .. entry1.completion_item.label .. " is " .. level_1)
+    level_2 = private_level(entry2)
+    print("Private level of entry " .. entry2.completion_item.label .. " is " .. level_2)
+
+    if level_1 == level_2 then
+        return nil
+    end
+
+    return level_1 < level_2
+end
+
+-- TODO:
+-- https://www.reddit.com/r/neovim/comments/tsq4z8/completion_with_nvimcmp_for_daprepl/
+-- https://github.com/rcarriga/cmp-dap/tree/master
+-- setlocal completeopt=menuone,popup,noinsert
+local cmp = require("cmp")
+cmp.setup({
+	enabled = function()
+		return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt" or require("cmp_dap").is_dap_buffer()
+	end,
+	preselect = cmp.PreselectMode.None,
+	snippet = {
+		-- REQUIRED - you must specify a snippet engine
+		expand = function(args)
+			-- vim.fn["vsnip#anonymous"](args.body) -- For `vsnip` users.
+			-- require('luasnip').lsp_expand(args.body) -- For `luasnip` users.
+			-- require('snippy').expand_snippet(args.body) -- For `snippy` users.
+			-- vim.fn["UltiSnips#Anon"](args.body) -- For `ultisnips` users.
+			vim.snippet.expand(args.body) -- For native neovim snippets (Neovim v0.10+)
+		end,
+	},
+	window = {
+		-- completion = cmp.config.window.bordered(),
+		-- documentation = cmp.config.window.bordered(),
+	},
+	mapping = cmp.mapping.preset.insert({
+		["<C-b>"] = cmp.mapping.scroll_docs(-4),
+		["<C-f>"] = cmp.mapping.scroll_docs(4),
+		["<C-Space>"] = cmp.mapping.complete(),
+		["<C-e>"] = cmp.mapping.abort(),
+		["<CR>"] = cmp.mapping.confirm({ select = false }),
+	}),
+	sources = cmp.config.sources({
+		{ name = "nvim_lsp_signature_help" },
+		{ name = "nvim_lsp" },
+		{ name = "path" },
+		{ name = "buffer" },
+	}),
+	completion = {
+		autocomplete = false,
+	},
+	experimental = {
+		ghost_text = true,
+	},
+	sorting = {
+		priority_weight = 1,
+		comparators = {
+                    deprioritize_private,
+                    cmp.config.compare.kind,
+		},
+	},
+})
+
+
+-- define a timer to activate delayed auto-complete after 300ms
+local cmp_timer = nil
+vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
+	pattern = "*",
+	callback = function()
+		if cmp_timer then
+			vim.loop.timer_stop(cmp_timer)
+			cmp_timer = nil
+		end
+
+		cmp_timer = vim.loop.new_timer()
+		cmp_timer:start(
+			300,
+			0,
+			vim.schedule_wrap(function()
+				cmp.complete({ reason = cmp.ContextReason.Auto })
+			end)
+		)
+	end,
+})
+
+-- `/` cmdline setup.
+cmp.setup.cmdline("/", {
+	mapping = cmp.mapping.preset.cmdline(),
+	sources = {
+		{ name = "buffer" },
+	},
+})
+
+-- `:` cmdline setup.
+cmp.setup.cmdline(":", {
+	mapping = cmp.mapping.preset.cmdline(),
+	sources = cmp.config.sources({
+		{ name = "path" },
+	}, {
+		{ name = "cmdline" },
+	}),
+	matching = { disallow_symbol_nonprefix_matching = false },
+})
+
+cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" }, {
+	sources = cmp.config.sources({
+		{ name = "dap" },
+	}, {
+		{ name = "path" },
+	}),
+})

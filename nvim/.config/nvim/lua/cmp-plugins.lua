@@ -17,9 +17,7 @@ function deprioritize_private(entry1, entry2)
     end
 
     level_1 = private_level(entry1)
-    print("Private level of entry " .. entry1.completion_item.label .. " is " .. level_1)
     level_2 = private_level(entry2)
-    print("Private level of entry " .. entry2.completion_item.label .. " is " .. level_2)
 
     if level_1 == level_2 then
         return nil

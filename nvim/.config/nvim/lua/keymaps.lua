@@ -5,6 +5,19 @@
 --  See `:help hlsearch`
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 
+vim.keymap.set("n", "<leader>f", function()
+    win_list = vim.api.nvim_list_wins()
+    for idx = #win_list, 1, -1 do
+        win_handle = win_list[idx]
+        win_cfg = vim.api.nvim_win_get_config(win_handle)
+        if win_cfg.relative ~= '' then
+            vim.api.nvim_set_current_win(win_handle)
+            break
+        end
+    end
+
+end, { desc = "[F]ocus floating window" })
+
 -- If the number column is displayed, hide it and hide the sign column
 -- Otherwise, display both.
 function toggleGutter()
@@ -57,7 +70,6 @@ local neotest = require("neotest")
 
 vim.keymap.set("n", "<leader>tr", function()
 	neotest.run.run({ extra_args = { "-vv" } })
-	-- TODO automatically focus floating window on failure
 end, { desc = "[T]ests - [R]un Nearest" })
 vim.keymap.set("n", "<leader>tl", function()
 	neotest.run.run_last()

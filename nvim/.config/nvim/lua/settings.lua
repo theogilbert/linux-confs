@@ -6,6 +6,15 @@ vim.g.loaded_python3_provider = 0
 
 vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg'}
 
+vim.g.xml_syntax_folding = 1
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "xml", "html" },
+  callback = function()
+    vim.opt_local.foldmethod = "syntax"
+  end,
+})
+
+
 vim.opt.shiftwidth = 4
 vim.opt.smarttab = true
 vim.opt.expandtab = true
@@ -17,8 +26,10 @@ vim.opt.completeopt = 'menuone,noinsert,preview'
 -- When opening a new window with vsplit, open the new window on the right
 vim.opt.splitright = true
 
-vim.opt.foldmethod = "syntax"
-vim.opt.foldlevelstart = 20
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldlevelstart = 99
+vim.opt.foldlevel = 99
 
 vim.opt.wildmode = "list:longest"
 

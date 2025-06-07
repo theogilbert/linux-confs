@@ -142,3 +142,10 @@ vim.keymap.set("n", "<leader>dd", dap.down, { desc = "Move [D]own the stack" })
 vim.keymap.set("n", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("v", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("n", "<leader>df", dap.focus_frame, { desc = "[F]ocus current frame" })
+
+gitsigns = require('gitsigns')
+vim.keymap.set("n", "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })
+vim.keymap.set("n", "<leader>gb", function()
+    gitsigns.blame_line({ full  = true })
+end, { desc = "[G]it - View line [b]lame" })
+

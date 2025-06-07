@@ -24,6 +24,8 @@ mini_ai.setup({
     }
 })
 
+require('gitsigns').setup()
+
 -- nvim-cmp has a big configuration. To improve explorability of this file, cmp's config
 -- has been moved to cmp-plugins.lua
 require("cmp-plugins")
@@ -33,6 +35,8 @@ require("cmp-plugins")
 -- TODO there exists a nvim plugin which is able to optimize linting/formatting operations
 --    it works by only submitting modified regions to the linter.
 --    if I ever encounter performance issues, look into it.
+-- TODO https://github.com/rcarriga/cmp-dap
+-- TODO https://github.com/hrsh7th/nvim-cmp/issues/1092
 
 vim.cmd("packadd! sonokai")
 vim.g.sonokai_style = "shusia"
@@ -87,6 +91,7 @@ wk.add({
 	{ "<leader>sl", desc = "[S]earch stuff in [L]SP" },
 	{ "<leader>sw", desc = "[S]earch stuff in [W]orkspace" },
 	{ "<leader>sG", desc = "[S]earch stuff in [G]it" },
+	{ "<leader>g", desc = "[g]it related actions" },
 	{ "<leader>e", desc = "File [E]xplorer" },
 	{ "<leader>O", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },

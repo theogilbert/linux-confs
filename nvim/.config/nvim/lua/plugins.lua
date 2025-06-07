@@ -5,6 +5,24 @@
 
 -- mini.statusline sets up the vim status line
 require("mini.statusline").setup({})
+mini_ai = require('mini.ai')
+mini_ai.setup({
+    n_lines = 9999,
+    custom_textobjects = {
+        f = mini_ai.gen_spec.treesitter({
+            a = "@function.outer",
+            i = "@function.inner",
+        }, {}),
+        c = mini_ai.gen_spec.treesitter({
+            a = "@class.outer",
+            i = "@class.inner",
+        }, {}),
+        B = mini_ai.gen_spec.treesitter({
+            a = "@block.outer",
+            i = "@block.inner",
+        }, {}),
+    }
+})
 
 -- nvim-cmp has a big configuration. To improve explorability of this file, cmp's config
 -- has been moved to cmp-plugins.lua

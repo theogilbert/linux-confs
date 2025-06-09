@@ -6,19 +6,6 @@
 (parameters
   (identifier) @parameter.inner)
 
-((parameters
-  "," @_start
-  .
-  (identifier) @_end)
-  (#make-range! "parameter.outer" @_start @_end))
-
-((parameters
-  .
-  (identifier) @_start
-  .
-  "," @_end)
-  (#make-range! "parameter.outer" @_start @_end))
-
 (if_statement
   (body) @conditional.inner) @conditional.outer
 

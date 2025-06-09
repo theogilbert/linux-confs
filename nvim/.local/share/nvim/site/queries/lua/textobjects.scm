@@ -9,17 +9,6 @@
   (arguments) @call.inner
   (#match? @call.inner "^[^\\(]"))
 
-(function_call
-  arguments: (arguments
-    .
-    "("
-    .
-    (_) @_start
-    (_)? @_end
-    .
-    ")"
-    (#make-range! "call.inner" @_start @_end)))
-
 ; class
 ; comment
 (comment
@@ -68,46 +57,6 @@
 
 (repeat_statement
   body: (_) @loop.inner)
-
-; parameter
-(arguments
-  .
-  (_) @parameter.inner
-  .
-  ","? @_end
-  (#make-range! "parameter.outer" @parameter.inner @_end))
-
-(parameters
-  .
-  (_) @parameter.inner
-  .
-  ","? @_end
-  (#make-range! "parameter.outer" @parameter.inner @_end))
-
-(table_constructor
-  .
-  (field) @parameter.inner
-  .
-  ","? @_end
-  (#make-range! "parameter.outer" @parameter.inner @_end))
-
-(arguments
-  "," @_start
-  .
-  (_) @parameter.inner
-  (#make-range! "parameter.outer" @_start @parameter.inner))
-
-(parameters
-  "," @_start
-  .
-  (_) @parameter.inner
-  (#make-range! "parameter.outer" @_start @parameter.inner))
-
-(table_constructor
-  "," @_start
-  .
-  (field) @parameter.inner
-  (#make-range! "parameter.outer" @_start @parameter.inner))
 
 ; number
 (number) @number.inner

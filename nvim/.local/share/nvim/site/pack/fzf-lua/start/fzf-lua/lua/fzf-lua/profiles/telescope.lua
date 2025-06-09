@@ -13,7 +13,7 @@ return {
     width   = 0.8,
     height  = 0.9,
     preview = {
-      hidden       = "nohidden",
+      hidden       = false,
       vertical     = "up:45%",
       horizontal   = "right:50%",
       layout       = "flex",
@@ -37,10 +37,6 @@ return {
     cursorlinenr   = hl_validate "TelescopeSelection",
     search         = hl_validate "IncSearch",
   },
-  lsp        = {
-    jump_to_single_result = true,
-    jump_to_single_result_action = actions.file_edit,
-  },
   fzf_colors = {
     ["fg"] = { "fg", "TelescopeNormal" },
     ["bg"] = { "bg", "TelescopeNormal" },
@@ -60,13 +56,13 @@ return {
   keymap     = {
     builtin = {
       true,
-      ["<C-d>"] = "preview-down",
-      ["<C-u>"] = "preview-up",
+      ["<C-d>"] = "preview-page-down",
+      ["<C-u>"] = "preview-page-up",
     },
     fzf = {
       true,
-      ["ctrl-d"] = "preview-down",
-      ["ctrl-u"] = "preview-up",
+      ["ctrl-d"] = "preview-page-down",
+      ["ctrl-u"] = "preview-page-up",
       ["ctrl-q"] = "select-all+accept",
     },
   },

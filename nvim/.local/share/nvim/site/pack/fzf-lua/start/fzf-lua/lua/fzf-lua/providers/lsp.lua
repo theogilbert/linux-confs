@@ -8,44 +8,22 @@ local make_entry = require "fzf-lua.make_entry"
 
 local M = {}
 
-local function handler_capability(handler)
-  if utils.__HAS_NVIM_08 then
-    return handler.server_capability
-  else
-    return handler.resolved_capability
-  end
-end
-
 local function check_capabilities(handler, silent)
-  local clients = utils.__HAS_NVIM_011
-      and vim.lsp.get_clients({ bufnr = core.CTX().bufnr })
-      ---@diagnostic disable-next-line: deprecated
-      or vim.lsp.buf_get_clients(core.CTX().bufnr)
+  local clients = utils.lsp_get_clients({ bufnr = core.CTX().bufnr })
 
   -- return the number of clients supporting the feature
   -- so the async version knows how many callbacks to wait for
   local num_clients = 0
 
   for _, client in pairs(clients) do
-    if utils.__HAS_NVIM_09 then
-      -- https://github.com/neovim/neovim/blob/65738202f8be3ca63b75197d48f2c7a9324c035b/runtime/doc/news.txt#L118-L122
-      -- Dynamic registration of LSP capabilities. An implication of this change is
-      -- that checking a client's `server_capabilities` is no longer a sufficient
-      -- indicator to see if a server supports a feature. Instead use
-      -- `client.supports_method(<method>)`. It considers both the dynamic
-      -- capabilities and static `server_capabilities`.
-      if client.supports_method(handler.method) then
-        num_clients = num_clients + 1
-      end
-    elseif utils.__HAS_NVIM_08 then
-      if client.server_capabilities[handler.server_capability] then
-        num_clients = num_clients + 1
-      end
-    else
-      ---@diagnostic disable-next-line: undefined-field
-      if client.resolved_capabilities[handler.resolved_capability] then
-        num_clients = num_clients + 1
-      end
+    -- https://github.com/neovim/neovim/blob/65738202f8be3ca63b75197d48f2c7a9324c035b/runtime/doc/news.txt#L118-L122
+    -- Dynamic registration of LSP capabilities. An implication of this change is
+    -- that checking a client's `server_capabilities` is no longer a sufficient
+    -- indicator to see if a server supports a feature. Instead use
+    -- `client.supports_method(<method>)`. It considers both the dynamic
+    -- capabilities and static `server_capabilities`.
+    if client:supports_method(handler.prep or handler.method) then
+      num_clients = num_clients + 1
     end
   end
 
@@ -79,10 +57,10 @@ local jump_to_location = function(opts, result, enc)
   -- safe to call even if the interface is closed
   utils.fzf_exit()
 
-  local action = opts.jump_to_single_result_action
+  local action = opts.jump1_action
   if action then
     local entry = location_to_entry(result, enc)
-    return opts.jump_to_single_result_action({ entry }, opts)
+    return opts.jump1_action({ entry }, opts)
   end
 
   return utils.jump_to_location(result, enc)
@@ -150,31 +128,36 @@ local function location_handler(opts, cb, _, result, ctx, _)
       return true
     end, result)
   end
-  local items = {}
+  local entries = {}
   if opts.regex_filter and opts._regex_filter_fn == nil then
     opts._regex_filter_fn = regex_filter_fn(opts.regex_filter)
   end
   -- Although `make_entry.file` filters for `cwd_only` we filter
-  -- here to accurately determine `jump_to_single_result` (#980)
+  -- here to accurately determine `jump1` (#980)
   result = vim.tbl_filter(function(x)
     local item = vim.lsp.util.locations_to_items({ x }, encoding)[1]
     if (opts.cwd_only and not path.is_relative_to(item.filename, opts.cwd)) or
         (opts._regex_filter_fn and not opts._regex_filter_fn(item, core.CTX())) then
       return false
     end
-    table.insert(items, item)
-    return true
+    if opts.current_buffer_only and not path.equals(core.CTX().bname, item.filename) then
+      return false
+    end
+    local entry = make_entry.lcol(item, opts)
+    entry = make_entry.file(entry, opts)
+    if not entry then
+      -- Filtered by cwd / file_ignore_patterns, etc
+      return false
+    else
+      table.insert(entries, { entry = entry, result = x })
+      return true
+    end
   end, result)
   -- Jump immediately if there is only one location
-  if opts.jump_to_single_result and #result == 1 then
-    jump_to_location(opts, result[1], encoding)
-  end
-  for _, entry in ipairs(items) do
-    if not opts.current_buffer_only or core.CTX().bname == entry.filename then
-      entry = make_entry.lcol(entry, opts)
-      entry = make_entry.file(entry, opts)
-      if entry then cb(entry) end
-    end
+  if opts.jump1 and #entries == 1 then
+    jump_to_location(opts, entries[1].result, encoding)
+  else
+    vim.tbl_map(function(x) cb(x.entry) end, entries)
   end
 end
 
@@ -192,7 +175,7 @@ local function call_hierarchy_handler(opts, cb, _, result, ctx, _)
         lnum = range.start.line + 1,
         col = range.start.character + 1,
       }
-      if opts.jump_to_single_result and #call_hierarchy_call.fromRanges == 1 then
+      if opts.jump1 and #result == 1 then
         jump_to_location(opts, location, encoding)
       end
       local entry = make_entry.lcol(location, opts)
@@ -240,14 +223,15 @@ local function symbols_to_items(symbols, bufnr, child_prefix)
   return _symbols_to_items(symbols, {}, bufnr or 0, "")
 end
 
-local function symbol_handler(opts, cb, _, result, _, _)
+local function symbol_handler(opts, cb, _, result, ctx, _)
   result = utils.tbl_islist(result) and result or { result }
   local items
   if opts.child_prefix then
     items = symbols_to_items(result, core.CTX().bufnr,
       opts.child_prefix == true and string.rep(" ", 2) or opts.child_prefix)
   else
-    items = vim.lsp.util.symbols_to_items(result, core.CTX().bufnr)
+    local encoding = vim.lsp.get_client_by_id(ctx.client_id).offset_encoding
+    items = vim.lsp.util.symbols_to_items(result, core.CTX().bufnr, encoding)
   end
   if opts.regex_filter and opts._regex_filter_fn == nil then
     opts._regex_filter_fn = regex_filter_fn(opts.regex_filter)
@@ -320,79 +304,70 @@ end
 local handlers = {
   ["code_actions"] = {
     label = "Code Actions",
-    resolved_capability = "code_action",
     server_capability = "codeActionProvider",
     method = "textDocument/codeAction",
     handler = code_action_handler
   },
   ["references"] = {
     label = "References",
-    resolved_capability = "find_references",
     server_capability = "referencesProvider",
     method = "textDocument/references",
     handler = location_handler
   },
   ["definitions"] = {
     label = "Definitions",
-    resolved_capability = "goto_definition",
     server_capability = "definitionProvider",
     method = "textDocument/definition",
     handler = location_handler
   },
   ["declarations"] = {
     label = "Declarations",
-    resolved_capability = "goto_declaration",
     server_capability = "declarationProvider",
     method = "textDocument/declaration",
     handler = location_handler
   },
   ["typedefs"] = {
     label = "Type Definitions",
-    resolved_capability = "type_definition",
     server_capability = "typeDefinitionProvider",
     method = "textDocument/typeDefinition",
     handler = location_handler
   },
   ["implementations"] = {
     label = "Implementations",
-    resolved_capability = "implementation",
     server_capability = "implementationProvider",
     method = "textDocument/implementation",
     handler = location_handler
   },
   ["document_symbols"] = {
     label = "Document Symbols",
-    resolved_capability = "document_symbol",
     server_capability = "documentSymbolProvider",
     method = "textDocument/documentSymbol",
     handler = symbol_handler
   },
   ["workspace_symbols"] = {
     label = "Workspace Symbols",
-    resolved_capability = "workspace_symbol",
     server_capability = "workspaceSymbolProvider",
     method = "workspace/symbol",
     handler = symbol_handler
   },
   ["live_workspace_symbols"] = {
     label = "Workspace Symbols",
-    resolved_capability = "workspace_symbol",
     server_capability = "workspaceSymbolProvider",
     method = "workspace/symbol",
     handler = symbol_handler
   },
   ["incoming_calls"] = {
     label = "Incoming Calls",
-    resolved_capability = "call_hierarchy",
     server_capability = "callHierarchyProvider",
     method = "callHierarchy/incomingCalls",
+    prep = "textDocument/prepareCallHierarchy",
     handler = call_hierarchy_handler
   },
   ["outgoing_calls"] = {
     label = "Outgoing Calls",
-    resolved_capability = "call_hierarchy",
     server_capability = "callHierarchyProvider",
     method = "callHierarchy/outgoingCalls",
+    prep = "textDocument/prepareCallHierarchy",
     handler = call_hierarchy_handler
   },
 }
@@ -504,17 +479,20 @@ local function gen_lsp_contents(opts)
         if response.result then
           local context = { client_id = client_id }
           lsp_handler.handler(opts, cb, lsp_handler.method, response.result, context)
+        elseif response.err then
+          utils.warn(string.format("Error executing '%s': %s",
+            lsp_handler.method, response.err.message))
         end
       end
       if utils.tbl_isempty(results) then
-        if not opts.fn_reload and not opts.silent then
-          utils.info(string.format("No %s found", string.lower(lsp_handler.label)))
-        else
+        if opts.fn_reload then
           -- return an empty set or the results wouldn't be
           -- cleared on live_workspace_symbols (#468)
           opts.__contents = {}
+        elseif not opts.silent then
+          utils.info(string.format("No %s found", string.lower(lsp_handler.label)))
         end
-      elseif not (opts.jump_to_single_result and #results == 1) then
+      elseif not (opts.jump1 and #results == 1) then
         -- LSP request was synchronous but we still asyncify the fzf feeding
         opts.__contents = function(fzf_cb)
           coroutine.wrap(function()
@@ -615,10 +593,9 @@ local function gen_lsp_contents_call_hierarchy(opts)
       or function(client)
         return vim.lsp.util.make_position_params(core.CTX().winid, client.offset_encoding)
       end
-  local method = "textDocument/prepareCallHierarchy"
-  local res, err = vim.lsp.buf_request_sync(0, method, lsp_params, 2000)
+  local res, err = vim.lsp.buf_request_sync(0, opts.lsp_handler.prep, lsp_params, 2000)
   if err then
-    utils.err(("Error executing '%s': %s"):format(method, err))
+    utils.err(("Error executing '%s': %s"):format(opts.lsp_handler.prep, err))
   else
     local _, response = next(res)
     if not response or not response.result or not response.result[1] then
@@ -660,7 +637,7 @@ local function fzf_lsp_locations(opts, fn_contents)
   if not opts then return end
   opts = core.set_fzf_field_index(opts)
   opts = fn_contents(opts)
-  if not opts.__contents then
+  if not opts or not opts.__contents then
     core.__CTX = nil
     return
   end
@@ -710,7 +687,7 @@ M.finder = function(opts)
       opts.silent = opts.silent == nil and true or opts.silent
       opts.no_autoclose = true
       opts.lsp_handler = handlers[method]
-      opts.lsp_handler.capability = handler_capability(opts.lsp_handler)
+      opts.lsp_handler.capability = opts.lsp_handler.server_capability
       opts.lsp_params = lsp_params -- reset previous calls params if existed
 
       -- returns nil for no client attached, false for unsupported capability
@@ -816,6 +793,7 @@ M.workspace_symbols = function(opts)
   opts = normalize_lsp_opts(opts, "lsp.symbols", "lsp_workspace_symbols")
   if not opts then return end
   opts.__ACT_TO = opts.__ACT_TO or M.live_workspace_symbols
+  opts.__call_fn = utils.__FNCREF__()
   opts.lsp_params = { query = opts.lsp_query or "" }
   opts = core.set_header(opts, opts.headers or
     { "actions", "cwd", "lsp_query", "regex_filter" })
@@ -824,6 +802,9 @@ M.workspace_symbols = function(opts)
   if not opts.__contents then
     core.__CTX = nil
     return
+  end
+  if utils.has(opts, "fzf") and not opts.prompt and opts.lsp_query and #opts.lsp_query > 0 then
+    opts.prompt = utils.ansi_from_hl(opts.hls.live_prompt, opts.lsp_query) .. " > "
   end
   if opts.symbol_style or opts.symbol_fmt then
     opts.fn_pre_fzf = function() gen_sym2style_map(opts) end
@@ -839,12 +820,14 @@ M.live_workspace_symbols = function(opts)
 
   -- needed by 'actions.sym_lsym'
   opts.__ACT_TO = opts.__ACT_TO or M.workspace_symbols
+  opts.__call_fn = utils.__FNCREF__()
 
+  -- NOTE: no longer used since we hl the query with `FzfLuaLivePrompt`
   -- prepend prompt with "*" to indicate "live" query
-  opts.prompt = type(opts.prompt) == "string" and opts.prompt or ""
-  if opts.live_ast_prefix ~= false then
-    opts.prompt = opts.prompt:match("^%*") and opts.prompt or ("*" .. opts.prompt)
-  end
+  -- opts.prompt = type(opts.prompt) == "string" and opts.prompt or "> "
+  -- if opts.live_ast_prefix ~= false then
+  --   opts.prompt = opts.prompt:match("^%*") and opts.prompt or ("*" .. opts.prompt)
+  -- end
 
   -- when using live_workspace_symbols there is no "query"
   -- the prompt input is the LSP query, store as "lsp_query"
@@ -895,39 +878,6 @@ M.live_workspace_symbols = function(opts)
   return core.fzf_exec(nil, opts)
 end
 
--- Converts 'vim.diagnostic.get' to legacy style 'get_line_diagnostics()'
--- TODO: not needed anymore, it seems that `vim.lsp.buf.code_action` still
--- uses the old `vim.lsp.diagnostic` API, we will do the same until neovim
--- stops using this API
---[[ local function get_line_diagnostics(_)
-  if not vim.diagnostic then
-    return vim.lsp.diagnostic.get_line_diagnostics()
-  end
-  local diag = vim.diagnostic.get(core.CTX().bufnr, { lnum = vim.api.nvim_win_get_cursor(0)[1] - 1 })
-  return diag and diag[1]
-      and { {
-        source = diag[1].source,
-        message = diag[1].message,
-        severity = diag[1].severity,
-        code = diag[1].user_data and diag[1].user_data.lsp and diag[1].user_data.lsp.code,
-        codeDescription = diag[1].user_data and diag[1].user_data.lsp and
-            diag[1].user_data.lsp.codeDescription,
-        range = {
-          ["start"] = {
-            line = diag[1].lnum,
-            character = diag[1].col,
-          },
-          ["end"] = {
-            line = diag[1].end_lnum,
-            character = diag[1].end_col,
-          }
-        },
-        data = diag[1].user_data and diag[1].user_data.lsp and diag[1].user_data.lsp.data
-      } }
-      -- Must return an empty table or some LSP servers fail (#707)
-      or {}
-end ]]
-
 M.code_actions = function(opts)
   opts = normalize_lsp_opts(opts, "lsp.code_actions")
   if not opts then return end
@@ -941,44 +891,9 @@ M.code_actions = function(opts)
   local ui_select = require "fzf-lua.providers.ui_select"
   local registered = ui_select.is_registered()
 
-  -- when fzf-lua isn't registered for ui.select we need to test if
-  -- code actions exist before calling `vim.lsp.buf.code_action()`
-  -- if code actions don't exist the deregister callback is never
-  -- called and we remain registered
-  if not registered then
-    -- irrelevant for code actions and can cause
-    -- single results to be skipped with 'async = false'
-    opts.jump_to_single_result = false
-    opts.lsp_params = function(client)
-      local params = vim.lsp.util.make_range_params(core.CTX().winid,
-        -- nvim 0.11 requires offset_encoding param, `client` is first arg of called func
-        -- https://github.com/neovim/neovim/commit/629483e24eed3f2c07e55e0540c553361e0345a2
-        client and client.offset_encoding or nil)
-      params.context = opts.context or {
-        -- Neovim still uses `vim.lsp.diagnostic` API in "nvim/runtime/lua/vim/lsp/buf.lua"
-        -- continue to use it until proven otherwise, this also fixes #707 as diagnostics
-        -- must not be nil or some LSP servers will fail (e.g. ruff_lsp, rust_analyzer)
-        diagnostics = vim.lsp.diagnostic.get_line_diagnostics(core.CTX().bufnr) or {}
-      }
-      return params
-    end
-    if not utils.__HAS_NVIM_011 and type(opts.lsp_params) == "function" then
-      opts.lsp_params = opts.lsp_params()
-    end
-
-    -- make sure 'gen_lsp_contents' is run synchronously
-    opts.async = false
-
-    -- when 'opts.async == false' calls 'vim.lsp.buf_request_sync'
-    -- so we can avoid calling 'ui_select.register' when no code
-    -- actions are available
-    local _, has_code_actions = gen_lsp_contents(opts)
-
-    -- error or no sync request no results
-    if not has_code_actions then
-      core.__CTX = nil
-      return
-    end
+  if not registered and not opts.silent then
+    utils.warn("FzfLua is not currently registered as 'vim.ui.select' backend, use 'silent=true'" ..
+      " to hide this message or register globally using ':FzfLua register_ui_select'.")
   end
 
   opts.actions = opts.actions or {}
@@ -992,7 +907,11 @@ M.code_actions = function(opts)
   -- 3rd arg are "once" options to override
   -- existing "registered" ui_select options
   ui_select.register(opts, true, opts)
-  vim.lsp.buf.code_action({ context = opts.context, filter = opts.filter })
+  vim.lsp.buf.code_action({
+    apply = opts.jump1 or opts.fzf_opts["-1"] or opts.fzf_opts["--select-1"],
+    context = opts.context,
+    filter = opts.filter,
+  })
   -- vim.defer_fn(function()
   --   ui_select.deregister({}, true, true)
   -- end, 100)
@@ -1002,7 +921,7 @@ local function wrap_fn(key, fn)
   return function(opts)
     opts = opts or {}
     opts.lsp_handler = handlers[key]
-    opts.lsp_handler.capability = handler_capability(opts.lsp_handler)
+    opts.lsp_handler.capability = opts.lsp_handler.server_capability
 
     -- check_capabilities will print the appropriate warning
     if not check_capabilities(opts.lsp_handler) then

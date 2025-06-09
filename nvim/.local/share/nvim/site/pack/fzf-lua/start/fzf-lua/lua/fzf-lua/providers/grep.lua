@@ -29,6 +29,17 @@ local get_grep_cmd = function(opts, search_query, no_esc)
     is_grep = true
     command = string.format("grep %s", opts.grep_opts)
   end
+  for k, v in pairs({
+    follow = opts.toggle_follow_flag or "-L",
+    hidden = opts.toggle_hidden_flag or "--hidden",
+    no_ignore = opts.toggle_ignore_flag or "--no-ignore",
+  }) do
+    (function()
+      -- Do nothing unless opt was set
+      if opts[k] == nil then return end
+      command = utils.toggle_cmd_flag(command, v, opts[k])
+    end)()
+  end
 
   -- save a copy of the command for `actions.toggle_ignore`
   -- TODO: both `get_grep_cmd` and `get_files_cmd` need to
@@ -36,11 +47,21 @@ local get_grep_cmd = function(opts, search_query, no_esc)
   opts._cmd = command
 
   if opts.rg_glob and not command:match("^rg") then
+    if not tonumber(opts.rg_glob) and not opts.silent then
+      -- Do not display the error message if using the defaults (rg_glob=1)
+      utils.warn("'--glob|iglob' flags require 'rg', ignoring 'rg_glob' option.")
+    end
     opts.rg_glob = false
-    utils.warn("'--glob|iglob' flags require 'rg', ignoring 'rg_glob' option.")
   end
 
-  if opts.rg_glob then
+  if opts.fn_transform_cmd then
+    local new_cmd, new_query = opts.fn_transform_cmd(search_query, opts.cmd, opts)
+    if new_cmd then
+      opts.no_esc = true
+      opts.search = new_query
+      return new_cmd
+    end
+  elseif opts.rg_glob then
     local new_query, glob_args = make_entry.glob_parse(search_query, opts)
     if glob_args then
       -- since the search string mixes both the query and
@@ -91,6 +112,35 @@ local get_grep_cmd = function(opts, search_query, no_esc)
     search_query = opts.search
   end
 
+  if not opts._ctags_file then
+    -- Auto add `--line-number` for grep and `--line-number --column` for rg
+    -- NOTE: although rg's `--column` implies `--line-number` we still add
+    -- `--line-number` since we remove `--column` when search regex is empty
+    local bin = path.tail(command:match("[^%s]+"))
+    local bin2flags = {
+      grep = { { "--line-number", "-n" }, { "--recursive", "-r" } },
+      rg = { { "--line-number", "-n" }, { "--column" } }
+    }
+    for _, flags in ipairs(bin2flags[bin] or {}) do
+      local has_flag_group
+      for _, f in ipairs(flags) do
+        if command:match("^" .. utils.lua_regex_escape(f))
+            or command:match("%s+" .. utils.lua_regex_escape(f))
+        then
+          has_flag_group = true
+        end
+      end
+      if not has_flag_group then
+        if not opts.silent then
+          utils.warn(string.format(
+            "Added missing '%s' flag to '%s'. Add 'silent=true' to hide this message.",
+            table.concat(flags, "|"), bin))
+        end
+        command = make_entry.rg_insert_args(command, flags[1])
+      end
+    end
+  end
+
   -- remove column numbers when search term is empty
   if not opts.no_column_hide and #search_query == 0 then
     command = command:gsub("%s%-%-column", "")
@@ -139,6 +189,10 @@ M.grep = function(opts)
     end
   end
 
+  if utils.has(opts, "fzf") and not opts.prompt and opts.search and #opts.search > 0 then
+    opts.prompt = utils.ansi_from_hl(opts.hls.live_prompt, opts.search) .. " > "
+  end
+
   -- get the grep command before saving the last search
   -- in case the search string is overwritten by 'rg_glob'
   opts.cmd = get_grep_cmd(opts, opts.search, opts.no_esc)
@@ -157,6 +211,7 @@ M.grep = function(opts)
   end
 
   -- search query in header line
+  opts = core.set_title_flags(opts, { "cmd" })
   opts = core.set_header(opts, opts.headers or { "actions", "cwd", "search" })
   opts = core.set_fzf_field_index(opts)
   core.fzf_exec(contents, opts)
@@ -178,11 +233,12 @@ local function normalize_live_grep_opts(opts)
   -- to deref one level up to get to `live_grep_{mt|st}`
   opts.__call_fn = utils.__FNCREF2__()
 
+  -- NOTE: no longer used since we hl the query with `FzfLuaLivePrompt`
   -- prepend prompt with "*" to indicate "live" query
-  opts.prompt = type(opts.prompt) == "string" and opts.prompt or ""
-  if opts.live_ast_prefix ~= false then
-    opts.prompt = opts.prompt:match("^%*") and opts.prompt or ("*" .. opts.prompt)
-  end
+  -- opts.prompt = type(opts.prompt) == "string" and opts.prompt or "> "
+  -- if opts.live_ast_prefix ~= false then
+  --   opts.prompt = opts.prompt:match("^%*") and opts.prompt or ("*" .. opts.prompt)
+  -- end
 
   -- when using live_grep there is no "query", the prompt input
   -- is a regex expression and should be saved as last "search"
@@ -260,6 +316,7 @@ M.live_grep_st = function(opts)
   end
 
   -- search query in header line
+  opts = core.set_title_flags(opts, { "cmd", "live" })
   opts = core.set_header(opts, opts.headers or { "actions", "cwd" })
   opts = core.set_fzf_field_index(opts)
   core.fzf_exec(nil, opts)
@@ -295,6 +352,7 @@ M.live_grep_mt = function(opts)
   opts.fn_reload = command
 
   -- search query in header line
+  opts = core.set_title_flags(opts, { "cmd", "live" })
   opts = core.set_header(opts, opts.headers or { "actions", "cwd" })
   opts = core.set_fzf_field_index(opts)
   core.fzf_exec(nil, opts)

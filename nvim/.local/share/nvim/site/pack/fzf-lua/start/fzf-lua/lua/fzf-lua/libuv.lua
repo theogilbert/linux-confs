@@ -1,6 +1,5 @@
 local uv = vim.uv or vim.loop
 
-local _has_nvim_010 = vim.fn.has("nvim-0.10") == 1
 local _is_win = vim.fn.has("win32") == 1 or vim.fn.has("win64") == 1
 
 local M = {}
@@ -8,78 +7,8 @@ local M = {}
 -- path to current file
 local __FILE__ = debug.getinfo(1, "S").source:gsub("^@", "")
 
--- if loading this file as standalone ('--headless --clean')
--- add the current folder to package.path so we can 'require'
--- NOTE: loading this file before fzf-lua can cause unintended
--- effects (as 'vim.g.fzf_lua_directory=nil'). Run an additional
--- check if we are running headless with 'vim.api.nvim_list_uis'
-if not vim.g.fzf_lua_directory and #vim.api.nvim_list_uis() == 0 then
-  -- global var indicating a headless instance
-  vim.g.fzf_lua_is_headless = true
-
-  -- prepend this folder first, so our modules always get first
-  -- priority over some unknown random module with the same name
-  package.path = (";%s/?.lua;"):format(vim.fn.fnamemodify(__FILE__, ":h"))
-      .. package.path
-
-  -- override require to remove the 'fzf-lua.' part
-  -- since all files are going to be loaded locally
-  local _require = require
-  require = function(s) return _require(s:gsub("^fzf%-lua%.", "")) end
-
-  -- due to 'os.exit' neovim doesn't delete the temporary
-  -- directory, save it so we can delete prior to exit (#329)
-  -- NOTE: opted to delete the temp dir at the start due to:
-  --   (1) spawn_stdio doesn't need a temp directory
-  --   (2) avoid dangling temp dirs on process kill (i.e. live_grep)
-  local tmpdir = vim.fn.fnamemodify(vim.fn.tempname(), ":h")
-  if tmpdir and #tmpdir > 0 then
-    vim.fn.delete(tmpdir, "rf")
-    -- io.stdout:write("[DEBUG] "..tmpdir.."\n")
-  end
-  -- neovim might also automatically start the RPC server which will
-  -- generate a named pipe temp file, e.g. `/run/user/1000/nvim.14249.0`
-  -- we don't need the server in the headless "child" process, stopping
-  -- the server also deletes the temp file
-  if vim.v.servername and #vim.v.servername > 0 then
-    pcall(vim.fn.serverstop, vim.v.servername)
-  end
-end
-
 local base64 = require("fzf-lua.lib.base64")
 local serpent = require("fzf-lua.lib.serpent")
-
--- save to upvalue for performance reasons
-local string_byte = string.byte
-local string_sub = string.sub
-
-local function find_last(str, bytecode)
-  for i = #str, 1, -1 do
-    if string_byte(str, i) == bytecode then
-      return i
-    end
-  end
-end
-
-local function find_next(str, bytecode, start_idx)
-  local bytecodes = type(bytecode) == "table" and bytecode or { bytecode }
-  for i = start_idx or 1, #str do
-    for _, b in ipairs(bytecodes) do
-      if string_byte(str, i) == b then
-        return i, string.char(b)
-      end
-    end
-  end
-end
-
-local function find_last_newline(str)
-  return find_last(str, 10)
-end
-
-local function find_next_newline(str, start_idx)
-  return find_next(str, 10, start_idx)
-end
-
 
 local function process_kill(pid, signal)
   if not pid or not tonumber(pid) then return false end
@@ -118,14 +47,16 @@ local function coroutinify(fn)
   end
 end
 
----@param opts {cwd: string, cmd: string|table, env: table?, cb_finish: function, cb_write: function, cb_err: function, cb_pid: function, fn_transform: function?, EOL: string?, process1: boolean?, profile: boolean?}
+---@param opts {cwd: string, cmd: string|table, env: table?, cb_finish: function, cb_write: function, cb_err: function, cb_pid: function, fn_transform: function?, EOL: string?, process1: boolean?, profiler: boolean?}
 ---@param fn_transform function?
 ---@param fn_done function?
+---@return uv.uv_process_t proc
+---@return integer         pid
 M.spawn = function(opts, fn_transform, fn_done)
   local EOL = opts.EOL or "\n"
   local output_pipe = uv.new_pipe(false)
   local error_pipe = uv.new_pipe(false)
-  local write_cb_count = 0
+  local write_cb_count, on_exit_called = 0, nil
   local prev_line_content = nil
 
   if opts.fn_transform then fn_transform = opts.fn_transform end
@@ -159,13 +90,29 @@ M.spawn = function(opts, fn_transform, fn_done)
   else
     table.insert(args, tostring(opts.cmd))
   end
+
+  ---@diagnostic disable-next-line: missing-fields
   local handle, pid = uv.spawn(shell, {
     args = args,
     stdio = { nil, output_pipe, error_pipe },
     cwd = opts.cwd,
-    env = opts.env,
+    ---@diagnostic disable-next-line: assign-type-mismatch
+    env = (function()
+      -- uv.spawn will override all env when table provided?
+      -- steal from $VIMRUNTIME/lua/vim/_system.lua
+      local env = vim.fn.environ() --- @type table<string,string>
+      env["NVIM"] = vim.v.servername
+      env["NVIM_LISTEN_ADDRESS"] = nil
+      env = vim.tbl_extend("keep", opts.env or {}, env or {})
+      local renv = {} --- @type string[]
+      for k, v in pairs(env) do
+        renv[#renv + 1] = string.format("%s=%s", k, tostring(v))
+      end
+      return renv
+    end)(),
     verbatim = _is_win,
   }, function(code, signal)
+    on_exit_called = true
     if write_cb_count == 0 and not output_pipe:is_active() then
       -- Do not call `:read_stop` or `:close` here as we may have data
       -- reads outstanding on slower Windows machines (#1521), only call
@@ -186,7 +133,7 @@ M.spawn = function(opts, fn_transform, fn_done)
         -- can fail with premature process kill
         -- assert(not err)
         finish(130, 0, 2, pid)
-      elseif write_cb_count == 0 and not output_pipe:is_active() then
+      elseif write_cb_count == 0 and not output_pipe:is_active() and on_exit_called then
         -- spawn callback already called and did not close the pipe
         -- due to write_cb_count>0, since this is the last call
         -- we can close the fzf pipe
@@ -195,89 +142,70 @@ M.spawn = function(opts, fn_transform, fn_done)
     end)
   end
 
-  -- This is the old function used, worked very well
-  -- but couldn't handle 'fn_transform' nil retval
-  -- which we need for 'file_ignore_patterns'
-  --[[ local function process_lines(data)
-    -- assert(#data<=66560) -- 65K
-    write_cb(data:gsub("[^\n]+",
-      function(x)
-        return fn_transform(x)
-      end))
-  end ]]
-  local function process_lines(data)
-    local lines = {}
-    local nlines = 0
-    local start_idx = 1
-    local t_st = opts.profile and uv.hrtime()
-    if t_st then write_cb(string.format("[DEBUG] start: %.0f (ns)" .. EOL, t_st)) end
-    repeat
-      local nl_idx = find_next_newline(data, start_idx)
-      local line = data:sub(start_idx, nl_idx - 1)
-      -- We used to limit lines fed into fzf to 1K for perf reasons
-      -- but it turned out to have some negative consequnces (#580)
-      -- if #line > 1024 then
-      -- line = line:sub(1, 1024)
-      -- io.stderr:write(string.format("[Fzf-lua] long line detected (%db), "
-      --   .. "consider adding '--max-columns=512' to ripgrep options: %s\n",
-      --   #line, line:sub(1,256)))
-      -- end
-      line = fn_transform(line)
-      if line then
-        nlines = nlines + 1
-        if opts.process1 then
-          write_cb(line .. EOL)
-        else
-          table.insert(lines, line)
-        end
-      end
-      start_idx = nl_idx + 1
-    until start_idx >= #data
-    -- Testing shows better performance writing the entire table at once as opposed to
-    -- calling 'write_cb' for every line after 'fn_transform', we therefore only use
-    -- `process1` when using "mini.icons" as `vim.filetype.match` causes a signigicant
-    -- delay and having to wait for all lines to be processed has an apparent lag
-    if #lines > 0 then write_cb(table.concat(lines, EOL) .. EOL) end
-    if t_st then
-      local t_e = vim.uv.hrtime()
-      write_cb(string.format("[DEBUG] finish:%.0f (ns) %d lines took %.0f (ms)" .. EOL,
-        t_e, nlines, (t_e - t_st) / 1e6))
-    end
-  end
-
   local read_cb = function(err, data)
     if err then
       assert(not err)
       finish(130, 0, 4, pid)
     end
     if not data then
-      return
-    end
-
-    if prev_line_content then
-      if #prev_line_content > 4096 then
-        -- chunk size is 64K, limit previous line length to 4K
-        -- max line length is therefor 4K + 64K (leftover + full chunk)
-        -- without this we can memory fault on extremely long lines (#185)
-        -- or have UI freezes (#211)
-        prev_line_content = prev_line_content:sub(1, 4096)
+      if prev_line_content then
+        write_cb(prev_line_content .. EOL)
       end
-      data = prev_line_content .. data
-      prev_line_content = nil
+      -- https://github.com/LazyVim/LazyVim/discussions/5264
+      -- The pipe can remain active *after* on_exit was called
+      if write_cb_count == 0 and on_exit_called then
+        finish(0, 0, 5, pid)
+      end
+      return
     end
 
     if not fn_transform then
       write_cb(data)
-    elseif string_byte(data, #data) == 10 then
-      process_lines(data)
     else
-      local nl_index = find_last_newline(data)
-      if not nl_index then
-        prev_line_content = data
-      else
-        prev_line_content = string_sub(data, nl_index + 1)
-        local stripped_with_newline = string_sub(data, 1, nl_index)
-        process_lines(stripped_with_newline)
+      local lines = {}
+      local nlines = 0
+      local start_idx = 1
+      local t_st = opts.profiler and uv.hrtime()
+      if t_st then write_cb(string.format("[DEBUG] start: %.0f (ns)" .. EOL, t_st)) end
+      repeat
+        local nl_idx = data:find("\n", start_idx, true)
+        if nl_idx then
+          local line = data:sub(start_idx, nl_idx - 1)
+          if prev_line_content then
+            line = prev_line_content .. line
+            prev_line_content = nil
+          end
+          line = fn_transform(line)
+          if line then
+            nlines = nlines + 1
+            if opts.process1 then
+              write_cb(line .. EOL)
+            else
+              table.insert(lines, line)
+            end
+          end
+          start_idx = nl_idx + 1
+        else
+          -- assert(start_idx <= #data)
+          if prev_line_content and #prev_line_content > 4096 then
+            -- chunk size is 64K, limit previous line length to 4K
+            -- max line length is therefor 4K + 64K (leftover + full chunk)
+            -- without this we can memory fault on extremely long lines (#185)
+            -- or have UI freezes (#211)
+            prev_line_content = prev_line_content:sub(1, 4096)
+          end
+          prev_line_content = (prev_line_content or "") .. data:sub(start_idx)
+        end
+      until not nl_idx or start_idx > #data
+      -- Testing shows better performance writing the entire table at once as opposed to
+      -- calling 'write_cb' for every line after 'fn_transform', we therefore only use
+      -- `process1` when using "mini.icons" as `vim.filetype.match` causes a signigicant
+      -- delay and having to wait for all lines to be processed has an apparent lag
+      if #lines > 0 then write_cb(table.concat(lines, EOL) .. EOL) end
+      if t_st then
+        local t_e = vim.uv.hrtime()
+        write_cb(string.format("[DEBUG] finish:%.0f (ns) %d lines took %.0f (ms)" .. EOL,
+          t_e, nlines, (t_e - t_st) / 1e6))
       end
     end
   end
@@ -306,11 +234,12 @@ M.spawn = function(opts, fn_transform, fn_done)
     output_pipe:read_start(read_cb)
     error_pipe:read_start(err_cb)
   end
+  return handle, pid
 end
 
 M.async_spawn = coroutinify(M.spawn)
 
----@param opts {cmd: string, cwd: string, cb_pid: function, cb_finish: function, cb_write: function, multiline: boolean?, process1: boolean?, profile: boolean?}
+---@param opts {cmd: string, cwd: string, cb_pid: function, cb_finish: function, cb_write: function, multiline: boolean?, process1: boolean?, profiler: boolean?}
 ---@param fn_transform function?
 ---@param fn_preprocess function?
 ---@param fn_postprocess function?
@@ -349,13 +278,13 @@ M.spawn_nvim_fzf_cmd = function(opts, fn_transform, fn_preprocess, fn_postproces
       cb_write = on_write,
       cb_pid = opts.cb_pid,
       process1 = opts.process1,
-      profile = opts.profile,
+      profiler = opts.profiler,
       EOL = opts.multiline and "\0" or "\n",
     }, fn_transform)
   end
 end
 
----@param opts table
+---@param opts table|string
 ---@param fn_transform_str string
 ---@param fn_preprocess_str string
 ---@param fn_postprocess_str string
@@ -374,7 +303,7 @@ M.spawn_stdio = function(opts, fn_transform_str, fn_preprocess_str, fn_postproce
   local function load_fn(fn_str)
     if type(fn_str) ~= "string" then return end
     local fn_loaded = nil
-    local fn = loadstring(fn_str) or load(fn_str)
+    local fn = loadstring(fn_str)
     if fn then fn_loaded = fn() end
     if type(fn_loaded) ~= "function" then
       fn_loaded = nil
@@ -414,7 +343,7 @@ M.spawn_stdio = function(opts, fn_transform_str, fn_preprocess_str, fn_postproce
   for k, v in pairs(opts.g or {}) do
     _G[k] = v
     if opts.debug == "v" or opts.debug == "verbose" then
-      io.stdout:write(string.format("[DEBUG] %s=%s" .. EOL, k, v))
+      io.stdout:write(string.format("[DEBUG] %s=%s" .. (k ~= "_EOL" and EOL or ""), k, v))
     end
   end
 
@@ -426,9 +355,14 @@ M.spawn_stdio = function(opts, fn_transform_str, fn_preprocess_str, fn_postproce
   -- run the preprocessing fn
   if fn_preprocess then fn_preprocess(opts) end
 
+  if opts.cmd and opts.cmd:match("%-%-color[=%s]+never") then
+    -- perf: skip stripping ansi coloring in `make_file.entry`
+    opts.no_ansi_colors = true
+  end
+
   if opts.debug == "v" or opts.debug == "verbose" then
     for k, v in pairs(opts) do
-      io.stdout:write(string.format("[DEBUG] %s=%s" .. EOL, k, v))
+      io.stdout:write(string.format("[DEBUG] %s=%s" .. EOL, k, tostring(v)))
     end
     io.stdout:write(string.format("[DEBUG] fn_transform=%s" .. EOL, fn_transform_str))
     io.stdout:write(string.format("[DEBUG] fn_preprocess=%s" .. EOL, fn_preprocess_str))
@@ -544,7 +478,7 @@ M.spawn_stdio = function(opts, fn_transform_str, fn_preprocess_str, fn_postproce
       cb_write = on_write,
       cb_err = on_err,
       process1 = opts.process1,
-      profile = opts.profile,
+      profiler = opts.profiler,
       EOL = EOL,
     },
     fn_transform and function(x)
@@ -758,20 +692,10 @@ M.wrap_spawn_stdio = function(opts, fn_transform, fn_preprocess, fn_postprocess)
   assert(opts and type(opts) == "string")
   assert(not fn_transform or type(fn_transform) == "string")
   local nvim_bin = os.getenv("FZF_LUA_NVIM_BIN") or vim.v.progpath
-  local nvim_runtime = os.getenv("FZF_LUA_NVIM_BIN") and ""
-      or string.format(
-        _is_win and [[set VIMRUNTIME=%s& ]] or "VIMRUNTIME=%s ",
-        _is_win and vim.fs.normalize(vim.env.VIMRUNTIME) or M.shellescape(vim.env.VIMRUNTIME)
-      )
-  local lua_cmd = ("lua %sloadfile([[%s]])().spawn_stdio(%s,%s,%s,%s)"):format(
-    _has_nvim_010 and "vim.g.did_load_filetypes=1; " or "",
-    _is_win and vim.fs.normalize(__FILE__) or __FILE__,
-    opts, fn_transform, fn_preprocess, fn_postprocess
-  )
-  local cmd_str = ("%s%s -n --headless --clean --cmd %s"):format(
-    nvim_runtime,
+  local cmd_str = ("%s -u NONE -l %s %s"):format(
     M.shellescape(_is_win and vim.fs.normalize(nvim_bin) or nvim_bin),
-    M.shellescape(lua_cmd)
+    M.shellescape(vim.fn.fnamemodify(_is_win and vim.fs.normalize(__FILE__) or __FILE__, ":h") .. "/spawn.lua"),
+    M.shellescape(("return %s,%s,%s,%s"):format(opts, fn_transform, fn_preprocess, fn_postprocess))
   )
   return cmd_str
 end

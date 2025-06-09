@@ -110,6 +110,7 @@ wk.add({
 	{ "<leader>l", desc = "[L]SP actions" },
 	{ "<leader>t", desc = "[T]ests actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
+	{ "<leader>M", desc = "[M]arkdown actions" },
 })
 
 -- disable netrw at the very start of your init.lua

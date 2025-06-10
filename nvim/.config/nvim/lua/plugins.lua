@@ -62,7 +62,7 @@ require("fzf-lua").setup({
 	winopts = { preview = { default = "bat" } },
 	manpages = { previewer = "man_native" },
 	helptags = { previewer = "help_native" },
-	lsp = { code_actions = { previewer = "codeaction_native" } },
+	lsp = { code_actions = { previewer = "bat" } },
 	tags = { previewer = "bat" },
 	btags = { previewer = "bat" },
 	keymap = {

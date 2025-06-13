@@ -140,8 +140,24 @@ vim.keymap.set("v", "<leader>de", dapui.eval, { desc = "[E]valuate expression" }
 vim.keymap.set("n", "<leader>df", dap.focus_frame, { desc = "[F]ocus current frame" })
 
 gitsigns = require('gitsigns')
-vim.keymap.set("n", "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })
-vim.keymap.set("n", "<leader>gb", function()
+vim.keymap.set({ "n", "v" }, "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })
+vim.keymap.set({ "n", "v" }, "<leader>gs", gitsigns.stage_hunk, { desc = "[G]it - [s]tage chunk" })
+vim.keymap.set({ "n", "v" }, "<leader>gr", gitsigns.reset_hunk, { desc = "[G]it - [r]eset chunk" })
+vim.keymap.set({ "n", "v" }, "<leader>gb", function()
     gitsigns.blame_line({ full  = true })
 end, { desc = "[G]it - View line [b]lame" })
 
+vim.keymap.set("n", "]c", function()
+    if vim.wo.diff then
+        vim.cmd.normal({']c', bang = true})
+    else
+        gitsigns.nav_hunk('next')
+    end
+end, { desc = "Go to next [c]hunk" })
+vim.keymap.set("n", "[c", function()
+    if vim.wo.diff then
+        vim.cmd.normal({'[c', bang = true})
+    else
+        gitsigns.nav_hunk('prev')
+    end
+end, { desc = "Go to previous [c]hunk" })

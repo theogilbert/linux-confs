@@ -88,6 +88,7 @@ require("fzf-lua").setup({
 		},
 	},
 })
+require('fzf-lua').register_ui_select()
 
 -- Which key
 local wk = require("which-key")

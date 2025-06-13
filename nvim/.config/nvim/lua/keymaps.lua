@@ -88,11 +88,7 @@ vim.keymap.set("n", "<leader>to", function()
 	neotest.output_panel.toggle()
 end, { desc = "[T]ests - Toggle [O]utput" })
 vim.keymap.set("n", "<leader>ts", function()
-	neotest.summary.toggle()
-	local win = vim.fn.bufwinid("Neotest Summary")
-	if win > -1 then
-		vim.api.nvim_set_current_win(win)
-	end
+    neotest.summary.toggle()
 end, { desc = "[T]ests - Toggle [S]ummary" })
 vim.keymap.set("n", "<leader>tp", function()
 	neotest.jump.prev({ status = "failed" })

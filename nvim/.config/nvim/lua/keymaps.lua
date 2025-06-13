@@ -106,7 +106,9 @@ function focus_current_file()
 	api.tree.open({ find_file = true })
 end
 
-vim.keymap.set("n", "<leader>et", api.tree.toggle, { desc = "File [E]xplorer - [T]oggle" })
+vim.keymap.set("n", "<leader>et", function()
+    api.tree.toggle({ find_file = true })
+end, { desc = "File [E]xplorer - [T]oggle" })
 vim.keymap.set("n", "<leader>ef", api.tree.open, { desc = "File [E]xplorer - [F]ocus" })
 vim.keymap.set("n", "<leader>er", api.tree.reload, { desc = "File [E]xplorer - [R]eload" })
 vim.keymap.set("n", "<leader>ec", focus_current_file, { desc = "File [E]xplorer - Focus [C]urrent file" })

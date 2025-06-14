@@ -145,6 +145,8 @@ vim.keymap.set("n", "<leader>df", dap.focus_frame, { desc = "[F]ocus current fra
 
 gitsigns = require('gitsigns')
 vim.keymap.set({ "n", "v" }, "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })
+vim.keymap.set({ "n", "v" }, "<leader>gD", ":DiffviewOpen ", { noremap = true, silent = false, desc = "[G]it - Open [d]iffview" })
+vim.keymap.set({ "n", "v" }, "<leader>gH", ":DiffviewFileHistory ", { noremap = true, silent = false, desc = "[G]it - Open file [h]istory" })
 vim.keymap.set({ "n", "v" }, "<leader>gs", gitsigns.stage_hunk, { desc = "[G]it - [s]tage chunk" })
 vim.keymap.set({ "n", "v" }, "<leader>gr", gitsigns.reset_hunk, { desc = "[G]it - [r]eset chunk" })
 vim.keymap.set({ "n", "v" }, "<leader>gb", function()

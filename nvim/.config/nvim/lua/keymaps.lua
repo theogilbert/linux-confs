@@ -66,6 +66,10 @@ vim.keymap.set("n", "<leader>o", fzflua.files, { desc = "Search Workspace Files"
 vim.keymap.set("n", "<leader>sGc", fzflua.git_bcommits, { desc = "[S]earch [G]it buffer [C]ommits" })
 vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it buffer [B]lame" })
 
+local session = require("session")
+vim.keymap.set("n", "<leader>vSl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
+vim.keymap.set("n", "<leader>vSc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
+
 local neotest = require("neotest")
 
 vim.keymap.set("n", "<leader>tr", function()

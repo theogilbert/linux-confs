@@ -70,6 +70,13 @@ local session = require("session")
 vim.keymap.set("n", "<leader>vSl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
 vim.keymap.set("n", "<leader>vSc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
 
+vim.keymap.set("v", "<leader>vs", function()
+  -- Substitute selected text in the whole buffer
+  vim.cmd('normal! "vy')
+  local escaped = vim.fn.escape(vim.fn.getreg("v"), [[\/]])
+  vim.api.nvim_feedkeys(":%s/" .. escaped .. "/", "t", false)
+end, { desc = "[v]im [s]ubstitute selection" })
+
 local neotest = require("neotest")
 
 vim.keymap.set("n", "<leader>tr", function()

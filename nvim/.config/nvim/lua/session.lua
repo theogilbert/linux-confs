@@ -19,7 +19,7 @@ function M.try_load_session()
     vim.cmd("source " .. get_session_path())
     vim.defer_fn(function()
         reload_all_file_buffers()
-    end, 200)
+    end, 50)
 end
 
 function reload_all_file_buffers()

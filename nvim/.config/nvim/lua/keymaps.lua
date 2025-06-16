@@ -124,6 +124,7 @@ vim.keymap.set("n", "<leader>lr", vim.lsp.buf.rename, { desc = "[L]SP - [R]ename
 
 local dap = require("dap")
 local dapui = require("dapui")
+local dap_settings = require("dap-plugins")
 vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint, { desc = "Toggle [B]reakpoint" })
 vim.keymap.set("n", "<leader>do", function()
 	vim.ui.input({ prompt = "Break condition: " }, function(input)
@@ -142,6 +143,12 @@ vim.keymap.set("n", "<leader>dd", dap.down, { desc = "Move [D]own the stack" })
 vim.keymap.set("n", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("v", "<leader>de", dapui.eval, { desc = "[E]valuate expression" })
 vim.keymap.set("n", "<leader>df", dap.focus_frame, { desc = "[F]ocus current frame" })
+
+vim.keymap.set("n", "<leader>dpv", dap_settings.show_scopes_pane, { desc = "Show [D]AP [p]ane - [v]ariables" })
+vim.keymap.set("n", "<leader>dpw", dap_settings.show_watches_pane, { desc = "Show [D]AP [p]ane - [w]atches" })
+vim.keymap.set("n", "<leader>dps", dap_settings.show_stacks_pane, { desc = "Show [D]AP [p]ane - [s]tack" })
+vim.keymap.set("n", "<leader>dpr", dap_settings.show_repl_pane, { desc = "Show [D]AP [p]ane - [r]epl" })
+vim.keymap.set("n", "<leader>dpb", dap_settings.show_breakpoints_pane, { desc = "Show [D]AP [p]ane - [b]reakpoints" })
 
 gitsigns = require('gitsigns')
 vim.keymap.set({ "n", "v" }, "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })

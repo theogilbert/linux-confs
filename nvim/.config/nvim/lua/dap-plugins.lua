@@ -1,3 +1,5 @@
+local M = {}
+
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "dap-repl",
   callback = function()
@@ -33,6 +35,7 @@ dap.adapters.python = function(cb, config)
 end
 
 local dap = require('dap')
+
 dap.configurations.python = {
   {
     -- The first three options are required by nvim-dap
@@ -60,35 +63,57 @@ dap.configurations.python = {
 }
 
 local dapui = require('dapui')
-dapui.setup({
-    layouts = { {
+
+function build_pane_layout(scope)
+    return {
         elements = { {
-            id = "scopes",
-            size = 0.5
-          }, {
-            id = "watches",
-            size = 0.25
-          }, {
-            id = "stacks",
-            size = 0.25
-          }},
-        position = "left",
-        size = 40
-      }, {
-        elements = { {
-            id = "repl",
+            id = scope,
             size = 1
           }},
         position = "bottom",
-        size = 10
-      } },
+        size = 15
+      }
+end
+
+dapui.setup({
+    layouts = {
+        build_pane_layout("scopes"),
+        build_pane_layout("watches"),
+        build_pane_layout("stacks"),
+        build_pane_layout("repl"),
+        build_pane_layout("breakpoints"),
+    },
 })
 
+function M.set_bottom_pane(scope)
+    dapui.close()
+    indices = { scopes = 1, watches = 2, stacks = 3, repl = 4, breakpoints = 5 }
+    dapui.open({layout = indices[scope]})
+end
+
+M.show_scopes_pane = function()
+    M.set_bottom_pane('scopes')
+end
+M.show_watches_pane = function()
+    M.set_bottom_pane('watches')
+end
+M.show_stacks_pane = function()
+    M.set_bottom_pane('stacks')
+end
+M.show_repl_pane = function()
+    M.set_bottom_pane('repl')
+    -- TODO in this specific case, focus repl pane
+end
+M.show_breakpoints_pane = function()
+    M.set_bottom_pane('breakpoints')
+end
+
+
 dap.listeners.before.attach.dapui_config = function()
-  dapui.open()
+  M.show_scopes_pane()
 end
 dap.listeners.before.launch.dapui_config = function()
-  dapui.open()
+  M.show_scopes_pane()
 end
 dap.listeners.before.event_terminated.dapui_config = function()
   dapui.close()
@@ -96,3 +121,5 @@ end
 dap.listeners.before.event_exited.dapui_config = function()
   dapui.close()
 end
+
+return M

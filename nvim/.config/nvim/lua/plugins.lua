@@ -9,11 +9,14 @@ mini_ai = require('mini.ai')
 mini_ai.setup({
     n_lines = 9999,
     custom_textobjects = {
+        c = mini_ai.gen_spec.treesitter({
+            a = "@call.outer",
+        }, {}),
         f = mini_ai.gen_spec.treesitter({
             a = "@function.outer",
             i = "@function.inner",
         }, {}),
-        c = mini_ai.gen_spec.treesitter({
+        C = mini_ai.gen_spec.treesitter({
             a = "@class.outer",
             i = "@class.inner",
         }, {}),

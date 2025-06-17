@@ -3,12 +3,20 @@ local M = {}
 local uv = vim.loop
 
 function M.save_session()
+    if not should_manage_session() then
+        return
+    end
+
     uv.fs_mkdir(get_session_dir(), 493)
     vim.cmd("mksession! " .. get_session_path())
 end
 
 
 function M.try_load_session()
+    if not should_manage_session() then
+        return
+    end
+
     session_path = get_session_path()
 
     local stat = uv.fs_stat(session_path)
@@ -43,6 +51,11 @@ function M.reset_session()
     M.clear_session()
     -- close all tabs and windows
     vim.cmd("enew | only | tabonly | %bw!")
+end
+
+function should_manage_session()
+    -- by default, contains { 'vim', '--embed' }
+    return #vim.v.argv <= 2
 end
 
 function get_session_dir()

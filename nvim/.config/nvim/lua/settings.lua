@@ -1,8 +1,3 @@
--- This NVIM configuration file is deeply inspired from kickstart.nvim.
---
--- TODO
--- On vimLeave, mksession
--- On VimStart, source session
 
 -- Disable Python provider for rplugins:
 -- I do not use Python rplugins, and the provider takes a long time to load.

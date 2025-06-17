@@ -29,6 +29,7 @@ end
 local custom_kind_priority = {
     [types.lsp.CompletionItemKind.Variable] = types.lsp.CompletionItemKind.Method,
     [types.lsp.CompletionItemKind.Module] = types.lsp.CompletionItemKind.Method,
+    [types.lsp.CompletionItemKind.EnumMember] = 1,
     [types.lsp.CompletionItemKind.Snippet] = 0,
     [types.lsp.CompletionItemKind.Keyword] = 0,
     [types.lsp.CompletionItemKind.Text] = 100,

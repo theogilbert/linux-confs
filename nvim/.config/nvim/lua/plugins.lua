@@ -11,6 +11,7 @@ mini_ai.setup({
     custom_textobjects = {
         c = mini_ai.gen_spec.treesitter({
             a = "@call.outer",
+            i = "@call.outer",
         }, {}),
         f = mini_ai.gen_spec.treesitter({
             a = "@function.outer",

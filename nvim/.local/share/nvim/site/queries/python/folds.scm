@@ -1,6 +1,7 @@
 ; Fold function and class definitions
 ((function_definition) @fold)
 ((class_definition) @fold)
+((decorator) @fold)
 
 ; Fold control structures
 ((if_statement) @fold)

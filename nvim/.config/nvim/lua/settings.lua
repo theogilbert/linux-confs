@@ -124,3 +124,7 @@ vim.filetype.add({
         ['.*Jenkinsfile.*'] = 'groovy'
     }
 })
+
+vim.opt.sessionoptions = {
+    "blank", "curdir", "globals", "help", "tabpages", "winsize", "terminal"
+}

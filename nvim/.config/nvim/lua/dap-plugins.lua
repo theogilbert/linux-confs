@@ -122,4 +122,8 @@ dap.listeners.before.event_exited.dapui_config = function()
   dapui.close()
 end
 
+require("nvim-dap-virtual-text").setup({
+    virt_text_pos = 'eol'
+})
+
 return M

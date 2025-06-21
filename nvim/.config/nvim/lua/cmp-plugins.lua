@@ -27,11 +27,12 @@ function deprioritize_private(entry1, entry2)
 end
 
 local custom_kind_priority = {
-    [types.lsp.CompletionItemKind.Variable] = types.lsp.CompletionItemKind.Method,
-    [types.lsp.CompletionItemKind.Module] = types.lsp.CompletionItemKind.Method,
-    [types.lsp.CompletionItemKind.EnumMember] = 1,
     [types.lsp.CompletionItemKind.Snippet] = 0,
     [types.lsp.CompletionItemKind.Keyword] = 0,
+    [types.lsp.CompletionItemKind.EnumMember] = 1,
+    [types.lsp.CompletionItemKind.Module] = 2,
+    [types.lsp.CompletionItemKind.Method] = 3,
+    [types.lsp.CompletionItemKind.Variable] = 3,
     [types.lsp.CompletionItemKind.Text] = 100,
 }
 

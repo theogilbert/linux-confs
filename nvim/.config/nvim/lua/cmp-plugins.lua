@@ -51,6 +51,25 @@ function custom_lsp_kind_comparator(entry1, entry2)
     end
 end
 
+-- We do not want auto-completion to propose private or protected attributes,
+-- unless we started typing __ or _.
+function filter_out_private_python_attributes(entry, ctx)
+    if vim.bo.filetype ~= 'python' then
+        return true  -- This logic only applies to Python scripts
+    end
+
+    local typed = ctx.cursor_before_line:match("%S+$") or ""
+    local label = entry:get_completion_item().label
+
+    if label:sub(1, 2) == "__" and not typed:match("__$") then
+        return false
+    elseif label:sub(1, 1) == "_" and not typed:match("_$") then
+        return false
+    end
+
+    return true
+end
+
 -- TODO:
 -- https://www.reddit.com/r/neovim/comments/tsq4z8/completion_with_nvimcmp_for_daprepl/
 -- https://github.com/rcarriga/cmp-dap/tree/master
@@ -78,7 +97,10 @@ cmp.setup({
 	}),
 	sources = cmp.config.sources({
 		{ name = "nvim_lsp_signature_help" },
-		{ name = "nvim_lsp" },
+                {
+                    name = "nvim_lsp",
+                    entry_filter = filter_out_private_python_attributes,
+                },
 		{ name = "path" },
 		{ name = "buffer" },
 	}),

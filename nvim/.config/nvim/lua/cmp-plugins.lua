@@ -156,8 +156,6 @@ cmp.setup.cmdline(":", {
 	sources = cmp.config.sources({
             { name = "path", option = { trailing_slash = true } },
             { name = "cmdline" },
-	}, {
-		{ name = "cmdline" },
 	}),
 	matching = { disallow_symbol_nonprefix_matching = false },
 })

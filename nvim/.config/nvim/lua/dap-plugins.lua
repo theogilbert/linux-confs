@@ -8,6 +8,13 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 local dap = require('dap')
+
+dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, body)
+    vim.defer_fn(function()
+        vim.cmd("normal! zz")
+    end, 50)
+end
+
 dap.adapters.python = function(cb, config)
   if config.request == 'attach' then
     ---@diagnostic disable-next-line: undefined-field

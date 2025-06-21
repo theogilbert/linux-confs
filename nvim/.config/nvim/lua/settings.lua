@@ -128,3 +128,5 @@ vim.filetype.add({
 vim.opt.sessionoptions = {
     "blank", "curdir", "globals", "help", "tabpages", "winsize", "terminal"
 }
+
+vim.o.switchbuf = 'useopen'

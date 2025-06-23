@@ -160,7 +160,7 @@ cmp.setup.cmdline(":", {
 	matching = { disallow_symbol_nonprefix_matching = false },
 })
 
-cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover" }, {
+cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover", "dapui_dataframe" }, {
 	sources = cmp.config.sources({
 		{ name = "dap" },
 	}, {

@@ -89,12 +89,14 @@ dapui.setup({
         build_pane_layout("stacks"),
         build_pane_layout("repl"),
         build_pane_layout("breakpoints"),
+        build_pane_layout("dataframe"),
     },
 })
+require('nvim-dap-ui-df').setup()
 
 function M.set_bottom_pane(scope)
     dapui.close()
-    indices = { scopes = 1, watches = 2, stacks = 3, repl = 4, breakpoints = 5 }
+    indices = { scopes = 1, watches = 2, stacks = 3, repl = 4, breakpoints = 5, dataframe = 6 }
     dapui.open({layout = indices[scope]})
 end
 
@@ -113,6 +115,9 @@ M.show_repl_pane = function()
 end
 M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')
+end
+M.show_dataframe_pane = function()
+    M.set_bottom_pane('dataframe')
 end
 
 

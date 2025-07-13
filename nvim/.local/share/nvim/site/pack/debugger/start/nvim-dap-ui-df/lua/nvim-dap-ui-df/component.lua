@@ -1,7 +1,8 @@
 local config = require("dapui.config")
+local table_fmt = require("nvim-dap-ui-df.table")
 
 ---@param client dapui.DAPClient
-component = function(client, send_ready)
+local component = function(client, send_ready)
     local running = false
     client.listen.scopes(function()
         running = true
@@ -85,17 +86,18 @@ function check_expression(client, frame_id, expr)
 end
 
 function evaluate_expression(client, frame_id, expr)
-    formatted_expr = expr .. ".head(100).to_markdown()"
+    formatted_expr = expr .. ".head(100).to_csv()"
     success, evaluated = pcall(
         client.request.evaluate,
         { context = "watch", expression = formatted_expr, frameId = frame_id }
     )
-    
+
     if not success then
         return vim.inspect(evaluated)
     end
 
-    return evaluated.result:gsub('\\n', '\n'):sub(2, -2)
+    evaluated = evaluated.result:gsub('\\n', '\n'):sub(2, -2)
+    return table_fmt.format_csv(evaluated)
 end
 
 return component

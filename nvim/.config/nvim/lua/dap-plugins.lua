@@ -1,5 +1,7 @@
 local M = {}
 
+local winutils = require("utilities.buffer")
+
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "dap-repl",
   callback = function()
@@ -111,7 +113,8 @@ M.show_stacks_pane = function()
 end
 M.show_repl_pane = function()
     M.set_bottom_pane('repl')
-    -- TODO in this specific case, focus repl pane
+    local win_id = winutils.find_one_by_filetype("dap-repl")
+    vim.api.nvim_set_current_win(win_id)
 end
 M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')

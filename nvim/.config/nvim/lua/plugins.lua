@@ -92,7 +92,16 @@ require("fzf-lua").setup({
 		},
 	},
 })
-require('fzf-lua').register_ui_select()
+-- require('fzf-lua').register_ui_select()
+require('suit').setup({
+    input = {
+        border = 'rounded'
+    },
+    select = {
+        border = 'rounded',
+        max_width = 90,
+    }
+})
 
 -- Which key
 local wk = require("which-key")

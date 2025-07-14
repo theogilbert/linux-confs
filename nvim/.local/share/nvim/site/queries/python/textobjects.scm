@@ -40,7 +40,9 @@
 (module
   (_) @statement.outer)
 
-(call) @call.outer
+(call
+  arguments: (argument_list) @call.inner
+  ) @call.outer
 
 
 (return_statement

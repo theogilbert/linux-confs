@@ -106,9 +106,10 @@ require('suit').setup({
 -- Which key
 local wk = require("which-key")
 wk.setup({
-	trigger_blacklist = {
-		n = { '"' },
-	},
+    preset = "helix",
+    trigger_blacklist = {
+        n = { '"' },
+    },
 })
 wk.add({
 	{ "<leader>s", desc = "[S]earch" },

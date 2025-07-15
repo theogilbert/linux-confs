@@ -23,8 +23,12 @@ M.get_selection = function()
     local lines = vim.fn.getline(start_row, end_row)
     if #lines == 0 then return "" end
 
-    lines[1] = string.sub(lines[1], start_col)
-    lines[#lines] = string.sub(lines[#lines], 1, end_col)
+    if vim.fn.mode() ~= 'V' then
+        lines[1] = string.sub(lines[1], start_col)
+        lines[#lines] = string.sub(lines[#lines], 1, end_col)
+    end
+
+    -- TODO handle block visual mode
 
     return table.concat(lines, "\n")
 end

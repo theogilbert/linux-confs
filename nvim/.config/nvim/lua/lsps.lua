@@ -1,3 +1,5 @@
+M = {}
+
 local lspconfig = require("lspconfig")
 
 vim.lsp.handlers["textDocument/publishDiagnostics"] = vim.lsp.with(vim.lsp.diagnostic.on_publish_diagnostics, {
@@ -74,9 +76,7 @@ lspconfig.ruff.setup({
 	capabilities = capabilities,
         init_options = {
             settings = {
-                ruff = {
-                    { codeAction = { disableRuleComment = { enable = false}}}
-                }
+                codeAction = { disableRuleComment = { enable = false}}
             }
         },
 	on_attach = function(client, bufnr)
@@ -118,3 +118,20 @@ require('lspconfig')['yamlls'].setup{
 }
 
 lspconfig.ts_ls.setup{}
+local cmd_utils = require("utilities.commands")
+
+M.run_code_actions = function()
+    vim.lsp.buf.code_action({filter = function(x)
+        if x.kind == "source.organizeImports.ruff" then
+            local filepath = vim.fn.expand('%:p')
+            return not cmd_utils.run_and_check("ruff check --select I00 " .. filepath)
+        elseif x.kind == "source.fixAll.ruff" then
+            local filepath = vim.fn.expand('%:p')
+            local ruff_diff = vim.fn.system("ruff check --diff " .. filepath)
+            return ruff_diff:match("^No errors would be fixed") == nil
+        end
+        return true
+    end})
+end
+
+return M

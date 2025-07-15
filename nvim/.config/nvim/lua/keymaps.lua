@@ -187,4 +187,4 @@ vim.keymap.set("n", "[c", function()
 end, { desc = "Go to previous [c]hunk" })
 
 local terminal_utils = require("utilities.terminal")
-vim.keymap.set({ "v" }, "<leader>S", terminal_utils.send_sel_to_terminal, { desc = "[S]ubmit selection to terminal" })
+vim.keymap.set({ "v" }, "<leader>p", terminal_utils.send_sel_to_terminal, { desc = "[P]ush selection to terminal" })

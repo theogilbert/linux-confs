@@ -45,30 +45,46 @@ end
 
 local dap = require('dap')
 
-dap.configurations.python = {
-  {
-    -- The first three options are required by nvim-dap
-    type = 'python'; -- the type here established the link to the adapter definition: `dap.adapters.python`
+local python_cfg_preset = {
+    type = 'python';
     request = 'launch';
-    name = "Launch file";
-
-    -- Options below are for debugpy, see https://github.com/microsoft/debugpy/wiki/Debug-configuration-settings for supported options
-
-    program = "${file}"; -- This configuration will launch the current file if used.
     pythonPath = function()
-      -- debugpy supports launching an application with a different interpreter then the one used to launch debugpy itself.
-      -- The code below looks for a `venv` or `.venv` folder in the current directly and uses the python within.
-      -- You could adapt this - to for example use the `VIRTUAL_ENV` environment variable.
-      local cwd = vim.fn.getcwd()
-      if vim.fn.executable(cwd .. '/venv/bin/python') == 1 then
-        return cwd .. '/venv/bin/python'
-      elseif vim.fn.executable(cwd .. '/.venv/bin/python') == 1 then
-        return cwd .. '/.venv/bin/python'
-      else
-        return '/usr/bin/python'
-      end
-    end;
-  },
+        local venv_path = os.getenv("VIRTUAL_ENV")
+        if venv_path ~= nil then
+            return venv_path .. "/bin/python"
+        else
+            return '/usr/bin/python'
+        end
+    end,
+    justMyCode = false
+}
+
+local make_python_cfg = function(attrs)
+    return vim.tbl_extend("error", python_cfg_preset, attrs)
+end
+
+local run_cmd_cfg = make_python_cfg( { name = "Run command" } )
+setmetatable(run_cmd_cfg, {
+        __call = function(cfg)
+            local venv = os.getenv("VIRTUAL_ENV")
+            local cmd = vim.fn.input("Command: ")
+            local parts = vim.split(cmd, "%s+")
+
+            if not vim.endswith(parts[1], ".py") and venv ~= nil then
+                parts[1] = venv .. "/bin/" .. parts[1]
+            end
+
+            local program = parts[1]
+            local args = vim.list_slice(parts, 2)
+
+            return vim.tbl_extend("error", cfg, { program=program, args=args })
+        end
+    })
+
+
+dap.configurations.python = {
+    make_python_cfg( { name = "Launch file", program = "$file" } ),
+    run_cmd_cfg
 }
 
 local dapui = require('dapui')

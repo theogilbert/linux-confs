@@ -77,7 +77,7 @@ function M.format_csv(csv_text)
             table.insert(centered_cells, centered)
         end
 
-        local formatted_line = '| ' .. table.concat(centered_cells, ' | ') .. ' |\n'
+        local formatted_line = '│ ' .. table.concat(centered_cells, ' │ ') .. ' │\n'
         table.insert(formatted_lines, formatted_line)
     end
 

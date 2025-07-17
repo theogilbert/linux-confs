@@ -137,6 +137,8 @@ M.show_breakpoints_pane = function()
 end
 M.show_dataframe_pane = function()
     M.set_bottom_pane('dataframe')
+    local win_id = winutils.find_one_by_filetype("dapui_dataframe")
+    vim.api.nvim_set_current_win(win_id)
 end
 
 

@@ -103,10 +103,10 @@ end
 
 dapui.setup({
     layouts = {
+        build_pane_layout("repl"),
         build_pane_layout("scopes"),
         build_pane_layout("watches"),
         build_pane_layout("stacks"),
-        build_pane_layout("repl"),
         build_pane_layout("breakpoints"),
         build_pane_layout("dataframe"),
     },

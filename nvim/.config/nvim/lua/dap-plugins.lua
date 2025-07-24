@@ -56,7 +56,8 @@ local python_cfg_preset = {
             return '/usr/bin/python'
         end
     end,
-    justMyCode = false
+    justMyCode = false,
+    cwd = "${workspaceFolder}"
 }
 
 local make_python_cfg = function(attrs)

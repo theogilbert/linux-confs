@@ -49,6 +49,12 @@ M.find_one_by_filetype = function(target_filetype)
     return nil
 end
 
+M.focus_filetype = function(target_filetype)
+    if win_id ~= nil and vim.api.nvim_win_is_valid(win_id) then
+        vim.api.nvim_set_current_win(win_id)
+    end
+end
+
 
 -- Find the first terminal in the current tab.
 -- Returns the winid and the buffer number.

@@ -115,7 +115,7 @@ require('nvim-dap-ui-df').setup()
 
 function M.set_bottom_pane(scope)
     dapui.close()
-    indices = { scopes = 1, watches = 2, stacks = 3, repl = 4, breakpoints = 5, dataframe = 6 }
+    local indices = { repl = 1, scopes = 2, watches = 3, stacks = 4, breakpoints = 5, dataframe = 6 }
     dapui.open({layout = indices[scope]})
 end
 
@@ -130,16 +130,14 @@ M.show_stacks_pane = function()
 end
 M.show_repl_pane = function()
     M.set_bottom_pane('repl')
-    local win_id = winutils.find_one_by_filetype("dap-repl")
-    vim.api.nvim_set_current_win(win_id)
+    winutils.focus_filetype('dap-repl')
 end
 M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')
 end
 M.show_dataframe_pane = function()
     M.set_bottom_pane('dataframe')
-    local win_id = winutils.find_one_by_filetype("dapui_dataframe")
-    vim.api.nvim_set_current_win(win_id)
+    winutils.focus_filetype('dapui_dataframe')
 end
 
 

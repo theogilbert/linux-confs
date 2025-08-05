@@ -50,7 +50,7 @@ local update_cols_widths = function(columns, cols_width)
             cols_width[col_num] = 0
         end
 
-        cols_width[col_num] = math.max(cols_width[col_num], #col)
+        cols_width[col_num] = math.max(cols_width[col_num], vim.api.nvim_strwidth(col))
     end
 
     return cols_width

@@ -84,7 +84,7 @@ setmetatable(run_cmd_cfg, {
 
 
 dap.configurations.python = {
-    make_python_cfg( { name = "Launch file", program = "$file" } ),
+    make_python_cfg( { name = "Launch file", program = "${file}" } ),
     run_cmd_cfg
 }
 

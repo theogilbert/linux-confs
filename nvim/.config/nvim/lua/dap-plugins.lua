@@ -142,10 +142,10 @@ end
 
 
 dap.listeners.before.attach.dapui_config = function()
-  M.show_scopes_pane()
+  M.show_repl_pane()
 end
 dap.listeners.before.launch.dapui_config = function()
-  M.show_scopes_pane()
+  M.show_repl_pane()
 end
 dap.listeners.before.event_terminated.dapui_config = function()
   dapui.close()

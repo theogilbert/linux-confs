@@ -1,3 +1,7 @@
+local M = {}
+
+local winutils = require("utilities.buffer")
+
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "dap-repl",
   callback = function()
@@ -6,6 +10,13 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 local dap = require('dap')
+
+dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, body)
+    vim.defer_fn(function()
+        vim.cmd("normal! zz")
+    end, 50)
+end
+
 dap.adapters.python = function(cb, config)
   if config.request == 'attach' then
     ---@diagnostic disable-next-line: undefined-field
@@ -23,7 +34,7 @@ dap.adapters.python = function(cb, config)
   else
     cb({
       type = 'executable',
-      command = '/home/tgilbert/.local/share/uv/tools/debugpy/bin/python',
+      command = vim.fn.expand('$HOME/.local/share/uv/tools/debugpy/bin/python'),
       args = { '-m', 'debugpy.adapter' },
       options = {
         source_filetype = 'python',
@@ -33,40 +44,108 @@ dap.adapters.python = function(cb, config)
 end
 
 local dap = require('dap')
-dap.configurations.python = {
-  {
-    -- The first three options are required by nvim-dap
-    type = 'python'; -- the type here established the link to the adapter definition: `dap.adapters.python`
+
+local python_cfg_preset = {
+    type = 'python';
     request = 'launch';
-    name = "Launch file";
-
-    -- Options below are for debugpy, see https://github.com/microsoft/debugpy/wiki/Debug-configuration-settings for supported options
-
-    program = "${file}"; -- This configuration will launch the current file if used.
     pythonPath = function()
-      -- debugpy supports launching an application with a different interpreter then the one used to launch debugpy itself.
-      -- The code below looks for a `venv` or `.venv` folder in the current directly and uses the python within.
-      -- You could adapt this - to for example use the `VIRTUAL_ENV` environment variable.
-      local cwd = vim.fn.getcwd()
-      if vim.fn.executable(cwd .. '/venv/bin/python') == 1 then
-        return cwd .. '/venv/bin/python'
-      elseif vim.fn.executable(cwd .. '/.venv/bin/python') == 1 then
-        return cwd .. '/.venv/bin/python'
-      else
-        return '/usr/bin/python'
-      end
-    end;
-  },
+        local venv_path = os.getenv("VIRTUAL_ENV")
+        if venv_path ~= nil then
+            return venv_path .. "/bin/python"
+        else
+            return '/usr/bin/python'
+        end
+    end,
+    justMyCode = false,
+    cwd = "${workspaceFolder}"
+}
+
+local make_python_cfg = function(attrs)
+    return vim.tbl_extend("error", python_cfg_preset, attrs)
+end
+
+local run_cmd_cfg = make_python_cfg( { name = "Run command" } )
+setmetatable(run_cmd_cfg, {
+        __call = function(cfg)
+            local venv = os.getenv("VIRTUAL_ENV")
+            local cmd = vim.fn.input("Command: ")
+            local parts = vim.split(cmd, "%s+")
+
+            if not vim.endswith(parts[1], ".py") and venv ~= nil then
+                parts[1] = venv .. "/bin/" .. parts[1]
+            end
+
+            local program = parts[1]
+            local args = vim.list_slice(parts, 2)
+
+            return vim.tbl_extend("error", cfg, { program=program, args=args })
+        end
+    })
+
+
+dap.configurations.python = {
+    make_python_cfg( { name = "Launch file", program = "${file}" } ),
+    run_cmd_cfg
 }
 
 local dapui = require('dapui')
-dapui.setup()
+
+function build_pane_layout(scope)
+    return {
+        elements = { {
+            id = scope,
+            size = 1
+          }},
+        position = "bottom",
+        size = 15
+      }
+end
+
+dapui.setup({
+    layouts = {
+        build_pane_layout("repl"),
+        build_pane_layout("scopes"),
+        build_pane_layout("watches"),
+        build_pane_layout("stacks"),
+        build_pane_layout("breakpoints"),
+        build_pane_layout("dataframe"),
+    },
+})
+require('nvim-dap-ui-df').setup()
+
+function M.set_bottom_pane(scope)
+    dapui.close()
+    local indices = { repl = 1, scopes = 2, watches = 3, stacks = 4, breakpoints = 5, dataframe = 6 }
+    dapui.open({layout = indices[scope]})
+end
+
+M.show_scopes_pane = function()
+    M.set_bottom_pane('scopes')
+end
+M.show_watches_pane = function()
+    M.set_bottom_pane('watches')
+end
+M.show_stacks_pane = function()
+    M.set_bottom_pane('stacks')
+end
+M.show_repl_pane = function()
+    M.set_bottom_pane('repl')
+    winutils.focus_filetype('dap-repl')
+end
+M.show_breakpoints_pane = function()
+    M.set_bottom_pane('breakpoints')
+end
+M.show_dataframe_pane = function()
+    M.set_bottom_pane('dataframe')
+    winutils.focus_filetype('dapui_dataframe')
+end
+
 
 dap.listeners.before.attach.dapui_config = function()
-  dapui.open()
+  M.show_repl_pane()
 end
 dap.listeners.before.launch.dapui_config = function()
-  dapui.open()
+  M.show_repl_pane()
 end
 dap.listeners.before.event_terminated.dapui_config = function()
   dapui.close()
@@ -74,3 +153,9 @@ end
 dap.listeners.before.event_exited.dapui_config = function()
   dapui.close()
 end
+
+require("nvim-dap-virtual-text").setup({
+    virt_text_pos = 'eol'
+})
+
+return M

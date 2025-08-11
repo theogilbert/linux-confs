@@ -12,7 +12,9 @@ Currently, this repository contains scripts for the following softwares:
 
 #### Installation
 
-Simply copy these scripts to your home directory.
+Simply copy these files to your home directory.
+
+To apply the `bat` theme present in `.config/bat/themes`, run `bat cache --build`.
 
 ### Neovim
 

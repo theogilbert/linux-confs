@@ -1,0 +1,17 @@
+cS	doc/surround.txt	/*cS*
+cs	doc/surround.txt	/*cs*
+ds	doc/surround.txt	/*ds*
+i_CTRL-G_S	doc/surround.txt	/*i_CTRL-G_S*
+i_CTRL-G_s	doc/surround.txt	/*i_CTRL-G_s*
+surround	doc/surround.txt	/*surround*
+surround-customizing	doc/surround.txt	/*surround-customizing*
+surround-mappings	doc/surround.txt	/*surround-mappings*
+surround-replacements	doc/surround.txt	/*surround-replacements*
+surround-targets	doc/surround.txt	/*surround-targets*
+surround.txt	doc/surround.txt	/*surround.txt*
+vS	doc/surround.txt	/*vS*
+vgS	doc/surround.txt	/*vgS*
+yS	doc/surround.txt	/*yS*
+ySS	doc/surround.txt	/*ySS*
+ys	doc/surround.txt	/*ys*
+yss	doc/surround.txt	/*yss*

@@ -8,6 +8,7 @@ export LS_COLORS=$LS_COLORS:'ow=1;34:'
 
 source "$HOME/.cargo/env"
 export CARGO_INCREMENTAL=1
+export BAT_THEME=monokai-extended
 
 alias nv=nvim
 alias vim=nvim

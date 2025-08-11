@@ -3,7 +3,7 @@ local util = require 'lspconfig.util'
 local function client_with_fn(fn)
   return function()
     local bufnr = vim.api.nvim_get_current_buf()
-    local client = util.get_active_client_by_name(bufnr, 'texlab')
+    local client = vim.lsp.get_clients({ bufnr = bufnr, name = 'texlab' })[1]
     if not client then
       return vim.notify(('texlab client not found in bufnr %d'):format(bufnr), vim.log.levels.ERROR)
     end
@@ -81,7 +81,7 @@ local function command_factory(cmd)
         if err then
           vim.notify(('Failed to clean %s files: %s'):format(cmd, err.message), vim.log.levels.ERROR)
         else
-          vim.notify(('cmmand %s execute successfully'):format(cmd), vim.log.levels.INFO)
+          vim.notify(('command %s executed successfully'):format(cmd), vim.log.levels.INFO)
         end
       end)
     end
@@ -90,7 +90,7 @@ local function command_factory(cmd)
       command = cmd_tbl[cmd],
       arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
     }
-    vim.notify(('command %s execute successfully'):format(cmd_tbl[cmd]))
+    vim.notify(('command %s executed successfully'):format(cmd_tbl[cmd]))
   end
 end
 

@@ -100,7 +100,7 @@ return {
       end
     end,
     root_dir = function(fname)
-      return util.root_pattern(
+      local root_file = {
         'tailwind.config.js',
         'tailwind.config.cjs',
         'tailwind.config.mjs',
@@ -108,11 +108,10 @@ return {
         'postcss.config.js',
         'postcss.config.cjs',
         'postcss.config.mjs',
-        'postcss.config.ts'
-      )(fname) or util.find_package_json_ancestor(fname) or vim.fs.find(
-        'node_modules',
-        { path = fname, upward = true }
-      )[1] or util.find_git_ancestor(fname)
+        'postcss.config.ts',
+      }
+      root_file = util.insert_package_json(root_file, 'tailwindcss', fname)
+      return util.root_pattern(unpack(root_file))(fname)
     end,
   },
   docs = {

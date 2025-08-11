@@ -5,13 +5,55 @@
 
 -- mini.statusline sets up the vim status line
 require("mini.statusline").setup({})
+mini_ai = require('mini.ai')
+mini_ai.setup({
+    n_lines = 9999,
+    search_method = 'cover_or_nearest',
+    custom_textobjects = {
+        c = mini_ai.gen_spec.treesitter({
+            a = "@call.outer",
+            i = "@call.outer",
+        }, {}),
+        f = mini_ai.gen_spec.treesitter({
+            a = "@function.outer",
+            i = "@function.inner",
+        }, {}),
+        C = mini_ai.gen_spec.treesitter({
+            a = "@class.outer",
+            i = "@class.inner",
+        }, {}),
+        B = mini_ai.gen_spec.treesitter({
+            a = "@block.outer",
+            i = "@block.inner",
+        }, {}),
+        e = {
+        {
+            "%u[%l%d]+%f[^%l%d]",
+            "%f[%S][%l%d]+%f[^%l%d]",
+            "%f[%P][%l%d]+%f[^%l%d]",
+            "^[%l%d]+%f[^%l%d]",
+            "%f[%S][%w]+%f[^%w]",
+            "%f[%P][%w]+%f[^%w]",
+            "^%w+%f[^%w]",
+        },
+        "^().*()$",
+    },
+    }
+})
+
+require('gitsigns').setup()
+
+-- nvim-cmp has a big configuration. To improve explorability of this file, cmp's config
+-- has been moved to cmp-plugins.lua
+require("cmp-plugins")
 
 -- TODO add <leader>l keymaps for lsp related operations ([L]sp operations)
 -- TODO add a shortcut to search not all symbols but simply classes
--- TODO configure cmp to start cmp only after 2 or 3 letters, not just one
 -- TODO there exists a nvim plugin which is able to optimize linting/formatting operations
 --    it works by only submitting modified regions to the linter.
 --    if I ever encounter performance issues, look into it.
+-- TODO https://github.com/rcarriga/cmp-dap
+-- TODO https://github.com/hrsh7th/nvim-cmp/issues/1092
 
 vim.cmd("packadd! sonokai")
 vim.g.sonokai_style = "shusia"
@@ -25,7 +67,7 @@ require("fzf-lua").setup({
 	winopts = { preview = { default = "bat" } },
 	manpages = { previewer = "man_native" },
 	helptags = { previewer = "help_native" },
-	lsp = { code_actions = { previewer = "codeaction_native" } },
+	lsp = { code_actions = { previewer = "bat" } },
 	tags = { previewer = "bat" },
 	btags = { previewer = "bat" },
 	keymap = {
@@ -41,66 +83,52 @@ require("fzf-lua").setup({
 			["ctrl-q"] = "select-all+accept",
 		},
 	},
-        actions = {
-            files = {
-                ["enter"] = actions.file_edit_or_qf,
-                ["ctrl-u"] = actions.file_split,
-                ["ctrl-v"] = actions.file_vsplit,
-                ["ctrl-t"] = actions.file_tabedit,
-                ["alt-q"] = actions.file_sel_to_qf,
-            }
-        }
+	actions = {
+		files = {
+			["enter"] = actions.file_edit_or_qf,
+			["ctrl-b"] = actions.file_split,
+			["ctrl-v"] = actions.file_vsplit,
+			["ctrl-t"] = actions.file_tabedit,
+			["alt-q"] = actions.file_sel_to_qf,
+		},
+	},
+})
+-- require('fzf-lua').register_ui_select()
+require('suit').setup({
+    input = {
+        border = 'rounded'
+    },
+    select = {
+        border = 'rounded',
+        max_width = 90,
+    }
 })
 
 -- Which key
 local wk = require("which-key")
-wk.setup {
+wk.setup({
+    preset = "helix",
     trigger_blacklist = {
-        n = { '"' }
-    }
-}
+        n = { '"' },
+    },
+})
 wk.add({
 	{ "<leader>s", desc = "[S]earch" },
+	{ "<leader>sv", desc = "[S]earch stuff in [V]im" },
 	{ "<leader>sf", desc = "[S]earch stuff in [F]ile" },
+	{ "<leader>sl", desc = "[S]earch stuff in [L]SP" },
 	{ "<leader>sw", desc = "[S]earch stuff in [W]orkspace" },
+	{ "<leader>sG", desc = "[S]earch stuff in [G]it" },
+	{ "<leader>g", desc = "[g]it related actions" },
 	{ "<leader>e", desc = "File [E]xplorer" },
-	{ "<leader>o", desc = "Toggle [O]ptions" },
+	{ "<leader>O", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },
 	{ "<leader>l", desc = "[L]SP actions" },
+	{ "<leader>t", desc = "[T]ests actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
-})
-
-local cmp = require("cmp")
-cmp.setup({
-        preselect = cmp.PreselectMode.None,
-	snippet = {
-		-- REQUIRED - you must specify a snippet engine
-		expand = function(args)
-			-- vim.fn["vsnip#anonymous"](args.body) -- For `vsnip` users.
-			-- require('luasnip').lsp_expand(args.body) -- For `luasnip` users.
-			-- require('snippy').expand_snippet(args.body) -- For `snippy` users.
-			-- vim.fn["UltiSnips#Anon"](args.body) -- For `ultisnips` users.
-			vim.snippet.expand(args.body) -- For native neovim snippets (Neovim v0.10+)
-		end,
-	},
-	window = {
-		-- completion = cmp.config.window.bordered(),
-		-- documentation = cmp.config.window.bordered(),
-	},
-	mapping = cmp.mapping.preset.insert({
-		["<C-b>"] = cmp.mapping.scroll_docs(-4),
-		["<C-f>"] = cmp.mapping.scroll_docs(4),
-		["<C-Space>"] = cmp.mapping.complete(),
-		["<C-e>"] = cmp.mapping.abort(),
-		["<CR>"] = cmp.mapping.confirm({ select = false }),
-	}),
-	sources = cmp.config.sources({
-		{ name = "nvim_lsp" },
-		{ name = "nvim_lsp_signature_help" },
-	}, {
-		{ name = "buffer" },
-		{ name = "path" },
-	}),
+	{ "<leader>M", desc = "[M]arkdown actions" },
+	{ "<leader>v", desc = "[V]im actions" },
+	{ "<leader>vS", desc = "[V]im [S]essions actions" },
 })
 
 -- disable netrw at the very start of your init.lua
@@ -110,6 +138,16 @@ vim.g.loaded_netrwPlugin = 1
 -- optionally enable 24-bit colour
 vim.opt.termguicolors = true
 
--- OR setup with some options
-require("nvim-tree").setup({})
+-- Default nvim-tree config.
+-- Options can be provided to the plugin.
+require("nvim-tree").setup()
+
+require("neotest").setup({
+	adapters = {
+		require("neotest-python")({
+			dap = { justMyCode = false },
+			pytest_discover_instances = true,
+		}),
+	},
+})
 

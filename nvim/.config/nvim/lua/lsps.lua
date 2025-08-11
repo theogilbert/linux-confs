@@ -1,3 +1,5 @@
+M = {}
+
 local lspconfig = require("lspconfig")
 
 vim.lsp.handlers["textDocument/publishDiagnostics"] = vim.lsp.with(vim.lsp.diagnostic.on_publish_diagnostics, {
@@ -14,7 +16,7 @@ vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	pattern = { "*.py" },
 	group = cursorHoverGroup,
 	callback = function(_)
-		vim.lsp.buf.signature_help()
+            vim.lsp.buf.signature_help({focusable= false, anchor_bias= "above"})
 	end,
 })
 
@@ -52,7 +54,6 @@ end, { silent = true })
 
 local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
--- TODO update this so that it only applies on python files
 lspconfig.basedpyright.setup({
 	settings = {
 		basedpyright = {
@@ -72,8 +73,12 @@ lspconfig.basedpyright.setup({
 local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
 
 lspconfig.ruff.setup({
-	trace = "verbose",
 	capabilities = capabilities,
+        init_options = {
+            settings = {
+                codeAction = { disableRuleComment = { enable = false}}
+            }
+        },
 	on_attach = function(client, bufnr)
 		if client.supports_method("textDocument/formatting") then
 			vim.api.nvim_clear_autocmds({ group = augroup, buffer = bufnr })
@@ -103,10 +108,30 @@ require('lspconfig')['yamlls'].setup{
             completion = true,
             validate = true,
             schemas = {
-                -- TODO add schemas in ~/.local, and link them here withotu hardcoded path
+                [vim.fn.stdpath("data") .. "/schemas/yaml/gitlab-ci.json"] = {
+                    "/.gitlab-ci.yml",
+                    "/.gitlab-ci.yaml",
+                }
             },
         },
     }
 }
 
 lspconfig.ts_ls.setup{}
+local cmd_utils = require("utilities.commands")
+
+M.run_code_actions = function()
+    vim.lsp.buf.code_action({filter = function(x)
+        if x.kind == "source.organizeImports.ruff" then
+            local filepath = vim.fn.expand('%:p')
+            return not cmd_utils.run_and_check("ruff check --select I00 " .. filepath)
+        elseif x.kind == "source.fixAll.ruff" then
+            local filepath = vim.fn.expand('%:p')
+            local ruff_diff = vim.fn.system("ruff check --diff " .. filepath)
+            return ruff_diff:match("^No errors would be fixed") == nil
+        end
+        return true
+    end})
+end
+
+return M

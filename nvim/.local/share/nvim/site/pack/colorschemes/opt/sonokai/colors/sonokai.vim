@@ -81,8 +81,8 @@ if &diff
   call sonokai#highlight('CursorLine', s:palette.none, s:palette.none, 'underline')
   call sonokai#highlight('CursorColumn', s:palette.none, s:palette.none, 'bold')
 else
-  call sonokai#highlight('CursorLine', s:palette.none, s:palette.bg1)
-  call sonokai#highlight('CursorColumn', s:palette.none, s:palette.bg1)
+  call sonokai#highlight('CursorLine', s:palette.none, s:palette.bg2)
+  call sonokai#highlight('CursorColumn', s:palette.none, s:palette.bg2)
 endif
 call sonokai#highlight('LineNr', s:palette.grey_dim, s:palette.none)
 if &diff
@@ -176,8 +176,8 @@ else
   call sonokai#highlight('VertSplit', s:palette.black, s:palette.none)
 endif
 highlight! link WinSeparator VertSplit
-call sonokai#highlight('Visual', s:palette.none, s:palette.bg3)
-call sonokai#highlight('VisualNOS', s:palette.none, s:palette.bg3, 'underline')
+call sonokai#highlight('Visual', s:palette.none, s:palette.grey_dim)
+call sonokai#highlight('VisualNOS', s:palette.none, s:palette.grey_dim, 'underline')
 call sonokai#highlight('QuickFixLine', s:palette.blue, s:palette.none, 'bold')
 call sonokai#highlight('Debug', s:palette.yellow, s:palette.none)
 call sonokai#highlight('debugPC', s:palette.bg0, s:palette.green)

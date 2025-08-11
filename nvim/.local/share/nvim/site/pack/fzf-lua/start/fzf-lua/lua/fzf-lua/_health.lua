@@ -19,7 +19,8 @@ function M.check()
     else
       local version = vim.fn.system(tool .. " --version") or ""
       version = vim.trim(vim.split(version, "\n")[1])
-      ok("'" .. tool .. "' `" .. version .. "`")
+      local is_ok = vim.v.shell_error == 0
+      (is_ok and ok or error)("'" .. tool .. "' `" .. version .. "`")
       return true
     end
   end
@@ -72,17 +73,21 @@ function M.check()
   end
 
   if vim.fn.executable("fzf") == 1 then
-    local version = utils.fzf_version()
-    if version < 0.53 then
+    local version, rc, err = utils.fzf_version()
+    if not version then
+      error(string.format("'fzf --version' failed with error %s: %s", rc, err))
+    elseif version[1] < 1 and version[2] < 53 then
       warn("'fzf' `>= 0.53` is recommended.")
     end
   end
 
   start("fzf-lua [optional]")
-  if pcall(require, "nvim-web-devicons") then
+  if package.loaded["nvim-web-devicons"] then
     ok("`nvim-web-devicons` found")
+  elseif package.loaded["mini.icons"] then
+    ok("`mini.icons` found")
   else
-    warn("`nvim-web-devicons` not found")
+    warn("`nvim-web-devicons` or `mini.icons` not found")
   end
   for _, tool in ipairs({ "rg", "fd", "fdfind", "bat", "batcat", "delta" }) do
     have(tool, true)
@@ -104,7 +109,7 @@ function M.check()
   if vim.env.FZF_DEFAULT_OPTS_FILE == nil then
     ok("`FZF_DEFAULT_OPTS_FILE` is not set")
   else
-    ok("`FZF_DEFAULT_OPTS_FILE` is set to `" .. vim.env.FZF_DEFAULT_OPTS_FILE .. "`")
+    ok("`$FZF_DEFAULT_OPTS_FILE` is set to `" .. vim.env.FZF_DEFAULT_OPTS_FILE .. "`")
   end
 end
 

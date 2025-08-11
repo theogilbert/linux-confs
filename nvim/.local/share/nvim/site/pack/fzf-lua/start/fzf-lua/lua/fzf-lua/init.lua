@@ -1,13 +1,9 @@
--- make value truthy so we can load the path module and subsequently
--- the libuv module without overriding the global require used only
--- for spawn_stdio headless instances, this way we can call
--- require("fzf-lua") from test specs (which also run headless)
-vim.g.fzf_lua_directory = ""
-
 local uv = vim.uv or vim.loop
 local path = require "fzf-lua.path"
 local utils = require "fzf-lua.utils"
 local config = require "fzf-lua.config"
+
+local M = {}
 
 do
   local function source_vimL(path_parts)
@@ -22,9 +18,6 @@ do
   vim.g.fzf_lua_directory = path.normalize(path.parent(currFile))
   vim.g.fzf_lua_root = path.parent(path.parent(vim.g.fzf_lua_directory))
 
-  -- Manually source the vimL script containing ':FzfLua' cmd
-  -- does nothing if already loaded due to `vim.g.loaded_fzf_lua`
-  source_vimL({ vim.g.fzf_lua_root, "plugin", "fzf-lua.vim" })
   -- Autoload scipts dynamically loaded on `vim.fn[fzf_lua#...]` call
   -- `vim.fn.exists("*fzf_lua#...")` will return 0 unless we manuall source
   source_vimL({ vim.g.fzf_lua_root, "autoload", "fzf_lua.vim" })
@@ -37,11 +30,31 @@ do
   -- fixed $NVIM_LISTEN_ADDRESS, different neovim instances will use the same path
   -- as their address and messages won't be received on older instances
   if not vim.g.fzf_lua_server then
-    vim.g.fzf_lua_server = vim.fn.serverstart("fzf-lua." .. os.time())
+    local ok, srv = pcall(vim.fn.serverstart, "fzf-lua." .. os.time())
+    if ok then
+      vim.g.fzf_lua_server = srv
+    else
+      error(string.format(
+        "serverstart(): %s. Please make sure 'XDG_RUNTIME_DIR' (%s) is writeable",
+        srv, vim.fn.stdpath("run")))
+    end
   end
-end
 
-local M = {}
+  -- Workaround for using `:wqa` with "hide"
+  -- https://github.com/neovim/neovim/issues/14061
+  vim.api.nvim_create_autocmd("ExitPre", {
+    group = vim.api.nvim_create_augroup("FzfLuaNvimQuit", { clear = true }),
+    callback = function()
+      local win = utils.fzf_winobj()
+      if win and win:hidden() then
+        vim.api.nvim_buf_delete(win._hidden_fzf_bufnr, { force = true })
+      end
+    end,
+  })
+
+  -- Setup global var
+  _G.FzfLua = M
+end
 
 -- Setup fzf-lua's highlights, use `override=true` to reset all highlights
 function M.setup_highlights(override)
@@ -54,6 +67,7 @@ function M.setup_highlights(override)
     { "FzfLuaNormal",            "normal",         { default = default, link = "Normal" } },
     { "FzfLuaBorder",            "border",         { default = default, link = "Normal" } },
     { "FzfLuaTitle",             "title",          { default = default, link = "FzfLuaNormal" } },
+    { "FzfLuaTitleFlags",        "title_flags",    { default = default, link = "CursorLine" } },
     { "FzfLuaBackdrop",          "backdrop",       { default = default, bg = "Black" } },
     { "FzfLuaHelpNormal",        "help_normal",    { default = default, link = "FzfLuaNormal" } },
     { "FzfLuaHelpBorder",        "help_border",    { default = default, link = "FzfLuaBorder" } },
@@ -70,12 +84,7 @@ function M.setup_highlights(override)
     { "FzfLuaScrollFloatFull",   "scrollfloat_f",  { default = default, link = "PmenuThumb" } },
     { "FzfLuaDirIcon",           "dir_icon",       { default = default, link = "Directory" } },
     { "FzfLuaDirPart",           "dir_part",       { default = default, link = "Comment" } },
-    { "FzfLuaFilePart", "file_part",
-      {
-        default = default,
-        link = utils.__HAS_NVIM_08 and "@none" or "Normal",
-      }
-    },
+    { "FzfLuaFilePart",          "file_part",      { default = default, link = "@none" } },
     -- Fzf terminal hls, colors from `vim.api.nvim_get_color_map()`
     { "FzfLuaHeaderBind", "header_bind",
       { default = default, fg = is_light and "MediumSpringGreen" or "BlanchedAlmond" } },
@@ -85,8 +94,10 @@ function M.setup_highlights(override)
       { default = default, fg = is_light and "CadetBlue4" or "CadetBlue1" } },
     { "FzfLuaPathLineNr", "path_linenr", -- qf|diag|lsp
       { default = default, fg = is_light and "MediumSpringGreen" or "LightGreen" } },
+    { "FzfLuaLivePrompt", "live_prompt", -- "live" queries prompt text color
+      { default = default, fg = is_light and "PaleVioletRed1" or "PaleVioletRed1" } },
     { "FzfLuaLiveSym", "live_sym",       -- lsp_live_workspace_symbols query
-      { default = default, fg = is_light and "Brown4" or "Brown1" } },
+      { default = default, fg = is_light and "PaleVioletRed1" or "PaleVioletRed1" } },
     -- lines|blines|treesitter
     { "FzfLuaBufId",     "buf_id",     { default = default, link = "TabLine" } },
     { "FzfLuaBufName",   "buf_name",   { default = default, link = "Directory" } },
@@ -127,35 +138,7 @@ function M.setup_highlights(override)
         hl_def.default = false
       end
     end
-    if utils.__HAS_NVIM_07 then
-      vim.api.nvim_set_hl(0, hl_name, hl_def)
-    else
-      if hl_def.link then
-        vim.cmd(string.format("hi! %s link %s %s",
-          hl_def.default and "default" or "",
-          hl_name, hl_def.link))
-      else
-        vim.cmd(string.format("hi! %s %s %s%s%s",
-          hl_def.default and "default" or "", hl_name,
-          hl_def.fg and string.format(" guifg=%s", hl_def.fg) or "",
-          hl_def.bg and string.format(" guibg=%s", hl_def.bg) or "",
-          hl_def.bold and " gui=bold" or ""))
-      end
-    end
-  end
-
-  -- linking to a cleared hl is bugged in neovim 0.8.x
-  -- resulting in a pink background for hls linked to `Normal`
-  if vim.fn.has("nvim-0.9") == 0 and vim.fn.has("nvim-0.8") == 1 then
-    for _, a in ipairs(highlights) do
-      local hl_name, opt_name = a[1], a[2]
-      if utils.is_hl_cleared(hl_name) then
-        -- reset any invalid hl, this will cause our 'winhighlight'
-        -- string to look something akin to `Normal:,FloatBorder:`
-        -- which uses terminal fg|bg colors instead
-        utils.map_set(config.setup_opts, "__HLS." .. opt_name, "")
-      end
-    end
+    vim.api.nvim_set_hl(0, hl_name, hl_def)
   end
 
   -- Init the colormap singleton
@@ -166,35 +149,14 @@ end
 -- case the user decides not to call `setup()`
 M.setup_highlights()
 
-local function load_profiles(profiles)
-  local ret = {}
-  profiles = type(profiles) == "table" and profiles
-      or type(profiles) == "string" and { profiles }
-      or {}
-  for _, profile in ipairs(profiles) do
-    local fname = path.join({ vim.g.fzf_lua_directory, "profiles", profile .. ".lua" })
-    local profile_opts = utils.load_profile_fname(fname, nil, true)
-    if type(profile_opts) == "table" then
-      if profile_opts[1] then
-        -- profile requires loading base profile(s)
-        profile_opts = vim.tbl_deep_extend("keep",
-          profile_opts, load_profiles(profile_opts[1]))
-      end
-      if type(profile_opts.fn_load) == "function" then
-        profile_opts.fn_load()
-        profile_opts.fn_load = nil
-      end
-      ret = vim.tbl_deep_extend("force", ret, profile_opts)
-    end
-  end
-  return ret
-end
-
 function M.setup(opts, do_not_reset_defaults)
   opts = type(opts) == "table" and opts or {}
+  -- Defaults to picker info in win title if neovim version >= 0.9, prompt otherwise
+  opts[1] = opts[1] == nil and "default" or opts[1]
   if opts[1] then
     -- Did the user supply profile(s) to load?
-    opts = vim.tbl_deep_extend("keep", opts, load_profiles(opts[1]))
+    opts = vim.tbl_deep_extend("keep", opts,
+      utils.load_profiles(opts[1], opts[2] == nil and 1 or opts[2]))
   end
   if do_not_reset_defaults then
     -- no defaults reset requested, merge with previous setup options
@@ -208,6 +170,8 @@ function M.setup(opts, do_not_reset_defaults)
       opts.defaults = opts.defaults or {}
       opts.defaults[o] = opts[gopt]
       opts[gopt] = nil
+      utils.warn(string.format("Deprecated option: '%s = %s' -> 'defaults = { %s = %s }'",
+        gopt, tostring(opts.defaults[o]), o, tostring(opts.defaults[o])))
     end
   end
   -- set custom &nbsp if caller requested
@@ -257,6 +221,8 @@ do
     tags_live_grep = { "fzf-lua.providers.tags", "live_grep" },
     git_files = { "fzf-lua.providers.git", "files" },
     git_status = { "fzf-lua.providers.git", "status" },
+    git_diff = { "fzf-lua.providers.git", "diff" },
+    git_hunks = { "fzf-lua.providers.git", "hunks" },
     git_stash = { "fzf-lua.providers.git", "stash" },
     git_commits = { "fzf-lua.providers.git", "commits" },
     git_bcommits = { "fzf-lua.providers.git", "bcommits" },
@@ -287,6 +253,7 @@ do
     marks = { "fzf-lua.providers.nvim", "marks" },
     menus = { "fzf-lua.providers.nvim", "menus" },
     keymaps = { "fzf-lua.providers.nvim", "keymaps" },
+    nvim_options = { "fzf-lua.providers.nvim", "nvim_options" },
     autocmds = { "fzf-lua.providers.nvim", "autocmds" },
     registers = { "fzf-lua.providers.nvim", "registers" },
     commands = { "fzf-lua.providers.nvim", "commands" },
@@ -324,6 +291,11 @@ do
     complete_file = { "fzf-lua.complete", "file" },
     complete_line = { "fzf-lua.complete", "line" },
     complete_bline = { "fzf-lua.complete", "bline" },
+    zoxide = { "fzf-lua.providers.files", "zoxide" },
+    -- API shortcuts
+    fzf_exec = { "fzf-lua.core", "fzf_exec" },
+    fzf_live = { "fzf-lua.core", "fzf_live" },
+    fzf_wrap = { "fzf-lua.core", "fzf_wrap" },
   }
 
   for k, v in pairs(lazyloaded_modules) do
@@ -374,12 +346,6 @@ end
 
 -- export the defaults module and deref
 M.defaults = require("fzf-lua.defaults").defaults
-
--- API shortcuts
-M.fzf_exec = require("fzf-lua.core").fzf_exec
-M.fzf_live = require("fzf-lua.core").fzf_live
-M.fzf_wrap = require("fzf-lua.core").fzf_wrap
--- M.fzf_raw = require( "fzf-lua.fzf").raw_fzf
 
 -- exported modules
 M._exported_modules = {

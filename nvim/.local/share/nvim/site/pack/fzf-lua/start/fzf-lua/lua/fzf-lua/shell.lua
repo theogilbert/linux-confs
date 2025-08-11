@@ -1,6 +1,6 @@
 -- modified version of:
 -- https://github.com/vijaymarupudi/nvim-fzf/blob/master/lua/fzf/actions.lua
-local uv = vim.loop
+local uv = vim.uv or vim.loop
 local utils = require "fzf-lua.utils"
 local path = require "fzf-lua.path"
 local libuv = require "fzf-lua.libuv"
@@ -12,7 +12,7 @@ local M = {}
 -- provider are 2 (`live_grep` with `multiprocess=false`)
 -- and 4 (`git_status` with preview and 3 reload binds)
 -- we can always increase if we need more
-local _MAX_LEN = vim.g.fzf_lua_shell_maxlen or 10
+local _MAX_LEN = 50
 local _index = 0
 local _registry = {}
 local _protected = {}
@@ -85,27 +85,13 @@ function M.raw_async_action(fn, fzf_field_expression, debug)
   -- this is for windows WSL and AppImage users, their nvim path isn't just
   -- 'nvim', it can be something else
   local nvim_bin = os.getenv("FZF_LUA_NVIM_BIN") or vim.v.progpath
-  local nvim_runtime = os.getenv("FZF_LUA_NVIM_BIN") and "" or string.format(
-    utils._if_win([[set VIMRUNTIME=%s& ]], "VIMRUNTIME=%s "),
-    utils._if_win(path.normalize(vim.env.VIMRUNTIME),
-      libuv.shellescape(vim.env.VIMRUNTIME)))
 
-  local call_args = ("fzf_lua_server=[[%s]], fnc_id=%d %s"):format(
-    vim.g.fzf_lua_server, id, debug and ", debug=true" or "")
-
-  -- we need to add '--' to mark the end of command options otherwise
-  -- our preview command will fail when the selected items contain
-  -- special shell chars ('+', '-', etc), examples where this can
-  -- happen are the `git status` command and git branches from diff
-  -- worktrees (#600)
-  local action_cmd = ("%s%s -n --headless --clean --cmd %s -- %s"):format(
-    nvim_runtime,
+  -- all args after `-l` will be in `_G.args`
+  local action_cmd = ("%s -u NONE -l %s %s %s %s"):format(
     libuv.shellescape(path.normalize(nvim_bin)),
-    libuv.shellescape(("lua %sloadfile([[%s]])().rpc_nvim_exec_lua({%s})"):format(
-      utils.__HAS_NVIM_010 and "vim.g.did_load_filetypes=1; " or "",
-      path.join { vim.g.fzf_lua_directory, "shell_helper.lua" },
-      call_args
-    )),
+    libuv.shellescape(path.normalize(path.join { vim.g.fzf_lua_directory, "shell_helper.lua" })),
+    id,
+    tostring(debug),
     fzf_field_expression)
 
   return action_cmd, id
@@ -113,13 +99,19 @@ end
 
 function M.raw_action(fn, fzf_field_expression, debug)
   local receiving_function = function(pipe, ...)
-    local ret = fn(...)
+    local ok, ret = pcall(fn, ...)
 
     local on_complete = function(_)
       -- We are NOT asserting, in case fzf closes
       -- the pipe before we can send the preview
       -- assert(not err)
       uv.close(pipe)
+    end
+
+    -- pipe must be closed, otherwise terminal will freeze
+    if not ok then
+      utils.err(ret)
+      on_complete()
     end
 
     if type(ret) == "string" then

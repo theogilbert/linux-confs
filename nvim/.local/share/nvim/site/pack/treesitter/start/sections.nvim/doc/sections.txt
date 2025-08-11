@@ -1,0 +1,206 @@
+*sections.txt*    Display code sections in a side panel    *sections* *sections.nvim*
+
+================================================================================
+CONTENTS                                                     *sections-contents*
+
+1. Introduction ............................ |sections-introduction|
+2. Requirements ............................ |sections-requirements|
+3. Installation ............................ |sections-installation|
+4. Configuration ........................... |sections-configuration|
+5. Usage ................................... |sections-usage|
+6. Keymaps ................................. |sections-keymaps|
+7. Supported Languages ..................... |sections-languages|
+8. API ..................................... |sections-api|
+9. Tree-sitter Queries .................... |sections-queries|
+10. License ................................ |sections-license|
+
+================================================================================
+1. INTRODUCTION                                          *sections-introduction*
+
+sections.nvim is a Neovim plugin that displays code sections (functions, 
+classes, headers, etc.) in a sidebar panel. It uses Tree-sitter queries to
+parse and extract structural information from your code, providing a quick
+overview and navigation interface for your files.
+
+The plugin supports hierarchical section display with collapsible nodes,
+filtering of private/public sections, and quick navigation to any section
+in your code.
+
+================================================================================
+2. REQUIREMENTS                                          *sections-requirements*
+
+- Neovim 0.11.3+ with Tree-sitter support.
+  Previous versions have not been tested.
+- Tree-sitter parsers for the languages you want to use.
+- A Nerd Font to properly display icons.
+
+================================================================================
+3. INSTALLATION                                          *sections-installation*
+
+Using lazy.nvim: >lua
+    {
+        "sections.nvim",
+        config = function()
+            require("sections").setup()
+        end,
+    }
+<
+
+Using packer.nvim: >lua
+    use {
+        "sections.nvim",
+        config = function()
+            require("sections").setup()
+        end,
+    }
+================================================================================
+4. CONFIGURATION                                        *sections-configuration*
+
+sections.nvim can be configured by passing options to the setup function:
+
+>lua
+    require("sections").setup({
+        indent = 2,                    -- Indentation per level
+        icons = {                      -- Icons for different section types
+            ["function"] = "󰊕",
+            class = "",
+            attribute = "󰠲",
+            header = "",
+        },
+        keymaps = {                    -- Keymaps within the sections panel
+            toggle_private = "p",      -- Toggle private sections visibility
+            toggle_section = "<cr>",   -- Collapse/expand section
+            select_section = "<C-]>",  -- Jump to section in code
+        },
+    })
+<
+
+Configuration Options:~
+
+*sections-config-indent*
+`indent` (number, default: 2)
+    Number of spaces to indent nested sections.
+
+*sections-config-icons*
+`icons` (table)
+    Icons displayed next to different section types. Defaults:
+    - function: "󰊕"
+    - class: ""
+    - attribute: "󰠲"
+    - header: ""
+
+*sections-config-keymaps*
+`keymaps` (table)
+    Key mappings for the sections panel:
+    - `toggle_private`: Toggle visibility of private sections (default: "p")
+    - `toggle_section`: Collapse/expand a section (default: "<cr>")
+    - `select_section`: Jump to section in source code (default: "<C-]>")
+
+================================================================================
+5. USAGE                                                        *sections-usage*
+
+Open/close the sections panel:~
+>
+    :lua require("sections").toggle()
+<
+
+The sections panel will display all parsed sections from the current buffer.
+Sections are automatically refreshed when:
+- You save the file
+- You switch to a different window/buffer
+- You enter a new buffer
+
+Panel Features:~
+- Hierarchical display of code sections
+- Collapsible sections (functions, classes, etc.)
+- Private section filtering (toggle with 'p' by default)
+- Quick navigation to any section
+
+================================================================================
+6. KEYMAPS                                                    *sections-keymaps*
+
+Default keymaps within the sections panel:
+
+*sections-keymap-select*
+`<C-]>` - Jump to section in source code and focus the code window
+
+*sections-keymap-toggle*
+`<cr>` - Collapse or expand the current section (if it has children)
+
+*sections-keymap-private*
+`p` - Toggle visibility of private sections (e.g. Python functions starting with '_')
+
+Note: These keymaps are only active when the cursor is in the sections panel.
+
+================================================================================
+7. SUPPORTED LANGUAGES                                      *sections-languages*
+
+By default, the plugin supports the following languages:
+
+*sections-lua*
+Lua:~
+- Function declarations
+- Function assignments (local func = function() end)
+
+*sections-python*  
+Python:~
+- Functions (public and private, starting with '_')
+- Classes (public and private, starting with '_')
+- Class attributes with type annotations
+- Module-level attributes
+
+*sections-markdown*
+Markdown:~
+- Headers (all levels using # syntax)
+
+To add support for additional languages, create Tree-sitter query files
+in the `queries/<language>/sections.scm` directory. See |sections-queries|.
+
+Of course, a Tree-sitter parser also needs to be available for this language.
+
+================================================================================
+8. API                                                            *sections-api*
+
+*sections.setup({config})*
+    Initialize the plugin with optional configuration.
+    
+    Parameters:~
+        {config} (table|nil) Configuration table, see |sections-configuration|
+
+*sections.toggle()*
+    Toggle the sections panel open or closed for the current tab.
+
+================================================================================
+9. TREE-SITTER QUERIES                                       *sections-queries*
+
+sections.nvim uses Tree-sitter queries to identify code sections. Query files
+are located in `queries/<language>/sections.scm`.
+
+Query Format:~
+Queries should capture nodes with the following captures:
+- `@section` - The entire section node
+- `@section.name` - The section name
+- `@section.param` - Section parameters (optional)
+  Currently, parameters are only compatible with section types `function` and `class`.
+- `@section.type_annotation` - Type annotations, displayed after `:` (optional)
+
+Metadata:~
+- `(#set! type "function"|"class"|"attribute"|"header")` - Section type
+- `(#set! private "true")` - Mark section as private
+
+Example query for functions:~
+>query
+    (function_definition
+      name: (identifier) @section.name
+      parameters: (parameters (identifier) @section.param)*
+    ) @section
+    (#set! type "function")
+<
+
+================================================================================
+10. LICENSE                                                   *sections-license*
+
+MIT License
+
+================================================================================
+vim:tw=78:ts=8:ft=help:norl:

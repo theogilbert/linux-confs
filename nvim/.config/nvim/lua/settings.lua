@@ -1,10 +1,29 @@
--- This NVIM configuration file is deeply inspired from kickstart.nvim.
 
 -- Disable Python provider for rplugins:
 -- I do not use Python rplugins, and the provider takes a long time to load.
 vim.g.loaded_python3_provider = 0
 
-vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg'}
+vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff'}
+
+vim.g.xml_syntax_folding = 1
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = { "xml", "html" },
+  callback = function()
+    vim.opt_local.foldmethod = "syntax"
+  end,
+})
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "markdown",
+  callback = function()
+    vim.keymap.set(
+        "v", "<leader>Mf", [[:! tr -s " " | column -t -s '|' -o '|'<CR>]],
+        { buffer = true, desc = "[M]arkdown - [f]ormat" }
+    )
+  end,
+})
+
+
+vim.opt.fillchars:append({ diff = ' ' })
 
 vim.opt.shiftwidth = 4
 vim.opt.smarttab = true
@@ -12,13 +31,22 @@ vim.opt.expandtab = true
 vim.opt.tabstop = 8
 vim.opt.softtabstop = 0
 
-vim.opt.foldmethod = "syntax"
-vim.opt.foldlevelstart = 20
+vim.opt.completeopt = 'menuone,noinsert,preview'
+
+-- When opening a new window with vsplit, open the new window on the right
+vim.opt.splitright = true
+
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldlevelstart = 99
+vim.opt.foldlevel = 99
 
 vim.opt.wildmode = "list:longest"
 
+-- take time to minimize diff in diffmode. Other algorithims are 'patience' and 'histogram'
+vim.opt.diffopt = "internal,filler,closeoff,algorithm:minimal"
+
 -- Set <space> as the leader key
--- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
@@ -63,6 +91,13 @@ vim.opt.updatetime = 250
 -- Displays which-key popup sooner
 -- vim.opt.timeoutlen = 300
 
+-- Sync clipboard between OS and Neovim.
+-- Schedule the setting after 'UiEnter' because it can increase startup-time.
+-- Remove this option if you want your clipboard to remain independant.
+vim.schedule(function()
+    vim.opt.clipboard = "unnamedplus"
+end)
+
 -- Configure how new splits should be opened
 vim.opt.splitbelow = true
 
@@ -83,3 +118,15 @@ vim.opt.syntax = "on"
 
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.opt.scrolloff = 2
+
+vim.filetype.add({
+    pattern = {
+        ['.*Jenkinsfile.*'] = 'groovy'
+    }
+})
+
+vim.opt.sessionoptions = {
+    "curdir", "globals", "help", "tabpages", "winsize", "terminal"
+}
+
+vim.o.switchbuf = 'useopen'

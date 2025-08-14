@@ -129,4 +129,4 @@ vim.opt.sessionoptions = {
     "curdir", "globals", "help", "tabpages", "winsize", "terminal"
 }
 
-vim.o.switchbuf = 'useopen'
+vim.o.switchbuf = 'useopen,uselast'

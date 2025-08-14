@@ -151,3 +151,5 @@ require("neotest").setup({
 	},
 })
 
+
+require("sections").setup({})

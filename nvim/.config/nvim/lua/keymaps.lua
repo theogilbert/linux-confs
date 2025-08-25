@@ -192,4 +192,4 @@ local terminal_utils = require("utilities.terminal")
 vim.keymap.set({ "v" }, "<leader>p", terminal_utils.send_sel_to_terminal, { desc = "[P]ush selection to terminal" })
 
 local sections = require("sections")
-vim.keymap.set({ "n" }, "<leader>S", sections.toggle, { desc = "Display code [S]ections" })
+vim.keymap.set({ "n" }, "<leader>n", sections.toggle, { desc = "Toggle file sections pane" })

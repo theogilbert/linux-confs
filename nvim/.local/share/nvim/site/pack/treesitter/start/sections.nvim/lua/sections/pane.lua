@@ -49,7 +49,10 @@ local function write_lines(lines, start, end_)
     vim.api.nvim_buf_set_lines(pane_buf, start, end_, false, lines)
     vim.bo[pane_buf].modifiable = false
 
-    vim.api.nvim_win_set_cursor(pane_info.pane_win, cursor)
+    local cursor_line, cursor_col = cursor[1], cursor[2]
+    if cursor_line <= #lines and cursor_col <= #lines[cursor_line] then
+        vim.api.nvim_win_set_cursor(pane_info.pane_win, cursor)
+    end
 
     return true, nil
 end

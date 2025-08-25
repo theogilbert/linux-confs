@@ -78,8 +78,8 @@ function check_expression(client, frame_id, expr)
         return success, evaluated and evaluated.result or "Unexpected failure"
     end
 
-    if evaluated.type ~= "DataFrame" then
-        return false, "Expression is not a Dataframe"
+    if evaluated.type ~= "DataFrame" and evaluated.type ~= "Series" then
+        return false, "Expression is neither a Dataframe nor a Series"
     end
 
     return true, ""

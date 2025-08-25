@@ -26,7 +26,11 @@ local parse_columns = function(csv_line)
                 current_cell_start = idx
             end
         else
-            if char == ',' and current_quotes_count == bounding_quotes_count then
+            if idx == #csv_line then
+                -- We reached the end of the line, so we need to add the last cell
+                local cell = csv_line:sub(current_cell_start, idx)
+                table.insert(cells, cell)
+            elseif char == ',' and current_quotes_count == bounding_quotes_count then
                 local cell = csv_line:sub(current_cell_start, idx - 1)
                 table.insert(cells, cell)
                 current_cell_start = nil

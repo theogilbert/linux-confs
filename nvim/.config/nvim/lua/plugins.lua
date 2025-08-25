@@ -129,6 +129,7 @@ wk.add({
 	{ "<leader>M", desc = "[M]arkdown actions" },
 	{ "<leader>v", desc = "[V]im actions" },
 	{ "<leader>vS", desc = "[V]im [S]essions actions" },
+	{ "<leader>S", desc = "[S]cratch file actions" },
 })
 
 -- disable netrw at the very start of your init.lua
@@ -153,3 +154,4 @@ require("neotest").setup({
 
 
 require("sections").setup({})
+require("utilities.scratch").setup({})

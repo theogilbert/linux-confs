@@ -192,7 +192,7 @@ local terminal_utils = require("utilities.terminal")
 vim.keymap.set({ "v" }, "<leader>p", terminal_utils.send_sel_to_terminal, { desc = "[P]ush selection to terminal" })
 
 local scratch_utils = require("utilities.scratch")
-vim.keymap.set({ "n" }, "<leader>Sn", scratch_utils.prompt_new_file, { desc = "[P]rompt the user to create a new scratch file" })
+vim.keymap.set({ "n" }, "<leader>Sn", scratch_utils.prompt_new_file, { desc = "Open [p]rompt to create a new scratch file" })
 vim.keymap.set({ "n" }, "<leader>So", scratch_utils.search_scratches, { desc = "[O]pen a new scratch file" })
 
 local sections = require("sections")

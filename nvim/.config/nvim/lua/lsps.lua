@@ -128,7 +128,7 @@ M.run_code_actions = function()
         elseif x.kind == "source.fixAll.ruff" then
             local filepath = vim.fn.expand('%:p')
             local ruff_diff = vim.fn.system("ruff check --diff " .. filepath)
-            return ruff_diff:match("^No errors would be fixed") == nil
+            return ruff_diff:match("^No errors would be fixed") == nil and ruff_diff ~= ""
         end
         return true
     end})

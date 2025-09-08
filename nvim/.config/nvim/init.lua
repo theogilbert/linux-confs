@@ -3,7 +3,7 @@
 -- These files are present under ./lua/
 require("settings")
 require("keymaps")
-require("macros")
 require("plugins")
 require("lsps")
 require("dap-plugins")
+require("macros")

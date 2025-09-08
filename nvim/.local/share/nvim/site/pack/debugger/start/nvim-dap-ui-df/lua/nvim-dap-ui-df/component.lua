@@ -86,7 +86,8 @@ function check_expression(client, frame_id, expr)
 end
 
 function evaluate_expression(client, frame_id, expr)
-    formatted_expr = expr .. ".head(100).to_csv()"
+    -- TODO make this configurable
+    formatted_expr = expr .. ".head(500).to_csv()"
     success, evaluated = pcall(
         client.request.evaluate,
         { context = "watch", expression = formatted_expr, frameId = frame_id }

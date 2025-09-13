@@ -16,45 +16,57 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 
 local function set_hls()
     vim.api.nvim_set_hl(0, "Flash", { bg = "#e0af68", fg = "#1a1b26" })
+    vim.api.nvim_set_hl(0, "CurrentCursorLine", { bg = "#505050" })
 end
 
-local function set_flash_winhl(win)
+local FlashRule = "CursorLine:Flash"
+local CurrentCLRule = "CursorLine:CurrentCursorLine"
+
+local function set_winhl_rule(win, rule)
     if not vim.api.nvim_win_is_valid(win) then
         return
     end
 
     local prev = vim.wo[win].winhighlight
-    local flash = prev .. (prev ~= "" and "," or "") .. "CursorLine:Flash"
+    local flash = prev .. (prev ~= "" and "," or "") .. rule
     vim.wo[win].winhighlight = flash
 end
 
-local function clear_flash_winhl(win)
+local function clear_winhl_rule(win, rule)
     if not vim.api.nvim_win_is_valid(win) then
         return
     end
 
     local prev = vim.wo[win].winhighlight
-    vim.wo[win].winhighlight = string.gsub(prev, "CursorLine:Flash", "")
+    vim.wo[win].winhighlight = string.gsub(prev, ",?" .. rule .. ",?", "")
 end
 
 
 set_hls()
 vim.api.nvim_create_autocmd("ColorScheme", { callback = set_hls })
 
-vim.api.nvim_create_autocmd("WinEnter", {
+vim.api.nvim_create_autocmd({"VimEnter", "WinEnter"}, {
     callback = function()
         local win = vim.api.nvim_get_current_win()
 
-        set_flash_winhl(win)
+        set_winhl_rule(win, CurrentCLRule)
+        set_winhl_rule(win, FlashRule)
 
-        -- Restore after short time, producing a flash effect
-        vim.defer_fn(function() clear_flash_winhl(win) end, 200)
+        -- Remove flash rule after a short time, producing a flash effect
+        vim.defer_fn(function() clear_winhl_rule(win, FlashRule) end, 200)
+    end,
+})
+
+vim.api.nvim_create_autocmd("WinLeave", {
+    callback = function()
+        local win = vim.api.nvim_get_current_win()
+        clear_winhl_rule(win, CurrentCLRule)
     end,
 })
 
 vim.api.nvim_create_autocmd("BufLeave", {
     callback = function()
         local win = vim.api.nvim_get_current_win()
-        clear_flash_winhl(win)
+        clear_winhl_rule(win, FlashRule)
     end,
 })

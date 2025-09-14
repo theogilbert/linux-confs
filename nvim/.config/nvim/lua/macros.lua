@@ -28,6 +28,11 @@ local function set_winhl_rule(win, rule)
     end
 
     local prev = vim.wo[win].winhighlight
+
+    if string.find(prev, rule, 1, true) then
+        return  -- Rule already present
+    end
+
     local flash = prev .. (prev ~= "" and "," or "") .. rule
     vim.wo[win].winhighlight = flash
 end
@@ -38,7 +43,9 @@ local function clear_winhl_rule(win, rule)
     end
 
     local prev = vim.wo[win].winhighlight
-    vim.wo[win].winhighlight = string.gsub(prev, ",?" .. rule .. ",?", "")
+
+    local new_rule = string.gsub(prev, ",?" .. rule .. ",?", "")
+    vim.wo[win].winhighlight = new_rule
 end
 
 

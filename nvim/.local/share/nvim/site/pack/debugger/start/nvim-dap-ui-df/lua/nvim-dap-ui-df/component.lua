@@ -1,5 +1,5 @@
 local config = require("dapui.config")
-local table_fmt = require("nvim-dap-ui-df.table")
+local table_fmt = require("utilities.table")
 
 ---@param client dapui.DAPClient
 local component = function(client, send_ready)
@@ -48,12 +48,13 @@ local component = function(client, send_ready)
                 " " .. expr .. "\n",
             })
 
+            local displayed_text = error_msg
             if success then
-                formatted_result = evaluate_expression(client, frame_id, expr)
-                canvas:write(formatted_result)
-            else
-                canvas:write(error_msg)
+                local formatted_result, err = evaluate_expression(client, frame_id, expr)
+                displayed_text = err or formatted_result
             end
+
+            canvas:write(displayed_text)
 
             canvas:add_mapping("edit", function()
                 editing = true
@@ -98,7 +99,8 @@ function evaluate_expression(client, frame_id, expr)
     end
 
     evaluated = evaluated.result:gsub('\\n', '\n'):sub(2, -2)
-    return table_fmt.format_csv(evaluated)
+    local table, err = table_fmt.from_csv(evaluated)
+    return table.text, err
 end
 
 return component

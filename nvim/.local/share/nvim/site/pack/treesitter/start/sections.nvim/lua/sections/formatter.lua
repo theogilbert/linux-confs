@@ -76,9 +76,9 @@ M.format = function(sections, show_private)
     return lines
 end
 
-local function get_nth_section(sections, n)
+local function get_nth_section(sections, n, consider_private)
     local cfg = config.get_config()
-    local sequence = unwrap_sections_into_sequence(sections, cfg)
+    local sequence = unwrap_sections_into_sequence(sections, consider_private, cfg)
 
     if n > #sequence then
         return nil
@@ -87,8 +87,8 @@ local function get_nth_section(sections, n)
     return sequence[n].value
 end
 
-M.get_section_pos = function(sections, section_num)
-    local section = get_nth_section(sections, section_num)
+M.get_section_pos = function(sections, section_num, consider_private)
+    local section = get_nth_section(sections, section_num, consider_private)
     if section ~= nil then
         return section.position
     end

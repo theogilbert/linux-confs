@@ -214,7 +214,7 @@ describe("should get section pos", function()
             },
         }
 
-        local section_pos = formatter.get_section_pos(sections, 2)
+        local section_pos = formatter.get_section_pos(sections, 2, true)
 
         assert.are.same({ 5, 1 }, section_pos)
     end)
@@ -241,8 +241,29 @@ describe("should get section pos", function()
             },
         }
 
-        local section_pos = formatter.get_section_pos(sections, 2)
+        local section_pos = formatter.get_section_pos(sections, 2, true)
 
         assert.are.same({ 3, 1 }, section_pos)
+    end)
+    it("should retrieve correct position of section when private section hidden", function()
+        local sections = {
+            {
+                name = "First header",
+                type = "header",
+                position = { 1, 1 },
+                private = true,
+                children = {},
+            },
+            {
+                name = "Second header",
+                type = "header",
+                position = { 2, 1 },
+                children = {},
+            },
+        }
+
+        local section_pos = formatter.get_section_pos(sections, 1, false)
+
+        assert.are.same({ 2, 1 }, section_pos)
     end)
 end)

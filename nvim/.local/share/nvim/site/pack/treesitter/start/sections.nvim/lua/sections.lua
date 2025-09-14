@@ -102,7 +102,7 @@ local function select_section()
         return
     end
 
-    local section_pos = formatter.get_section_pos(info.sections, section_number)
+    local section_pos = formatter.get_section_pos(info.sections, section_number, info.show_private)
     if section_pos == nil then
         vim.notify("Failed to select section: could not retrieve section position", vim.log.levels.ERROR)
         return

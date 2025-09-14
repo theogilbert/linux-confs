@@ -123,6 +123,7 @@ wk.add({
 	{ "<leader>e", desc = "File [E]xplorer" },
 	{ "<leader>O", desc = "Toggle [O]ptions" },
 	{ "<leader>d", desc = "[D]ebugger actions" },
+	{ "<leader>dp", desc = "[D]ebugger panes" },
 	{ "<leader>l", desc = "[L]SP actions" },
 	{ "<leader>t", desc = "[T]ests actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },

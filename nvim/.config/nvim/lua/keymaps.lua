@@ -70,10 +70,10 @@ vim.keymap.set("n", "<leader>sGc", fzflua.git_bcommits, { desc = "[S]earch [G]it
 vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it buffer [B]lame" })
 
 local session = require("session")
-vim.keymap.set("n", "<leader>vSl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
-vim.keymap.set("n", "<leader>vSc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
+vim.keymap.set("n", "<leader>vsl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
+vim.keymap.set("n", "<leader>vsc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
 
-vim.keymap.set("v", "<leader>vs", function()
+vim.keymap.set("v", "<leader>vS", function()
   -- Substitute selected text in the whole buffer
   vim.cmd('normal! "vy')
   local escaped = vim.fn.escape(vim.fn.getreg("v"), [[\/]])

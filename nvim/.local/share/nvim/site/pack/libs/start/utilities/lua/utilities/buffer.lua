@@ -50,6 +50,7 @@ M.find_one_by_filetype = function(target_filetype)
 end
 
 M.focus_filetype = function(target_filetype)
+    local win_id = M.find_one_by_filetype(target_filetype)
     if win_id ~= nil and vim.api.nvim_win_is_valid(win_id) then
         vim.api.nvim_set_current_win(win_id)
     end

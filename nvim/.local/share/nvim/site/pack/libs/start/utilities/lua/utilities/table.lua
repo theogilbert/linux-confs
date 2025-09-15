@@ -1,7 +1,7 @@
 local M = {}
 
 local center = function(text, width)
-    local rough_whitespace_count = (width - #text) / 2
+    local rough_whitespace_count = (width - vim.api.nvim_strwidth(text)) / 2
     local before_len = math.floor(rough_whitespace_count)
     local after_len = math.ceil(rough_whitespace_count)
     return string.rep(' ', before_len) .. text .. string.rep(' ', after_len)
@@ -107,13 +107,22 @@ end
 local update_cols_widths = function(columns, cols_width)
     for col_num, col in ipairs(columns) do
         if cols_width[col_num] == nil then
-            cols_width[col_num] = 0
+            cols_width[col_num] = 2
         end
 
-        cols_width[col_num] = math.max(cols_width[col_num], vim.api.nvim_strwidth(col))
+        cols_width[col_num] = math.max(cols_width[col_num], vim.api.nvim_strwidth(col) + 2)
     end
 
     return cols_width
+end
+
+local function build_header_separator_line(cols_width)
+    local line = "├"
+    for col_num, col_width in ipairs(cols_width) do
+        local col_sep = col_num < #cols_width and "┼" or ""
+        line = line .. string.rep("─", col_width) .. col_sep
+    end
+    return line .. "┤\n"
 end
 
 
@@ -168,9 +177,12 @@ function M.from_structured_data(lines)
             table.insert(centered_cells, centered)
         end
 
-        local formatted_line = '│ ' .. table.concat(centered_cells, ' │ ') .. ' │\n'
+        local formatted_line = '│' .. table.concat(centered_cells, '│') .. '│\n'
         table.insert(formatted_lines, formatted_line)
     end
+
+    local separator = build_header_separator_line(cols_width)
+    table.insert(formatted_lines, 2, separator)
 
     return {
         lines = lines,

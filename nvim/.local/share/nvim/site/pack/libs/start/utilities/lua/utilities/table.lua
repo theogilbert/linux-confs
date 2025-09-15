@@ -129,13 +129,15 @@ end
 ---Creates a new formatted table object.
 ---
 ---@param csv_text string A textual CSV content, using comma (`,`) as separator.
+---@param header_lines integer|nil How many lines should be considered part of the header.
+---Defaults to 1.
 ---@return table FormattedTable A table with the following fields:
 ---  - `lines` (table): The structured input data, in the form of a table whose elements
 ---     represent a line. Each line is itself a table where each element is a cell.
 ---  - `columns_width` (table): The width of each column of the table.
 ---  - `text` (table): The formatted text of the table, in the form of a table of textual lines.
 ---@return string|nil err: Error message if parsing failed, or nil on success.
-function M.from_csv(csv_text)
+function M.from_csv(csv_text, header_lines)
     local lines = {}
 
     for line in csv_text:gmatch("[^\n]+") do
@@ -146,7 +148,7 @@ function M.from_csv(csv_text)
         table.insert(lines, cols)
     end
 
-    return M.from_structured_data(lines)
+    return M.from_structured_data(lines, header_lines)
 end
 
 ---Creates a new formatted table object.
@@ -154,11 +156,14 @@ end
 ---@param lines table The structured data from which to create the formatted table.
 ---       This table should contain rows, where each row is itself a table containing multiple values.
 ---       All rows should contain the same number of elements.
+---@param header_lines integer|nil How many lines should be considered part of the header.
+---Defaults to 1.
 ---@return table FormattedTable A table with the following fields:
 ---  - `lines` (table): The input structure data
 ---  - `columns_width` (table): The width of each column of the table.
 ---  - `text` (table): The formatted text of the table, in the form of a table of textual lines.
-function M.from_structured_data(lines)
+function M.from_structured_data(lines, header_lines)
+    header_lines = header_lines ~= nil and header_lines or 1
     -- First, we need to detect the width of each column
     -- so that all rows for a given column are written over
     -- the same number of characters, without truncating any
@@ -181,8 +186,10 @@ function M.from_structured_data(lines)
         table.insert(formatted_lines, formatted_line)
     end
 
-    local separator = build_header_separator_line(cols_width)
-    table.insert(formatted_lines, 2, separator)
+    if header_lines > 0 then
+        local separator = build_header_separator_line(cols_width)
+        table.insert(formatted_lines, header_lines + 1, separator)
+    end
 
     return {
         lines = lines,

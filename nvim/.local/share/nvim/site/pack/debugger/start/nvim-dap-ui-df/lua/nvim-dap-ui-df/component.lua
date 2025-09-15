@@ -1,6 +1,47 @@
 local config = require("dapui.config")
 local table_fmt = require("utilities.table")
 
+local function evaluate_expression(client, frame_id, expr)
+    local success, evaluated = pcall(
+        client.request.evaluate,
+        { context = "watch", expression = expr, frameId = frame_id }
+    )
+
+    if not success then
+        return "", vim.inspect(evaluated)
+    end
+
+    local lines = evaluated.result:gsub('\\n', '\n'):sub(2, -2)
+    return lines, nil
+end
+
+local function fetch_and_format_df(client, frame_id, df_expr)
+    -- TODO make this configurable
+    local df_data, err = evaluate_expression(
+        client, frame_id, df_expr .. ".head(500).to_csv()"
+    )
+
+    if err ~= nil then
+        return "", err
+    end
+
+    local dtypes_expr = "','.join([" .. df_expr .. ".index.dtype.name, *[" .. df_expr .. "[col].dtype.name for col in " .. df_expr .. ".columns]])"
+    local df_dtypes, dtypes_err = evaluate_expression(
+        client, frame_id, dtypes_expr
+    )
+
+    if dtypes_err ~= nil then
+        return "", dtypes_err
+    end
+
+
+    local data_first_eol = df_data:find("\n")
+    local lines = df_data:sub(1, data_first_eol) .. df_dtypes .. "\n" .. df_data:sub(data_first_eol + 1)
+
+    local table, fmt_err = table_fmt.from_csv(lines, 2)
+    return table.text, fmt_err
+end
+
 ---@param client dapui.DAPClient
 local component = function(client, send_ready)
     local running = false
@@ -50,7 +91,7 @@ local component = function(client, send_ready)
 
             local displayed_text = error_msg
             if success then
-                local formatted_result, err = evaluate_expression(client, frame_id, expr)
+                local formatted_result, err = fetch_and_format_df(client, frame_id, expr)
                 displayed_text = err or formatted_result
             end
 
@@ -86,21 +127,5 @@ function check_expression(client, frame_id, expr)
     return true, ""
 end
 
-function evaluate_expression(client, frame_id, expr)
-    -- TODO make this configurable
-    formatted_expr = expr .. ".head(500).to_csv()"
-    success, evaluated = pcall(
-        client.request.evaluate,
-        { context = "watch", expression = formatted_expr, frameId = frame_id }
-    )
-
-    if not success then
-        return vim.inspect(evaluated)
-    end
-
-    evaluated = evaluated.result:gsub('\\n', '\n'):sub(2, -2)
-    local table, err = table_fmt.from_csv(evaluated)
-    return table.text, err
-end
 
 return component

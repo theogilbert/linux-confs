@@ -17,6 +17,8 @@ dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, 
     end, 50)
 end
 
+vim.fn.sign_define('DapBreakpoint', {text='🛑', texthl='', linehl='', numhl=''})
+
 dap.adapters.python = function(cb, config)
   if config.request == 'attach' then
     ---@diagnostic disable-next-line: undefined-field

@@ -44,7 +44,10 @@ local function clear_winhl_rule(win, rule)
 
     local prev = vim.wo[win].winhighlight
 
-    local new_rule = string.gsub(prev, ",?" .. rule .. ",?", "")
+    local new_rule = string.gsub(prev, rule, "")
+    new_rule = string.gsub(new_rule, "^,", "")
+    new_rule = string.gsub(new_rule, ",$", "")
+    new_rule = string.gsub(new_rule, ",,", ",")
     vim.wo[win].winhighlight = new_rule
 end
 

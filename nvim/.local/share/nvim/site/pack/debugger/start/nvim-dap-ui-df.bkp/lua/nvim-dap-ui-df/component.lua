@@ -1,6 +1,9 @@
 local config = require("dapui.config")
 local table_fmt = require("utilities.table")
 
+-- TODO separate column names from data lines
+-- TODO add column dtype below column name
+
 local function evaluate_expression(client, frame_id, expr)
     local success, evaluated = pcall(
         client.request.evaluate,
@@ -101,6 +104,8 @@ local component = function(client, send_ready)
                 editing = true
                 send_ready()
             end, { line = 0 })
+            -- TODO add mapping on all lines displaying the df
+            -- TODO sort by selected column with shortcut
 
         end
     }

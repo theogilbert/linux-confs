@@ -45,7 +45,6 @@ dap.adapters.python = function(cb, config)
   end
 end
 
-local dap = require('dap')
 
 local python_cfg_preset = {
     type = 'python';
@@ -110,10 +109,19 @@ dapui.setup({
         build_pane_layout("watches"),
         build_pane_layout("stacks"),
         build_pane_layout("breakpoints"),
-        build_pane_layout("dataframe"),
     },
 })
-require('nvim-dap-ui-df').setup()
+
+local dapui_df = require('nvim-dap-ui-df')
+dapui_df.setup()
+
+-- Setup the new nvim-dap-df-pane plugin
+local dap_df_pane = require('nvim-dap-df-pane')
+dap_df_pane.setup({
+  position = "bottom",
+  size = 15,
+  default_text = "No DAP session is currently running"
+})
 
 function M.set_bottom_pane(scope)
     dapui.close()
@@ -138,8 +146,11 @@ M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')
 end
 M.show_dataframe_pane = function()
-    M.set_bottom_pane('dataframe')
-    winutils.focus_filetype('dapui_dataframe')
+
+    dapui_df.toggle_pane()
+
+    -- M.set_bottom_pane('dataframe')
+    -- winutils.focus_filetype('dapui_dataframe')
 end
 
 

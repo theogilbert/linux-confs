@@ -190,7 +190,7 @@ local function setup_autocommands(opts)
   end
 
   if opts.hijack_directories.enable then
-    create_nvim_tree_autocmd({ "BufEnter", "BufNewFile" }, { callback = M.open_on_directory })
+    create_nvim_tree_autocmd({ "BufEnter", "BufNewFile" }, { callback = M.open_on_directory, nested = true })
   end
 
   if opts.view.centralize_selection then
@@ -236,6 +236,20 @@ local function setup_autocommands(opts)
       end,
     })
   end
+
+  -- Handles event dispatch when tree is closed by `:q`
+  create_nvim_tree_autocmd("WinClosed", {
+    pattern = "*",
+    ---@param ev vim.api.keyset.create_autocmd.callback_args
+    callback = function(ev)
+      if not vim.api.nvim_buf_is_valid(ev.buf) then
+        return
+      end
+      if vim.api.nvim_get_option_value("filetype", { buf = ev.buf }) == "NvimTree" then
+        require("nvim-tree.events")._dispatch_on_tree_close()
+      end
+    end,
+  })
 end
 
 local DEFAULT_OPTS = { -- BEGIN_DEFAULT_OPTS
@@ -259,6 +273,7 @@ local DEFAULT_OPTS = { -- BEGIN_DEFAULT_OPTS
   view = {
     centralize_selection = false,
     cursorline = true,
+    cursorlineopt = "both",
     debounce_delay = 15,
     side = "left",
     preserve_window_proportions = false,
@@ -323,7 +338,10 @@ local DEFAULT_OPTS = { -- BEGIN_DEFAULT_OPTS
       hidden_placement = "after",
       diagnostics_placement = "signcolumn",
       bookmarks_placement = "signcolumn",
-      padding = " ",
+      padding = {
+        icon = " ",
+        folder_arrow = " ",
+      },
       symlink_arrow = " ➛ ",
       show = {
         file = true,
@@ -402,6 +420,7 @@ local DEFAULT_OPTS = { -- BEGIN_DEFAULT_OPTS
       warning = "",
       error = "",
     },
+    diagnostic_opts = false,
   },
   modified = {
     enable = false,

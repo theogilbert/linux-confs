@@ -254,7 +254,6 @@ local function close(tabpage)
           return
         end
       end
-      events._dispatch_on_tree_close()
       return
     end
   end
@@ -270,9 +269,12 @@ function M.close_all_tabs()
   end
 end
 
-function M.close()
+---@param tabpage integer|nil
+function M.close(tabpage)
   if M.View.tab.sync.close then
     M.close_all_tabs()
+  elseif tabpage then
+    close(tabpage)
   else
     M.close_this_tab_only()
   end
@@ -286,6 +288,7 @@ function M.open(options)
 
   local profile = log.profile_start("view open")
 
+  events._dispatch_on_tree_pre_open()
   create_buffer()
   open_window()
   M.resize()
@@ -326,14 +329,7 @@ local function grow()
     local count = vim.fn.strchars(l)
     -- also add space for right-aligned icons
     local extmarks = vim.api.nvim_buf_get_extmarks(M.get_bufnr(), ns_id, { line_nr, 0 }, { line_nr, -1 }, { details = true })
-    for _, extmark in ipairs(extmarks) do
-      local virt_texts = extmark[4].virt_text
-      if virt_texts then
-        for _, virt_text in ipairs(virt_texts) do
-          count = count + vim.fn.strchars(virt_text[1])
-        end
-      end
-    end
+    count = count + utils.extmarks_length(extmarks)
     if resizing_width < count then
       resizing_width = count
     end
@@ -411,6 +407,7 @@ end
 ---@param opts OpenInWinOpts|nil
 function M.open_in_win(opts)
   opts = opts or { hijack_current_buf = true, resize = true }
+  events._dispatch_on_tree_pre_open()
   if opts.winid and vim.api.nvim_win_is_valid(opts.winid) then
     vim.api.nvim_set_current_win(opts.winid)
   end
@@ -422,6 +419,7 @@ function M.open_in_win(opts)
     M.reposition_window()
     M.resize()
   end
+  events._dispatch_on_tree_open()
 end
 
 function M.abandon_current_window()
@@ -626,6 +624,7 @@ function M.setup(opts)
   M.View.tab = opts.tab
   M.View.preserve_window_proportions = options.preserve_window_proportions
   M.View.winopts.cursorline = options.cursorline
+  M.View.winopts.cursorlineopt = options.cursorlineopt
   M.View.winopts.number = options.number
   M.View.winopts.relativenumber = options.relativenumber
   M.View.winopts.signcolumn = options.signcolumn

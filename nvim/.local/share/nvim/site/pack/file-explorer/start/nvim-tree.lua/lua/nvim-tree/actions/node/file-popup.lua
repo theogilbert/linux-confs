@@ -50,13 +50,16 @@ local function setup_window(node)
     file_path = node.absolute_path,
   }
   local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].bufhidden = "wipe"
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
   vim.api.nvim_win_set_buf(winnr, bufnr)
 end
 
 function M.close_popup()
   if current_popup ~= nil then
-    vim.api.nvim_win_close(current_popup.winnr, true)
+    if vim.api.nvim_win_is_valid(current_popup.winnr) then
+      vim.api.nvim_win_close(current_popup.winnr, true)
+    end
     vim.cmd("augroup NvimTreeRemoveFilePopup | au! CursorMoved | augroup END")
 
     current_popup = nil

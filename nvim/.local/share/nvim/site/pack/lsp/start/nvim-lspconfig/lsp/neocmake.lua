@@ -1,6 +1,6 @@
 ---@brief
 ---
---- https://github.com/Decodetalkers/neocmakelsp
+--- https://github.com/neocmakelsp/neocmakelsp
 ---
 --- CMake LSP Implementation
 ---
@@ -15,6 +15,8 @@
 ---   capabilities = capabilities,
 --- })
 --- ```
+
+---@type vim.lsp.Config
 return {
   cmd = { 'neocmakelsp', '--stdio' },
   filetypes = { 'cmake' },

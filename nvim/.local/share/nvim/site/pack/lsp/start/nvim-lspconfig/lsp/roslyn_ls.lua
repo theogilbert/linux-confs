@@ -22,10 +22,12 @@
 local uv = vim.uv
 local fs = vim.fs
 
+local group = vim.api.nvim_create_augroup('lspconfig.roslyn_ls', { clear = true })
+
 ---@param client vim.lsp.Client
 ---@param target string
 local function on_init_sln(client, target)
-  vim.notify('Initializing: ' .. target, vim.log.levels.INFO, { title = 'roslyn_ls' })
+  vim.notify('Initializing: ' .. target, vim.log.levels.TRACE, { title = 'roslyn_ls' })
   ---@diagnostic disable-next-line: param-type-mismatch
   client:notify('solution/open', {
     solution = vim.uri_from_fname(target),
@@ -35,7 +37,7 @@ end
 ---@param client vim.lsp.Client
 ---@param project_files string[]
 local function on_init_project(client, project_files)
-  vim.notify('Initializing: projects', vim.log.levels.INFO, { title = 'roslyn_ls' })
+  vim.notify('Initializing: projects', vim.log.levels.TRACE, { title = 'roslyn_ls' })
   ---@diagnostic disable-next-line: param-type-mismatch
   client:notify('project/open', {
     projects = vim.tbl_map(function(file)
@@ -44,20 +46,27 @@ local function on_init_project(client, project_files)
   })
 end
 
+---@param client vim.lsp.Client
+local function refresh_diagnostics(client)
+  local buffers = vim.lsp.get_buffers_by_client_id(client.id)
+  for _, buf in ipairs(buffers) do
+    if vim.api.nvim_buf_is_loaded(buf) then
+      client:request(
+        vim.lsp.protocol.Methods.textDocument_diagnostic,
+        { textDocument = vim.lsp.util.make_text_document_params(buf) },
+        nil,
+        buf
+      )
+    end
+  end
+end
+
 local function roslyn_handlers()
   return {
     ['workspace/projectInitializationComplete'] = function(_, _, ctx)
       vim.notify('Roslyn project initialization complete', vim.log.levels.INFO, { title = 'roslyn_ls' })
-
-      local buffers = vim.lsp.get_buffers_by_client_id(ctx.client_id)
-      for _, buf in ipairs(buffers) do
-        vim.lsp.util._refresh('textDocument/diagnostic', { bufnr = buf })
-      end
-    end,
-    ['workspace/_roslyn_projectHasUnresolvedDependencies'] = function()
-      vim.notify('Detected missing dependencies. Run `dotnet restore` command.', vim.log.levels.ERROR, {
-        title = 'roslyn_ls',
-      })
+      local client = assert(vim.lsp.get_client_by_id(ctx.client_id))
+      refresh_diagnostics(client)
       return vim.NIL
     end,
     ['workspace/_roslyn_projectNeedsRestore'] = function(_, result, ctx)
@@ -88,7 +97,7 @@ local function roslyn_handlers()
   }
 end
 
----@type vim.lsp.ClientConfig
+---@type vim.lsp.Config
 return {
   name = 'roslyn_ls',
   offset_encoding = 'utf-8',
@@ -102,6 +111,31 @@ return {
   },
   filetypes = { 'cs' },
   handlers = roslyn_handlers(),
+
+  commands = {
+    ['roslyn.client.completionComplexEdit'] = function(command, ctx)
+      local client = assert(vim.lsp.get_client_by_id(ctx.client_id))
+      local args = command.arguments or {}
+      local uri, edit = args[1], args[2]
+
+      if uri and edit and edit.newText and edit.range then
+        local workspace_edit = {
+          changes = {
+            [uri.uri] = {
+              {
+                range = edit.range,
+                newText = edit.newText,
+              },
+            },
+          },
+        }
+        vim.lsp.util.apply_workspace_edit(workspace_edit, client.offset_encoding)
+      else
+        vim.notify('roslyn_ls: completionComplexEdit args not understood: ' .. vim.inspect(args), vim.log.levels.WARN)
+      end
+    end,
+  },
+
   root_dir = function(bufnr, cb)
     local bufname = vim.api.nvim_buf_get_name(bufnr)
     -- don't try to find sln or csproj for files from libraries
@@ -109,7 +143,7 @@ return {
     if not bufname:match('^' .. fs.joinpath('/tmp/MetadataAsSource/')) then
       -- try find solutions root first
       local root_dir = fs.root(bufnr, function(fname, _)
-        return fname:match('%.sln$') ~= nil
+        return fname:match('%.sln[x]?$') ~= nil
       end)
 
       if not root_dir then
@@ -130,7 +164,7 @@ return {
 
       -- try load first solution we find
       for entry, type in fs.dir(root_dir) do
-        if type == 'file' and vim.endswith(entry, '.sln') then
+        if type == 'file' and (vim.endswith(entry, '.sln') or vim.endswith(entry, '.slnx')) then
           on_init_sln(client, fs.joinpath(root_dir, entry))
           return
         end
@@ -144,6 +178,23 @@ return {
       end
     end,
   },
+
+  on_attach = function(client, bufnr)
+    -- avoid duplicate autocmds for same buffer
+    if vim.api.nvim_get_autocmds({ buffer = bufnr, group = group })[1] then
+      return
+    end
+
+    vim.api.nvim_create_autocmd({ 'BufWritePost', 'InsertLeave' }, {
+      group = group,
+      buffer = bufnr,
+      callback = function()
+        refresh_diagnostics(client)
+      end,
+      desc = 'roslyn_ls: refresh diagnostics',
+    })
+  end,
+
   capabilities = {
     -- HACK: Doesn't show any diagnostics if we do not set this to true
     textDocument = {

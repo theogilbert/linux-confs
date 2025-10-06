@@ -1,5 +1,7 @@
 from io import StringIO
+import json
 from pathlib import Path
+import re
 from typing import Callable, Dict, List, Optional, Union
 
 import pytest
@@ -9,6 +11,7 @@ from _pytest.fixtures import FixtureLookupErrorRepr
 
 from .base import NeotestAdapter, NeotestError, NeotestResult, NeotestResultStatus
 
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 class PytestNeotestAdapter(NeotestAdapter):
     def __init__(self, emit_parameterized_ids: bool):
@@ -130,7 +133,7 @@ class NeotestResultCollector:
                 errors.append({"message": msg_prefix + exc_repr, "line": None})
             # Test failed internally
             elif isinstance(exc_repr, ExceptionRepr):
-                error_message = exc_repr.reprcrash.message  # type: ignore
+                error_message = ANSI_ESCAPE.sub('', exc_repr.reprcrash.message)  # type: ignore
                 error_line = None
                 for traceback_entry in reversed(call.excinfo.traceback):
                     if str(traceback_entry.path) == abs_path:
@@ -203,6 +206,17 @@ class NeotestDebugpyPlugin:
             py_db.stop_on_unhandled_exception(py_db, thread, additional_info, excinfo)
         finally:
             additional_info.is_tracing -= 1
+
+
+class TestNameTemplateExtractor:
+    @staticmethod
+    def pytest_collection_modifyitems(config):
+        config = {"python_functions": config.getini("python_functions")[0]}
+        print(f"\n{json.dumps(config)}\n")
+
+
+def extract_test_name_template(args):
+    pytest.main(args=["-k", "neotest_none"], plugins=[TestNameTemplateExtractor])
 
 
 def collect(args):

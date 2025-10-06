@@ -15,7 +15,7 @@
 [![LuaRocks](https://img.shields.io/luarocks/v/mfussenegger/nvim-dap?logo=lua&color=purple)](https://luarocks.org/modules/mfussenegger/nvim-dap)
 
 - Install nvim-dap like any other Neovim plugin:
-  - `git clone https://github.com/mfussenegger/nvim-dap.git ~/.config/nvim/pack/plugins/start/nvim-dap`
+  - `git clone https://codeberg.org/mfussenegger/nvim-dap.git ~/.config/nvim/pack/plugins/start/nvim-dap`
   - Or with [vim-plug][11]: `Plug 'mfussenegger/nvim-dap'`
   - Or with [packer.nvim][12]: `use 'mfussenegger/nvim-dap'`
 - Generate the documentation for nvim-dap using `:helptags ALL` or
@@ -24,8 +24,8 @@
 Supported Neovim versions:
 
 - Latest nightly
-- 0.10.x (Recommended)
-- 0.9.5
+- 0.11.x (Recommended)
+- 0.10.4
 
 You'll need to install and configure a debug adapter per language. See
 
@@ -38,13 +38,41 @@ You'll need to install and configure a debug adapter per language. See
 
 A typical debug flow consists of:
 
-- Setting breakpoints via `:lua require'dap'.toggle_breakpoint()`.
-- Launching debug sessions and resuming execution via `:lua require'dap'.continue()`.
-- Stepping through code via `:lua require'dap'.step_over()` and `:lua require'dap'.step_into()`.
-- Inspecting the state via the built-in REPL: `:lua require'dap'.repl.open()`
-  or using the widget UI (`:help dap-widgets`)
+- Setting breakpoints via `:DapToggleBreakpoint` or `:lua
+  require'dap'.toggle_breakpoint()`.
+- Launching debug sessions and resuming execution via `:DapNew` and
+  `:DapContinue` or `:lua require'dap'.continue()`.
+- Stepping through code via `:DapStepOver`, `:DapStepInto` or the corresponding
+  functions `:lua require'dap'.step_over()` and `:lua
+  require'dap'.step_into()`.
+- Inspecting the state:
+  - Via the built-in REPL: `:lua require'dap'.repl.open()`
+    - Try typing an expression followed by ENTER to evaluate it.
+    - Try commands like `.help`, `.frames`, `.threads`.
+    - Variables with structure can be expanded and collapsed with ENTER on the
+      corresponding line.
+  - Via the widget UI (`:help dap-widgets`). Typically you'd inspect values,
+    threads, stacktrace ad-hoc when needed instead of showing the information
+    all the time, but you can also create sidebars for a permanent display
+  - Via UI extensions:
+    - IDE like: [nvim-dap-ui][15]
+    - Middle ground between the IDE like nvim-dap-ui and the built-in widgets: [nvim-dap-view][nvim-dap-view]
+    - Show inline values: [nvim-dap-virtual-text][7]
 
 See [:help dap.txt](doc/dap.txt), `:help dap-mapping` and `:help dap-api`.
+
+**Tip:**
+
+The arrow keys are good candidates for keymaps to step through code as their
+direction resembles the direction you'll step to.
+
+- Down: Step over
+- Right: Step into
+- Left: Step out
+- Up: Restart frame
+
+You can setup keymaps temporary during a debug session using event listeners.
+See `:help dap-listeners`.
 
 ## Supported languages
 
@@ -58,7 +86,7 @@ The Wiki is community maintained. If you got an adapter working that isn't
 listed yet, please extend the Wiki.
 
 Some debug adapters have [language specific
-extensions](https://github.com/mfussenegger/nvim-dap/wiki/Extensions#language-specific-extensions).
+extensions](https://codeberg.org/mfussenegger/nvim-dap/wiki/Extensions#language-specific-extensions).
 Using them over a manual configuration is recommended, as they're
 usually better maintained.
 
@@ -74,14 +102,9 @@ older version. Please update the wiki if you discover outdated examples.
   to extend the debugging experience. Either by improving the UI or by making
   it easier to debug parts of an application.
 
-  - Examples of UI/UX extensions are [nvim-dap-virtual-text][7] and [nvim-dap-ui][15]
-  - Examples for language specific extensions include [nvim-jdtls][8] and [nvim-dap-python][9]
-
-## Extensions
-
-All known extensions are listed in the [Wiki][10]. The wiki is community
-maintained. Please add new extensions if you built one or if you discovered one
-that's not listed.
+  All known extensions are listed in the [Wiki][10]. The wiki is community
+  maintained. Please add new extensions if you built one or if you discovered
+  one that's not listed.
 
 ## Non-Goals
 
@@ -137,14 +160,12 @@ time.
 
 [1]: https://neovim.io/
 [2]: https://github.com/puremourning/vimspector
-[5]: https://github.com/mfussenegger/nvim-dap/wiki/Debug-Adapter-installation
+[5]: https://codeberg.org/mfussenegger/nvim-dap/wiki/Debug-Adapter-installation
 [7]: https://github.com/theHamsta/nvim-dap-virtual-text
-[8]: https://github.com/mfussenegger/nvim-jdtls
-[9]: https://github.com/mfussenegger/nvim-dap-python
-[10]: https://github.com/mfussenegger/nvim-dap/wiki/Extensions
+[10]: https://codeberg.org/mfussenegger/nvim-dap/wiki/Extensions
 [11]: https://github.com/junegunn/vim-plug
 [12]: https://github.com/wbthomason/packer.nvim
 [13]: https://microsoft.github.io/debug-adapter-protocol/implementors/adapters/
 [15]: https://github.com/rcarriga/nvim-dap-ui
 [demo]: https://user-images.githubusercontent.com/38700/124292938-669a7100-db56-11eb-93b8-77b66994fc8a.gif
-
+[nvim-dap-view]: https://github.com/igorlfs/nvim-dap-view

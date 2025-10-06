@@ -1,4 +1,4 @@
-DAP client                                           *dap.txt*
+*dap.txt*                                         DAP client
 
 
 nvim-dap is a Debug Adapter Protocol client, or "debugger", or "debug-frontend".
@@ -34,7 +34,7 @@ Available debug adapters:
   https://microsoft.github.io/debug-adapter-protocol/implementors/adapters/
 
 Debug adapter configuration and installation instructions:
-  https://github.com/mfussenegger/nvim-dap/wiki/Debug-Adapter-installation
+  https://codeberg.org/mfussenegger/nvim-dap/wiki/Debug-Adapter-installation
 
 Debug Adapter Protocol:
   https://microsoft.github.io/debug-adapter-protocol/
@@ -53,12 +53,12 @@ so, how, you need to configure them via the `dap.adapters` table. The key of
 the table is an arbitrary name that debug adapters are looked up by when using
 a |dap-configuration|.
 
-For example, to register the `debugpy` debug adapter under the type `python` you
-can add the following entry:
+For example, to register the `debugpy` debug adapter you can add the following 
+entry:
 
 >lua
   local dap = require('dap')
-  dap.adapters.python = {
+  dap.adapters.debugpy = {
     type = 'executable';
     command = os.getenv('HOME') .. '/.virtualenvs/tools/bin/python';
     args = { '-m', 'debugpy.adapter' };
@@ -133,7 +133,7 @@ For `server` the following options are supported:
 
 For `pipe` the following options are supported:
 
-
+>
     pipe: string      -- Absolute path to the pipe file.
                       -- If `${pipe}` nvim-dap generates a temporary filename
                       -- that is intended for use with `executable`
@@ -249,7 +249,7 @@ For example:
     local dap = require('dap')
     dap.configurations.python = {
       {
-        type = 'python';
+        type = 'debugpy';
         request = 'launch';
         name = "Launch file";
         program = "${file}";
@@ -383,7 +383,7 @@ Inputs can be referenced with `${input:<id>}` placeholders.
       "version": "0.2.0",
       "configurations": [
           {
-              "type": "python",
+              "type": "debugpy",
               "request": "launch",
               "name": "Launch",
               "program": "${input:myPrompt}"
@@ -538,6 +538,7 @@ Stepping:
 - `DapStepInto`: Step into the current expression
 - `DapStepOut`: Step out of the current scope
 - `DapStepOver`: Step over the current line
+- `DapPause`: Pause the current thread or pick a thread to pause
 
 REPL:
 
@@ -587,15 +588,19 @@ The configuration values are set via `dap.defaults.fallback` (for global) or
   threads to be able to stop, you may want to set this to false.
   Defaults to true.
 
-- switchbuf. (string). Controls the behavior when jumping to a breakpoint.
-                       See |'switchbuf'|. Defaults to the global `'switchbuf'`
-                       setting.
+- switchbuf. (string|fun). Controls the behavior when jumping to a
+  breakpoint. See |'switchbuf'|. Defaults to the global `'switchbuf'` setting.
 
-                       nvim-dap provides an additional `usevisible` option
-                       that can be used to prevent jumps within the active
-                       window if a stopped event is within the visible region.
-                       Best used in combination with other options. For
-                       example: 'usevisible,usetab,uselast'
+  nvim-dap provides an additional `usevisible` option
+  that can be used to prevent jumps within the active
+  window if a stopped event is within the visible region.
+  Best used in combination with other options. For
+  example: 'usevisible,usetab,uselast'
+
+  For more complex use cases, nvim-dap allows overriding with a function. The
+  function receives 3 arguments: (bufnr, line, column). It has full control of
+  how Neovim should behave and it is not expected to return anything.
+
 
 - `on_output`. A function with two parameters: `session` and `output_event`:
   Overrides the default output handling with a custom handler.
@@ -624,8 +629,8 @@ Some more examples:
   local dap = require('dap')
   -- Use "tabnew" for all debug adapters
   dap.defaults.fallback.terminal_win_cmd = 'tabnew'
-  -- Except for python
-  dap.defaults.python.terminal_win_cmd = 'belowright new'
+  -- Except for debugpy
+  dap.defaults.debugpy.terminal_win_cmd = 'belowright new'
 
   dap.defaults.java.auto_continue_if_many_stopped = false
 
@@ -852,10 +857,10 @@ set_exception_breakpoints({filters}, {exceptionOptions})
     Or per config/adapter type:
 
 >lua
-        require('dap').defaults.python.exception_breakpoints = {'raised'}
+        require('dap').defaults.debugpy.exception_breakpoints = {'raised'}
 <
 
-    In this example `python` is the type. This is the same type used in
+    In this example `debugpy` is the type. This is the same type used in
     |dap-configuration| or the |dap-adapter| definition.
 
 
@@ -1294,9 +1299,10 @@ client.
 Currently there are:
 
 - `dap.listeners.on_config` (See |dap-listeners-on_config|)
+- `dap.listeners.on_session` (See |dap-listeners-on_session|)
 
 ==============================================================================
-ON_CONFIG EXTENSIONS API                              *dap-listeners-on_config*
+ON_CONFIG LISTENER                                    *dap-listeners-on_config*
 
 
 Plugins can pre-process the |dap-configuration| whenever a debug session
@@ -1312,7 +1318,7 @@ parameter and must return a |dap-configuration|.
 
 Before making modifications to the config you should copy it, to ensure you
 don't make permanent changes to a configuration stored within
-`dap.configrations.<filetype>` via mutations.
+`dap.configurations.<filetype>` via mutations.
 
 Example:
 >lua
@@ -1331,6 +1337,35 @@ should prefer using the `enrich_config` function available in |dap-adapter|.
 If you are not owning the adapter definition but the plugin's functionality is
 still specific to a limited selection of adapters, please make sure you're not
 messing with configurations used with adapters foreign to your plugin.
+
+==============================================================================
+ON_SESSION LISTENER                                  *dap-listeners-on_session*
+
+`on_session` listeners can be used to listen to session changes. Opposed to
+the initialize and terminated events from debug adapters - to which you
+could listen to using |dap-listeners| - `on_session` listeners are also called
+whenever the focused session changes. The full list of triggers is:
+
+- New sessions
+- Focused session changes
+- Last remaining session finishes
+
+A listener is a function with two parameters, the old session and the new
+session.
+
+To register a `on_session` listener, add an entry to the
+`dap.listeners.on_session` table. For example:
+>lua
+  local dap = require("dap")
+  dap.listeners.on_session["dummy-noop"] = function(old, new)
+    if new then
+      vim.print("New session: ", new.id)
+    end
+  end
+<
+As with other listeners, `dummy-noop` in the example above is an arbitrary
+name. Plugins should namespace those with their name to avoid conflicts with
+others.
 
 ==============================================================================
 PROVIDERS EXTENSIONS API                                       *dap-providers*

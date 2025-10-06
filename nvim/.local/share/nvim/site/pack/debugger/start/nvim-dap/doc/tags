@@ -9,6 +9,7 @@ dap-launch.json	dap.txt	/*dap-launch.json*
 dap-listeners	dap.txt	/*dap-listeners*
 dap-listeners-ext	dap.txt	/*dap-listeners-ext*
 dap-listeners-on_config	dap.txt	/*dap-listeners-on_config*
+dap-listeners-on_session	dap.txt	/*dap-listeners-on_session*
 dap-mappings	dap.txt	/*dap-mappings*
 dap-providers	dap.txt	/*dap-providers*
 dap-providers-configs	dap.txt	/*dap-providers-configs*

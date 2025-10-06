@@ -9,14 +9,17 @@
 --- npm i -g vscode-langservers-extracted
 --- ```
 ---
---- `vscode-eslint-language-server` provides an `EslintFixAll` command that can be used to format a document on save:
+--- The default `on_attach` config provides the `LspEslintFixAll` command that can be used to format a document on save:
 --- ```lua
---- vim.lsp.config('eslint', {
----   --- ...
+--- local base_on_attach = vim.lsp.config.eslint.on_attach
+--- vim.lsp.config("eslint", {
 ---   on_attach = function(client, bufnr)
+---     if not base_on_attach then return end
+---
+---     base_on_attach(client, bufnr)
 ---     vim.api.nvim_create_autocmd("BufWritePre", {
 ---       buffer = bufnr,
----       command = "EslintFixAll",
+---       command = "LspEslintFixAll",
 ---     })
 ---   end,
 --- })
@@ -27,10 +30,34 @@
 --- Messages handled in lspconfig: `eslint/openDoc`, `eslint/confirmESLintExecution`, `eslint/probeFailed`, `eslint/noLibrary`
 ---
 --- Additional messages you can handle: `eslint/noConfig`
+---
+--- ### Monorepo support
+---
+--- `vscode-eslint-language-server` supports monorepos by default. It will automatically find the config file corresponding to the package you are working on. You can use different configs in different packages.
+--- This works without the need of spawning multiple instances of `vscode-eslint-language-server`.
+--- You can use a different version of ESLint in each package, but it is recommended to use the same version of ESLint in all packages. The location of the ESLint binary will be determined automatically.
+---
+--- /!\ When using flat config files, you need to use them across all your packages in your monorepo, as it's a global setting for the server.
 
 local util = require 'lspconfig.util'
 local lsp = vim.lsp
 
+local eslint_config_files = {
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.cjs',
+  '.eslintrc.yaml',
+  '.eslintrc.yml',
+  '.eslintrc.json',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  'eslint.config.cjs',
+  'eslint.config.ts',
+  'eslint.config.mts',
+  'eslint.config.cts',
+}
+
+---@type vim.lsp.Config
 return {
   cmd = { 'vscode-eslint-language-server', '--stdio' },
   filetypes = {
@@ -43,13 +70,12 @@ return {
     'vue',
     'svelte',
     'astro',
+    'htmlangular',
   },
-  on_attach = function(client)
+  workspace_required = true,
+  on_attach = function(client, bufnr)
     vim.api.nvim_buf_create_user_command(0, 'LspEslintFixAll', function()
-      local bufnr = vim.api.nvim_get_current_buf()
-
-      client:exec_cmd({
-        title = 'Fix all Eslint errors for current buffer',
+      client:request_sync('workspace/executeCommand', {
         command = 'eslint.applyAllFixes',
         arguments = {
           {
@@ -57,30 +83,41 @@ return {
             version = lsp.util.buf_versions[bufnr],
           },
         },
-      }, { bufnr = bufnr })
+      }, nil, bufnr)
     end, {})
   end,
-  -- https://eslint.org/docs/user-guide/configuring/configuration-files#configuration-file-formats
   root_dir = function(bufnr, on_dir)
-    local root_file_patterns = {
-      '.eslintrc',
-      '.eslintrc.js',
-      '.eslintrc.cjs',
-      '.eslintrc.yaml',
-      '.eslintrc.yml',
-      '.eslintrc.json',
-      'eslint.config.js',
-      'eslint.config.mjs',
-      'eslint.config.cjs',
-      'eslint.config.ts',
-      'eslint.config.mts',
-      'eslint.config.cts',
-    }
+    -- The project root is where the LSP can be started from
+    -- As stated in the documentation above, this LSP supports monorepos and simple projects.
+    -- We select then from the project root, which is identified by the presence of a package
+    -- manager lock file.
+    local root_markers = { 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock' }
+    -- Give the root markers equal priority by wrapping them in a table
+    root_markers = vim.fn.has('nvim-0.11.3') == 1 and { root_markers, { '.git' } }
+      or vim.list_extend(root_markers, { '.git' })
+    -- We fallback to the current working directory if no project root is found
+    local project_root = vim.fs.root(bufnr, root_markers) or vim.fn.getcwd()
 
-    local fname = vim.api.nvim_buf_get_name(bufnr)
-    root_file_patterns = util.insert_package_json(root_file_patterns, 'eslintConfig', fname)
-    local root_dir = vim.fs.dirname(vim.fs.find(root_file_patterns, { path = fname, upward = true })[1])
-    on_dir(root_dir)
+    -- We know that the buffer is using ESLint if it has a config file
+    -- in its directory tree.
+    --
+    -- Eslint used to support package.json files as config files, but it doesn't anymore.
+    -- We keep this for backward compatibility.
+    local filename = vim.api.nvim_buf_get_name(bufnr)
+    local eslint_config_files_with_package_json =
+      util.insert_package_json(eslint_config_files, 'eslintConfig', filename)
+    local is_buffer_using_eslint = vim.fs.find(eslint_config_files_with_package_json, {
+      path = filename,
+      type = 'file',
+      limit = 1,
+      upward = true,
+      stop = vim.fs.dirname(project_root),
+    })[1]
+    if not is_buffer_using_eslint then
+      return
+    end
+
+    on_dir(project_root)
   end,
   -- Refer to https://github.com/Microsoft/vscode-eslint#settings-options for documentation.
   settings = {
@@ -106,7 +143,7 @@ return {
     -- This path is relative to the workspace folder (root dir) of the server instance.
     nodePath = '',
     -- use the workspace folder location or the file location (if no workspace folder is open) as the working directory
-    workingDirectory = { mode = 'location' },
+    workingDirectory = { mode = 'auto' },
     codeAction = {
       disableRuleComment = {
         enable = true,
@@ -130,18 +167,24 @@ return {
         name = vim.fn.fnamemodify(root_dir, ':t'),
       }
 
-      -- Support flat config
-      local flat_config_files = {
-        'eslint.config.js',
-        'eslint.config.mjs',
-        'eslint.config.cjs',
-        'eslint.config.ts',
-        'eslint.config.mts',
-        'eslint.config.cts',
-      }
+      -- Support flat config files
+      -- They contain 'config' in the file name
+      local flat_config_files = vim.tbl_filter(function(file)
+        return file:match('config')
+      end, eslint_config_files)
 
       for _, file in ipairs(flat_config_files) do
-        if vim.fn.filereadable(root_dir .. '/' .. file) == 1 then
+        local found_files = vim.fn.globpath(root_dir, file, true, true)
+
+        -- Filter out files inside node_modules
+        local filtered_files = {}
+        for _, found_file in ipairs(found_files) do
+          if string.find(found_file, '[/\\]node_modules[/\\]') == nil then
+            table.insert(filtered_files, found_file)
+          end
+        end
+
+        if #filtered_files > 0 then
           config.settings.experimental = config.settings.experimental or {}
           config.settings.experimental.useFlatConfig = true
           break

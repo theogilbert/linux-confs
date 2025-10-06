@@ -6,9 +6,10 @@
 --- ```sh
 --- npm install -g brighterscript
 --- ```
+
+---@type vim.lsp.Config
 return {
   cmd = { 'bsc', '--lsp', '--stdio' },
   filetypes = { 'brs' },
-  single_file_support = true,
   root_markers = { 'makefile', 'Makefile', '.git' },
 }

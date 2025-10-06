@@ -77,7 +77,7 @@ local js_watch_query = [[
 ---@alias neotest.Consumer fun(client: neotest.Client): table
 
 ---@class neotest.Config.floating
----@field border string Border style
+---@field border? string Border style
 ---@field max_height number Max height of window as proportion of NeoVim window
 ---@field max_width number Max width of window as proportion of NeoVim window
 ---@field options table Window local options to set on floating windows (e.g. winblend)
@@ -193,6 +193,7 @@ local default_config = {
     child_indent = "│",
     final_child_indent = " ",
     watching = "",
+    test = "",
     notify = "",
   },
   highlights = {
@@ -216,7 +217,7 @@ local default_config = {
     watching = "NeotestWatching",
   },
   floating = {
-    border = "rounded",
+    border = nil,
     max_height = 0.6,
     max_width = 0.6,
     options = {},
@@ -402,11 +403,11 @@ local default_config = {
       haskell = [[
         ;query
         ;explicit import
-        ((import_item [(variable)]) @symbol)
+        (import_name (variable) @symbol)
         ;symbols that may be imported implicitly
         ((type) @symbol)
-        (qualified_variable (variable) @symbol)
-        (exp_apply (exp_name (variable) @symbol))
+        (qualified (name) @symbol)
+        (apply (variable) @symbol)
         ((constructor) @symbol)
         ((operator) @symbol)
       ]],

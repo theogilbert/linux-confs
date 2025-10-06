@@ -16,7 +16,7 @@ local mime_to_filetype = {
 
 local err_mt = {
   __tostring = function(e)
-    return utils.fmt_error(e)
+    return utils.fmt_error(e) or "Undefined error"
   end,
 }
 
@@ -56,6 +56,7 @@ end
 ---@field private handle uv.uv_stream_t
 ---@field current_frame dap.StackFrame|nil
 ---@field initialized boolean
+---@field term_buf? integer
 ---@field stopped_thread_id number|nil
 ---@field id number
 ---@field threads table<number, dap.Thread>
@@ -251,53 +252,35 @@ local function run_in_terminal(lsession, request)
     lsession.config,
     lsession.filetype
   )
-  local terminal_buf_name = '[dap-terminal] ' .. (lsession.config.name or body.args[1])
-  local terminal_name_ok = pcall(api.nvim_buf_set_name, terminal_buf, terminal_buf_name)
-  if not terminal_name_ok then
-    log:warn(terminal_buf_name ..  ' is not a valid buffer name')
-    api.nvim_buf_set_name(terminal_buf, '[dap-terminal] dap-' .. tostring(lsession.id))
-  end
   pcall(api.nvim_buf_del_keymap, terminal_buf, "t", "<CR>")
   local path = vim.bo[cur_buf].path
   if path and path ~= "" then
     vim.bo[terminal_buf].path = path
   end
-  local jobid
 
-  local chan = api.nvim_open_term(terminal_buf, {
-    on_input = function(_, _, _, data)
-      pcall(api.nvim_chan_send, jobid, data)
-    end,
-  })
-  local opts = {
-    env = next(body.env or {}) and body.env or vim.empty_dict(),
-    cwd = (body.cwd and body.cwd ~= '') and body.cwd or nil,
-    height = terminal_win and api.nvim_win_get_height(terminal_win) or math.ceil(vim.o.lines / 2),
-    width = terminal_win and api.nvim_win_get_width(terminal_win) or vim.o.columns,
-    pty = true,
-    on_stdout = function(_, data)
-      local count = #data
-      for idx, line in pairs(data) do
-        if idx == count then
-          local send_ok = pcall(api.nvim_chan_send, chan, line)
-          if not send_ok then
-            return
-          end
-        else
-          local send_ok = pcall(api.nvim_chan_send, chan, line .. '\n')
-          if not send_ok then
-            return
-          end
-        end
+  local jobid
+  lsession.term_buf = terminal_buf
+  vim.api.nvim_buf_call(terminal_buf, function()
+    local termopen = vim.fn.has("nvim-0.11") == 1 and vim.fn.jobstart or vim.fn.termopen
+    jobid = termopen(body.args, {
+      env = next(body.env or {}) and body.env or vim.empty_dict(),
+      cwd = (body.cwd and body.cwd ~= '') and body.cwd or nil,
+      height = terminal_win and api.nvim_win_get_height(terminal_win) or math.ceil(vim.o.lines / 2),
+      width = terminal_win and api.nvim_win_get_width(terminal_win) or vim.o.columns,
+      term = vim.fn.has("nvim-0.11") == 1 and true or nil,
+      on_exit = function()
+        terminals.release(terminal_buf)
       end
-    end,
-    on_exit = function(_, exit_code)
-      pcall(api.nvim_chan_send, chan, '\r\n[Process exited ' .. tostring(exit_code) .. ']')
-      pcall(api.nvim_buf_set_keymap, terminal_buf, "t", "<CR>", "<cmd>bd!<CR>", { noremap = true, silent = true})
-      terminals.release(terminal_buf)
-    end,
-  }
-  jobid = vim.fn.jobstart(body.args, opts)
+    })
+  end)
+
+  local terminal_buf_name = "[dap-terminal] " .. (lsession.config.name or body.args[1])
+  local terminal_name_ok = pcall(api.nvim_buf_set_name, terminal_buf, terminal_buf_name)
+  if not terminal_name_ok then
+    log:warn(terminal_buf_name .. " is not a valid buffer name")
+    api.nvim_buf_set_name(terminal_buf, "[dap-terminal] dap-" .. tostring(lsession.id))
+  end
+
   if settings.focus_terminal then
     for _, win in pairs(api.nvim_tabpage_list_wins(0)) do
       if api.nvim_win_get_buf(win) == terminal_buf then
@@ -426,7 +409,7 @@ end
 ---@param bufnr number
 ---@param line number
 ---@param column number
----@param switchbuf string
+---@param switchbuf string|fun(bufnr: integer, line: integer, column: integer):nil
 ---@param filetype string
 local function jump_to_location(bufnr, line, column, switchbuf, filetype)
   progress.report('Stopped at line ' .. line)
@@ -524,13 +507,18 @@ local function jump_to_location(bufnr, line, column, switchbuf, filetype)
     return true
   end
 
-  if switchbuf:find('usetab') then
+  if type(switchbuf) == "string" and switchbuf:find('usetab') then
     switchbuf_fn.useopen = switchbuf_fn.usetab
   end
 
-  if switchbuf:find('newtab') then
+  if type(switchbuf) == "string" and switchbuf:find('newtab') then
     switchbuf_fn.vsplit = switchbuf_fn.newtab
     switchbuf_fn.split = switchbuf_fn.newtab
+  end
+
+  if type(switchbuf) == "function" then
+    switchbuf(bufnr, line, column)
+    return
   end
 
   local opts = vim.split(switchbuf, ',', { plain = true })
@@ -552,10 +540,9 @@ end
 --- Must be called in a coroutine
 ---
 ---@param session dap.Session
----@param frame dap.StackFrame
+---@param source dap.Source?
 ---@return number|nil
-local function frame_to_bufnr(session, frame)
-  local source = frame.source
+local function source_to_bufnr(session, source)
   if not source then
     return nil
   end
@@ -592,12 +579,13 @@ local function jump_to_frame(session, frame, preserve_focus_hint, stopped)
   if preserve_focus_hint or frame.line < 0 then
     return
   end
-  local bufnr = frame_to_bufnr(session, frame)
+  local bufnr = source_to_bufnr(session, frame.source)
   if not bufnr then
     utils.notify('Source missing, cannot jump to frame: ' .. frame.name, vim.log.levels.INFO)
     return
   end
   vim.fn.bufload(bufnr)
+  vim.bo[bufnr].buflisted = true
   local ok, failure = pcall(vim.fn.sign_place, 0, session.sign_group, 'DapStopped', bufnr, { lnum = frame.line; priority = 22 })
   if not ok then
     utils.notify(tostring(failure), vim.log.levels.ERROR)
@@ -792,7 +780,7 @@ function Session:event_stopped(stopped)
       jump_to_frame(self, current_frame, stopped.preserveFocusHint, stopped)
       self:_request_scopes(current_frame)
     elseif stopped.reason == "exception" then
-      local bufnr = frame_to_bufnr(self, current_frame)
+      local bufnr = source_to_bufnr(self, current_frame.source)
       if bufnr then
         self:_show_exception_info(stopped.threadId, bufnr, current_frame)
       end
@@ -1090,7 +1078,7 @@ function Session:handle_body(body)
     vim.schedule(function()
       local before = listeners.before[decoded.command]
       call_listener(before, self, err, response, request, decoded.request_seq)
-      callback(err, decoded.body, decoded.request_seq)
+      callback(err, response, decoded.request_seq)
       local after = listeners.after[decoded.command]
       call_listener(after, self, err, response, request, decoded.request_seq)
     end)
@@ -2087,11 +2075,25 @@ end
 
 
 ---@param event dap.BreakpointEvent
-function Session.event_breakpoint(_, event)
+function Session.event_breakpoint(session, event)
   if event.reason == 'changed' then
     local bp = event.breakpoint
     if bp.id then
       breakpoints.update(bp)
+    end
+  elseif event.reason == 'new' then
+    local bp = event.breakpoint
+    if bp.id then
+      local bufnr = source_to_bufnr(session, bp.source)
+      if bufnr then
+        breakpoints.set({}, bufnr, bp.line)
+        breakpoints.set_state(bufnr, bp)
+      end
+    end
+  elseif event.reason == 'removed' then
+    local bp = event.breakpoint
+    if bp.id then
+      breakpoints.remove_by_id(bp.id)
     end
   end
 end

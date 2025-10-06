@@ -39,7 +39,7 @@ local async_func = function(f)
   end
 end
 
----@param canvas Canvas
+---@param canvas neotest.summary.Canvas
 ---@param tree neotest.Tree
 function SummaryComponent:render(canvas, tree, expanded, focused, indent)
   self.renders = self.renders + 1
@@ -178,13 +178,15 @@ function SummaryComponent:_render(canvas, tree, expanded, focused, indent)
         neotest.run.attach(position.id, { adapter = self.adapter_id })
       end)
     )
-    canvas:add_mapping(
-      "watch",
-      async_func(function()
-        neotest.watch.toggle({ position.id, adapter = self.adapter_id })
-        neotest.summary.render()
-      end)
-    )
+    if neotest.watch then
+      canvas:add_mapping(
+        "watch",
+        async_func(function()
+          neotest.watch.toggle({ position.id, adapter = self.adapter_id })
+          neotest.summary.render()
+        end)
+      )
+    end
     canvas:add_mapping(
       "output",
       async_func(function()
@@ -270,7 +272,7 @@ function SummaryComponent:_render(canvas, tree, expanded, focused, indent)
 
     local state_icon, state_icon_group = self:_state_icon(status)
 
-    if neotest.watch.is_watching(position.id) then
+    if neotest.watch and neotest.watch.is_watching(position.id) then
       state_icon = config.icons.watching
     end
 

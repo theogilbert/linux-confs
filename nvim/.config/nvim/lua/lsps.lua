@@ -1,6 +1,5 @@
 M = {}
 
-local lspconfig = require("lspconfig")
 
 vim.lsp.handlers["textDocument/publishDiagnostics"] = vim.lsp.with(vim.lsp.diagnostic.on_publish_diagnostics, {
 	virtual_text = true,
@@ -54,7 +53,7 @@ end, { silent = true })
 
 local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
-lspconfig.basedpyright.setup({
+vim.lsp.config("basedpyright", {
 	settings = {
 		basedpyright = {
 			disableOrganizeImports = true, -- Using Ruff
@@ -69,10 +68,11 @@ lspconfig.basedpyright.setup({
 	},
 	capabilities = capabilities,
 })
+vim.lsp.enable("basedpyright")
 
 local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
 
-lspconfig.ruff.setup({
+vim.lsp.config("ruff", {
 	capabilities = capabilities,
         init_options = {
             settings = {
@@ -92,8 +92,9 @@ lspconfig.ruff.setup({
 		end
 	end,
 })
+vim.lsp.enable("ruff")
 
-require('lspconfig')['yamlls'].setup{
+vim.lsp.config("yamlls", {
     on_attach = on_attach,
     filetypes = { "yaml", "yml" },
     flags = { debounce_test_changes = 150 },
@@ -115,9 +116,10 @@ require('lspconfig')['yamlls'].setup{
             },
         },
     }
-}
+})
+vim.lsp.enable("yamlls")
 
-lspconfig.ts_ls.setup{}
+vim.lsp.enable("ts_ls")
 local cmd_utils = require("utilities.commands")
 
 M.run_code_actions = function()

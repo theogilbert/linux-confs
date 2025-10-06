@@ -14,9 +14,12 @@
 ---
 ---
 
+local util = require 'lspconfig.util'
+
+---@type vim.lsp.Config
 return {
   cmd = {
-    'OmniSharp',
+    vim.fn.executable('OmniSharp') == 1 and 'OmniSharp' or 'omnisharp',
     '-z', -- https://github.com/OmniSharp/omnisharp-vscode/pull/4300
     '--hostPID',
     tostring(vim.fn.getpid()),
@@ -26,7 +29,15 @@ return {
     '--languageserver',
   },
   filetypes = { 'cs', 'vb' },
-  root_markers = { '.sln', '.csproj', 'omnisharp.json', 'function.json' },
+  root_dir = function(bufnr, on_dir)
+    local fname = vim.api.nvim_buf_get_name(bufnr)
+    on_dir(
+      util.root_pattern '*.sln'(fname)
+        or util.root_pattern '*.csproj'(fname)
+        or util.root_pattern 'omnisharp.json'(fname)
+        or util.root_pattern 'function.json'(fname)
+    )
+  end,
   init_options = {},
   capabilities = {
     workspace = {

@@ -7,20 +7,18 @@
 --- npm install -g elm elm-test elm-format @elm-tooling/elm-language-server
 --- ```
 
-local util = require 'lspconfig.util'
 local api = vim.api
 
-local elm_root_pattern = util.root_pattern 'elm.json'
-
+---@type vim.lsp.Config
 return {
   cmd = { 'elm-language-server' },
   -- TODO(ashkan) if we comment this out, it will allow elmls to operate on elm.json. It seems like it could do that, but no other editor allows it right now.
   filetypes = { 'elm' },
   root_dir = function(bufnr, on_dir)
     local fname = api.nvim_buf_get_name(bufnr)
-    local filetype = api.nvim_buf_get_option(0, 'filetype')
+    local filetype = vim.bo[bufnr].filetype
     if filetype == 'elm' or (filetype == 'json' and fname:match 'elm%.json$') then
-      on_dir(elm_root_pattern(fname))
+      on_dir(vim.fs.root(fname, 'elm.json'))
       return
     end
     on_dir(nil)

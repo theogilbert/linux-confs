@@ -7,26 +7,44 @@
 --- ```sh
 --- npm install [-g] @ast-grep/cli
 --- ```
+
+---@type vim.lsp.Config
 return {
   cmd = { 'ast-grep', 'lsp' },
+  workspace_required = true,
+  reuse_client = function(client, config)
+    config.cmd_cwd = config.root_dir
+    return client.config.cmd_cwd == config.cmd_cwd
+  end,
   filetypes = { -- https://ast-grep.github.io/reference/languages.html
+    'bash',
     'c',
     'cpp',
-    'rust',
+    'csharp',
+    'css',
+    'elixir',
     'go',
+    'haskell',
+    'html',
     'java',
-    'python',
     'javascript',
     'javascriptreact',
     'javascript.jsx',
+    'json',
+    'kotlin',
+    'lua',
+    'nix',
+    'php',
+    'python',
+    'ruby',
+    'rust',
+    'scala',
+    'solidity',
+    'swift',
     'typescript',
     'typescriptreact',
     'typescript.tsx',
-    'html',
-    'css',
-    'kotlin',
-    'dart',
-    'lua',
+    'yaml',
   },
   root_markers = { 'sgconfig.yaml', 'sgconfig.yml' },
 }

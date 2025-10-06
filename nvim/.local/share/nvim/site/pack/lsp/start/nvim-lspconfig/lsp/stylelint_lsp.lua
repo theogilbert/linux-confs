@@ -8,7 +8,7 @@
 --- npm i -g stylelint-lsp
 --- ```
 ---
---- Can be configured by passing a `settings.stylelintplus` object to `stylelint_lsp.setup`:
+--- Can be configured by passing a `settings.stylelintplus` object to vim.lsp.config('stylelint_lsp'):
 ---
 --- ```lua
 --- vim.lsp.config('stylelint_lsp', {
@@ -37,6 +37,7 @@ local root_file = {
 
 root_file = util.insert_package_json(root_file, 'stylelint')
 
+---@type vim.lsp.Config
 return {
   cmd = { 'stylelint-lsp', '--stdio' },
   filetypes = {

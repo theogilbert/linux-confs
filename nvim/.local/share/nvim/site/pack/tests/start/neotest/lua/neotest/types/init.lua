@@ -31,6 +31,7 @@ M.ResultStatus = {
 ---@class neotest.Error
 ---@field message string
 ---@field line? integer
+---@field severity? integer Diagnostic severity (see vim.diagnostic.severity)
 
 ---@class neotest.Process
 ---@field output async fun(): string Path to file containing output data
@@ -61,7 +62,7 @@ M.ResultStatus = {
 ---@field cwd? string
 ---@field context? table Arbitrary data to preserve state between running and result collection
 ---@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
----@field stream fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
+---@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
 
 M.Tree = require("neotest.types.tree")
 M.FanoutAccum = require("neotest.types.fanout_accum")

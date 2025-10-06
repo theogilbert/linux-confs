@@ -2,13 +2,13 @@ local uv = vim.uv or vim.loop
 local core = require "fzf-lua.core"
 local path = require "fzf-lua.path"
 local utils = require "fzf-lua.utils"
-local shell = require "fzf-lua.shell"
 local config = require "fzf-lua.config"
 local devicons = require "fzf-lua.devicons"
 
 local M = {}
 
 M.commands = function(opts)
+  ---@type fzf-lua.config.Commands
   opts = config.normalize_opts(opts, "commands")
   if not opts then return end
 
@@ -63,26 +63,25 @@ M.commands = function(opts)
     end
   end
 
-  opts.flatten = opts.flatten or {}
-  for k, _ in pairs(global_commands) do
-    table.insert(entries, utils.ansi_codes.blue(k))
+  local add_subcommand = function(k, ansi_color)
     local flattened = vim.is_callable(opts.flatten[k]) and opts.flatten[k](opts)
         or opts.flatten[k] and vim.fn.getcompletion(k .. " ", "cmdline")
         or {}
     vim.list_extend(entries,
-      vim.tbl_map(function(cmd) return utils.ansi_codes.blue(k .. " " .. cmd) end,
+      vim.tbl_map(function(cmd) return ansi_color(k .. " " .. cmd) end,
         flattened))
+  end
+
+  opts.flatten = opts.flatten or {}
+  for k, _ in pairs(global_commands) do
+    table.insert(entries, utils.ansi_codes[opts.hls.cmd_global](k))
+    add_subcommand(k, utils.ansi_codes[opts.hls.cmd_global])
   end
 
   for k, v in pairs(buf_commands) do
     if type(v) == "table" then
-      table.insert(entries, utils.ansi_codes.green(k))
-      local flattened = vim.is_callable(opts.flatten[k]) and opts.flatten[k](opts)
-          or opts.flatten[k] and vim.fn.getcompletion(k .. " ", "cmdline")
-          or {}
-      vim.list_extend(entries,
-        vim.tbl_map(function(cmd) return utils.ansi_codes.green(k .. " " .. cmd) end,
-          flattened))
+      table.insert(entries, utils.ansi_codes[opts.hls.cmd_buf](k))
+      add_subcommand(k, utils.ansi_codes[opts.hls.cmd_buf])
     end
   end
 
@@ -92,7 +91,7 @@ M.commands = function(opts)
   end
 
   for k, _ in pairs(builtin_commands) do
-    table.insert(entries, utils.ansi_codes.magenta(k))
+    table.insert(entries, utils.ansi_codes[opts.hls.cmd_ex](k))
   end
 
   opts.preview = function(args)
@@ -103,55 +102,70 @@ M.commands = function(opts)
     return cmd
   end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
+---@param opts table
+---@param str ":"|"/"
 local history = function(opts, str)
-  local history = vim.fn.execute("history " .. str)
-  history = vim.split(history, "\n")
-
-  local entries = {}
-  for i = #history, 3, -1 do
-    local item = history[i]
-    local _, finish = string.find(item, "%d+ +")
-    table.insert(
-      entries,
-      opts.reverse_list and 1 or #entries + 1,
-      string.sub(item, finish + 1))
-  end
-
-  core.fzf_exec(entries, opts)
+  local histnr          = vim.fn.histnr(str)
+  local dr              = opts.reverse_list and 1 or -1
+  local bulk            = 500
+  local from, to, delta = dr, dr * histnr, dr * bulk
+  local content         = coroutine.wrap(function(cb)
+    local co = coroutine.running()
+    for i = from, to, delta do
+      vim.schedule(function()
+        local count = bulk
+        for j = 0, delta - dr, dr do
+          local index = i + j
+          if dr > 0 and index <= to or dr < 0 and index >= to then
+            cb(vim.fn.histget(str, index), function()
+              count = count - 1
+              if count == 0 or index == to then
+                coroutine.resume(co)
+              end
+            end)
+          end
+        end
+      end)
+      coroutine.yield()
+    end
+    cb(nil)
+  end)
+  core.fzf_exec(content, opts)
 end
 
 M.command_history = function(opts)
+  ---@type fzf-lua.config.CommandHistory
   opts = config.normalize_opts(opts, "command_history")
   if not opts then return end
-  if opts.fzf_opts["--header"] == nil then
-    opts = core.set_header(opts, opts.headers or { "actions" })
-  end
-  history(opts, "cmd")
+  history(opts, ":")
 end
 
 M.search_history = function(opts)
+  ---@type fzf-lua.config.SearchHistory
   opts = config.normalize_opts(opts, "search_history")
   if not opts then return end
-  if opts.fzf_opts["--header"] == nil then
-    opts = core.set_header(opts, opts.headers or { "actions" })
-  end
-  history(opts, "search")
+  history(opts, "/")
 end
 
 M.changes = function(opts)
+  ---@type fzf-lua.config.Changes
   opts = config.normalize_opts(opts, "changes")
-  return M.jumps(opts)
+  if not opts then return end
+  return M.changes_or_jumps(opts)
 end
 
 M.jumps = function(opts)
+  ---@type fzf-lua.config.Jumps
   opts = config.normalize_opts(opts, "jumps")
   if not opts then return end
+  return M.changes_or_jumps(opts)
+end
 
-  local jumps = vim.fn.execute(opts.cmd)
-  jumps = vim.split(jumps, "\n")
+M.changes_or_jumps = function(opts)
+  local jumps = vim.split(vim.fn.execute(opts.cmd), "\n")
 
   local entries = {}
   for i = #jumps - 1, 3, -1 do
@@ -173,10 +187,11 @@ M.jumps = function(opts)
 
   opts.fzf_opts["--header-lines"] = 1
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.tagstack = function(opts)
+  ---@type fzf-lua.config.Tagstack
   opts = config.normalize_opts(opts, "tagstack")
   if not opts then return end
 
@@ -226,55 +241,58 @@ M.tagstack = function(opts)
       tag.text))
   end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 
 M.marks = function(opts)
+  ---@type fzf-lua.config.Marks
   opts = config.normalize_opts(opts, "marks")
   if not opts then return end
 
-  opts.__fn_reload = opts.__fn_reload or function()
-    return function(cb)
-      local win = core.CTX().winid
-      local buf = core.CTX().bufnr
-      local marks = vim.api.nvim_win_call(win,
-        function() return vim.api.nvim_buf_call(buf, function() return vim.fn.execute("marks") end) end)
-      marks = vim.split(marks, "\n")
-      local entries = {}
-      local pattern = opts.marks and opts.marks or ""
-      for i = #marks, 3, -1 do
-        local mark, line, col, text = marks[i]:match("(.)%s+(%d+)%s+(%d+)%s+(.*)")
-        col = tostring(tonumber(col) + 1)
-        if path.is_absolute(text) then
-          text = path.HOME_to_tilde(text)
-        end
-        if not pattern or string.match(mark, pattern) then
-          table.insert(entries, string.format(" %-15s %15s %15s %s",
-            utils.ansi_codes.yellow(mark),
-            utils.ansi_codes.blue(line),
-            utils.ansi_codes.green(col),
-            text))
-        end
-      end
-
-      table.sort(entries, function(a, b) return a < b end)
-      table.insert(entries, 1,
-        string.format("%-5s %s  %s %s", "mark", "line", "col", "file/text"))
-
-      vim.tbl_map(cb, entries)
-      cb(nil)
+  local contents = function(cb)
+    local buf = utils.CTX().bufnr
+    local entries = {}
+    local function add_mark(mark, line, col, text)
+      if opts.marks and not string.match(mark, opts.marks) then return end
+      table.insert(entries, string.format("%s  %s  %s %s",
+        utils.ansi_codes[opts.hls.buf_nr](string.format("%4s", mark)),
+        utils.ansi_codes[opts.hls.path_linenr](string.format("%4s", tostring(line))),
+        utils.ansi_codes[opts.hls.path_colnr](string.format("%3s", tostring(col))),
+        text))
     end
+
+    -- local buffer marks
+    for _, m in ipairs(vim.fn.getmarklist(buf)) do
+      local mark, lnum, col = m.mark:sub(2, 2), m.pos[2], m.pos[3]
+      local text = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1]
+      add_mark(mark, lnum, col, utils.ansi_from_hl("Directory", text or "-invalid-"))
+    end
+
+    -- global marks
+    for _, m in ipairs(vim.fn.getmarklist()) do
+      local mark, bufnr, lnum, col, file = m.mark:sub(2, 2), m.pos[1], m.pos[2], m.pos[3], m.file
+      file = path.relative_to(file, uv.cwd())
+      if path.is_absolute(file) then
+        file = path.HOME_to_tilde(file)
+      end
+      if bufnr == utils.CTX().bufnr then
+        local text = vim.api.nvim_buf_get_lines(bufnr, lnum - 1, lnum, false)[1]
+        add_mark(mark, lnum, col, utils.ansi_from_hl("Directory", text or "-invalid-"))
+      else
+        add_mark(mark, lnum, col, file or "-invalid-")
+      end
+    end
+
+    if opts.sort then
+      table.sort(entries, function(a, b) return a < b end)
+    end
+    table.insert(entries, 1,
+      string.format("%-5s %s  %s %s", "mark", "line", "col", "file/text"))
+
+    vim.tbl_map(cb, entries)
+    cb(nil)
   end
-
-  -- build the "reload" cmd and remove '-- {+}' from the initial cmd
-  local contents, id = shell.reload_action_cmd(opts, "")
-  opts.__reload_cmd = contents
-
-  opts._fn_pre_fzf = function()
-    shell.set_protected(id)
-  end
-
 
   opts.fzf_opts["--header-lines"] = 1
   --[[ opts.preview = function (args, fzf_lines, _)
@@ -291,10 +309,11 @@ M.marks = function(opts)
     end
   end ]]
 
-  core.fzf_exec(contents, opts)
+  return core.fzf_exec(contents, opts)
 end
 
 M.registers = function(opts)
+  ---@type fzf-lua.config.Registers
   opts = config.normalize_opts(opts, "registers")
   if not opts then return end
 
@@ -350,10 +369,11 @@ M.registers = function(opts)
     return contents and register_escape_special(contents) or args[1]
   end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.keymaps = function(opts)
+  ---@type fzf-lua.config.Keymaps
   opts = config.normalize_opts(opts, "keymaps")
   if not opts then return end
 
@@ -438,10 +458,11 @@ M.keymaps = function(opts)
   local header_str = format({ mode = "m", lhs = "keymap", desc = "description", rhs = "detail" })
   table.insert(entries, 1, header_str)
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.nvim_options = function(opts)
+  ---@type fzf-lua.config.NvimOptions
   opts = config.normalize_opts(opts, "nvim_options")
   if not opts then return end
 
@@ -494,42 +515,31 @@ M.nvim_options = function(opts)
     return entries
   end
 
-  opts.func_async_callback = false
-  opts.__fn_reload = opts.__fn_reload or function(_)
-    return function(cb)
-      vim.api.nvim_win_call(opts.__CTX.winid, function()
-        coroutine.wrap(function()
-          local co = coroutine.running()
-          local entries = format_option_entries()
-          for _, entry in pairs(entries) do
-            vim.schedule(function()
-              cb(entry, function()
-                coroutine.resume(co)
-              end)
+  local contents = function(cb)
+    vim.api.nvim_win_call(opts.__CTX.winid, function()
+      coroutine.wrap(function()
+        local co = coroutine.running()
+        local entries = format_option_entries()
+        for _, entry in pairs(entries) do
+          vim.schedule(function()
+            cb(entry, function()
+              coroutine.resume(co)
             end)
-            coroutine.yield()
-          end
-          cb()
-        end)()
-      end)
-    end
-  end
-
-  -- build the "reload" cmd and remove '-- {+}' from the initial cmd
-  local contents, id = shell.reload_action_cmd(opts, "")
-  opts.__reload_cmd = contents
-
-  opts._fn_pre_fzf = function()
-    shell.set_protected(id)
+          end)
+          coroutine.yield()
+        end
+        cb()
+      end)()
+    end)
   end
 
   opts.fzf_opts["--header-lines"] = "2"
 
-  core.fzf_exec(contents, opts)
+  return core.fzf_exec(contents, opts)
 end
 
 M.spell_suggest = function(opts)
-  -- if not vim.wo.spell then return false end
+  ---@type fzf-lua.config.SpellSuggest
   opts = config.normalize_opts(opts, "spell_suggest")
   if not opts then return end
 
@@ -547,7 +557,7 @@ M.spell_suggest = function(opts)
   local cursor_word = before .. after
   local entries = vim.fn.spellsuggest(cursor_word)
 
-  opts.complete = function(selected, o, l, _)
+  opts.complete = function(selected, _o, l, _)
     if #selected == 0 then return end
     local replace_at = col - #before
     local before_path = replace_at > 1 and l:sub(1, replace_at - 1) or ""
@@ -559,10 +569,11 @@ M.spell_suggest = function(opts)
 
   if utils.tbl_isempty(entries) then return end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.filetypes = function(opts)
+  ---@type fzf-lua.config.Filetypes
   opts = config.normalize_opts(opts, "filetypes")
   if not opts then return end
 
@@ -578,20 +589,22 @@ M.filetypes = function(opts)
     end, entries)
   end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.packadd = function(opts)
+  ---@type fzf-lua.config.Packadd
   opts = config.normalize_opts(opts, "packadd")
   if not opts then return end
 
   local entries = vim.fn.getcompletion("", "packadd")
   if utils.tbl_isempty(entries) then return end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.menus = function(opts)
+  ---@type fzf-lua.config.Menus
   opts = config.normalize_opts(opts, "menus")
   if not opts then return end
 
@@ -620,10 +633,11 @@ M.menus = function(opts)
     return
   end
 
-  core.fzf_exec(entries, opts)
+  return core.fzf_exec(entries, opts)
 end
 
 M.autocmds = function(opts)
+  ---@type fzf-lua.config.Autocmds
   opts = config.normalize_opts(opts, "autocmds")
   if not opts then return end
 
@@ -686,7 +700,7 @@ M.autocmds = function(opts)
         local entry = string.format("%s:%d:%s%s", file, line, separator, format({
           event = utils.ansi_codes.blue(a.event),
           pattern = utils.ansi_codes.yellow(a.pattern),
-          group = utils.ansi_codes.green(a.group_name and vim.trim(a.group_name) or " "),
+          group = utils.ansi_codes.green(a.group_name and vim.trim(tostring(a.group_name)) or " "),
           code = a.callback and utils.ansi_codes.red(tostring(a.callback)) or a.command,
           desc = a.desc,
         }))

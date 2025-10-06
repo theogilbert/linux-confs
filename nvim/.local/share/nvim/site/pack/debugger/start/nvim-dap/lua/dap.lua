@@ -90,7 +90,7 @@ M.repl = setmetatable({}, {
 ---@field exceptionInfo table<string, dap.RequestListener>
 ---@field goto table<string, dap.RequestListener>
 ---@field gotoTargets table<string, dap.RequestListener>
----@field initialize table<string, dap.RequestListener>
+---@field initialize table<string, dap.RequestListener<dap.Capabilities?, dap.InitializeRequestArguments>>
 ---@field launch table<string, dap.RequestListener>
 ---@field loadedSources table<string, dap.RequestListener>
 ---@field modules table<string, dap.RequestListener>
@@ -138,7 +138,10 @@ M.listeners = {
   }),
 
   ---@type table<string, fun(config: dap.Configuration):dap.Configuration>
-  on_config = {}
+  on_config = {},
+
+  ---@type table<string, fun(old: dap.Session?, new: dap.Session?)>
+  on_session = {}
 }
 
 
@@ -165,7 +168,7 @@ M.defaults = setmetatable(
       focus_terminal = false,
       auto_continue_if_many_stopped = true,
 
-      ---@type string|nil
+      ---@type string|fun(bufnr: integer, line: integer, column: integer):nil|nil
       switchbuf = nil,
 
       ---@type nil|fun(session: dap.Session, output: dap.OutputEvent)
@@ -218,7 +221,7 @@ local DAP_QUICKFIX_CONTEXT = DAP_QUICKFIX_TITLE
 ---@class dap.ServerAdapter : dap.Adapter
 ---@field type "server"
 ---@field host string|nil
----@field port integer
+---@field port integer|"${port}"
 ---@field executable nil|dap.ServerAdapterExecutable
 ---@field options nil|ServerOptions
 
@@ -262,6 +265,7 @@ M.adapters = {}
 ---@field type string
 ---@field request "launch"|"attach"
 ---@field name string
+---@field [string] any
 
 
 --- Configurations per adapter. See `:help dap-configuration` for more help.
@@ -311,7 +315,12 @@ end
 
 providers.configs["dap.launch.json"] = function()
   local ok, configs = pcall(require("dap.ext.vscode").getconfigs)
-  return ok and configs or {}
+  if not ok then
+    local msg = "Can't get configurations from launch.json:\n%s" .. configs
+    vim.notify_once(msg, vim.log.levels.WARN, {title = "DAP"})
+    return {}
+  end
+  return configs
 end
 
 do
@@ -566,7 +575,7 @@ end
 
 
 ---@param config dap.Configuration
----@result dap.Configuration
+---@return dap.Configuration
 local function prepare_config(config)
   local co, is_main = coroutine.running()
   assert(co and not is_main, "prepare_config must be running in coroutine")
@@ -662,7 +671,7 @@ end
 --- Step over the current line
 ---@param opts table|nil
 function M.step_over(opts)
-  session = first_stopped_session()
+  M.set_session(first_stopped_session())
   if not session then
     return
   end
@@ -695,7 +704,7 @@ end
 
 ---@param opts? {askForTargets?: boolean, steppingGranularity?: dap.SteppingGranularity}
 function M.step_into(opts)
-  session = first_stopped_session()
+  M.set_session(first_stopped_session())
   if not session then
     return
   end
@@ -732,16 +741,18 @@ function M.step_into(opts)
   end)
 end
 
+
 function M.step_out(opts)
-  session = first_stopped_session()
+  M.set_session(first_stopped_session())
   if not session then
     return
   end
   session:_step('stepOut', opts)
 end
 
+
 function M.step_back(opts)
-  session = first_stopped_session()
+  M.set_session(first_stopped_session())
   if not session then
     return
   end
@@ -1105,7 +1116,7 @@ end
 ---@param opts? {new?: boolean}
 function M.continue(opts)
   if not session then
-    session = first_stopped_session()
+    M.set_session(first_stopped_session())
   end
 
   opts = opts or {}
@@ -1249,7 +1260,7 @@ end
 
 
 function M.set_log_level(level)
-  log():set_level(level)
+  require("dap.log").set_level(level)
 end
 
 
@@ -1268,16 +1279,22 @@ end
 
 ---@param new_session dap.Session|nil
 function M.set_session(new_session)
-  if new_session then
-    if new_session.parent == nil then
-      sessions[new_session.id] = new_session
-    end
-    session = new_session
-  else
+  if session and new_session and session.id == new_session.id then
+    return
+  end
+  local old_session = session
+  if not new_session then
     local _, lsession = next(sessions)
-    local msg = lsession and ("Running: " .. lsession.config.name) or ""
-    lazy.progress.report(msg)
-    session = lsession
+    new_session = lsession
+  end
+  local msg = new_session and ("Running: " .. new_session.config.name) or ""
+  lazy.progress.report(msg)
+  if new_session and new_session.parent == nil then
+    sessions[new_session.id] = new_session
+  end
+  session = new_session
+  for _, on_session in pairs(M.listeners.on_session) do
+    on_session(old_session, new_session)
   end
 end
 
@@ -1357,7 +1374,7 @@ api.nvim_create_autocmd("ExitPre", {
       ---@diagnostic disable-next-line: redundant-return-value
       return session == nil and next(sessions) == nil
     end)
-    M.repl.close()
+    M.repl._exit()
     if _log then
       _log:close()
     end

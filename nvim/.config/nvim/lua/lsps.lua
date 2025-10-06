@@ -95,7 +95,6 @@ vim.lsp.config("ruff", {
 vim.lsp.enable("ruff")
 
 vim.lsp.config("yamlls", {
-    on_attach = on_attach,
     filetypes = { "yaml", "yml" },
     flags = { debounce_test_changes = 150 },
     settings = {

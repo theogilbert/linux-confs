@@ -33,7 +33,7 @@
   },
   "mini.base16": {
     "disp_name": "Mini Base16",
-    "url": "echasnovski/mini.base16",
+    "url": "nvim-mini/mini.base16",
     "colorschemes": [
       { "name": "minischeme", "disp_name": "Mini Scheme" },
       { "name": "minicyan", "disp_name": "Mini Cyan" }
@@ -145,11 +145,6 @@
       { "name": "terafox", "disp_name": "Terafox" },
       { "name": "carbonfox", "disp_name": "Carbonfox" }
     ]
-  },
-  "embark-theme": {
-    "disp_name": "Embark",
-    "url": "embark-theme/vim",
-    "colorschemes": ["embark"]
   },
   "github-nvim-theme": {
     "disp_name": "Github",

@@ -60,17 +60,17 @@ sections.nvim can be configured by passing options to the setup function:
 
 >lua
     require("sections").setup({
-        indent = 2,                    -- Indentation per level
-        icons = {                      -- Icons for different section types
+        indent = 2,                           -- Indentation per level
+        icons = {                             -- Icons for different section types
             ["function"] = "󰊕",
             class = "",
             attribute = "󰠲",
             header = "",
         },
-        keymaps = {                    -- Keymaps within the sections panel
-            toggle_private = "p",      -- Toggle private sections visibility
-            toggle_section = "<cr>",   -- Collapse/expand section
-            select_section = "<C-]>",  -- Jump to section in code
+        keymaps = {                           -- Keymaps within the sections panel
+            toggle_private = "p",             -- Toggle private sections visibility
+            toggle_section_collapse = "<cr>", -- Collapse/expand section
+            select_section = "<C-]>",         -- Jump to section in code
         },
     })
 <
@@ -93,7 +93,7 @@ Configuration Options:~
 `keymaps` (table)
     Key mappings for the sections panel:
     - `toggle_private`: Toggle visibility of private sections (default: "p")
-    - `toggle_section`: Collapse/expand a section (default: "<cr>")
+    - `toggle_section_collapse`: Collapse/expand a section (default: "<cr>")
     - `select_section`: Jump to section in source code (default: "<C-]>")
 
 ================================================================================

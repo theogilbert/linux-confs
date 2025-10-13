@@ -24,6 +24,7 @@ local function init_tab_info(watched_win, watched_buf)
         watched_win = watched_win,
         watched_buf = watched_buf,
         sections = {},
+        collapsed = {},
         show_private = true,
     }
 end
@@ -78,7 +79,7 @@ local function refresh_pane(win, buf)
         return
     end
 
-    local sections_lines = formatter.format(sections, info.show_private)
+    local sections_lines = formatter.format(sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
 
     info.watched_win = win
@@ -102,7 +103,7 @@ local function select_section()
         return
     end
 
-    local section_pos = formatter.get_section_pos(info.sections, section_number, info.show_private)
+    local section_pos = formatter.get_section_pos(info.sections, section_number, info.collapsed, info.show_private)
     if section_pos == nil then
         vim.notify("Failed to select section: could not retrieve section position", vim.log.levels.ERROR)
         return
@@ -112,7 +113,7 @@ local function select_section()
     vim.api.nvim_set_current_win(info.watched_win)
 end
 
-local function toggle_section()
+local function toggle_section_collapse()
     local info = get_tab_info()
     if info == nil then
         return
@@ -124,8 +125,19 @@ local function toggle_section()
         return
     end
 
-    formatter.toggle_collapse(info.sections, section_line)
-    local sections_lines = formatter.format(info.sections, info.show_private)
+    local section = formatter.get_nth_section(info.sections, section_line, info.collapsed, info.show_private)
+    if section == nil then
+        vim.notify("Cannot select section: section is nil", vim.log.level.ERROR)
+        return
+    end
+
+    if info.collapsed[section.node_id] == nil then
+        info.collapsed[section.node_id] = true
+    else
+        info.collapsed[section.node_id] = nil
+    end
+
+    local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
 end
 
@@ -139,7 +151,7 @@ local function toggle_private()
 
     render_header(info)
 
-    local sections_lines = formatter.format(info.sections, info.show_private)
+    local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
 end
 
@@ -170,6 +182,18 @@ local function setup_autocommands()
             refresh_pane(win, args.buf)
         end,
     })
+    --
+    -- When closing the window, go back to the original win
+    vim.api.nvim_create_autocmd({ "WinClosed" }, {
+        group = group,
+        callback = function(args)
+            local info = get_tab_info()
+            if info == nil then
+                return
+            end
+            vim.api.nvim_set_current_win(info.watched_win)
+        end,
+    })
 end
 
 M.toggle = function()
@@ -183,7 +207,7 @@ M.toggle = function()
         pane.open({
             keymaps = {
                 [cfg.keymaps.select_section] = select_section,
-                [cfg.keymaps.toggle_section] = toggle_section,
+                [cfg.keymaps.toggle_section_collapse] = toggle_section_collapse,
                 [cfg.keymaps.toggle_private] = toggle_private,
             },
             on_close = clear_tab_info,

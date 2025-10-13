@@ -1,3 +1,17 @@
+---The sections' node_id attributes are randomly generated and cannot be
+---known ahead of time.
+---To be able to assert equality on section objects, we drop this attribute.
+---@param sections table
+---@return table sections
+local function drop_node_id(sections)
+    for _, section in ipairs(sections) do
+        section.node_id = nil
+        section.children = drop_node_id(section.children)
+    end
+
+    return sections
+end
+
 local function create_buf_with_text(text, lang)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("filetype", lang, { buf = buf })
@@ -35,6 +49,7 @@ Bar
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_header("First header", 1),
             build_header("Second header", 5),
@@ -52,6 +67,7 @@ Bar
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_header("Parent header", 1, {
                 build_header("Sub header", 2),
@@ -72,6 +88,7 @@ Bar
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_header("Parent header", 1, {
                 build_header("Sub header", 2, {
@@ -108,6 +125,7 @@ function function2() end
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_function("function1", 1),
             build_function("function2", 2),
@@ -139,6 +157,7 @@ function function2(p3, p4, p5) end
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_function("function1", 1, { "p1", "p2" }),
             build_function("function2", 2, { "p3", "p4", "p5" }),
@@ -190,6 +209,7 @@ describe("parsing python sections", function()
         local buf = create_python_buf("def foo():\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_function("foo", { 1, 0 }) }, root_nodes)
     end)
 
@@ -200,6 +220,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
             ]])
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_function("foo", { 1, 0 }, { "arg1", "arg2", "arg3", "arg4", "arg5" }) }, root_nodes)
     end)
 
@@ -207,6 +228,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass:\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_class("SimpleClass", { 1, 0 }) }, root_nodes)
     end)
 
@@ -214,6 +236,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass(Enum):\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_class("SimpleClass", { 1, 0 }, { "Enum" }) }, root_nodes)
     end)
 
@@ -221,6 +244,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass(str, Enum):\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_class("SimpleClass", { 1, 0 }, { "str", "Enum" }) }, root_nodes)
     end)
 
@@ -232,6 +256,7 @@ class Arbiter:
         ]])
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_class("Arbiter", { 1, 0 }, nil, {
                 build_function("kill_worker", { 2, 4 }, { "self", "pid", "sig" }),
@@ -248,6 +273,7 @@ class SimpleClass:
 ]])
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_class("SimpleClass", { 1, 0 }, nil, {
                 build_attribute("FOO1", "str", { 2, 4 }),
@@ -265,6 +291,7 @@ FOO3: int = 2
 ]])
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_attribute("FOO1", "str", { 1, 0 }),
             build_attribute("FOO2", nil, { 2, 0 }),
@@ -282,6 +309,7 @@ def foo():
 
         local root_nodes = parser.parse_sections(buf)
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ build_function("foo", { 1, 0 }) }, root_nodes)
     end)
 
@@ -294,6 +322,7 @@ def _foo():
         local expected_fn = build_function("_foo", { 1, 0 })
         expected_fn.private = true
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ expected_fn }, root_nodes)
     end)
 
@@ -306,6 +335,7 @@ class _Foo:
         local expected_cls = build_class("_Foo", { 1, 0 })
         expected_cls.private = true
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ expected_cls }, root_nodes)
     end)
 
@@ -318,6 +348,7 @@ class Foo:
         local expected_attr = build_attribute("_BAR", "int", { 2, 4 })
         expected_attr.private = true
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({
             build_class("Foo", { 1, 0 }, nil, { expected_attr }),
         }, root_nodes)
@@ -331,6 +362,7 @@ _BAR = 123
         local expected_attr = build_attribute("_BAR", nil, { 1, 0 })
         expected_attr.private = true
 
+        root_nodes = drop_node_id(root_nodes)
         assert.are.same({ expected_attr }, root_nodes)
     end)
 end)

@@ -10,7 +10,7 @@ local _config = {
     },
     keymaps = {
         toggle_private = "p",
-        toggle_section = "<cr>",
+        toggle_section_collapse = "<cr>",
         select_section = "<C-]>",
     },
 }

@@ -53,10 +53,10 @@ require("sections").setup({
         attribute = "󰠲",
         header = "",
     },
-    keymaps = {                    -- Keymaps within the sections panel
-        toggle_private = "p",      -- Toggle private sections visibility
-        toggle_section = "<cr>",   -- Collapse/expand section
-        select_section = "<C-]>",  -- Jump to section in code
+    keymaps = {                           -- Keymaps within the sections panel
+        toggle_private = "p",             -- Toggle private sections visibility
+        toggle_section_collapse = "<cr>", -- Collapse/expand section
+        select_section = "<C-]>",         -- Jump to section in code
     },
 })
 ```
@@ -71,7 +71,7 @@ require("sections").setup({
 | `icons.attribute` | string | `"󰠲"` | Icon for attributes/variables |
 | `icons.header` | string | `""` | Icon for headers/headings |
 | `keymaps.toggle_private` | string | `"p"` | Key to toggle private sections |
-| `keymaps.toggle_section` | string | `"<cr>"` | Key to expand/collapse sections |
+| `keymaps.toggle_section_collapse` | string | `"<cr>"` | Key to expand/collapse sections |
 | `keymaps.select_section` | string | `"<C-]>"` | Key to jump to section |
 
 ## Keymaps (within sections panel)

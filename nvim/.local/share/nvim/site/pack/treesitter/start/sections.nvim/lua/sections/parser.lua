@@ -111,6 +111,7 @@ end
 
 local function cleanup_internal_data_from_sections(sections)
     for i = 1, #sections do
+        sections[i].node_id = sections[i].node:id()
         sections[i].node = nil
         sections[i].children = cleanup_internal_data_from_sections(sections[i].children)
     end

@@ -182,6 +182,18 @@ local function setup_autocommands()
             refresh_pane(win, args.buf)
         end,
     })
+    --
+    -- When closing the window, go back to the original win
+    vim.api.nvim_create_autocmd({ "WinClosed" }, {
+        group = group,
+        callback = function(args)
+            local info = get_tab_info()
+            if info == nil then
+                return
+            end
+            vim.api.nvim_set_current_win(info.watched_win)
+        end,
+    })
 end
 
 M.toggle = function()

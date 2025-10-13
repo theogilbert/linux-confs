@@ -46,8 +46,9 @@ vim.keymap.set("n", "<leader>s", function() require("sections").toggle() end, { 
 
 ```lua
 require("sections").setup({
-    indent = 2,                    -- Indentation per level
-    icons = {                      -- Icons for different section types
+    indent = 2,                           -- Indentation per level
+    width = 40,                           -- Default width of the pane
+    icons = {                             -- Icons for different section types
         ["function"] = "󰊕",
         class = "",
         attribute = "󰠲",
@@ -66,6 +67,7 @@ require("sections").setup({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `indent` | number | `2` | Number of spaces to indent nested sections |
+| `width` | number | `40` | Width of the section pane (in characters) |
 | `icons.function` | string | `"󰊕"` | Icon for functions |
 | `icons.class` | string | `""` | Icon for classes |
 | `icons.attribute` | string | `"󰠲"` | Icon for attributes/variables |

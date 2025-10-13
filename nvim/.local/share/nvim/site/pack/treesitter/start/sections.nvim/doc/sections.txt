@@ -61,6 +61,7 @@ sections.nvim can be configured by passing options to the setup function:
 >lua
     require("sections").setup({
         indent = 2,                           -- Indentation per level
+        width = 40,                           -- Default width of the pane
         icons = {                             -- Icons for different section types
             ["function"] = "󰊕",
             class = "",
@@ -80,6 +81,11 @@ Configuration Options:~
 *sections-config-indent*
 `indent` (number, default: 2)
     Number of spaces to indent nested sections.
+
+*sections-config-width*
+`width` (number, default: 40)
+    Default width of the sections pane when first opened.
+
 
 *sections-config-icons*
 `icons` (table)

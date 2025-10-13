@@ -2,6 +2,7 @@ local M = {}
 
 local _config = {
     indent = 2,
+    width = 40,
     icons = {
         ["function"] = "󰊕",
         class = "",

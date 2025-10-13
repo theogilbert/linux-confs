@@ -205,6 +205,7 @@ M.toggle = function()
         local watched_win = vim.api.nvim_get_current_win()
         init_tab_info(watched_win, watched_buf)
         pane.open({
+            width = cfg.width,
             keymaps = {
                 [cfg.keymaps.select_section] = select_section,
                 [cfg.keymaps.toggle_section_collapse] = toggle_section_collapse,

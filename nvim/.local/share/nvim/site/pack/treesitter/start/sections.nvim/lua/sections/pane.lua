@@ -126,10 +126,12 @@ M.open = function(opts)
     vim.bo[bufid].buftype = "nofile"
     vim.bo[bufid].modifiable = false
 
+    local width = opts.width or 50
+
     local winid = vim.api.nvim_open_win(
         bufid,
         false,
-        { vertical = true, split = "left", win = -1, width = 50, style = "minimal" }
+        { vertical = true, split = "left", win = -1, width = width, style = "minimal" }
     )
     vim.wo[winid].wrap = false
     vim.api.nvim_set_option_value("cursorline", true, { win = winid })

@@ -165,6 +165,15 @@ M.close = function()
     clear_pane_info()
 end
 
+M.get_win = function()
+    local info = get_pane_info()
+    if info == nil then
+        return nil
+    end
+
+    return info.pane_win
+end
+
 M.setup = function()
     local group = vim.api.nvim_create_augroup("SectionsPaneCleanup", { clear = true })
 

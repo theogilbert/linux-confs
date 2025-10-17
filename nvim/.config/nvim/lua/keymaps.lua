@@ -197,3 +197,4 @@ vim.keymap.set({ "n" }, "<leader>So", scratch_utils.search_scratches, { desc = "
 
 local sections = require("sections")
 vim.keymap.set({ "n" }, "<leader>n", sections.toggle, { desc = "Toggle file sections pane" })
+vim.keymap.set({ "n" }, "<leader>N", sections.focus, { desc = "Focus sections pane" })

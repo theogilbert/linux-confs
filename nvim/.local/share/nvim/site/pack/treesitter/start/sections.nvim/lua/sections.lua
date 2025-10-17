@@ -220,6 +220,15 @@ M.toggle = function()
     end
 end
 
+M.focus = function()
+    local pane_win = pane.get_win()
+    if pane_win == nil then
+        vim.notify("No sections pane is currently open")
+        return
+    end
+    vim.api.nvim_set_current_win(pane_win)
+end
+
 M.setup = function(config_)
     config.init(config_)
     setup_autocommands()

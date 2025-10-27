@@ -1,4 +1,6 @@
 local Buffer = require("nvim-dap-df-pane.buffer")
+local evaluator = require("nvim-dap-df-pane.evaluator")
+local table_fmt = require("utilities.table")
 
 local Pane = {}
 Pane.__index = Pane
@@ -20,19 +22,7 @@ function Pane:open()
   end
   
   -- Create the split based on position
-  local cmd
-  if self.config.position == "bottom" then
-    cmd = string.format("botright %dsplit", self.config.size)
-  elseif self.config.position == "top" then
-    cmd = string.format("topleft %dsplit", self.config.size)
-  elseif self.config.position == "left" then
-    cmd = string.format("topleft %dvsplit", self.config.size)
-  elseif self.config.position == "right" then
-    cmd = string.format("botright %dvsplit", self.config.size)
-  else
-    error("Invalid position: " .. self.config.position)
-  end
-  
+  local cmd = string.format("botright %dsplit", self.config.size)
   vim.cmd(cmd)
   self.win_id = vim.api.nvim_get_current_win()
   
@@ -41,10 +31,13 @@ function Pane:open()
   
   -- Configure the window
   vim.api.nvim_win_set_option(self.win_id, "number", false)
-  vim.api.nvim_win_set_option(self.win_id, "relativenumber", false)
   vim.api.nvim_win_set_option(self.win_id, "signcolumn", "no")
   vim.api.nvim_win_set_option(self.win_id, "winfixheight", true)
   vim.api.nvim_win_set_option(self.win_id, "winfixwidth", true)
+  vim.api.nvim_win_set_option(self.win_id, "wrap", false)
+  
+  -- Set up keymaps for the buffer
+  self:setup_keymaps()
   
   self.is_open_flag = true
   self:refresh()
@@ -64,30 +57,77 @@ function Pane:is_open()
   return self.is_open_flag and self.win_id and vim.api.nvim_win_is_valid(self.win_id)
 end
 
+function Pane:buf_id()
+    return self.buffer.buf_id
+end
+
+-- Set up keymaps for the buffer
+function Pane:setup_keymaps()
+  self.buffer:set_keymap('n', 'e', function()
+    self:prompt_expression()
+  end, { desc = 'Enter DataFrame expression' })
+  
+  self.buffer:set_keymap('n', 'r', function()
+    self:refresh()
+  end, { desc = 'Refresh DataFrame display' })
+end
+
+-- Evaluate expression in DAP context
+function Pane:evaluate_expression()
+    local expr = self.expression
+    if expr == nil then
+        self:set_content("Press 'e' to enter an expression")
+        return
+    end
+    evaluator.evaluate_expression(expr, function(err, ret)
+        if err ~= nil then
+            self:set_content("Failed to evaluate expression: " .. vim.inspect(err))
+        else
+            local table, fmt_err = table_fmt.from_csv(ret, 2)
+            if fmt_err ~= nil then
+                self:set_content("Failed to format result: " .. vim.inspect(fmt_err))
+            else
+                local pane_output = { expr }
+                for idx, val in ipairs(table.text) do
+                    pane_output[idx + 1] = val
+                end
+                self:set_content(pane_output)
+            end
+        end
+    end)
+end
+
+-- Prompt for new expression
+function Pane:prompt_expression()
+  vim.ui.input({
+    prompt = 'DataFrame expression: ',
+    default = self.expression or ''
+  }, function(input)
+    if input and input ~= '' then
+      self:set_expression(input)
+    end
+  end)
+end
+
+-- Set current expression and refresh display
+function Pane:set_expression(expression)
+  self.expression = expression
+  self:refresh()
+end
+
 -- Refresh the pane content
 function Pane:refresh()
   if not self:is_open() then
     return
   end
-  
-  -- Check if DAP session is active
-  local dap_ok, dap = pcall(require, "dap")
-  local content
-  
-  if dap_ok and dap.session() then
-    -- DAP session is active - for now just show a different message
-    content = { "DAP session active" }
-  else
-    -- No DAP session
-    content = { self.config.default_text }
-  end
-  
-  self.buffer:set_content(content)
+
+  self:evaluate_expression()
 end
 
 -- Set custom content (for internal use)
 function Pane:set_content(lines)
   self.buffer:set_content(lines)
 end
+
 
 return Pane

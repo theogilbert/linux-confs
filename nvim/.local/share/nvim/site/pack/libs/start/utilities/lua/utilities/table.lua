@@ -122,7 +122,7 @@ local function build_header_separator_line(cols_width)
         local col_sep = col_num < #cols_width and "┼" or ""
         line = line .. string.rep("─", col_width) .. col_sep
     end
-    return line .. "┤\n"
+    return line .. "┤"
 end
 
 
@@ -182,7 +182,7 @@ function M.from_structured_data(lines, header_lines)
             table.insert(centered_cells, centered)
         end
 
-        local formatted_line = '│' .. table.concat(centered_cells, '│') .. '│\n'
+        local formatted_line = '│' .. table.concat(centered_cells, '│') .. '│'
         table.insert(formatted_lines, formatted_line)
     end
 

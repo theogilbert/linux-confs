@@ -13,6 +13,8 @@ describe("Buffer", function()
       assert.is_not_nil(buffer)
       assert.is_not_nil(buffer.buf_id)
       assert.is_true(vim.api.nvim_buf_is_valid(buffer.buf_id))
+
+      buffer:close()
     end)
     
     it("should set buffer options correctly", function()
@@ -22,6 +24,8 @@ describe("Buffer", function()
       assert.equals("hide", vim.api.nvim_buf_get_option(buffer.buf_id, "bufhidden"))
       assert.is_false(vim.api.nvim_buf_get_option(buffer.buf_id, "swapfile"))
       assert.is_false(vim.api.nvim_buf_get_option(buffer.buf_id, "modifiable"))
+
+      buffer:close()
     end)
     
     it("should set buffer name", function()
@@ -29,7 +33,8 @@ describe("Buffer", function()
       local name = vim.api.nvim_buf_get_name(buffer.buf_id)
       
       -- Buffer name should end with the expected pattern (may have path prefix)
-      assert.matches("%[DAP DF Pane %d+%]$", name)
+      assert.matches("%[DAP DF Pane]$", name)
+      buffer:close()
     end)
   end)
   
@@ -38,6 +43,10 @@ describe("Buffer", function()
     
     before_each(function()
       buffer = Buffer:new()
+    end)
+
+    after_each(function()
+      buffer:close()
     end)
     
     it("should set content from lines array", function()
@@ -68,6 +77,10 @@ describe("Buffer", function()
     before_each(function()
       buffer = Buffer:new()
     end)
+
+    after_each(function()
+        buffer:close()
+    end)
     
     it("should return current buffer content", function()
       local lines = {"Test 1", "Test 2"}
@@ -79,13 +92,21 @@ describe("Buffer", function()
   end)
   
   describe("is_valid()", function()
+    local buffer
+    
+    before_each(function()
+      buffer = Buffer:new()
+    end)
+
+    after_each(function()
+        buffer:close()
+    end)
+
     it("should return true for valid buffer", function()
-      local buffer = Buffer:new()
       assert.is_true(buffer:is_valid())
     end)
     
     it("should return false for deleted buffer", function()
-      local buffer = Buffer:new()
       vim.api.nvim_buf_delete(buffer.buf_id, { force = true })
       assert.is_false(buffer:is_valid())
     end)
@@ -96,6 +117,10 @@ describe("Buffer", function()
     
     before_each(function()
       buffer = Buffer:new()
+    end)
+
+    after_each(function()
+        buffer:close()
     end)
     
     it("should set buffer-local keymaps", function()

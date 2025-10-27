@@ -12,7 +12,9 @@ describe("nvim-dap-df-pane", function()
   
   after_each(function()
     -- Clean up any open windows
-    if dap_pane._get_pane() then
+    local existing_pane = dap_pane._get_pane()
+    if existing_pane then
+      existing_pane.buffer:close()
       dap_pane.close()
     end
   end)
@@ -26,11 +28,7 @@ describe("nvim-dap-df-pane", function()
     
     it("should accept custom configuration", function()
       assert.has_no.errors(function()
-        dap_pane.setup({
-          position = "top",
-          size = 20,
-          default_text = "Custom message",
-        })
+        dap_pane.setup({ size = 20 })
       end)
     end)
   end)
@@ -92,16 +90,14 @@ describe("nvim-dap-df-pane", function()
     end)
   end)
   
-  describe("default text", function()
-    it("should display default text when no DAP session", function()
-      dap_pane.setup({
-        default_text = "Test default text"
-      })
+  describe("prompt expression", function()
+    it("should display expression prompt", function()
+      dap_pane.setup({})
       dap_pane.open()
       
       local pane = dap_pane._get_pane()
       local content = pane.buffer:get_content()
-      assert.equals("Test default text", content[1])
+      assert.equals("Press 'e' to enter an expression", content[1])
     end)
   end)
 end)

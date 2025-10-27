@@ -161,7 +161,7 @@ vim.keymap.set("n", "<leader>dpw", dap_settings.show_watches_pane, { desc = "Sho
 vim.keymap.set("n", "<leader>dps", dap_settings.show_stacks_pane, { desc = "Show [D]AP [p]ane - [s]tack" })
 vim.keymap.set("n", "<leader>dpr", dap_settings.show_repl_pane, { desc = "Show [D]AP [p]ane - [r]epl" })
 vim.keymap.set("n", "<leader>dpb", dap_settings.show_breakpoints_pane, { desc = "Show [D]AP [p]ane - [b]reakpoints" })
-vim.keymap.set("n", "<leader>dpd", function() require('nvim-dap-df-pane').toggle() end, { desc = "Toggle [D]AP [p]ane - [d]ataframe" })
+vim.keymap.set("n", "<leader>dpd", dap_settings.show_dataframe_pane, { desc = "Toggle [D]AP [p]ane - [d]ataframe" })
 
 local gitsigns = require('gitsigns')
 vim.keymap.set({ "n", "v" }, "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })

@@ -1,3 +1,5 @@
+local Pane = require("nvim-dap-df-pane.pane")
+
 local M = {}
 
 -- Plugin state
@@ -8,9 +10,7 @@ local state = {
 
 -- Default configuration
 local default_config = {
-  position = "bottom",
   size = 10,
-  default_text = "No DAP session is currently running",
 }
 
 -- Setup function
@@ -34,7 +34,6 @@ end
 -- Open the pane
 function M.open()
   if not state.pane then
-    local Pane = require("nvim-dap-df-pane.pane")
     state.pane = Pane:new(state.config)
   end
   state.pane:open()

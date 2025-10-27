@@ -9,32 +9,36 @@ function Buffer:new()
   self.buf_id = vim.api.nvim_create_buf(false, true)
   
   -- Configure the buffer
-  vim.api.nvim_buf_set_option(self.buf_id, "buftype", "nofile")
-  vim.api.nvim_buf_set_option(self.buf_id, "bufhidden", "hide")
-  vim.api.nvim_buf_set_option(self.buf_id, "swapfile", false)
-  vim.api.nvim_buf_set_option(self.buf_id, "modifiable", false)
-  
-  -- Create a unique name using the buffer ID to avoid conflicts
-  local name = "[DAP DF Pane " .. self.buf_id .. "]"
-  vim.api.nvim_buf_set_name(self.buf_id, name)
+  vim.api.nvim_set_option_value("buftype", "nofile", {buf=self.buf_id})
+  vim.api.nvim_set_option_value("bufhidden", "hide", {buf=self.buf_id})
+  vim.api.nvim_set_option_value("swapfile", false, {buf=self.buf_id})
+  vim.api.nvim_set_option_value("modifiable", false, {buf=self.buf_id})
+  vim.api.nvim_buf_set_name(self.buf_id, "[DAP DF Pane]")
   
   return self
 end
 
--- Set the buffer content
+function Buffer:close()
+    if self:is_valid() then
+        vim.api.nvim_buf_delete(self.buf_id, {force=true})
+    end
+end
+
+--- Set the buffer content
+---
+---@param lines table The list of lines to write to the buffer
 function Buffer:set_content(lines)
   if type(lines) == "string" then
     lines = vim.split(lines, "\n")
   end
-  
   -- Temporarily make the buffer modifiable
-  vim.api.nvim_buf_set_option(self.buf_id, "modifiable", true)
-  
+  vim.api.nvim_set_option_value("modifiable", true, {buf=self.buf_id})
+
   -- Set the lines
   vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, lines)
-  
+
   -- Make it non-modifiable again
-  vim.api.nvim_buf_set_option(self.buf_id, "modifiable", false)
+  vim.api.nvim_set_option_value("modifiable", false, {buf=self.buf_id})
 end
 
 -- Get the buffer content

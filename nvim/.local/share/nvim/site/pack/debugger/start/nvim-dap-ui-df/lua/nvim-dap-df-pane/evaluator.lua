@@ -87,11 +87,4 @@ M.evaluate_expression = function(expression, on_result)
 	end)
 end
 
-M.setup_dap_listener = function(pane)
-	local pane_name = "pane-" .. pane:buf_id()
-	dap.listeners.after.event_stopped[pane_name] = function()
-		pane:refresh()
-	end
-end
-
 return M

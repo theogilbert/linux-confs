@@ -1,3 +1,4 @@
+local dap = require("dap")
 local Pane = require("nvim-dap-df-pane.pane")
 
 local M = {}
@@ -29,6 +30,12 @@ function M.setup(opts)
 			end
 		end,
 	})
+
+	dap.listeners.after.event_stopped["dap-ui-df"] = function()
+            if state.pane and state.pane:is_open() then
+                state.pane:refresh()
+            end
+        end
 end
 
 -- Open the pane

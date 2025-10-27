@@ -8,10 +8,8 @@ test:
 	@echo "Running nvim-dap-df-pane tests..."
 	@nvim --headless -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal_init.lua'}"
 
-# Clean generated files
-clean:
-	@echo "Cleaning generated files..."
-	@find . -name "*.tmp" -delete
+format:
+	@stylua .
 
 # Show help
 help:
@@ -19,5 +17,5 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make test  - Run all tests using plenary"
-	@echo "  make clean - Clean generated files"
+	@echo "  make format  - Format lua files"
 	@echo "  make help  - Show this help message"

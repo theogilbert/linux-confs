@@ -1,0 +1,124 @@
+*nvim-dap-df-pane.txt*    DAP Pane for Neovim
+
+==============================================================================
+CONTENTS                                                   *nvim-dap-df-pane-contents*
+
+  1. Introduction ....................................... |nvim-dap-df-pane-intro|
+  2. Requirements .................................. |nvim-dap-df-pane-requirements|
+  3. Installation .................................. |nvim-dap-df-pane-installation|
+  4. Configuration ................................ |nvim-dap-df-pane-configuration|
+  5. Commands .......................................... |nvim-dap-df-pane-commands|
+  6. API .................................................... |nvim-dap-df-pane-api|
+
+==============================================================================
+INTRODUCTION                                                  *nvim-dap-df-pane-intro*
+
+nvim-dap-df-pane is a Neovim plugin that provides a dedicated pane window for
+displaying DAP (Debug Adapter Protocol) evaluation results. It automatically
+detects DAP session status and provides a clean interface for future
+extensibility.
+
+==============================================================================
+REQUIREMENTS                                           *nvim-dap-df-pane-requirements*
+
+- Neovim 0.8.0 or later
+- nvim-dap (optional, but recommended)
+
+==============================================================================
+INSTALLATION                                           *nvim-dap-df-pane-installation*
+
+Using packer.nvim:
+>lua
+  use {
+    'nvim-dap-df-pane',
+    requires = 'mfussenegger/nvim-dap',
+    config = function()
+      require('nvim-dap-df-pane').setup()
+    end
+  }
+<
+
+Using lazy.nvim:
+>lua
+  {
+    'nvim-dap-df-pane',
+    dependencies = { 'mfussenegger/nvim-dap' },
+    config = function()
+      require('nvim-dap-df-pane').setup()
+    end
+  }
+<
+
+==============================================================================
+CONFIGURATION                                         *nvim-dap-df-pane-configuration*
+
+Call the setup function with your configuration:
+>lua
+  require('nvim-dap-df-pane').setup({
+    position = "bottom",  -- "bottom", "top", "left", "right"
+    size = 10,           -- height/width depending on position
+    default_text = "No DAP session is currently running",
+  })
+<
+
+Options~
+                                                          *nvim-dap-df-pane-options*
+
+position~
+    Type: `string`
+    Default: `"bottom"`
+    
+    Position of the pane window. Valid values:
+    - "bottom": Split below
+    - "top": Split above  
+    - "left": Split to the left
+    - "right": Split to the right
+
+size~
+    Type: `number`
+    Default: `10`
+    
+    Size of the pane window:
+    - For horizontal splits (top/bottom): height in lines
+    - For vertical splits (left/right): width in columns
+
+default_text~
+    Type: `string`
+    Default: `"No DAP session is currently running"`
+    
+    Text displayed when no DAP session is active.
+
+==============================================================================
+COMMANDS                                                  *nvim-dap-df-pane-commands*
+
+nvim-dap-df-pane doesn't provide any ex-commands by default. Use the Lua API
+instead.
+
+==============================================================================
+API                                                            *nvim-dap-df-pane-api*
+
+setup({opts})                                               *nvim-dap-df-pane.setup()*
+    Initialize the plugin with configuration options.
+    
+    Parameters:
+    - {opts} (table|nil): Configuration table (see |nvim-dap-df-pane-options|)
+
+open()                                                       *nvim-dap-df-pane.open()*
+    Open the DAP pane window. If already open, this is a no-op.
+
+close()                                                     *nvim-dap-df-pane.close()*
+    Close the DAP pane window.
+
+toggle()                                                   *nvim-dap-df-pane.toggle()*
+    Toggle the DAP pane window open/closed.
+
+Example usage:
+>lua
+  -- Keybindings
+  vim.keymap.set('n', '<leader>dp', function() 
+    require('nvim-dap-df-pane').toggle() 
+  end, { desc = "Toggle DAP Pane" })
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

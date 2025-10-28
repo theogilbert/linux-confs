@@ -141,7 +141,6 @@ M.show_stacks_pane = function()
 end
 M.show_repl_pane = function()
     M.set_bottom_pane('repl')
-    winutils.focus_filetype('dap-repl')
 end
 M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')
@@ -149,8 +148,7 @@ end
 M.show_dataframe_pane = function()
     dapui.close()
     dapui_df.open()
-    -- M.set_bottom_pane('dataframe')
-    -- winutils.focus_filetype('dapui_dataframe')
+    winutils.focus_filetype('dap-df')
 end
 
 

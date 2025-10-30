@@ -79,7 +79,7 @@ setmetatable(run_cmd_cfg, {
             local program = parts[1]
             local args = vim.list_slice(parts, 2)
 
-            return vim.tbl_extend("error", cfg, { program=program, args=args, stopOnEntry=true })
+            return vim.tbl_extend("error", cfg, { program=program, args=args })
         end
     })
 

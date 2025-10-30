@@ -25,7 +25,11 @@ function DataView:refresh(on_ready)
     evaluator.evaluate_expression(self.expr, function(err, ret)
         if err ~= nil then
             self.state = State.FAILED
-            self.data = {"Failed to evaluate expression:",vim.inspect(err)}
+            self.data = {"Failed to evaluate expression:"}
+
+            local err_lines = vim.split(vim.inspect(err), "\n")
+            vim.list_extend(self.data, err_lines)
+
             on_ready()
             return
         end

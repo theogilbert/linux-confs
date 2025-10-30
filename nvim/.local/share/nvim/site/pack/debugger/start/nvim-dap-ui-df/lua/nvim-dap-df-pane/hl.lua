@@ -10,12 +10,11 @@ local function build_highlights()
     local bg = vim.api.nvim_get_hl(0, { name = "Normal" }).bg
 
     return {
-        DapDfPromptPrefix = { fg = bg, bg = EXPR_BG },
-        DapDfPromptContent = { fg = EXPR_FG, bg = EXPR_BG },
-        DapDfPromptSuffix = { fg = EXPR_BG, bg = bg },
         DapDfBorder = { fg = BORDER_FG },
         DapDfError = { fg = ERROR_FG },
-        DapDfType = { fg = TYPE_FG }
+        DapDfPrompt = { fg = EXPR_FG, bg = EXPR_BG },
+        DapDfHeaderRow = { bold = true },
+        DapDfTypeRow = { fg = TYPE_FG }
     }
 end
 

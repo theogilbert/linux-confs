@@ -46,7 +46,7 @@ function DataView:refresh(on_ready)
 end
 
 function DataView:get_lines()
-    local lines = { " " .. self.expr .. " " }
+    local lines = { "➜ " .. self.expr }
 
     return vim.list_extend(lines, self.data)
 
@@ -56,10 +56,7 @@ local function build_hl_rules_for_columns(higroup, line, columns_width)
         local content_rules = {}
 
         local cur_col = 1
-        print(vim.inspect(columns_width))
         for i, width in ipairs(columns_width) do
-            print(vim.inspect(i) .. " - " .. vim.inspect(width))
-
             content_rules[i] = {
                 higroup = higroup,
                 start = {line, cur_col },
@@ -74,28 +71,26 @@ local function build_hl_rules_for_columns(higroup, line, columns_width)
 end
 
 function DataView:get_hl_rules()
-    local expr_width = vim.api.nvim_strwidth(self.expr)
-    local all_rules = {
-        -- We start with highlight rules for the expression
-        { higroup = "DapDfPromptPrefix", start = {0, 0}, finish = {0, 2}},
-        { higroup = "DapDfPromptContent", start = {0, 2}, finish = {0, expr_width + 5}},
-        { higroup = "DapDfPromptSuffix", start = {0, expr_width + 5}, finish = {0, -1}},
-    }
-
-    local content_rules = {}
+    local hl_rules = {}
     if self.state == State.EVALUATING then
-        content_rules = {
+        hl_rules = {
             { higroup = "DapDfLoading", start = {1, 0}, finish = {-1, -1} }
         }
     elseif self.state == State.READY then
-        content_rules = build_hl_rules_for_columns("DapDfType", 2, self.table.columns_width)
+        hl_rules = vim.iter(
+            {
+                {{ higroup = "DapDfPrompt", start = {0, 0}, finish = {0, -1}}},
+                build_hl_rules_for_columns("DapDfHeaderRow", 1, self.table.columns_width),
+                build_hl_rules_for_columns("DapDfTypeRow", 2, self.table.columns_width),
+            }
+        ):flatten():totable()
     elseif self.state == State.FAILED then
-        content_rules = {
+        hl_rules = {
             { higroup = "DapDfError", start = {1, 0}, finish = {#self.data + 1, -1} }
         }
     end
 
-    return vim.list_extend(all_rules, content_rules)
+    return hl_rules
 end
 
 

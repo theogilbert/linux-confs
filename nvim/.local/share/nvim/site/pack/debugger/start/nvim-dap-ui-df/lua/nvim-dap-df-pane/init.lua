@@ -1,5 +1,6 @@
 local dap = require("dap")
 local Pane = require("nvim-dap-df-pane.pane")
+local hl = require("nvim-dap-df-pane.hl")
 
 local M = {}
 
@@ -17,6 +18,8 @@ local default_config = {
 -- Setup function
 function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", default_config, opts or {})
+
+        hl.setup()
 
 	-- Set up autocommands for DAP session lifecycle
 	local augroup = vim.api.nvim_create_augroup("NvimDapDfPane", { clear = true })

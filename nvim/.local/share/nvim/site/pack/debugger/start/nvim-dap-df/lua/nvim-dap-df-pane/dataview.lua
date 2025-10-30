@@ -46,7 +46,10 @@ function DataView:refresh(on_ready)
 end
 
 function DataView:get_lines()
-    local lines = { "➜ " .. self.expr }
+    local base_prompt = "➜ " .. self.expr
+    local first_line_width = vim.api.nvim_strwidth(self.data[1] or "")
+    local chars_to_add = math.max(0, first_line_width - vim.api.nvim_strwidth(base_prompt))
+    local lines = {  base_prompt .. string.rep(" ", chars_to_add)}
 
     return vim.list_extend(lines, self.data)
 

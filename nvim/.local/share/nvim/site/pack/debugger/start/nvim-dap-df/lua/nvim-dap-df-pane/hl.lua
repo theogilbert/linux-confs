@@ -1,6 +1,6 @@
 local M = {}
 
-local EXPR_BG = "#9ecd6f"
+local EXPR_BG = "#95A1F5"
 local EXPR_FG = "#000000"
 local BORDER_FG = "#555555"
 local ERROR_FG = "#CA2722"

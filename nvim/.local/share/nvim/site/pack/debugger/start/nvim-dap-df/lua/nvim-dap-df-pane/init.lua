@@ -1,5 +1,6 @@
 local dap = require("dap")
 local Pane = require("nvim-dap-df-pane.pane")
+local hl = require("nvim-dap-df-pane.hl")
 
 local M = {}
 
@@ -12,27 +13,17 @@ local state = {
 -- Default configuration
 local default_config = {
 	size = 10,
+        limit = 500,
 }
 
 -- Setup function
 function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", default_config, opts or {})
 
-	-- Set up autocommands for DAP session lifecycle
-	local augroup = vim.api.nvim_create_augroup("NvimDapDfPane", { clear = true })
+        hl.setup()
 
-	vim.api.nvim_create_autocmd("User", {
-		pattern = "DapSessionChanged",
-		group = augroup,
-		callback = function()
-			if state.pane then
-				state.pane:refresh()
-			end
-		end,
-	})
-
-	dap.listeners.after.event_stopped["dap-ui-df"] = function()
-            if state.pane and state.pane:is_open() then
+        dap.listeners.after.scopes["dap-ui-df"] = function()
+            if state.pane then
                 state.pane:refresh()
             end
         end

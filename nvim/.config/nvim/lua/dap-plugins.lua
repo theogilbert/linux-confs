@@ -112,19 +112,12 @@ dapui.setup({
     },
 })
 
-local dapui_df = require('nvim-dap-df-pane')
-dapui_df.setup()
-
 -- Setup the new nvim-dap-df-pane plugin
-local dap_df_pane = require('nvim-dap-df-pane')
-dap_df_pane.setup({
-  position = "bottom",
-  size = 15,
-  default_text = "No DAP session is currently running"
-})
+local dap_df = require('nvim-dap-df-pane')
+dap_df.setup({ size = 15, limit = 1000 })
 
 function M.set_bottom_pane(scope)
-    dapui_df.close()
+    dap_df.close()
     dapui.close()
     local indices = { repl = 1, scopes = 2, watches = 3, stacks = 4, breakpoints = 5, dataframe = 6 }
     dapui.open({layout = indices[scope]})
@@ -147,7 +140,7 @@ M.show_breakpoints_pane = function()
 end
 M.show_dataframe_pane = function()
     dapui.close()
-    dapui_df.open()
+    dap_df.open()
     winutils.focus_filetype('dap-df')
 end
 

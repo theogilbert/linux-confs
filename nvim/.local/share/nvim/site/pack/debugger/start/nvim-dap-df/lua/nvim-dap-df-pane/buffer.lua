@@ -1,3 +1,5 @@
+local hl = require("nvim-dap-df-pane.hl")
+
 local Buffer = {}
 Buffer.__index = Buffer
 
@@ -10,10 +12,12 @@ function Buffer:new()
 
 	-- Configure the buffer
 	vim.api.nvim_set_option_value("buftype", "nofile", { buf = self.buf_id })
+	vim.api.nvim_set_option_value("filetype", "dap-df", { buf = self.buf_id })
 	vim.api.nvim_set_option_value("bufhidden", "hide", { buf = self.buf_id })
 	vim.api.nvim_set_option_value("swapfile", false, { buf = self.buf_id })
 	vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
 	vim.api.nvim_buf_set_name(self.buf_id, "[DAP DF Pane]")
+        hl.setup_static_hl_rules(self.buf_id)
 
 	return self
 end
@@ -31,19 +35,29 @@ function Buffer:set_content(lines)
 	if type(lines) == "string" then
 		lines = vim.split(lines, "\n")
 	end
-	-- Temporarily make the buffer modifiable
-	vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
 
-	-- Set the lines
+        vim.bo[self.buf_id].modifiable = true
 	vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, lines)
-
-	-- Make it non-modifiable again
-	vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+        vim.bo[self.buf_id].modifiable = false
 end
 
 -- Get the buffer content
 function Buffer:get_content()
 	return vim.api.nvim_buf_get_lines(self.buf_id, 0, -1, false)
+end
+
+--- @param hl_rules table[] List of highlight rules to apply to the buffer, where each rule has:
+---   - `higroup` (string): The name of the highlight group to apply
+---   - `start` (string|integer[]): Start of region as a (line, column) tuple
+---     or string accepted by |getpos()|
+---   - `finish` (string|integer[]): End of region as a (line, column) tuple
+---     or string accepted by |getpos()|
+function Buffer:apply_highlight(hl_rules)
+    vim.api.nvim_buf_clear_namespace(self.buf_id, hl.NS_ID, 0, -1)
+
+    for _, rule in ipairs(hl_rules) do
+        vim.hl.range(self.buf_id, hl.NS_ID, rule.higroup, rule.start, rule.finish)
+    end
 end
 
 -- Check if the buffer is valid

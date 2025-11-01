@@ -1,6 +1,6 @@
+local DataView = require("nvim-dap-df-pane.dataview")
 local Buffer = require("nvim-dap-df-pane.buffer")
-local evaluator = require("nvim-dap-df-pane.evaluator")
-local table_fmt = require("utilities.table")
+local hl = require("nvim-dap-df-pane.hl")
 
 local Pane = {}
 Pane.__index = Pane
@@ -12,6 +12,7 @@ function Pane:new(config)
 	self.win_id = nil
 	self.buffer = Buffer:new()
 	self.is_open_flag = false
+        self.dataview = nil
 	return self
 end
 
@@ -35,6 +36,7 @@ function Pane:open()
 	vim.api.nvim_win_set_option(self.win_id, "winfixheight", true)
 	vim.api.nvim_win_set_option(self.win_id, "winfixwidth", true)
 	vim.api.nvim_win_set_option(self.win_id, "wrap", false)
+        vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
 
 	-- Set up keymaps for the buffer
 	self:setup_keymaps()
@@ -72,48 +74,21 @@ function Pane:setup_keymaps()
 	end, { desc = "Refresh DataFrame display" })
 end
 
--- Evaluate expression in DAP context
-function Pane:evaluate_expression()
-	local expr = self.expression
-	if expr == nil then
-		self:set_content("Press 'e' to enter an expression")
-		return
-	end
-	evaluator.evaluate_expression(expr, function(err, ret)
-		if err ~= nil then
-			self:set_content("Failed to evaluate expression: " .. vim.inspect(err))
-		else
-			local table, fmt_err = table_fmt.from_csv(ret, 2)
-			if fmt_err ~= nil then
-				self:set_content("Failed to format result: " .. vim.inspect(fmt_err))
-			else
-				local pane_output = { expr }
-				for idx, val in ipairs(table.text) do
-					pane_output[idx + 1] = val
-				end
-				self:set_content(pane_output)
-			end
-		end
-	end)
-end
+
 
 -- Prompt for new expression
 function Pane:prompt_expression()
 	vim.ui.input({
 		prompt = "DataFrame expression: ",
-		default = self.expression or "",
+		default = self.dataview and self.dataview.expr or "",
 	}, function(input)
 		if input and input ~= "" then
-			self:set_expression(input)
+                    self.dataview = DataView:new(input, self.config.limit)
+                    self:refresh()
 		end
 	end)
 end
 
--- Set current expression and refresh display
-function Pane:set_expression(expression)
-	self.expression = expression
-	self:refresh()
-end
 
 -- Refresh the pane content
 function Pane:refresh()
@@ -121,12 +96,15 @@ function Pane:refresh()
 		return
 	end
 
-	self:evaluate_expression()
-end
-
--- Set custom content (for internal use)
-function Pane:set_content(lines)
-	self.buffer:set_content(lines)
+	if self.dataview == nil then
+            self.buffer:set_content("Press 'e' to enter an expression")
+            return
+        else
+            self.dataview:refresh(function()
+                self.buffer:set_content(self.dataview:get_lines())
+                self.buffer:apply_highlight(self.dataview:get_hl_rules())
+            end)
+	end
 end
 
 return Pane

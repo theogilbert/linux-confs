@@ -21,21 +21,8 @@ function M.setup(opts)
 
         hl.setup()
 
-	-- Set up autocommands for DAP session lifecycle
-	local augroup = vim.api.nvim_create_augroup("NvimDapDfPane", { clear = true })
-
-	vim.api.nvim_create_autocmd("User", {
-		pattern = "DapSessionChanged",
-		group = augroup,
-		callback = function()
-			if state.pane then
-				state.pane:refresh()
-			end
-		end,
-	})
-
-	dap.listeners.after.event_stopped["dap-ui-df"] = function()
-            if state.pane and state.pane:is_open() then
+        dap.listeners.after.scopes["dap-ui-df"] = function()
+            if state.pane then
                 state.pane:refresh()
             end
         end

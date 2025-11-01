@@ -13,6 +13,7 @@ local state = {
 -- Default configuration
 local default_config = {
 	size = 10,
+        limit = 500,
 }
 
 -- Setup function

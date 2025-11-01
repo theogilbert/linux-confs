@@ -83,7 +83,7 @@ function Pane:prompt_expression()
 		default = self.dataview and self.dataview.expr or "",
 	}, function(input)
 		if input and input ~= "" then
-                    self.dataview = DataView:new(input)
+                    self.dataview = DataView:new(input, self.config.limit)
                     self:refresh()
 		end
 	end)

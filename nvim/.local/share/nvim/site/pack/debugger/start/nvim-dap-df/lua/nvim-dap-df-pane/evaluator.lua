@@ -2,10 +2,69 @@ local dap = require("dap")
 
 local M = {}
 
+--- @enum Types
 local Types = {
     DataFrame = "DataFrame",
     Series = "Series"
 }
+---
+--- @class EvaluationState
+--- @field callback function Function to call with the parameters error, data, shape
+--- @field type Types The class name of the object evaluated by the expression
+--- @field sent boolean True if the state has been sent to the callback yet.
+---     Prevents duplicate calls in case of multiple errors.
+--- @field data table The list of CSV lines representing the column names and data
+--- @field row_len number|nil The number of rows in the DataFrame/Series
+--- @field col_len number|nil The number of columns in the DataFrame/Series
+--- @field dtypes table|nil The CSV line representing the dtypes of the columns
+
+local function init_evaluation_state(callback, type)
+    if Types[type] == nil then
+            return nil, "Expression is neither a DataFrame nor a Series, but a " .. type
+    end
+
+    return { callback = callback, type = type, sent = false }, nil
+end
+
+local function merge_data_and_dtypes(data_ret, dtypes_ret)
+	local data_first_eol = data_ret:find("\n")
+	return data_ret:sub(1, data_first_eol) .. dtypes_ret .. "\n" .. data_ret:sub(data_first_eol + 1)
+end
+
+local function send_if_state_ready(state)
+    local attrs = {'row_len', 'col_len', 'data', 'dtypes'}
+    for _, field in ipairs(attrs) do
+        if state[field] == nil then
+            return
+        end
+    end
+
+    state.sent = true
+
+    local merged = merge_data_and_dtypes(state.data, state.dtypes)
+    local shape = { state.col_len, state.row_len }
+
+    state.callback(merged, shape, nil)
+end
+
+local function fail_evaluation_state(state, err)
+    if state.sent then
+        return
+    end
+
+    state.sent = true
+    state.callback(nil, nil, err)
+end
+
+local function update_evaluation_state(state, field, value)
+    if state.sent then
+        return
+    end
+
+    state[field] = value
+
+    send_if_state_ready(state)
+end
 
 local function evaluate_expression(session, expr, callback)
 	local params = { expression = expr, context = "watch", frameId = session.current_frame.id }
@@ -13,32 +72,43 @@ local function evaluate_expression(session, expr, callback)
 		if err ~= nil then
 			callback(err, nil)
 		else
-			local lines = result.result:gsub("\\n", "\n"):sub(2, -2)
-			callback(nil, { type = result.type, result = lines })
+			callback(nil, { type = result.type, lines = result.result })
 		end
 	end)
 end
 
-local function check_expression_type(session, expr, callback)
-	evaluate_expression(session, expr, function(err, result)
-		if err ~= nil then
-			callback(err)
-		elseif Types[result.type] == nil then
-			callback(result.type, "Expression is neither a DataFrame nor a Series, but a " .. result.type)
-		else
-			callback(result.type, nil)
-		end
-	end)
+--- Evaluate an expression and updates the specified field of the given EvaluationState
+--- with the result.
+--- @param state EvaluationState The state to update with the evaluation result
+--- @param field string The field of the state to update
+--- @param expr string The expression to evaluate
+--- @param str_value boolean True if the expression resolves to a string that must be properly escaped,
+---                          False otherwise.
+--- @param session any The DAP session object
+local function evaluate_state_field(state, field, expr, str_value, session)
+    evaluate_expression(session, expr, function(err, result)
+        if err ~= nil then
+            fail_evaluation_state(state, err)
+        else
+            local value = result.lines
+            if str_value then
+                value = value:gsub("\\n", "\n"):sub(2, -2)
+            end
+
+            update_evaluation_state(state, field, value)
+        end
+
+    end)
 end
 
-local function evaluate_df_expression(session, df_expr, callback)
-	local limited_expr = df_expr .. ".head(500).to_csv()"
-	evaluate_expression(session, limited_expr, callback)
+local function evaluate_df_data(state, df_expr, limit, session)
+    local limited_expr = df_expr .. ".head(" .. limit .. ").to_csv()"
+    evaluate_state_field(state, "data", limited_expr, true, session)
 end
 
-local function evaluate_df_dtypes(session, df_expr, type, callback)
+local function evaluate_df_dtypes(state, df_expr, session)
     local dtypes_expr = ""
-    if type == Types.DataFrame then
+    if state.type == Types.DataFrame then
 	local idx_expr = df_expr .. ".index.dtype.name"
 	local cols_expr = "[" .. df_expr .. "[col].dtype.name for col in " .. df_expr .. ".columns]"
 
@@ -50,20 +120,31 @@ local function evaluate_df_dtypes(session, df_expr, type, callback)
 	dtypes_expr = "','.join([" .. idx_expr .. ", " .. col_expr .. "])"
     end
 
-    evaluate_expression(session, dtypes_expr, callback)
+    evaluate_state_field(state, "dtypes", dtypes_expr, true, session)
 end
 
-local function merge_data_and_dtypes(data_ret, dtypes_ret)
-	local data_first_eol = data_ret:find("\n")
-	return data_ret:sub(1, data_first_eol) .. dtypes_ret .. "\n" .. data_ret:sub(data_first_eol + 1)
+local function evaluate_col_count(state, df_expr, session)
+    if state.type == Types.Series then
+        update_evaluation_state(state, "col_len", "1")
+    else
+        local cols_count_expr = "len(" .. df_expr .. ".columns)"
+        evaluate_state_field(state, "col_len", cols_count_expr, false, session)
+    end
 end
+
+local function evaluate_row_count(state, df_expr, session)
+    local row_count_expr = "len(" .. df_expr .. ")"
+    evaluate_state_field(state, "row_len", row_count_expr, false, session)
+end
+
 
 --- Parses TSNode objects matching queries present in queries/<filetype>/sections.scm
 --- @param expression string A python expression resolving to a pd.DataFrame or pd.Series object
+--- @param limit number The maximum number of rows to fetch
 --- @param on_result function The callback function called when the evaluation result is ready.
 ---        Accepts two parameters: err and result. Result will be a string representing the result
 ---        of the expression in CSV format.
-M.evaluate_expression = function(expression, on_result)
+M.evaluate_expression = function(expression, limit, on_result)
 	local session = dap.session()
 
 	if session == nil then
@@ -76,30 +157,23 @@ M.evaluate_expression = function(expression, on_result)
 		return
 	end
 
-	check_expression_type(session, expression, function(type, err)
-                -- TODO : send type in callback, and use that type to evaluate df_types (currently fails in case of Series as no columns)
-		if err ~= nil then
-			on_result(err, nil)
-			return
-		end
+        evaluate_expression(session, expression, function(err, result)
+            if err ~= nil then
+                on_result(nil, nil, err)
+                return
+            end
 
-		evaluate_df_expression(session, expression, function(err, data_ret)
-			if err ~= nil then
-				on_result(err, nil)
-				return
-			end
+            local state, err = init_evaluation_state(on_result, result.type)
 
-			evaluate_df_dtypes(session, expression, type, function(err, dtypes_ret)
-				if err ~= nil then
-					on_result(err, nil)
-					return
-				end
-
-				local merged = merge_data_and_dtypes(data_ret.result, dtypes_ret.result)
-				on_result(nil, merged)
-			end)
-		end)
-	end)
+            if err ~= nil then
+                on_result(nil, nil, err)
+            else
+                evaluate_df_data(state, expression, limit, session)
+                evaluate_df_dtypes(state, expression, session)
+                evaluate_row_count(state, expression, session)
+                evaluate_col_count(state, expression, session)
+            end
+        end)
 end
 
 return M

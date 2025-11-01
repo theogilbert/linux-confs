@@ -2,17 +2,19 @@ local M = {}
 
 local EXPR_BG = "#95A1F5"
 local EXPR_FG = "#000000"
+local SHAPE_FG = "#F9F9FF"
+local PROMPT_LOADING_FG = "#555555"
 local BORDER_FG = "#555555"
 local ERROR_FG = "#CA2722"
 local TYPE_FG = "#96DDF5"
 
 local function build_highlights()
-    local bg = vim.api.nvim_get_hl(0, { name = "Normal" }).bg
-
     return {
         DapDfBorder = { fg = BORDER_FG },
         DapDfError = { fg = ERROR_FG },
         DapDfPrompt = { fg = EXPR_FG, bg = EXPR_BG },
+        DapDfPromptShape = { fg = SHAPE_FG, bg = EXPR_BG },
+        DapDfPromptLoading = { fg = PROMPT_LOADING_FG, bg = EXPR_BG },
         DapDfHeaderRow = { bold = true },
         DapDfTypeRow = { fg = TYPE_FG }
     }

@@ -80,7 +80,7 @@ end
 function Pane:prompt_expression()
 	vim.ui.input({
 		prompt = "DataFrame expression: ",
-		default = self.expression or "",
+		default = self.dataview and self.dataview.expr or "",
 	}, function(input)
 		if input and input ~= "" then
                     self.dataview = DataView:new(input)

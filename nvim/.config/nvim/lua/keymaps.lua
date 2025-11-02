@@ -20,19 +20,26 @@ end, { desc = "[F]ocus floating window" })
 
 -- If the number column is displayed, hide it and hide the sign column
 -- Otherwise, display both.
-function toggleGutter()
-	isGutterDisplayed = vim.opt.number:get()
+local function toggleGutter()
+	local isGutterDisplayed = vim.opt.number:get()
 
 	vim.opt.number = not isGutterDisplayed
 	vim.opt.signcolumn = isGutterDisplayed and "no" or "yes"
 end
 vim.keymap.set("n", "<Leader>On", toggleGutter, { desc = "Toggle [O]ption [N]umber" })
 
-function toggleMouse()
-	toggledSettings = vim.opt.mouse:get().a and "" or "a"
+local function toggleMouse()
+	local toggledSettings = vim.opt.mouse:get().a and "" or "a"
 	vim.opt.mouse = toggledSettings
 end
 vim.keymap.set("n", "<Leader>Om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
+
+local function toggleBytesInfo()
+    -- See statusline.lua for more info
+    vim.g.bytes_info_statusline = not vim.g.bytes_info_statusline
+    vim.cmd("redrawstatus")
+end
+vim.keymap.set("n", "<Leader>Ob", toggleBytesInfo, { desc = "Toggle [O]ption [B]ytes info" })
 
 vim.keymap.set("n", "<Leader>m", function()
 	vim.cmd("MaximizerToggle!")

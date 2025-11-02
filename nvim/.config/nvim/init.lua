@@ -2,6 +2,7 @@
 
 -- These files are present under ./lua/
 require("settings")
+require("statusline")
 require("keymaps")
 require("plugins")
 require("lsps")

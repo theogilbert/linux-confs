@@ -3,6 +3,7 @@ sections-api	sections.txt	/*sections-api*
 sections-config-icons	sections.txt	/*sections-config-icons*
 sections-config-indent	sections.txt	/*sections-config-indent*
 sections-config-keymaps	sections.txt	/*sections-config-keymaps*
+sections-config-width	sections.txt	/*sections-config-width*
 sections-configuration	sections.txt	/*sections-configuration*
 sections-contents	sections.txt	/*sections-contents*
 sections-installation	sections.txt	/*sections-installation*

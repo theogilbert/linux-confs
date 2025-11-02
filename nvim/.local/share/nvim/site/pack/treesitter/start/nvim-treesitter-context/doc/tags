@@ -1,0 +1,17 @@
+hl-TreesitterContext	nvim-treesitter-context.txt	/*hl-TreesitterContext*
+hl-TreesitterContextBottom	nvim-treesitter-context.txt	/*hl-TreesitterContextBottom*
+hl-TreesitterContextLineNumber	nvim-treesitter-context.txt	/*hl-TreesitterContextLineNumber*
+hl-TreesitterContextLineNumberBottom	nvim-treesitter-context.txt	/*hl-TreesitterContextLineNumberBottom*
+hl-TreesitterContextSeparator	nvim-treesitter-context.txt	/*hl-TreesitterContextSeparator*
+nvim-treesitter-context	nvim-treesitter-context.txt	/*nvim-treesitter-context*
+nvim-treesitter-context-commands	nvim-treesitter-context.txt	/*nvim-treesitter-context-commands*
+nvim-treesitter-context-config	nvim-treesitter-context.txt	/*nvim-treesitter-context-config*
+nvim-treesitter-context-disable()	nvim-treesitter-context.txt	/*nvim-treesitter-context-disable()*
+nvim-treesitter-context-enable()	nvim-treesitter-context.txt	/*nvim-treesitter-context-enable()*
+nvim-treesitter-context-enabled()	nvim-treesitter-context.txt	/*nvim-treesitter-context-enabled()*
+nvim-treesitter-context-functions	nvim-treesitter-context.txt	/*nvim-treesitter-context-functions*
+nvim-treesitter-context-go_to_context()	nvim-treesitter-context.txt	/*nvim-treesitter-context-go_to_context()*
+nvim-treesitter-context-highlights	nvim-treesitter-context.txt	/*nvim-treesitter-context-highlights*
+nvim-treesitter-context-intro	nvim-treesitter-context.txt	/*nvim-treesitter-context-intro*
+nvim-treesitter-context-setup()	nvim-treesitter-context.txt	/*nvim-treesitter-context-setup()*
+nvim-treesitter-context-toggle()	nvim-treesitter-context.txt	/*nvim-treesitter-context-toggle()*

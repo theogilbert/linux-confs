@@ -1,12 +1,12 @@
 local M = {}
 
-local EXPR_BG = "#95A1F5"
-local EXPR_FG = "#000000"
-local SHAPE_FG = "#F9F9FF"
+local EXPR_BG = "#3A3E5C"
+local EXPR_FG = "#9CDCFE"
+local SHAPE_FG = "#7F8490"
 local PROMPT_LOADING_FG = "#555555"
 local BORDER_FG = "#555555"
 local ERROR_FG = "#CA2722"
-local TYPE_FG = "#96DDF5"
+local TYPE_FG = "#8AA1C2"
 
 local function build_highlights()
     return {

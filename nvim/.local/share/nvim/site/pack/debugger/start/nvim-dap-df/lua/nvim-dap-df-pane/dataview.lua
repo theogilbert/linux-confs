@@ -4,13 +4,23 @@ local table_fmt = require("utilities.table")
 local DataView = {}
 DataView.__index = DataView
 
+--- @class State The current state of the data view
 local State = {
+	--- The expression is being evaluated and the data view is waiting for its result
 	EVALUATING = 0,
+	--- The expression has been evaluated and the data view is ready to be rendered
 	READY = 1,
+	--- The expression failed to be evaluated
 	FAILED = 2,
 }
 
--- Constructor
+--- @class DataView Generates the content of the DAP DF Pane buffer,
+--- given a valid DataFrame / Series expression.
+--- @field limit number The maximum number of rows to display
+--- @field expr string The valid python expression which evaluates to a DataFrame or a Series
+--- @field state State The current state of the data view
+--- @field shape table A table containing the number of columns and rows in the data
+--- @field lines table A sequence of lines to display in the data view. Represents the actual data.
 function DataView:new(expr, limit)
 	local self = setmetatable({}, DataView)
 
@@ -23,6 +33,9 @@ function DataView:new(expr, limit)
 	return self
 end
 
+--- Re-evaluate the expression and signal the caller when the result is ready to be rendered.
+--- @param on_ready function A callback function (no arguments) that is called when the data
+---                  view is ready to be rendered.
 function DataView:refresh(on_ready)
 	self.state = State.EVALUATING
 	on_ready()
@@ -47,19 +60,31 @@ function DataView:refresh(on_ready)
 			return
 		end
 
-		self.state = State.READY
 		self.table = table
 		self.lines = table.text
 		self.shape = shape
 		self.state = State.READY
+
 		on_ready()
 	end)
 end
 
+--- Generates the data shape part of the prompt line
+---
+--- @param self DataView The DataView for which to generate the shape representation
+--- @return string shape_repr A representation of the data shape, in the form of [num_cols,num_rows]
 local function get_shape_repr(self)
 	return self.shape and "[" .. self.shape[1] .. "×" .. self.shape[2] .. "]" or ""
 end
 
+--- Generates the whole prompt line for the dataview
+---
+--- @param self DataView The DataView for which to generate the shape representation
+--- @param width number The width of the table representing the data, in characters.
+--- @return string prompt A line containing:
+---          - the evaluated expression
+---          - the shape of its resulting data
+---          - Optionally a label indicating that the data is being evaluated.
 local function get_prompt_line(self, width)
 	local shape_repr = get_shape_repr(self)
 
@@ -74,6 +99,7 @@ local function get_prompt_line(self, width)
 	return base_prompt .. string.rep(" ", chars_to_add)
 end
 
+--- Generate the highlighting rules which will be applied on the prompt line.
 local function build_hl_rules_for_prompt(self)
 	local shape_start = 3 + #self.expr + 2
 	local shape_end = shape_start + #get_shape_repr(self)
@@ -101,6 +127,8 @@ local function build_hl_rules_for_prompt(self)
 	return rules
 end
 
+--- Returns a render of the evaluation result of the input expression
+--- @return table lines The sequence of the lines of the render
 function DataView:get_lines()
 	local first_line_width = vim.api.nvim_strwidth(self.lines[1] or "")
 	local prompt_line = get_prompt_line(self, first_line_width)
@@ -130,6 +158,7 @@ local function build_hl_rules_for_columns(higroup, line, table)
 	return content_rules
 end
 
+--- Returns the rules used to highlight the expression's rendered result.
 function DataView:get_hl_rules()
 	local hl_rules = {}
 	if self.state == State.FAILED then

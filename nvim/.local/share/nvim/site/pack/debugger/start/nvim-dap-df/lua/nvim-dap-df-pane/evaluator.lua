@@ -7,9 +7,13 @@ local Types = {
 	DataFrame = "DataFrame",
 	Series = "Series",
 }
+
+--- @class EvaluationState Given an input DataFrame/Series expression, multiple expressions
+--- will need to be evaluated to collect sufficient information to render the data.
+--- This class represents the intermediary state of this collection.
 ---
---- @class EvaluationState
---- @field callback function Function to call with the parameters error, data, shape
+--- @field callback function Function to call when all information have been collected.
+---                  It will be called with the parameters `error`, `data` and `shape`.
 --- @field type Types The class name of the object evaluated by the expression
 --- @field sent boolean True if the state has been sent to the callback yet.
 ---     Prevents duplicate calls in case of multiple errors.
@@ -72,8 +76,19 @@ local function evaluate_expression(session, expr, callback)
 		if err ~= nil then
 			callback(err, nil)
 		else
-			callback(nil, { type = result.type, lines = result.result })
+			callback(nil, result.result)
 		end
+	end)
+end
+
+local function evaluate_expression_type(session, expr, callback)
+	local type_expr = expr .. ".__class__.__name__"
+	evaluate_expression(session, type_expr, function(err, result)
+		if err ~= nil then
+			callback(err, result)
+		end
+
+		callback(nil, result:sub(2, -2))
 	end)
 end
 
@@ -90,7 +105,7 @@ local function evaluate_state_field(state, field, expr, str_value, session)
 		if err ~= nil then
 			fail_evaluation_state(state, err)
 		else
-			local value = result.lines
+			local value = result
 			if str_value then
 				value = value:gsub("\\n", "\n"):sub(2, -2)
 			end
@@ -136,32 +151,36 @@ local function evaluate_row_count(state, df_expr, session)
 	evaluate_state_field(state, "row_len", row_count_expr, false, session)
 end
 
---- Parses TSNode objects matching queries present in queries/<filetype>/sections.scm
+--- @alias EvaluationCallback fun(data: table|nil, shape: table|nil, err: string|nil)
+
+--- Evaluate and collect various information about the provided expression.
 --- @param expression string A python expression resolving to a pd.DataFrame or pd.Series object
 --- @param limit number The maximum number of rows to fetch
---- @param on_result function The callback function called when the evaluation result is ready.
----        Accepts two parameters: err and result. Result will be a string representing the result
----        of the expression in CSV format.
+--- @param on_result EvaluationCallback The callback function called when the evaluation result is ready.
+---        Accepts three parameters:
+---        - data (table) - A sequence oof lines representing the data in CSV format
+---        - shape (table) - A list containing two numbers: the number of columns and rows in the data.
+---        - err (string|nil) - If the evaluation fails, this parameter will be set to the error message.
 M.evaluate_expression = function(expression, limit, on_result)
 	local session = dap.session()
 
 	if session == nil then
-		on_result("No active DAP session", nil)
+		on_result(nil, nil, "No active DAP session")
 		return
 	end
 
 	if not session.current_frame then
-		on_result("No current frame", nil)
+		on_result(nil, nil, "No current frame")
 		return
 	end
 
-	evaluate_expression(session, expression, function(err, result)
+	evaluate_expression_type(session, expression, function(err, type)
 		if err ~= nil then
 			on_result(nil, nil, err)
 			return
 		end
 
-		local state, err = init_evaluation_state(on_result, result.type)
+		local state, err = init_evaluation_state(on_result, type)
 
 		if err ~= nil then
 			on_result(nil, nil, err)

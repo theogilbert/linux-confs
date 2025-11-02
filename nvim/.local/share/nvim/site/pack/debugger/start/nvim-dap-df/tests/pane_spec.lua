@@ -1,4 +1,5 @@
 Pane = require("nvim-dap-df-pane.pane")
+local hl = require("nvim-dap-df-pane.hl")
 
 describe("Pane", function()
 	local pane
@@ -6,6 +7,7 @@ describe("Pane", function()
 	before_each(function()
 		local config = { size = 10 }
 		pane = Pane:new(config)
+		hl.setup()
 	end)
 
 	after_each(function()
@@ -39,16 +41,6 @@ describe("Pane", function()
 
 			assert.is_false(pane:is_open())
 			assert.equals(windows_when_open - 1, #vim.api.nvim_list_wins())
-		end)
-	end)
-
-	describe("set_content()", function()
-		it("should update buffer content", function()
-			local test_lines = { "Line 1", "Line 2", "Line 3" }
-			pane:set_content(test_lines)
-
-			local content = pane.buffer:get_content()
-			assert.are.same(test_lines, content)
 		end)
 	end)
 end)

@@ -169,4 +169,11 @@ if vim.fn.executable("lua-language-server") then
     vim.lsp.enable("lua_ls")
 end
 
+vim.api.nvim_create_autocmd("LspAttach", {
+  callback = function(args)
+    -- args.buf is the buffer number where LSP attached
+    vim.opt.scroll = vim.g.scroll_setting
+  end,
+})
+
 return M

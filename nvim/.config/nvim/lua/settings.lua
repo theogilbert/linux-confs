@@ -120,6 +120,9 @@ vim.opt.syntax = "on"
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.opt.scrolloff = 2
 
+vim.g.scroll_setting = 8
+vim.opt.scroll = vim.g.scroll_setting
+
 vim.filetype.add({
     pattern = {
         ['.*Jenkinsfile.*'] = 'groovy'

@@ -86,9 +86,10 @@ local function evaluate_expression_type(session, expr, callback)
 	evaluate_expression(session, type_expr, function(err, result)
 		if err ~= nil then
 			callback(err, result)
+                else
+                    callback(nil, result:sub(2, -2))
 		end
 
-		callback(nil, result:sub(2, -2))
 	end)
 end
 

@@ -41,6 +41,16 @@ mini_ai.setup({
     }
 })
 
+require("mini.surround").setup({
+  mappings = {
+    add = 'ma', -- Add surrounding in Normal and Visual modes
+    delete = 'md', -- Delete surrounding
+    replace = 'ms', -- Replace surrounding
+    find = 'mf', -- Find surrounding (to the right)
+  },
+  search_method = 'cover_or_nearest',
+})
+
 require('gitsigns').setup()
 
 -- nvim-cmp has a big configuration. To improve explorability of this file, cmp's config

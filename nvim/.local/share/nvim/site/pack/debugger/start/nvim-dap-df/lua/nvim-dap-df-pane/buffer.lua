@@ -17,7 +17,7 @@ function Buffer:new()
 	vim.api.nvim_set_option_value("swapfile", false, { buf = self.buf_id })
 	vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
 	vim.api.nvim_buf_set_name(self.buf_id, "[DAP DF Pane]")
-        hl.setup_static_hl_rules(self.buf_id)
+	hl.setup_static_hl_rules(self.buf_id)
 
 	return self
 end
@@ -36,9 +36,9 @@ function Buffer:set_content(lines)
 		lines = vim.split(lines, "\n")
 	end
 
-        vim.bo[self.buf_id].modifiable = true
+	vim.bo[self.buf_id].modifiable = true
 	vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, lines)
-        vim.bo[self.buf_id].modifiable = false
+	vim.bo[self.buf_id].modifiable = false
 end
 
 -- Get the buffer content
@@ -53,11 +53,11 @@ end
 ---   - `finish` (string|integer[]): End of region as a (line, column) tuple
 ---     or string accepted by |getpos()|
 function Buffer:apply_highlight(hl_rules)
-    vim.api.nvim_buf_clear_namespace(self.buf_id, hl.NS_ID, 0, -1)
+	vim.api.nvim_buf_clear_namespace(self.buf_id, hl.NS_ID, 0, -1)
 
-    for _, rule in ipairs(hl_rules) do
-        vim.hl.range(self.buf_id, hl.NS_ID, rule.higroup, rule.start, rule.finish)
-    end
+	for _, rule in ipairs(hl_rules) do
+		vim.hl.range(self.buf_id, hl.NS_ID, rule.higroup, rule.start, rule.finish)
+	end
 end
 
 -- Check if the buffer is valid

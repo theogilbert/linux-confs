@@ -13,20 +13,20 @@ local state = {
 -- Default configuration
 local default_config = {
 	size = 10,
-        limit = 500,
+	limit = 500,
 }
 
 -- Setup function
 function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", default_config, opts or {})
 
-        hl.setup()
+	hl.setup()
 
-        dap.listeners.after.scopes["dap-ui-df"] = function()
-            if state.pane then
-                state.pane:refresh()
-            end
-        end
+	dap.listeners.after.scopes["dap-ui-df"] = function()
+		if state.pane then
+			state.pane:refresh()
+		end
+	end
 end
 
 -- Open the pane

@@ -12,7 +12,7 @@ function Pane:new(config)
 	self.win_id = nil
 	self.buffer = Buffer:new()
 	self.is_open_flag = false
-        self.dataview = nil
+	self.dataview = nil
 	return self
 end
 
@@ -36,7 +36,7 @@ function Pane:open()
 	vim.api.nvim_win_set_option(self.win_id, "winfixheight", true)
 	vim.api.nvim_win_set_option(self.win_id, "winfixwidth", true)
 	vim.api.nvim_win_set_option(self.win_id, "wrap", false)
-        vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
+	vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
 
 	-- Set up keymaps for the buffer
 	self:setup_keymaps()
@@ -74,8 +74,6 @@ function Pane:setup_keymaps()
 	end, { desc = "Refresh DataFrame display" })
 end
 
-
-
 -- Prompt for new expression
 function Pane:prompt_expression()
 	vim.ui.input({
@@ -83,12 +81,11 @@ function Pane:prompt_expression()
 		default = self.dataview and self.dataview.expr or "",
 	}, function(input)
 		if input and input ~= "" then
-                    self.dataview = DataView:new(input, self.config.limit)
-                    self:refresh()
+			self.dataview = DataView:new(input, self.config.limit)
+			self:refresh()
 		end
 	end)
 end
-
 
 -- Refresh the pane content
 function Pane:refresh()
@@ -97,13 +94,13 @@ function Pane:refresh()
 	end
 
 	if self.dataview == nil then
-            self.buffer:set_content("Press 'e' to enter an expression")
-            return
-        else
-            self.dataview:refresh(function()
-                self.buffer:set_content(self.dataview:get_lines())
-                self.buffer:apply_highlight(self.dataview:get_hl_rules())
-            end)
+		self.buffer:set_content("Press 'e' to enter an expression")
+		return
+	else
+		self.dataview:refresh(function()
+			self.buffer:set_content(self.dataview:get_lines())
+			self.buffer:apply_highlight(self.dataview:get_hl_rules())
+		end)
 	end
 end
 

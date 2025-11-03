@@ -1258,7 +1258,10 @@ function FzfWin:close(fzf_bufnr, hide, hidden)
       -- "split" reused the current win (e.g. "enew")
       -- restore the original buffer and styling options
       self:set_winopts(self.fzf_winid, self.src_winid_style or {})
-      utils.win_set_buf_noautocmd(self.fzf_winid, self.src_bufnr)
+      -- buf may be invalid if we switched away from a scratch buffer
+      if vim.api.nvim_buf_is_valid(self.src_bufnr) then
+        utils.win_set_buf_noautocmd(self.fzf_winid, self.src_bufnr)
+      end
       -- also restore the original alternate buffer
       local alt_bname = (function()
         local alt_bufnr = utils.__CTX() and utils.__CTX().alt_bufnr
@@ -1311,6 +1314,12 @@ function FzfWin:close(fzf_bufnr, hide, hidden)
     -- use `vim.o.hlsearch` as `vim.cmd("hls")` is invalid
     vim.o.hlsearch = true
     self.hls_on_close = nil
+  end
+  -- Restore insert/normal-terminal mode (#2054)
+  if utils.__CTX().mode == "nt" then
+    utils.feed_keys_termcodes([[<C-\><C-n>]])
+  elseif utils.__CTX().mode == "i" then
+    vim.cmd [[noautocmd lua vim.api.nvim_feedkeys('i', 'n', true)]]
   end
   if self.winopts and type(self.winopts.on_close) == "function" then
     self.winopts.on_close()

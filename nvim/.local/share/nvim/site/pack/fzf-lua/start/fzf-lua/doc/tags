@@ -188,6 +188,8 @@ fzf-lua-opts-lsp_incoming_calls	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_incoming_cal
 fzf-lua-opts-lsp_live_workspace_symbols	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_live_workspace_symbols*
 fzf-lua-opts-lsp_outgoing_calls	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_outgoing_calls*
 fzf-lua-opts-lsp_references	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_references*
+fzf-lua-opts-lsp_type_sub	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_type_sub*
+fzf-lua-opts-lsp_type_super	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_type_super*
 fzf-lua-opts-lsp_typedefs	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_typedefs*
 fzf-lua-opts-lsp_workspace_diagnostics	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_workspace_diagnostics*
 fzf-lua-opts-lsp_workspace_symbols	fzf-lua-opts.txt	/*fzf-lua-opts-lsp_workspace_symbols*

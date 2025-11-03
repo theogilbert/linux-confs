@@ -753,6 +753,8 @@ function M.normalize_opts(opts, globals, __resume_key)
         }
       else
         return "fzf", opts.__FZF_VERSION, {
+          ["0.66"] = { fzf_opts = { ["--raw"] = true, ["--gutter"] = true, ["--gutter-raw"] = true } },
+          ["0.63"] = { fzf_opts = { ["--footer"] = true } },
           ["0.59"] = { fzf_opts = { ["--scheme"] = "path" } },
           ["0.56"] = { fzf_opts = { ["--gap"] = true } },
           ["0.54"] = {
@@ -1080,6 +1082,8 @@ M._action_to_helpstr = {
   [actions.git_branch_del]       = "git-branch-del",
   [actions.git_switch]           = "git-switch",
   [actions.git_worktree_cd]      = "change-directory",
+  [actions.git_worktree_add]     = "git-worktree-add",
+  [actions.git_worktree_del]     = "git-worktree-del",
   [actions.git_checkout]         = "git-checkout",
   [actions.git_reset]            = "git-reset",
   [actions.git_stage]            = "git-stage",

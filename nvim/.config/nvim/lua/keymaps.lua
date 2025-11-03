@@ -56,7 +56,12 @@ vim.keymap.set("n", "<leader>svk", fzflua.keymaps, { desc = "[S]earch [V]im [K]e
 vim.keymap.set("n", "<leader>sW", fzflua.grep_cWORD, { desc = "[S]earch current [W]ord" })
 vim.keymap.set("n", "<leader>sg", search_utils.grep, { desc = "[S]earch by [G]rep" })
 vim.keymap.set(
-    "n", "<leader>sa", 
+    "n", "<leader>st",
+    function() search_utils.grep({ filetype = true }) end,
+    { desc = "[S]earch by grep, focused on a single file[t]ype" }
+)
+vim.keymap.set(
+    "n", "<leader>sa",
     function() search_utils.grep({ resume = true }) end,
     { desc = "[S]earch [a]gain (previous pattern)" }
 )

@@ -48,12 +48,18 @@ end, { desc = "Toggle [M]aximize the window" })
 --
 
 local fzflua = require("fzf-lua")
+local search_utils = require("utilities.search")
 
 vim.keymap.set("n", "<leader>svh", fzflua.helptags, { desc = "[S]earch [V]im [H]elp" })
 vim.keymap.set("n", "<leader>svk", fzflua.keymaps, { desc = "[S]earch [V]im [K]eymaps" })
 
 vim.keymap.set("n", "<leader>sW", fzflua.grep_cWORD, { desc = "[S]earch current [W]ord" })
-vim.keymap.set("n", "<leader>sg", fzflua.live_grep, { desc = "[S]earch by [G]rep" })
+vim.keymap.set("n", "<leader>sg", search_utils.grep, { desc = "[S]earch by [G]rep" })
+vim.keymap.set(
+    "n", "<leader>sa", 
+    function() search_utils.grep({ resume = true }) end,
+    { desc = "[S]earch [a]gain (previous pattern)" }
+)
 vim.keymap.set("n", "<leader>sr", fzflua.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
 vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
 
@@ -75,6 +81,8 @@ vim.keymap.set("n", "<leader>o", fzflua.files, { desc = "Search Workspace Files"
 
 vim.keymap.set("n", "<leader>sGc", fzflua.git_bcommits, { desc = "[S]earch [G]it buffer [C]ommits" })
 vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it buffer [B]lame" })
+
+vim.keymap.set("n", "<leader>sdb", fzflua.dap_breakpoints, { desc = "[S]earch [D]AP [b]reakpoints" })
 
 local session = require("session")
 vim.keymap.set("n", "<leader>vsl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })

@@ -1,10 +1,24 @@
-((decorated_definition)?
-  (function_definition
-    body: (block)? @function.inner)) @function.outer
+((decorated_definition
+   (function_definition
+     body: (block)? @function.inner))
+ @function.outer)
 
-((decorated_definition)?
-  (class_definition
-    body: (block)? @class.inner)) @class.outer
+((function_definition
+   body: (block)? @function.inner)
+ @function.outer
+ (#not-has-parent? @function.outer decorated_definition)
+)
+
+((decorated_definition
+   (class_definition
+     body: (block)? @class.inner))
+ @class.outer)
+
+((class_definition
+   body: (block)? @class.inner)
+ @class.outer
+ (#not-has-parent? @class.outer decorated_definition)
+)
 
 (while_statement
   body: (block)? @loop.inner) @loop.outer

@@ -156,6 +156,16 @@ M.ui_select = function(items, ui_opts, on_choice)
   -- ui.select is code actions
   -- inherit from defaults if not triggered by lsp_code_actions
   local opts_merge_strategy = "keep"
+
+  -- fix error when vim.lsp.buf.code_action() called but didn't triggers vim.ui.select
+  -- _OPTS_ONCE also means pending deregister
+  -- since we only use it to custom codeaction preview now
+  if _OPTS_ONCE and ui_opts.kind ~= "codeaction" then
+    M.deregister({}, true, true)
+    _OPTS_ONCE = nil
+    return vim.ui.select(items, ui_opts, on_choice)
+  end
+
   if not _OPTS_ONCE and ui_opts.kind == "codeaction" then
     ---@type fzf-lua.config.LspCodeActions
     _OPTS_ONCE = config.normalize_opts({}, "lsp.code_actions")
@@ -185,6 +195,11 @@ M.ui_select = function(items, ui_opts, on_choice)
     end)()
     _OPTS_ONCE = nil
   end
+
+  -- disable hide profile unless specifically requested
+  -- casues issues with abort as on_choice(nil) won't be called (#2439)
+  ---@diagnostic disable: inject-field
+  opts.no_hide = opts.no_hide == nil and true or opts.no_hide
 
   return core.fzf_exec(entries, opts)
 end

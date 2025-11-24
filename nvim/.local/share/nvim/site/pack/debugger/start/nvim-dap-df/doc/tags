@@ -1,0 +1,13 @@
+nvim-dap-df-pane-api	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-api*
+nvim-dap-df-pane-commands	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-commands*
+nvim-dap-df-pane-configuration	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-configuration*
+nvim-dap-df-pane-contents	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-contents*
+nvim-dap-df-pane-installation	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-installation*
+nvim-dap-df-pane-intro	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-intro*
+nvim-dap-df-pane-options	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-options*
+nvim-dap-df-pane-requirements	nvim-dap-df-pane.txt	/*nvim-dap-df-pane-requirements*
+nvim-dap-df-pane.close()	nvim-dap-df-pane.txt	/*nvim-dap-df-pane.close()*
+nvim-dap-df-pane.open()	nvim-dap-df-pane.txt	/*nvim-dap-df-pane.open()*
+nvim-dap-df-pane.setup()	nvim-dap-df-pane.txt	/*nvim-dap-df-pane.setup()*
+nvim-dap-df-pane.toggle()	nvim-dap-df-pane.txt	/*nvim-dap-df-pane.toggle()*
+nvim-dap-df-pane.txt	nvim-dap-df-pane.txt	/*nvim-dap-df-pane.txt*

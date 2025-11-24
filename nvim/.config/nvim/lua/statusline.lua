@@ -1,6 +1,12 @@
 -- mini.statusline sets up the vim status line
 local H = {}
 
+require("mini.statusline").setup({
+    content = {
+        active = H.generate_status_line
+    }
+})
+
 H.generate_status_line = function()
     local mode, mode_hl = MiniStatusline.section_mode({ trunc_width = 120 })
     local git           = MiniStatusline.section_git({ trunc_width = 40 })
@@ -23,14 +29,6 @@ H.generate_status_line = function()
         { hl = mode_hl,                  strings = { search, location } },
     })
 end
-
-require("mini.statusline").setup({
-    content = {
-        active = H.generate_status_line
-    }
-})
-
-
 
 H.section_bytes_insight = function(args)
     return "Off. %o (0x%O) | C%b (0x%B)"

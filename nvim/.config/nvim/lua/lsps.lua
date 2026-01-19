@@ -68,7 +68,16 @@ vim.lsp.config("basedpyright", {
 	},
 	capabilities = capabilities,
 })
-vim.lsp.enable("basedpyright")
+
+vim.lsp.config("ty", {
+    settings = {
+        ty = {
+        }
+    },
+    capabilities = capabilities,
+})
+
+vim.lsp.enable("ty")
 
 local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
 

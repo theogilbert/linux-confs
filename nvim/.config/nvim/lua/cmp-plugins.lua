@@ -1,8 +1,8 @@
 local cmp = require("cmp")
 local types = require("cmp.types")
 
-function deprioritize_private(entry1, entry2)
-    function private_level(entry)
+local function deprioritize_private(entry1, entry2)
+    local function private_level(entry)
         if vim.bo.filetype ~= "python" then
             return 0
         end
@@ -16,8 +16,8 @@ function deprioritize_private(entry1, entry2)
         return 0
     end
 
-    level_1 = private_level(entry1)
-    level_2 = private_level(entry2)
+    local level_1 = private_level(entry1)
+    local level_2 = private_level(entry2)
 
     if level_1 == level_2 then
         return nil
@@ -36,8 +36,8 @@ local custom_kind_priority = {
     [types.lsp.CompletionItemKind.Text] = 100,
 }
 
-function custom_lsp_kind_comparator(entry1, entry2)
-    function custom_lsp_kind(kind)
+local function custom_lsp_kind_comparator(entry1, entry2)
+    local function custom_lsp_kind(kind)
         return custom_kind_priority[kind] or kind
     end
 
@@ -53,7 +53,7 @@ end
 
 -- We do not want auto-completion to propose private or protected attributes,
 -- unless we started typing __ or _.
-function filter_out_private_python_attributes(entry, ctx)
+local function filter_out_private_python_attributes(entry, ctx)
     if vim.bo.filetype ~= 'python' then
         return true  -- This logic only applies to Python scripts
     end
@@ -78,23 +78,28 @@ cmp.setup({
 	enabled = function()
                 return vim.api.nvim_buf_get_option(0, "buftype") ~= "prompt" or require("cmp_dap").is_dap_buffer()
 	end,
-	preselect = cmp.PreselectMode.Item,
+        formatting = {
+            format = function (entry, vim_item)
+                vim_item.menu = nil
+                return vim_item
+            end
+        },
+	preselect = cmp.PreselectMode.None,
 	snippet = {
 		expand = function(args)
                     vim.snippet.expand(args.body) -- For native neovim snippets (Neovim v0.10+)
 		end,
 	},
-	window = {
-		-- completion = cmp.config.window.bordered(),
-		-- documentation = cmp.config.window.bordered(),
-	},
 	mapping = cmp.mapping.preset.insert({
 		["<C-b>"] = cmp.mapping.scroll_docs(-4),
 		["<C-f>"] = cmp.mapping.scroll_docs(4),
 		["<C-Space>"] = cmp.mapping.complete(),
+                ["<Tab>"] = cmp.mapping.select_next_item(),
+                ["<S-Tab>"] = cmp.mapping.select_prev_item(),
 		["<C-e>"] = cmp.mapping.abort(),
 		["<CR>"] = cmp.mapping.confirm({ select = false }),
 	}),
+	matching = { disallow_fuzzy_matching = false },
 	sources = cmp.config.sources({
 		{ name = "nvim_lsp_signature_help" },
                 {
@@ -108,15 +113,26 @@ cmp.setup({
 		autocomplete = false,
 	},
 	sorting = {
-		comparators = {
-                    cmp.config.compare.offset,
-                    cmp.config.compare.exact,
-                    cmp.config.compare.score,
-                    cmp.config.compare.recently_used,
-                    deprioritize_private,
-                    custom_lsp_kind_comparator,
-                    cmp.config.compare.length,
-		},
+            comparators = {
+                cmp.config.compare.exact,
+                cmp.config.compare.offset,
+                cmp.config.compare.score,
+                cmp.config.compare.recently_used,
+                deprioritize_private,
+                custom_lsp_kind_comparator,
+                cmp.config.compare.length,
+            },
+	},
+	window = {
+		completion = cmp.config.window.bordered({
+                    max_height = 10,
+                    winhighlight = 'Normal:FloatBorder'
+                }),
+		documentation = cmp.config.window.bordered({
+                    max_height=15,
+                    max_width=88,
+                    winhighlight = 'Normal:FloatBorder'
+                }),
 	},
 })
 

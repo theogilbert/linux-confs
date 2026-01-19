@@ -139,6 +139,8 @@ M.run_code_actions = function()
             local filepath = vim.fn.expand('%:p')
             local ruff_diff = vim.fn.system("ruff check --diff " .. filepath)
             return ruff_diff:match("^No errors would be fixed") == nil and ruff_diff ~= ""
+        elseif x.kind == "quickfix" and x.title:match("Ignore .+ for this line") ~= nil then
+            return false
         end
         return true
     end})

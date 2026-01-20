@@ -105,9 +105,10 @@ cmp.setup({
                 {
                     name = "nvim_lsp",
                     entry_filter = filter_out_private_python_attributes,
+                    max_item_count = 20,
                 },
-		{ name = "path" },
-		{ name = "buffer" },
+		{ name = "path", max_item_count = 10 },
+		{ name = "buffer", max_item_count = 10, },
 	}),
 	completion = {
 		autocomplete = false,

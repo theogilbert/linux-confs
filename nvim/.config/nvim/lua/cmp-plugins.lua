@@ -130,7 +130,7 @@ cmp.setup({
 	window = {
 		completion = cmp.config.window.bordered({
                     max_height = 10,
-                    winhighlight = 'Normal:FloatBorder'
+                    winhighlight = 'Normal:FloatBorder,CursorLine:Visual'
                 }),
 		documentation = cmp.config.window.bordered({
                     max_height=15,

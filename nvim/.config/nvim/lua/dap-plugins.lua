@@ -18,6 +18,7 @@ dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, 
 end
 
 vim.fn.sign_define('DapBreakpoint', {text='🛑', texthl='', linehl='', numhl=''})
+vim.fn.sign_define('DapBreakpointCondition', {text='🟡', texthl='', linehl='', numhl=''})
 
 dap.adapters.python = function(cb, config)
   if config.request == 'attach' then

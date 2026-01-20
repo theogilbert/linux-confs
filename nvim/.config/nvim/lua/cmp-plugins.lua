@@ -81,6 +81,9 @@ cmp.setup({
         formatting = {
             format = function (entry, vim_item)
                 vim_item.menu = nil
+                if vim_item.menu ~= nil and not vim_item.menu:match('^ *%(import .*') then
+                    vim_item.menu = nil
+                end
                 return vim_item
             end
         },

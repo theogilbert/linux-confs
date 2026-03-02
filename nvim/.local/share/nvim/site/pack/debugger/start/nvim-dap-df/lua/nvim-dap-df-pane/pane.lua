@@ -31,11 +31,11 @@ function Pane:open()
 	vim.api.nvim_win_set_buf(self.win_id, self.buffer.buf_id)
 
 	-- Configure the window
-	vim.api.nvim_win_set_option(self.win_id, "number", false)
-	vim.api.nvim_win_set_option(self.win_id, "signcolumn", "no")
-	vim.api.nvim_win_set_option(self.win_id, "winfixheight", true)
-	vim.api.nvim_win_set_option(self.win_id, "winfixwidth", true)
-	vim.api.nvim_win_set_option(self.win_id, "wrap", false)
+        vim.api.nvim_set_option_value("number", false, {win = self.win_id})
+        vim.api.nvim_set_option_value("signcolumn", "no", {win = self.win_id})
+        vim.api.nvim_set_option_value("winfixheight", true, {win = self.win_id})
+        vim.api.nvim_set_option_value("winfixwidth", true, {win = self.win_id})
+        vim.api.nvim_set_option_value("wrap", false, {win = self.win_id})
 	vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
 
 	-- Set up keymaps for the buffer

@@ -70,7 +70,7 @@ local parse_csv_line = function(csv_line)
     local cells = {}
     local current_cell_data = nil
 
-    for idx = 1, #csv_line do
+    for idx = 1, #csv_line + 1 do
         local char = csv_line:sub(idx, idx)
 
         if current_cell_data == nil then
@@ -88,19 +88,21 @@ local parse_csv_line = function(csv_line)
         end
     end
 
-    if current_cell_data ~= nil then
-        local err = process_end_of_line(current_cell_data, #csv_line)
-        if err ~= nil then
-            return {}, "Failed to parse line '" .. csv_line .. "': " .. err
-        end
-
-        if current_cell_data.end_pos ~= nil then
-            table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
-        else
-            return {}, "Unexpected end of CSV line '" .. csv_line .. "'"
-        end
+    if current_cell_data == nil then
+        return cells, nil
     end
 
+    -- We have a trailing cell to parse
+    local err = process_end_of_line(current_cell_data, #csv_line)
+    if err ~= nil then
+        return {}, "Failed to parse line '" .. csv_line .. "': " .. err
+    end
+
+    if current_cell_data.end_pos ~= nil then
+        table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
+    else
+        return {}, "Unexpected end of CSV line '" .. csv_line .. "'"
+    end
     return cells, nil
 end
 

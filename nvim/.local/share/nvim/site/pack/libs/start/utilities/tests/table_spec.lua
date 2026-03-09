@@ -11,5 +11,14 @@ describe("table-from-csv", function()
         }, result.text)
     end)
 
+    it("should properly handle empty last column", function()
+        local result = table_fmt.from_csv(",filled,empty\n0,foo,")
+        assert.are.same({
+            "│   │ filled │ empty │",
+            "├───┼────────┼───────┤",
+            "│ 0 │  foo   │       │"
+        }, result.text)
+    end)
+
 
 end)

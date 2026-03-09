@@ -117,7 +117,7 @@ local function evaluate_state_field(state, field, expr, str_value, session)
 end
 
 local function evaluate_df_data(state, df_expr, limit, session)
-	local limited_expr = df_expr .. ".head(" .. limit .. ").to_csv()"
+	local limited_expr = df_expr .. ".head(" .. limit .. ").to_csv(na_rep=\"pd.NA\")"
 	evaluate_state_field(state, "data", limited_expr, true, session)
 end
 

@@ -1,5 +1,6 @@
 local DataView = require("nvim-dap-df-pane.dataview")
 local Buffer = require("nvim-dap-df-pane.buffer")
+local prompt = require("nvim-dap-df-pane.prompt")
 local hl = require("nvim-dap-df-pane.hl")
 
 local Pane = {}
@@ -10,7 +11,7 @@ function Pane:new(config)
 	local self = setmetatable({}, Pane)
 	self.config = config
 	self.win_id = nil
-	self.buffer = Buffer:new()
+	self.buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 	self.is_open_flag = false
 	self.dataview = nil
 	return self
@@ -76,32 +77,40 @@ end
 
 -- Prompt for new expression
 function Pane:prompt_expression()
-	vim.ui.input({
-		prompt = "DataFrame expression: ",
-		default = self.dataview and self.dataview.expr or "",
-	}, function(input)
-		if input and input ~= "" then
-			self.dataview = DataView:new(input, self.config.limit)
-			self:refresh()
-		end
-	end)
+        local current_expr = self.dataview and self.dataview.expr or ""
+        prompt.open({
+            title = "DataFrame / Series expression",
+            expression = current_expr,
+            on_confirm = function(expr)
+                if expr ~= "" then
+                    self.dataview = DataView:new(expr, self.config.limit)
+                    self:refresh()
+                else
+                    self.dataview = nil
+                    self:refresh()
+                end
+            end,
+            on_cancel = function()
+                print("DataFrame prompt cancelled")
+            end
+        })
 end
 
 -- Refresh the pane content
 function Pane:refresh()
-	if not self:is_open() then
-		return
-	end
+    if not self:is_open() then
+        return
+    end
 
-	if self.dataview == nil then
-		self.buffer:set_content("Press 'e' to enter an expression")
-		return
-	else
-		self.dataview:refresh(function()
-			self.buffer:set_content(self.dataview:get_lines())
-			self.buffer:apply_highlight(self.dataview:get_hl_rules())
-		end)
-	end
+    if self.dataview == nil then
+        self.buffer:set_content("Press 'e' to enter an expression")
+        return
+    else
+        self.dataview:refresh(function()
+            self.buffer:set_content(self.dataview:get_lines())
+            self.buffer:apply_highlight(self.dataview:get_hl_rules())
+        end)
+    end
 end
 
 return Pane

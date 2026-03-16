@@ -80,12 +80,12 @@ vim.keymap.set("n", "<leader>sfs", fzflua.lsp_document_symbols, { desc = "[S]ear
 
 vim.keymap.set("n", "<leader>swd", fzflua.lsp_workspace_diagnostics, { desc = "[S]earch [W]orkspace [D]iagnostics" })
 vim.keymap.set("n", "<leader>sws", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [W]orkspace [S]ymbols" })
-vim.keymap.set("n", "<leader>k", fzflua.lsp_live_workspace_symbols, { desc = "Search Workspace Symbols" })
-vim.keymap.set("n", "<leader>slc", function()
+vim.keymap.set("n", "<leader>k", function()
     fzflua.lsp_live_workspace_symbols({regex_filter = function(item, ctx)
-        return item.kind == 'Class'
+        local supported_kinds = {'Class', 'Interface', 'Enum', 'Function', 'Constant'}
+        return vim.tbl_contains(supported_kinds, item.kind)
     end})
-end, { desc = "[S]earch Workspace [C]lasses" })
+end, { desc = "[S]earch Workspace [S]ymbols" })
 vim.keymap.set("n", "<leader>swf", fzflua.files, { desc = "[S]earch [W]orkspace [F]iles" })
 vim.keymap.set("n", "<leader>o", fzflua.files, { desc = "Search Workspace Files" })
 

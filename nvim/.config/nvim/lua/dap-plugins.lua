@@ -69,10 +69,13 @@ end
 local run_cmd_cfg = make_python_cfg( { name = "Run command" } )
 setmetatable(run_cmd_cfg, {
         __call = function(cfg)
-            local venv = os.getenv("VIRTUAL_ENV")
-            local cmd = vim.fn.input("Command: ")
+            local ok, cmd = pcall(vim.fn.input, "Command: ")
+            if not ok or cmd == "" then
+                return vim.tbl_extend("error", cfg, { program = dap.ABORT })
+            end
             local parts = vim.split(cmd, "%s+")
 
+            local venv = os.getenv("VIRTUAL_ENV")
             if not vim.endswith(parts[1], ".py") and venv ~= nil then
                 parts[1] = venv .. "/bin/" .. parts[1]
             end

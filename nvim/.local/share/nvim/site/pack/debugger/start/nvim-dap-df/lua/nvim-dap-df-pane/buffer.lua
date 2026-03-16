@@ -3,23 +3,37 @@ local hl = require("nvim-dap-df-pane.hl")
 local Buffer = {}
 Buffer.__index = Buffer
 
--- Constructor
-function Buffer:new()
+--- Create a new buffer
+--- @param name string The name of the buffer
+--- @param filetype string The filetype associated with the buffer. See 'filetype' option
+--- @param modifiable boolean Whether the buffer is modifiable or not. See 'modifiable' option.
+--- @param buftype string The type of the buffer. See 'buftype' option.
+function Buffer:new(name, filetype, modifiable, buftype)
 	local self = setmetatable({}, Buffer)
+        self.keymaps = {}
 
 	-- Create a new buffer
 	self.buf_id = vim.api.nvim_create_buf(false, true)
+        self.modifiable = modifiable
 
 	-- Configure the buffer
-	vim.api.nvim_set_option_value("buftype", "nofile", { buf = self.buf_id })
-	vim.api.nvim_set_option_value("filetype", "dap-df", { buf = self.buf_id })
+	vim.api.nvim_set_option_value("buftype", buftype, { buf = self.buf_id })
+	vim.api.nvim_set_option_value("filetype", filetype, { buf = self.buf_id })
 	vim.api.nvim_set_option_value("bufhidden", "hide", { buf = self.buf_id })
 	vim.api.nvim_set_option_value("swapfile", false, { buf = self.buf_id })
-	vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
-	vim.api.nvim_buf_set_name(self.buf_id, "[DAP DF Pane]")
+	vim.api.nvim_set_option_value("modifiable", modifiable, { buf = self.buf_id })
+	vim.api.nvim_buf_set_name(self.buf_id, name)
 	hl.setup_static_hl_rules(self.buf_id)
 
 	return self
+end
+
+function Buffer:from_id(bufid)
+    local self = setmetatable({}, Buffer)
+    self.keymaps = {}
+    self.buf_id = bufid
+    self.modifiable = vim.api.nvim_get_option_value("modifiable", { buf = self.buf_id })
+    return self
 end
 
 function Buffer:close()
@@ -38,7 +52,7 @@ function Buffer:set_content(lines)
 
 	vim.bo[self.buf_id].modifiable = true
 	vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, lines)
-	vim.bo[self.buf_id].modifiable = false
+	vim.bo[self.buf_id].modifiable = self.modifiable
 end
 
 -- Get the buffer content
@@ -70,6 +84,13 @@ function Buffer:set_keymap(mode, key, callback, opts)
 	opts = opts or {}
 	opts.buffer = self.buf_id
 	vim.keymap.set(mode, key, callback, opts)
+        table.insert(self.keymaps, {mode, key, opts})
+end
+
+function Buffer:clear_keymaps()
+    for _, keymap in ipairs(self.keymaps) do
+        vim.keymap.del(keymap[0], keymap[1], keymap[2])
+    end
 end
 
 return Buffer

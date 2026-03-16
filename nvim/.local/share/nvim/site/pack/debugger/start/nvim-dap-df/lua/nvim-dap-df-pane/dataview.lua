@@ -45,7 +45,12 @@ function DataView:refresh(on_ready)
 			self.state = State.FAILED
 			self.lines = { "Failed to evaluate expression:" }
 
-			local err_lines = vim.split(vim.inspect(err), "\n")
+                        local err_repr = vim.inspect(err)
+                        if err.message ~= nil then
+                            err_repr = err.message
+                        end
+
+			local err_lines = vim.split(err_repr, "\n")
 			vim.list_extend(self.lines, err_lines)
 
 			on_ready()

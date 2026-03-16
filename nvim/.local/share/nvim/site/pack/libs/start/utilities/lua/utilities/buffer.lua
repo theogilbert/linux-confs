@@ -1,4 +1,4 @@
-M = {}
+local M = {}
 
 M.is_in_visual_mode = function()
     local cur_mode = vim.fn.mode()
@@ -22,6 +22,9 @@ M.get_selection = function()
 
     local lines = vim.fn.getline(start_row, end_row)
     if #lines == 0 then return "" end
+    if type(lines) == "string" then
+        lines = {lines}
+    end
 
     if vim.fn.mode() ~= 'V' then
         lines[1] = string.sub(lines[1], start_col)
@@ -40,7 +43,7 @@ end
 M.find_one_by_filetype = function(target_filetype)
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local bufnr = vim.api.nvim_win_get_buf(win)
-        local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
+        local filetype = vim.api.nvim_get_option_value("filetype", {buf=bufnr})
         if filetype == target_filetype then
             return win
         end
@@ -63,7 +66,7 @@ end
 M.find_terminal = function()
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local bufnr = vim.api.nvim_win_get_buf(win)
-        local buftype = vim.api.nvim_buf_get_option(bufnr, "buftype")
+        local buftype = vim.api.nvim_get_option_value("buftype", {buf=bufnr})
         if buftype == "terminal" then
             return win, bufnr
         end

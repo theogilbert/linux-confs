@@ -13,16 +13,13 @@ function M.open(opts)
     local on_confirm = opts.on_confirm
     local title = opts.title or "DAP Expression"
 
-    local buffer = Buffer:new("dap://expression", "python", true, "acwrite")
+    local buffer = Buffer:new("dap://expression", "dapui_dataframe", true, "acwrite")
     local buf = buffer.buf_id
     vim.bo[buf].bufhidden = "wipe"
 
     if opts.expression and opts.expression ~= "" then
         buffer:set_content(opts.expression)
     end
-
-    vim.bo[buf].omnifunc = "v:lua.require'dap.repl'.omnifunc"
-    require('dap.ext.autocompl').attach(buf)
 
     -- Floating window geometry
     local width = math.floor(vim.o.columns * 0.6)

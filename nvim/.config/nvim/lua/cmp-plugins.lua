@@ -165,9 +165,7 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 -- `/` cmdline setup.
 cmp.setup.cmdline("/", {
 	mapping = cmp.mapping.preset.cmdline(),
-	sources = {
-		{ name = "buffer" },
-	},
+	sources = { { name = "buffer" } },
 })
 
 -- `:` cmdline setup.
@@ -181,9 +179,5 @@ cmp.setup.cmdline(":", {
 })
 
 cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover", "dapui_dataframe" }, {
-	sources = cmp.config.sources({
-		{ name = "dap" },
-	}, {
-		{ name = "path" },
-	}),
+	sources = cmp.config.sources({ { name = "dap" } })
 })

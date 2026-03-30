@@ -174,21 +174,13 @@ local function setup_autocommands()
         end,
     })
 
-    -- When focusing a different win, refresh the pane
-    vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
-        group = group,
-        callback = function(args)
-            local win = vim.api.nvim_get_current_win()
-            refresh_pane(win, args.buf)
-        end,
-    })
     --
     -- When closing the window, go back to the original win
     vim.api.nvim_create_autocmd({ "WinClosed" }, {
         group = group,
         callback = function(args)
             local info = get_tab_info()
-            if info == nil then
+            if info == nil or not vim.api.nvim_win_is_valid(info.watched_win) then
                 return
             end
             vim.api.nvim_set_current_win(info.watched_win)

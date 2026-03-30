@@ -9,6 +9,7 @@ local DEFAULT_HIGHLIGHTS = {
     SectionsHeader = { fg = "#8ED0B2", bold = true },
     SectionsPaneHeaderDim = { fg = "#999E9B", bold = true },
     SectionsPaneHeaderWarn = { fg = "#e78a4e", bold = true },
+    SectionsParameters = { fg = "#6c597a", bold = false },
 }
 
 local SECTIONS_HIGHLIGHTS = {
@@ -35,6 +36,8 @@ local function define_syntax_match_rules(buf)
             local cmd = string.format([[syntax match %s /%s/]], hl_group, icon)
             vim.cmd(cmd)
         end
+
+        vim.cmd([[syntax match SectionsParameters /([^)]*)/]])
     end)
 end
 

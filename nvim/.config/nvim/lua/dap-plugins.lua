@@ -110,7 +110,7 @@ dapui.setup({
 
 -- Setup the new nvim-dap-df-pane plugin
 local dap_df = require('nvim-dap-df-pane')
-dap_df.setup({ size = 15, limit = 20 })
+dap_df.setup({ size = 15, limit = 1000 })
 
 function M.set_bottom_pane(scope)
     dap_df.close()

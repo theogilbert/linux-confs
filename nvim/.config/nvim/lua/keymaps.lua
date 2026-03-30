@@ -68,7 +68,7 @@ vim.keymap.set(
 vim.keymap.set("n", "<leader>sr", fzflua.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
 vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
 
-vim.keymap.set("n", "<leader>sli", fzflua.lsp_incoming_calls, { desc = "[S]earch [L]SP [I]ncoming files" })
+vim.keymap.set("n", "<leader>slr", fzflua.lsp_references, { desc = "[S]earch [L]SP [R]eferences" })
 
 
 local lsp_settings = require("lsps")

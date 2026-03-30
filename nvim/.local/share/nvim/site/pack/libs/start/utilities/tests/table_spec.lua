@@ -20,5 +20,13 @@ describe("table-from-csv", function()
         }, result.text)
     end)
 
+    it("should properly handle trailing line", function()
+        local result = table_fmt.from_csv(",col\n0,\"value\"\n\n")
+        assert.are.same({
+            "│   │  col  │",
+            "├───┼───────┤",
+            "│ 0 │ value │"
+        }, result.text)
+    end)
 
 end)

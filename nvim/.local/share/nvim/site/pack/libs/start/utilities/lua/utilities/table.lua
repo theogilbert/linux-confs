@@ -31,7 +31,7 @@ local function parse_new_char(cell_data, idx, char)
         if not cell_data.quoted or cell_data.pending_quote then
             cell_data.end_pos = idx - 1
         end
-    elseif cell_data.pending_quote then
+    elseif char ~= '' and cell_data.pending_quote then
         return "Unexpected quote character at index " .. idx - 1
     end
 

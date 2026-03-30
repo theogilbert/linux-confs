@@ -14,18 +14,21 @@ M.send_sel_to_terminal = function()
     return M.send_to_terminal(selection)
 end
 
-M.send_to_terminal = function(text)
-    _, term_buf = buf_utils.find_terminal()
+M.send_to_terminals = function(text)
+    local terminals = buf_utils.find_all_terminals()
 
-    if term_buf == nil then
+    if #terminals == 0 then
         vim.notify("Cannot send selection to terminal: no terminal found")
         return
     end
-    local channel_id = vim.b[term_buf].terminal_job_id
-    if channel_id then
-        vim.fn.chansend(channel_id, text .. "\n")
-    else
-        print("Not a terminal buffer.")
+
+    for _, v in ipairs(terminals) do
+        local channel_id = vim.b[v.buf].terminal_job_id
+        if channel_id then
+            vim.api.nvim_chan_send(channel_id, text .. "\n")
+        else
+            print("Not a terminal buffer")
+        end
     end
 end
 

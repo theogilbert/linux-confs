@@ -75,4 +75,21 @@ M.find_terminal = function()
     return nil, nil
 end
 
+-- Find all terminals present in the current tab page
+-- Returns a table list whose items contain the winid
+-- and the buffer number of a terminal.
+M.find_all_terminals = function()
+    local terminals = {}
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local bufnr = vim.api.nvim_win_get_buf(win)
+        local buftype = vim.api.nvim_get_option_value("buftype", {buf=bufnr})
+        if buftype == "terminal" then
+            table.insert(terminals, { win = win, buf = bufnr })
+        end
+    end
+
+    return terminals
+end
+
 return M

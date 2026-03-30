@@ -366,3 +366,72 @@ _BAR = 123
         assert.are.same({ expected_attr }, root_nodes)
     end)
 end)
+
+describe("should parse xml sections", function()
+    local parser = require("sections.parser")
+
+    local function build_xml_header(name, line, children, x_pos)
+        return {
+            name = name,
+            type = "header",
+            position = { line, x_pos or 0},
+            children = children or {},
+            private = false,
+        }
+    end
+
+    it("parse subsequent headers", function()
+        local buf = create_buf_with_text(
+            [[
+<first-tag>foo</first-tag>
+<second-tag>bar</second-tag>
+        ]],
+            "xml"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_xml_header("first-tag", 1),
+            build_xml_header("second-tag", 2),
+        }, root_nodes)
+    end)
+
+    it("should parse nested elements", function()
+        local buf = create_buf_with_text(
+            [[
+<parent-tag>
+  <sub-tag>
+  </sub-tag>
+</parent-tag>
+]],
+            "xml"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_xml_header("parent-tag", 1, {
+                build_xml_header("sub-tag", 2, {}, 2),
+            }),
+        }, root_nodes)
+    end)
+
+    it("should parse self-closed tags", function()
+            local buf = create_buf_with_text(
+                [[
+<self-closed/>
+    ]],
+                "xml"
+            )
+
+            local root_nodes = parser.parse_sections(buf)
+
+            root_nodes = drop_node_id(root_nodes)
+            assert.are.same({
+                build_xml_header("self-closed", 1),
+            }, root_nodes)
+        end)
+end)

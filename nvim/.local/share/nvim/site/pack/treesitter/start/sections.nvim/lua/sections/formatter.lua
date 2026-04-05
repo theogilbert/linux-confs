@@ -70,10 +70,9 @@ end
 ---@return table lines The text lines representing the formatted sections
 M.format = function(sections, collapsed, show_private)
     local cfg = config.get_config()
-
-    local lines = {}
     local sequence = unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
 
+    local lines = {}
     for _, section_line in pairs(sequence) do
         local text = get_section_text(section_line.value, collapsed, cfg, section_line.depth)
         table.insert(lines, text)
@@ -113,22 +112,35 @@ M.get_section_pos = function(sections, n, collapsed, consider_private)
     return nil
 end
 
+--- Builds a flat sequence of visible sections.
+--- @param sections table The list of sections
+--- @param collapsed table A mapping whose keys represent collapsed sections' node_id
+--- @param show_private boolean If false, private sections are hidden
+--- @return table sequence The flat sequence
+M.build_sequence = function(sections, collapsed, show_private)
+    local cfg = config.get_config()
+    return unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
+end
+
 --- Returns the pane line number of the section closest to the given cursor position.
 --- If the exact section is not visible (collapsed or hidden), the last visible
 --- section before the cursor is returned instead.
---- @param sections table The list of sections
+--- @param sequence table The flat sequence from `get_sequence()`
 --- @param cursor_line integer The 1-indexed cursor line in the source buffer
---- @param collapsed table A mapping whose keys represent collapsed sections' node_id
---- @param show_private boolean If false, private sections are hidden
 --- @return integer|nil pane_line The 1-indexed pane line, or nil if no section precedes the cursor
-M.get_current_section_pane_line = function(sections, cursor_line, collapsed, show_private)
-    local cfg = config.get_config()
-    local sequence = unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
-
+M.get_current_section_pane_line = function(sequence, cursor_line)
+    -- Binary search: find the last entry with position[1] <= cursor_line
+    local lo, hi = 1, #sequence
     local best_line = nil
-    for i, section_line in ipairs(sequence) do
-        if section_line.value.position and section_line.value.position[1] <= cursor_line then
-            best_line = i
+
+    while lo <= hi do
+        local mid = math.floor((lo + hi) / 2)
+        local pos = sequence[mid].value.position
+        if pos and pos[1] <= cursor_line then
+            best_line = mid
+            lo = mid + 1
+        else
+            hi = mid - 1
         end
     end
 

@@ -57,7 +57,15 @@ local function update_current_section_highlight()
     end
 
     local cursor_line = vim.api.nvim_win_get_cursor(info.watched_win)[1]
-    local pane_line = formatter.get_current_section_pane_line(info.sections, cursor_line, info.collapsed, info.show_private)
+    if info.cached_sequence == nil then
+        info.cached_sequence = formatter.build_sequence(info.sections, info.collapsed, info.show_private)
+    end
+    local pane_line = formatter.get_current_section_pane_line(info.cached_sequence, cursor_line)
+
+    if pane_line == info.last_pane_line then
+        return
+    end
+    info.last_pane_line = pane_line
 
     pane.highlight_section(pane_line)
     if pane_line ~= nil then
@@ -100,6 +108,8 @@ local function refresh_pane(win, buf)
     info.watched_win = win
     info.watched_buf = buf
     info.sections = sections
+    info.last_pane_line = nil
+    info.cached_sequence = nil
 
     update_current_section_highlight()
 end
@@ -154,6 +164,9 @@ local function toggle_section_collapse()
         info.collapsed[section.node_id] = nil
     end
 
+    info.last_pane_line = nil
+    info.cached_sequence = nil
+
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
 
@@ -167,6 +180,8 @@ local function toggle_private()
     end
 
     info.show_private = not info.show_private
+    info.last_pane_line = nil
+    info.cached_sequence = nil
 
     render_header(info)
 

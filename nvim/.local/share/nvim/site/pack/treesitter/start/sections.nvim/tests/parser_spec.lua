@@ -436,22 +436,22 @@ describe("should parse xml sections", function()
         end)
 end)
 
-describe("should parse yaml headers", function()
+local function build_indented_header(name, line, column, children)
+    return {
+        name = name,
+        type = "header",
+        position = { line, column },
+        children = children or {},
+        private = false,
+    }
+end
+
+describe("parsing yaml sections", function()
     local parser = require("sections.parser")
 
     before_each(function()
         assert:set_parameter("TableFormatLevel", 10)
     end)
-
-    local function build_yaml_header(name, line, children, x_pos)
-        return {
-            name = name,
-            type = "header",
-            position = { line, x_pos or 0},
-            children = children or {},
-            private = false,
-        }
-    end
 
     it("parse subsequent keys", function()
         local buf = create_buf_with_text(
@@ -466,8 +466,8 @@ foo2: 456
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_yaml_header("foo", 1),
-            build_yaml_header("foo2", 2),
+            build_indented_header("foo", 1, 0),
+            build_indented_header("foo2", 2, 0),
         }, root_nodes)
     end)
 
@@ -485,10 +485,63 @@ foo:
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_yaml_header("foo", 1, {
-                build_yaml_header("bar1", 2, {}, 2),
-                build_yaml_header("bar2", 3, {}, 2),
+            build_indented_header("foo", 1, 0, {
+                build_indented_header("bar1", 2, 2),
+                build_indented_header("bar2", 3, 2),
             }),
         }, root_nodes)
     end)
 end)
+
+
+describe("should parse json headers", function()
+    local parser = require("sections.parser")
+
+    before_each(function()
+        assert:set_parameter("TableFormatLevel", 10)
+    end)
+
+    it("parse subsequent keys", function()
+        local buf = create_buf_with_text(
+            [[
+{
+    "foo": 123,
+    "bar": 123
+}
+        ]],
+            "json"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_indented_header("foo", 2, 4),
+            build_indented_header("bar", 3, 4),
+        }, root_nodes)
+    end)
+
+    it("should parse nested keys", function()
+        local buf = create_buf_with_text(
+            [[
+{
+    "foo": {
+        "bar": 123
+    }
+}
+]],
+            "json"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_indented_header("foo", 2, 4,  {
+                build_indented_header("bar", 3, 8),
+            }),
+        }, root_nodes)
+    end)
+end)
+
+

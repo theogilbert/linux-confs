@@ -435,3 +435,60 @@ describe("should parse xml sections", function()
             }, root_nodes)
         end)
 end)
+
+describe("should parse yaml headers", function()
+    local parser = require("sections.parser")
+
+    before_each(function()
+        assert:set_parameter("TableFormatLevel", 10)
+    end)
+
+    local function build_yaml_header(name, line, children, x_pos)
+        return {
+            name = name,
+            type = "header",
+            position = { line, x_pos or 0},
+            children = children or {},
+            private = false,
+        }
+    end
+
+    it("parse subsequent keys", function()
+        local buf = create_buf_with_text(
+            [[
+foo: 123
+foo2: 456
+        ]],
+            "yaml"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_yaml_header("foo", 1),
+            build_yaml_header("foo2", 2),
+        }, root_nodes)
+    end)
+
+    it("should parse nested keys", function()
+        local buf = create_buf_with_text(
+            [[
+foo:
+  bar1: 2
+  bar2: 2
+]],
+            "yaml"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_yaml_header("foo", 1, {
+                build_yaml_header("bar1", 2, {}, 2),
+                build_yaml_header("bar2", 3, {}, 2),
+            }),
+        }, root_nodes)
+    end)
+end)

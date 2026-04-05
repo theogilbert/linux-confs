@@ -207,18 +207,6 @@ local function setup_autocommands()
             update_current_section_highlight()
         end,
     })
-
-    -- When closing the window, go back to the original win
-    vim.api.nvim_create_autocmd({ "WinClosed" }, {
-        group = group,
-        callback = function(args)
-            local info = get_tab_info()
-            if info == nil or not vim.api.nvim_win_is_valid(info.watched_win) then
-                return
-            end
-            vim.api.nvim_set_current_win(info.watched_win)
-        end,
-    })
 end
 
 M.toggle = function()

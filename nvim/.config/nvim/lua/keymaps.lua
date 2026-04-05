@@ -34,6 +34,16 @@ local function toggleMouse()
 end
 vim.keymap.set("n", "<Leader>Om", toggleMouse, { desc = "Toggle [O]ption [M]ouse" })
 
+local ogSynMaxCol = vim.o.synmaxcol
+local function toggleSynMaxCol()
+    if vim.o.synmaxcol == ogSynMaxCol then
+        vim.o.synmaxcol = 0
+    else
+        vim.o.synmaxcol = ogSynMaxCol
+    end
+end
+vim.keymap.set("n", "<Leader>Os", toggleSynMaxCol, { desc = "Toggle [O]ption [S]yntax max col limit" })
+
 local function toggleBytesInfo()
     -- See statusline.lua for more info
     vim.g.bytes_info_statusline = not vim.g.bytes_info_statusline

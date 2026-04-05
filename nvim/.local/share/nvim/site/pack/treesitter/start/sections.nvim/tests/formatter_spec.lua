@@ -212,9 +212,10 @@ end)
 describe("should get current section pane line", function()
     local formatter = require("sections.formatter")
 
-    local function current_pane_line(sections, cursor_line, collapsed, show_private)
+    local function current_pane_line(sections, cursor_line, collapsed, show_private, cursor_col)
+        cursor_col = cursor_col or 0
         local sequence = formatter.build_sequence(sections, collapsed, show_private)
-        return formatter.get_current_section_pane_line(sequence, cursor_line)
+        return formatter.get_current_section_pane_line(sequence, cursor_line, cursor_col)
     end
 
     it("should return nil when no sections", function()
@@ -279,6 +280,28 @@ describe("should get current section pane line", function()
             { name = "_bar", type = "function", position = { 5, 0 }, node_id = "2", children = {}, private = true },
         }
         assert.are.equal(1, current_pane_line(sections, 7, {}, false))
+    end)
+
+    it("should use column to distinguish sections on the same line", function()
+        local sections = {
+            { name = "a", type = "header", position = { 1, 0 }, node_id = "1", children = {} },
+            { name = "b", type = "header", position = { 1, 10 }, node_id = "2", children = {} },
+            { name = "c", type = "header", position = { 1, 20 }, node_id = "3", children = {} },
+        }
+        assert.are.equal(1, current_pane_line(sections, 1, {}, true, 0))
+        assert.are.equal(1, current_pane_line(sections, 1, {}, true, 9))
+        assert.are.equal(2, current_pane_line(sections, 1, {}, true, 10))
+        assert.are.equal(2, current_pane_line(sections, 1, {}, true, 15))
+        assert.are.equal(3, current_pane_line(sections, 1, {}, true, 20))
+        assert.are.equal(3, current_pane_line(sections, 1, {}, true, 99))
+    end)
+
+    it("should return nil when cursor column is before all sections on the same line", function()
+        local sections = {
+            { name = "a", type = "header", position = { 1, 5 }, node_id = "1", children = {} },
+        }
+        assert.is_nil(current_pane_line(sections, 1, {}, true, 3))
+        assert.are.equal(1, current_pane_line(sections, 1, {}, true, 5))
     end)
 end)
 

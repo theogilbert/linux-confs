@@ -67,7 +67,10 @@ local function merge_sections(sections_matches)
     end
 
     table.sort(sections, function(s1, s2)
-        return s1.position[1] < s2.position[1]
+        if s1.position[1] ~= s2.position[1] then
+            return s1.position[1] < s2.position[1]
+        end
+        return s1.position[2] < s2.position[2]
     end)
 
     return sections

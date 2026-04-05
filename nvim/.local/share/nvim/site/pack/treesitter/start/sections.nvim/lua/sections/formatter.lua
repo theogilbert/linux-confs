@@ -125,18 +125,19 @@ end
 --- Returns the pane line number of the section closest to the given cursor position.
 --- If the exact section is not visible (collapsed or hidden), the last visible
 --- section before the cursor is returned instead.
---- @param sequence table The flat sequence from `get_sequence()`
+--- @param sequence table The flat sequence from `build_sequence()`
 --- @param cursor_line integer The 1-indexed cursor line in the source buffer
+--- @param cursor_col integer The 0-indexed cursor column in the source buffer
 --- @return integer|nil pane_line The 1-indexed pane line, or nil if no section precedes the cursor
-M.get_current_section_pane_line = function(sequence, cursor_line)
-    -- Binary search: find the last entry with position[1] <= cursor_line
+M.get_current_section_pane_line = function(sequence, cursor_line, cursor_col)
+    -- Binary search: find the last entry with position <= (cursor_line, cursor_col)
     local lo, hi = 1, #sequence
     local best_line = nil
 
     while lo <= hi do
         local mid = math.floor((lo + hi) / 2)
         local pos = sequence[mid].value.position
-        if pos and pos[1] <= cursor_line then
+        if pos and (pos[1] < cursor_line or (pos[1] == cursor_line and pos[2] <= cursor_col)) then
             best_line = mid
             lo = mid + 1
         else

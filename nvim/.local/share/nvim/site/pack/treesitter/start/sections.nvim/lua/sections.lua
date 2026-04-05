@@ -56,11 +56,12 @@ local function update_current_section_highlight()
         return
     end
 
-    local cursor_line = vim.api.nvim_win_get_cursor(info.watched_win)[1]
+    local cursor = vim.api.nvim_win_get_cursor(info.watched_win)
+    local cursor_line, cursor_col = cursor[1], cursor[2]
     if info.cached_sequence == nil then
         info.cached_sequence = formatter.build_sequence(info.sections, info.collapsed, info.show_private)
     end
-    local pane_line = formatter.get_current_section_pane_line(info.cached_sequence, cursor_line)
+    local pane_line = formatter.get_current_section_pane_line(info.cached_sequence, cursor_line, cursor_col)
 
     if pane_line == info.last_pane_line then
         return

@@ -207,6 +207,74 @@ describe("should display sections", function()
     end)
 end)
 
+describe("should get current section pane line", function()
+    local formatter = require("sections.formatter")
+
+    it("should return nil when no sections", function()
+        assert.is_nil(formatter.get_current_section_pane_line({}, 5, {}, true))
+    end)
+
+    it("should return nil when cursor is before all sections", function()
+        local sections = {
+            { name = "foo", type = "function", position = { 5, 0 }, node_id = "1", children = {} },
+        }
+        assert.is_nil(formatter.get_current_section_pane_line(sections, 3, {}, true))
+    end)
+
+    it("should return pane line of the section the cursor is on", function()
+        local sections = {
+            { name = "foo", type = "function", position = { 1, 0 }, node_id = "1", children = {} },
+            { name = "bar", type = "function", position = { 10, 0 }, node_id = "2", children = {} },
+        }
+        assert.are.equal(1, formatter.get_current_section_pane_line(sections, 1, {}, true))
+        assert.are.equal(1, formatter.get_current_section_pane_line(sections, 5, {}, true))
+        assert.are.equal(2, formatter.get_current_section_pane_line(sections, 10, {}, true))
+        assert.are.equal(2, formatter.get_current_section_pane_line(sections, 99, {}, true))
+    end)
+
+    it("should prefer the deepest section when cursor is inside a nested section", function()
+        local sections = {
+            {
+                name = "MyClass",
+                type = "class",
+                position = { 1, 0 },
+                node_id = "1",
+                children = {
+                    { name = "foo", type = "function", position = { 5, 0 }, node_id = "2", children = {} },
+                    { name = "bar", type = "function", position = { 15, 0 }, node_id = "3", children = {} },
+                },
+            },
+        }
+        assert.are.equal(1, formatter.get_current_section_pane_line(sections, 3, {}, true))
+        assert.are.equal(2, formatter.get_current_section_pane_line(sections, 5, {}, true))
+        assert.are.equal(2, formatter.get_current_section_pane_line(sections, 12, {}, true))
+        assert.are.equal(3, formatter.get_current_section_pane_line(sections, 15, {}, true))
+    end)
+
+    it("should fall back to the parent section when children are collapsed", function()
+        local sections = {
+            {
+                name = "MyClass",
+                type = "class",
+                position = { 1, 0 },
+                node_id = "1",
+                children = {
+                    { name = "foo", type = "function", position = { 5, 0 }, node_id = "2", children = {} },
+                },
+            },
+        }
+        assert.are.equal(1, formatter.get_current_section_pane_line(sections, 7, { ["1"] = true }, true))
+    end)
+
+    it("should fall back to the previous visible section when current section is hidden as private", function()
+        local sections = {
+            { name = "foo", type = "function", position = { 1, 0 }, node_id = "1", children = {}, private = false },
+            { name = "_bar", type = "function", position = { 5, 0 }, node_id = "2", children = {}, private = true },
+        }
+        assert.are.equal(1, formatter.get_current_section_pane_line(sections, 7, {}, false))
+    end)
+end)
+
 describe("should get section pos", function()
     local formatter = require("sections.formatter")
 

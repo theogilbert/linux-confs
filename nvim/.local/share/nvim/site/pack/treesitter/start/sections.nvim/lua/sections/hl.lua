@@ -10,6 +10,7 @@ local DEFAULT_HIGHLIGHTS = {
     SectionsPaneHeaderDim = { fg = "#999E9B", bold = true },
     SectionsPaneHeaderWarn = { fg = "#e78a4e", bold = true },
     SectionsParameters = { fg = "#6c597a", bold = false },
+    SectionsCurrentSection = { bg = "#4e432f" },
 }
 
 local SECTIONS_HIGHLIGHTS = {
@@ -21,6 +22,7 @@ local SECTIONS_HIGHLIGHTS = {
 
 local function setup_highlights()
     M.NS_ID = vim.api.nvim_create_namespace("SectionNs")
+    M.CURRENT_SECTION_NS_ID = vim.api.nvim_create_namespace("SectionCurrentNs")
     for group, opts in pairs(DEFAULT_HIGHLIGHTS) do
         vim.api.nvim_set_hl(M.NS_ID, group, opts)
     end

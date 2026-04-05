@@ -165,6 +165,57 @@ M.close = function()
     clear_pane_info()
 end
 
+--- Highlights the section at the given pane line, clearing any previous highlight.
+--- @param pane_line integer|nil 1-indexed line within the sections area (not counting header), or nil to only clear
+M.highlight_section = function(pane_line)
+    local info = get_pane_info()
+    if info == nil then
+        return
+    end
+
+    vim.api.nvim_buf_clear_namespace(info.pane_buf, hl.CURRENT_SECTION_NS_ID, 0, -1)
+
+    if pane_line == nil then
+        return
+    end
+
+    local buf_line = #info.header_lines + pane_line - 1 -- 0-indexed
+    vim.api.nvim_buf_set_extmark(info.pane_buf, hl.CURRENT_SECTION_NS_ID, buf_line, 0, {
+        line_hl_group = "SectionsCurrentSection",
+    })
+end
+
+--- Move the viewport of the pane to display the given pane line at the middle of the window.
+--- @param pane_line integer 1-indexed line within the sections area (not counting header).
+M.focus = function(pane_line)
+    local info = get_pane_info()
+    if info == nil then
+        return
+    end
+
+    local win = info.pane_win
+
+    local buf_line = #info.header_lines + pane_line
+    local win_info = vim.fn.getwininfo(win)[1]
+    local topline = win_info.topline
+    local botline = win_info.botline
+    local height = vim.api.nvim_win_get_height(win)
+    local scrolloff = math.min(vim.o.scrolloff, math.floor((height - 1) / 2))
+
+    local new_topline = topline
+    if buf_line < topline + scrolloff then
+      new_topline = math.max(1, buf_line - scrolloff)
+    elseif buf_line > botline - scrolloff then
+      new_topline = buf_line + scrolloff - height + 1
+    end
+
+    if new_topline ~= topline then
+      vim.api.nvim_win_call(win, function()
+        vim.fn.winrestview({ topline = new_topline })
+      end)
+    end
+end
+
 M.get_win = function()
     local info = get_pane_info()
     if info == nil then

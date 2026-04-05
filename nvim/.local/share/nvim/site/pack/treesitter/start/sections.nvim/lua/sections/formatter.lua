@@ -113,4 +113,26 @@ M.get_section_pos = function(sections, n, collapsed, consider_private)
     return nil
 end
 
+--- Returns the pane line number of the section closest to the given cursor position.
+--- If the exact section is not visible (collapsed or hidden), the last visible
+--- section before the cursor is returned instead.
+--- @param sections table The list of sections
+--- @param cursor_line integer The 1-indexed cursor line in the source buffer
+--- @param collapsed table A mapping whose keys represent collapsed sections' node_id
+--- @param show_private boolean If false, private sections are hidden
+--- @return integer|nil pane_line The 1-indexed pane line, or nil if no section precedes the cursor
+M.get_current_section_pane_line = function(sections, cursor_line, collapsed, show_private)
+    local cfg = config.get_config()
+    local sequence = unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
+
+    local best_line = nil
+    for i, section_line in ipairs(sequence) do
+        if section_line.value.position and section_line.value.position[1] <= cursor_line then
+            best_line = i
+        end
+    end
+
+    return best_line
+end
+
 return M

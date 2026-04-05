@@ -50,6 +50,21 @@ local function supports_buf(buf)
     return true
 end
 
+local function update_current_section_highlight()
+    local info = get_tab_info()
+    if info == nil or not vim.api.nvim_win_is_valid(info.watched_win) then
+        return
+    end
+
+    local cursor_line = vim.api.nvim_win_get_cursor(info.watched_win)[1]
+    local pane_line = formatter.get_current_section_pane_line(info.sections, cursor_line, info.collapsed, info.show_private)
+
+    pane.highlight_section(pane_line)
+    if pane_line ~= nil then
+        pane.focus(pane_line)
+    end
+end
+
 local function render_header(tab_info)
     local header_lines = header.get_lines(tab_info.show_private)
     pane.write_header(header_lines)
@@ -85,6 +100,8 @@ local function refresh_pane(win, buf)
     info.watched_win = win
     info.watched_buf = buf
     info.sections = sections
+
+    update_current_section_highlight()
 end
 
 local function select_section()
@@ -139,6 +156,8 @@ local function toggle_section_collapse()
 
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
+
+    update_current_section_highlight()
 end
 
 local function toggle_private()
@@ -153,6 +172,8 @@ local function toggle_private()
 
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
+
+    update_current_section_highlight()
 end
 
 local function setup_autocommands()
@@ -174,7 +195,19 @@ local function setup_autocommands()
         end,
     })
 
-    --
+    -- When moving the cursor in the watched buffer, highlight the current section in the pane
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = group,
+        callback = function(args)
+            local info = get_tab_info()
+            if info == nil or args.buf ~= info.watched_buf then
+                return
+            end
+
+            update_current_section_highlight()
+        end,
+    })
+
     -- When closing the window, go back to the original win
     vim.api.nvim_create_autocmd({ "WinClosed" }, {
         group = group,

@@ -85,7 +85,7 @@ local function get_angular_core_version(root_dir)
 
   local json = vim.json.decode(content) or {}
 
-  local version = (json.dependencies or {})['@angular/core'] or ''
+  local version = (json.dependencies or {})['@angular/core'] or (json.devDependencies or {})['@angular/core'] or ''
   return version:match('%d+%.%d+%.%d+') or ''
 end
 
@@ -118,6 +118,6 @@ return {
     return vim.lsp.rpc.start(cmd, dispatchers)
   end,
 
-  filetypes = { 'typescript', 'html', 'typescriptreact', 'typescript.tsx', 'htmlangular' },
+  filetypes = { 'typescript', 'html', 'typescriptreact', 'htmlangular' },
   root_markers = { 'angular.json', 'nx.json' },
 }

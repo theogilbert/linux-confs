@@ -111,7 +111,6 @@ cmp.setup({
                     max_item_count = 20,
                 },
 		{ name = "path", max_item_count = 10 },
-		{ name = "buffer", max_item_count = 10, },
 	}),
 	completion = {
 		autocomplete = false,
@@ -165,7 +164,6 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 -- `/` cmdline setup.
 cmp.setup.cmdline("/", {
 	mapping = cmp.mapping.preset.cmdline(),
-	sources = { { name = "buffer" } },
 })
 
 -- `:` cmdline setup.

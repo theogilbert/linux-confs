@@ -401,7 +401,7 @@ local function set_cursor(win, line, column)
     end)
   else
     local msg = string.format(
-      "Adapter reported a frame in buf %d line %s column %s, but: %s. "
+      "Adapter reported frame in buf %d line %d:%d, but: %s. "
       .. "Ensure executable is up2date and if using a source mapping ensure it is correct",
       api.nvim_win_get_buf(win),
       line,
@@ -418,8 +418,8 @@ end
 ---@param column number
 ---@param switchbuf string|fun(bufnr: integer, line: integer, column: integer):nil
 ---@param filetype string
+---@return boolean
 local function jump_to_location(bufnr, line, column, switchbuf, filetype)
-  progress.report('Stopped at line ' .. line)
   -- vscode-go sends columns with 0
   -- That would cause a "Column value outside range" error calling nvim_win_set_cursor
   -- nvim-dap says "columnsStartAt1 = true" on initialize :/
@@ -430,7 +430,7 @@ local function jump_to_location(bufnr, line, column, switchbuf, filetype)
   if cur_buf == bufnr and api.nvim_win_get_cursor(0)[1] == line and column == 1 then
     -- A user might have positioned the cursor over a variable in anticipation of hitting a breakpoint
     -- Don't move the cursor to the beginning of the line if it's in the right place
-    return
+    return true
   end
 
   local cur_win = api.nvim_get_current_win()
@@ -525,20 +525,21 @@ local function jump_to_location(bufnr, line, column, switchbuf, filetype)
 
   if type(switchbuf) == "function" then
     switchbuf(bufnr, line, column)
-    return
+    return true
   end
 
   local opts = vim.split(switchbuf, ',', { plain = true })
   for _, opt in pairs(opts) do
     local fn = switchbuf_fn[opt]
     if fn and fn() then
-      return
+      return true
     end
   end
   utils.notify(
     'Stopped at line ' .. line .. ' but `switchbuf` setting prevented jump to location. Target buffer ' .. bufnr .. ' not open in any window?',
     vim.log.levels.WARN
   )
+  return false
 end
 
 
@@ -553,7 +554,8 @@ local function source_to_bufnr(session, source)
   if not source then
     return nil
   end
-  if not source.sourceReference or source.sourceReference == 0 then
+  local source_ref = source.sourceReference
+  if not source_ref or source_ref == 0 then
     if not source.path then
       return nil
     end
@@ -564,11 +566,13 @@ local function source_to_bufnr(session, source)
       return vim.uri_to_bufnr(vim.uri_from_fname(source.path))
     end
   end
-  local co = coroutine.running()
-  assert(co, 'Must run in coroutine')
-  session:source(source, coresume(co))
-  local _, bufnr = coroutine.yield()
-  return bufnr
+  local fname = string.format(
+    "dap-src://%d/%d/%s",
+    session.id,
+    source_ref,
+    source.path or ""
+  )
+  return vim.uri_to_bufnr(fname)
 end
 
 
@@ -576,20 +580,21 @@ end
 ---@param frame dap.StackFrame
 ---@param preserve_focus_hint boolean
 ---@param stopped nil|dap.StoppedEvent
+---@return boolean
 local function jump_to_frame(session, frame, preserve_focus_hint, stopped)
   local source = frame.source
   if not source then
     utils.notify('Source missing, cannot jump to frame: ' .. frame.name, vim.log.levels.INFO)
-    return
+    return false
   end
   vim.fn.sign_unplace(session.sign_group)
   if preserve_focus_hint or frame.line < 0 then
-    return
+    return false
   end
   local bufnr = source_to_bufnr(session, frame.source)
   if not bufnr then
     utils.notify('Source missing, cannot jump to frame: ' .. frame.name, vim.log.levels.INFO)
-    return
+    return false
   end
   vim.fn.bufload(bufnr)
   vim.bo[bufnr].buflisted = true
@@ -598,16 +603,18 @@ local function jump_to_frame(session, frame, preserve_focus_hint, stopped)
     utils.notify(tostring(failure), vim.log.levels.ERROR)
   end
   local switchbuf = defaults(session).switchbuf or vim.o.switchbuf or 'uselast'
-  jump_to_location(bufnr, frame.line, frame.column, switchbuf, session.filetype)
+  local jumped = jump_to_location(bufnr, frame.line, frame.column, switchbuf, session.filetype)
   if stopped and stopped.reason == 'exception' then
     session:_show_exception_info(stopped.threadId, bufnr, frame)
   end
+  return jumped
 end
 
 
 --- Request a source
 ---@param source dap.Source
 ---@param cb fun(err: dap.ErrorResponse?, buf: integer?) the buffer will have the contents of the source
+---@deprecated Open a buffer named "dap-src://<session-id>/<source-ref>/<source-path>" instead
 function Session:source(source, cb)
   assert(source, 'source is required')
   assert(source.sourceReference, 'sourceReference is required')
@@ -748,18 +755,23 @@ function Session:event_stopped(stopped)
       for _, thread in pairs(self.threads) do
         thread.stopped = true
       end
-    elseif stopped.threadId then
-      progress.report('Thread stopped: ' .. stopped.threadId)
-      self.threads[stopped.threadId].stopped = true
-    else
+    elseif not stopped.threadId then
       utils.notify('Stopped event received, but no threadId or allThreadsStopped', vim.log.levels.WARN)
     end
 
     if not stopped.threadId then
       return
     end
+    progress.report('Thread stopped: ' .. stopped.threadId)
     local thread = self.threads[stopped.threadId]
-    assert(thread, 'Thread not found: ' .. stopped.threadId)
+    if not thread then
+      thread = {
+        id = stopped.threadId,
+        name = "Unknown",
+      }
+      self.threads[stopped.threadId] = thread
+    end
+    thread.stopped = true
 
     ---@type dap.StackTraceArguments
     local params = {
@@ -785,7 +797,10 @@ function Session:event_stopped(stopped)
     end
     if should_jump then
       self.current_frame = current_frame
-      jump_to_frame(self, current_frame, stopped.preserveFocusHint, stopped)
+      local jumped = jump_to_frame(self, current_frame, stopped.preserveFocusHint, stopped)
+      if jumped then
+        progress.report('Stopped at line ' .. tostring(current_frame.line))
+      end
       self:_request_scopes(current_frame)
     elseif stopped.reason == "exception" then
       local bufnr = source_to_bufnr(self, current_frame.source)
@@ -931,14 +946,13 @@ do
     end
   end
 
-  local detach_handlers = {}
-
-  local function remove_breakpoints(_, buf)
+  ---@param args vim.api.keyset.create_autocmd.callback_args
+  local function remove_breakpoints(args)
     local session = dap().session()
     if session then
-      session:set_breakpoints({[buf] = {}})
+      session:set_breakpoints({[args.buf] = {}})
     end
-    detach_handlers[buf] = nil
+    return true
   end
 
   function Session:set_breakpoints(bps, on_done)
@@ -951,9 +965,13 @@ do
     end
     for bufnr, buf_bps in pairs(bps) do
       notify_if_missing_capability(buf_bps, self.capabilities)
-      if non_empty(buf_bps) and not detach_handlers[bufnr] then
-        detach_handlers[bufnr] = true
-        api.nvim_buf_attach(bufnr, false, { on_detach = remove_breakpoints })
+      if non_empty(buf_bps) then
+        local group = "dap-bps-del-" .. tostring(bufnr)
+        api.nvim_create_autocmd("BufWipeout", {
+          group = api.nvim_create_augroup(group, { clear = true }),
+          buffer = bufnr,
+          callback = remove_breakpoints,
+        })
       end
       local path = api.nvim_buf_get_name(bufnr)
       ---@type dap.SetBreakpointsArguments
@@ -1630,6 +1648,9 @@ function Session.spawn(adapter, config, opts)
 end
 
 
+---@param session dap.Session
+---@param thread_id integer
+---@param cb? fun(err: dap.ErrorResponse?, thread_id: integer?)
 local function pause_thread(session, thread_id, cb)
   assert(session, 'Cannot pause thread without active session')
   assert(thread_id, 'thread_id is required to pause thread')
@@ -1638,19 +1659,20 @@ local function pause_thread(session, thread_id, cb)
     if err then
       utils.notify('Error pausing: ' .. tostring(err), vim.log.levels.ERROR)
     else
-      utils.notify('Thread paused ' .. thread_id, vim.log.levels.INFO)
       local thread = session.threads[thread_id]
       if thread then
         thread.stopped = true
       end
     end
     if cb then
-      cb(err)
+      cb(err, thread_id)
     end
   end)
 end
 
 
+---@param thread_id? integer
+---@param cb? fun(err: dap.ErrorResponse?, thread_id: integer)
 function Session:_pause(thread_id, cb)
   if thread_id then
     pause_thread(self, thread_id, cb)
@@ -1996,7 +2018,10 @@ function Session:_frame_set(frame)
   end
   self.current_frame = frame
   coroutine.wrap(function()
-    jump_to_frame(self, frame, false)
+    local jumped = jump_to_frame(self, frame, false)
+    if jumped then
+      progress.report(string.format("Set frame: %s:%s:%s", frame.name, frame.line, frame.column))
+    end
     self:_request_scopes(frame)
   end)()
 end

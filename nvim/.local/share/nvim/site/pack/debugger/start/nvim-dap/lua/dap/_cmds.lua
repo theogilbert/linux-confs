@@ -1,5 +1,8 @@
 local api = vim.api
 local M = {}
+local mime_to_filetype = {
+  ['text/javascript'] = 'javascript'
+}
 
 
 ---@param args vim.api.keyset.create_user_command.command_args
@@ -54,6 +57,49 @@ function M.new(args)
       end
     end
   end)
+end
+
+
+---@param buf integer
+function M.source(buf)
+  local fname = api.nvim_buf_get_name(buf)
+  local session_id, source_ref, source_path = fname:match("dap%-src://(%d+)/(%d+)/(.*)")
+  session_id = tonumber(session_id)
+  source_ref = tonumber(source_ref)
+  local dap = require("dap")
+  local session = dap.sessions()[session_id]
+  if not session then
+    return
+  end
+  local params = {
+    source = {
+      sourceReference = source_ref
+    },
+    sourceReference = source_ref
+  }
+  local response
+  session:request("source", params, function (err, result)
+    response = {err, result}
+  end)
+  vim.wait(5000, function() return response ~= nil end)
+  local err = response[1]
+  if err then
+    require("dap.utils").notify(tostring(err), vim.log.levels.WARN)
+    return
+  end
+  local result = response[2]
+  api.nvim_buf_set_lines(buf, 0, -1, true, vim.split(result.content, "\n", { plain = true }))
+  local adapter_options = session.adapter.options or {}
+  local ft = mime_to_filetype[response.mimeType] or adapter_options.source_filetype
+  if ft then
+    vim.bo[buf].filetype = ft
+  elseif source_path ~= "" and vim.filetype then
+    local ok
+    ok, ft = pcall(vim.filetype.match, { buf = buf, filename = source_path })
+    if ok and ft then
+      vim.bo[buf].filetype = ft
+    end
+  end
 end
 
 

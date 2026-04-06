@@ -15,6 +15,8 @@ local ns = 'dap_breakpoints'
 local M = {}
 
 
+---@param bufexpr? string|integer
+---@return vim.fn.sign_getplaced.ret.item[]
 local function get_breakpoint_signs(bufexpr)
   if bufexpr then
     return vim.fn.sign_getplaced(bufexpr, {group = ns})
@@ -163,6 +165,8 @@ end
 
 
 --- Returns all breakpoints grouped by bufnr
+---@param bufexpr? integer|string
+---@return table<integer, dap.bp>
 function M.get(bufexpr)
   local signs = get_breakpoint_signs(bufexpr)
   if #signs == 0 then
@@ -176,6 +180,7 @@ function M.get(bufexpr)
     for _, bp in pairs(buf_bp_signs.signs) do
       local bp_entry = bp_by_sign_by_buf[bufnr][bp.id] or {}
       table.insert(breakpoints, {
+        buf = bufnr,
         line = bp.lnum;
         condition = bp_entry.condition;
         hitCondition = bp_entry.hitCondition;

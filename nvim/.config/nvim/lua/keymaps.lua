@@ -76,7 +76,7 @@ vim.keymap.set(
     { desc = "[S]earch [a]gain (previous pattern)" }
 )
 vim.keymap.set("n", "<leader>sr", fzflua.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
-vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [O]pen buffers" })
+vim.keymap.set("n", "<leader>sb", fzflua.buffers, { desc = "[S]earch [B]uffers" })
 
 vim.keymap.set("n", "<leader>slr", fzflua.lsp_references, { desc = "[S]earch [L]SP [R]eferences" })
 

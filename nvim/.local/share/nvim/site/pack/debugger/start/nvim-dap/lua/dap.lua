@@ -378,6 +378,9 @@ do
     ['${relativeFileDirname}'] = function(_)
       return vim.fn.fnamemodify(vim.fn.expand("%:.:h"), ":r")
     end,
+    ['${fileDirnameBasename}'] = function(_)
+      return vim.fn.fnamemodify(vim.fn.expand("%:p:h"), ":t")
+    end,
     ['${workspaceFolder}'] = function(_)
       return vim.fn.getcwd()
     end,
@@ -735,6 +738,12 @@ function M.step_into(opts)
       return
     end
 
+    if #response.targets == 0 then
+      notify('No targets found. Trying regular step_into.', vim.log.levels.INFO)
+      session:_step('stepIn', opts)
+      return
+    end
+
     lazy.ui.pick_if_many(
       response.targets,
       "Step into which function?",
@@ -784,7 +793,11 @@ end
 
 function M.pause(thread_id)
   if session then
-    session:_pause(thread_id)
+    session:_pause(thread_id, function(_, tid)
+      if tid then
+        notify('Thread paused ' .. tostring(tid), vim.log.levels.INFO)
+      end
+    end)
   end
 end
 
@@ -949,7 +962,7 @@ function M.restart(config, opts)
   if lsession.capabilities.supportsRestartRequest then
     lazy.async.run(function()
       config = prepare_config(config)
-      lsession:request('restart', config, function(err0, _)
+      lsession:request('restart', { arguments = config }, function(err0, _)
         if err0 then
           notify('Error restarting debug adapter: ' .. tostring(err0), vim.log.levels.ERROR)
         else

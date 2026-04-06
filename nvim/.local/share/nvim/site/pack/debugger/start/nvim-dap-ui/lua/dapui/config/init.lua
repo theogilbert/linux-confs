@@ -4,6 +4,7 @@ local dapui = {}
 ---@toc_entry Configuration Options
 
 ---@class dapui.Config
+---@field wrap boolean Whether or not to wrap UI text
 ---@field icons dapui.Config.icons
 ---@field mappings table<dapui.Action, string|string[]> Keys to trigger actions in elements
 ---@field element_mappings table<string, table<dapui.Action, string|string[]>> Per-element overrides of global mappings
@@ -70,13 +71,14 @@ local dapui = {}
 ---@field sort_variables? fun(a: dapui.types.Variable, b: dapui.types.Variable):boolean Sorting function to determine
 --- render order of variables.
 
----@alias dapui.Action "expand"|"open"|"remove"|"edit"|"repl"|"toggle"
+---@alias dapui.Action "expand"|"open"|"remove"|"edit"|"repl"|"toggle"|"watch"
 
 ---@alias dapui.FloatingAction "close"
 
 ---@type dapui.Config
 ---@nodoc
 local default_config = {
+  wrap = false,
   icons = { expanded = "", collapsed = "", current_frame = "" },
   mappings = {
     -- Use a table to apply multiple mappings
@@ -86,6 +88,7 @@ local default_config = {
     edit = "e",
     repl = "r",
     toggle = "t",
+    watch = "w",
   },
   element_mappings = {},
   expand_lines = vim.fn.has("nvim-0.7") == 1,

@@ -290,16 +290,26 @@ local function get_files(path, opts)
       error('opts.filter must be a string or a function')
     end
   end
-  if opts.executables and vim.fs.dir then
+  if opts.executables then
     local f = filter
     local uv = vim.uv or vim.loop
-    local user_execute = tonumber("00100", 8)
-    filter = function(filepath)
-      if not f(filepath) then
-        return false
+    if vim.fn.has("win32") == 1 then
+      filter = function(filepath)
+        if not f(filepath) then
+          return false
+        end
+        local ext = vim.fn.fnamemodify(filepath, ":e")
+        return vim.tbl_contains({".exe", ".bat", ".cmd", ".ps1", ".com"}, ext)
       end
-      local stat = uv.fs_stat(filepath)
-      return stat and bit.band(stat.mode, user_execute) == user_execute or false
+    else
+      local user_execute = tonumber("00100", 8)
+      filter = function(filepath)
+        if not f(filepath) then
+          return false
+        end
+        local stat = uv.fs_stat(filepath)
+        return stat and bit.band(stat.mode, user_execute) == user_execute or false
+      end
     end
   end
 
@@ -412,10 +422,11 @@ function M.splitstr(str)
     return {}
   end
 
-  local space = S(" \t\n\r") ^ 1
-  local unquoted = C((1 - space) ^ 0)
-  local element = qtext('"') + qtext("'") + unquoted
-  local p = lpeg.Ct(element * (space * element) ^ 0)
+  local space = S(" \t\n\r")
+  local unquoted = P('\\') * C(P(1)) + C(P(1) - space)
+  local word = qtext('"') + qtext("'") + unquoted
+  local element = lpeg.Cf(word ^ 1, function(acc, val) return acc .. val end)
+  local p = lpeg.Ct(element * (space ^ 1 * element) ^ 0)
   return lpeg.match(p, str)
 end
 

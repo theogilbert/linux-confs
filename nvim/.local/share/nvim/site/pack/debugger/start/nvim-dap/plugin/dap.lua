@@ -62,11 +62,21 @@ if api.nvim_create_autocmd then
     end
   })
 
+  local readcmds = api.nvim_create_augroup("dap-readcmds", { clear = true })
   api.nvim_create_autocmd("BufReadCmd", {
-    group = api.nvim_create_augroup("dap-readcmds", { clear = true }),
+    group = readcmds,
     pattern = "dap-eval://*",
     callback = function()
       require("dap._cmds").bufread_eval()
+    end,
+  })
+
+  api.nvim_create_autocmd("BufReadCmd", {
+    group = readcmds,
+    pattern = "dap-src://*",
+    ---@param args vim.api.keyset.create_autocmd.callback_args
+    callback = function(args)
+      require("dap._cmds").source(args.buf)
     end,
   })
 end

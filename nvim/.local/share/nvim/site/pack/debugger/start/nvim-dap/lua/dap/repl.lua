@@ -136,9 +136,12 @@ local repl = ui.new_view(
 M.commands = {
   continue = {'.continue', '.c'},
   next_ = {'.next', '.n'},
+  nexti = {'.nexti', '.ni'},
   step_back = {'.back', '.b'},
+  step_backi = {'.backi', '.bi'},
   reverse_continue = {'.reverse-continue', '.rc'},
   into = {'.into'},
+  intoi = {'.intoi'},
   into_targets = {'.into-targets'},
   out = {'.out'},
   scopes = {'.scopes'},
@@ -302,10 +305,14 @@ local function coexecute(text, opts)
     require('dap').continue()
   elseif vim.tbl_contains(M.commands.next_, text) then
     require('dap').step_over()
+  elseif vim.tbl_contains(M.commands.nexti, text) then
+    require('dap').step_over({granularity = "instruction"})
   elseif vim.tbl_contains(M.commands.capabilities, text) then
     M.append(vim.inspect(session.capabilities))
   elseif vim.tbl_contains(M.commands.into, text) then
     require('dap').step_into()
+  elseif vim.tbl_contains(M.commands.intoi, text) then
+    require('dap').step_into({granularity = "instruction"})
   elseif vim.tbl_contains(M.commands.into_targets, text) then
     require('dap').step_into({askForTargets=true})
   elseif vim.tbl_contains(M.commands.out, text) then
@@ -315,6 +322,8 @@ local function coexecute(text, opts)
     M.print_stackframes()
   elseif vim.tbl_contains(M.commands.step_back, text) then
     require('dap').step_back()
+  elseif vim.tbl_contains(M.commands.step_backi, text) then
+    require('dap').step_back({granularity = "instruction"})
   elseif vim.tbl_contains(M.commands.pause, text) then
     session:_pause()
   elseif vim.tbl_contains(M.commands.reverse_continue, text) then
@@ -468,25 +477,17 @@ end
 function M.append(line, lnum, opts)
   opts = opts or {}
   local buf = repl._init_buf()
-  if vim.bo[buf].fileformat ~= "dos" then
-    line = line:gsub('\r\n', '\n')
-  end
-  local lines = vim.split(line, '\n')
+  line = line:gsub("\r\n", "\n")
+  local lines = vim.split(line, "\n")
   if lnum == '$' or not lnum then
     lnum = line_count(buf)
     if opts.newline == false then
-      local last_line = api.nvim_buf_get_lines(buf, lnum, lnum + 1, true)[1]
-      local insert_pos = last_line ~= nil and #last_line or 0
-      if last_line == prompt then
-        -- insert right in front of the empty prompt
-        insert_pos = 0
-        if lines[#lines] ~= '' then
-          table.insert(lines, #lines + 1, '')
-        end
-      elseif vim.startswith(last_line or "", prompt) then
-        table.insert(lines, 1, '')
+      if lnum == 0 then
+        api.nvim_buf_set_lines(buf, lnum, lnum, true, lines)
+      else
+        local last_line = api.nvim_buf_get_lines(buf, lnum - 1, lnum, true)[1]
+        api.nvim_buf_set_text(buf, lnum - 1, #last_line, lnum - 1, #last_line, lines)
       end
-      api.nvim_buf_set_text(buf, lnum, insert_pos, lnum, insert_pos, lines)
     else
       api.nvim_buf_set_lines(buf, lnum, lnum, true, lines)
     end

@@ -37,3 +37,4 @@ dapui.setup()	nvim-dap-ui.txt	/*dapui.setup()*
 dapui.toggle()	nvim-dap-ui.txt	/*dapui.toggle()*
 dapui.update_render()	nvim-dap-ui.txt	/*dapui.update_render()*
 nvim-dap-ui	nvim-dap-ui.txt	/*nvim-dap-ui*
+nvim-dap-ui.txt	nvim-dap-ui.txt	/*nvim-dap-ui.txt*

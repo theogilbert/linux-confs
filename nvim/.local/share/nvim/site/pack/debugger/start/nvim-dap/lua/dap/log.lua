@@ -50,6 +50,7 @@ local log_mt = {
 function Log:write(...)
   self:open()
   self._file:write(...)
+  self._file:flush()
 end
 
 function Log:open()

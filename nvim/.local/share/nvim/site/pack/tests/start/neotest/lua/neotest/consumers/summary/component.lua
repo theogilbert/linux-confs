@@ -48,6 +48,16 @@ function SummaryComponent:render(canvas, tree, expanded, focused, indent)
     if not tree then
       return
     end
+    local position = tree:data()
+    canvas:add_mapping("run", function()
+      require("neotest").run.run({ position.id, adapter = self.adapter_id })
+    end)
+    canvas:add_mapping("debug", function()
+      require("neotest").run.run({ position.id, adapter = self.adapter_id, strategy = "dap" })
+    end)
+    canvas:add_mapping("stop", function()
+      require("neotest").run.stop({ position.id, adapter = self.adapter_id })
+    end)
     canvas:add_mapping("clear_target", function()
       require("neotest").summary.target(self.adapter_id)
     end)
@@ -153,23 +163,30 @@ function SummaryComponent:_render(canvas, tree, expanded, focused, indent)
       canvas:add_mapping(
         "expand_all",
         async_func(function()
-          local positions = {}
-          local root_type = position.type
-          --  Don't want to load all files under dir to prevent memory issues
-          if root_type == "dir" then
+          if self.expanded_positions[position.id] then
             for _, pos in node:iter() do
-              if pos.type == "dir" then
+              self.expanded_positions[pos.id] = nil
+            end
+            neotest.summary.render()
+          else
+            local positions = {}
+            local root_type = position.type
+            --  Don't want to load all files under dir to prevent memory issues
+            if root_type == "dir" then
+              for _, pos in node:iter() do
+                if pos.type == "dir" then
+                  positions[pos.id] = true
+                end
+              end
+            else
+              for _, pos in
+                self.client:get_position(position.id, { adapter = self.adapter_id }):iter()
+              do
                 positions[pos.id] = true
               end
             end
-          else
-            for _, pos in
-              self.client:get_position(position.id, { adapter = self.adapter_id }):iter()
-            do
-              positions[pos.id] = true
-            end
+            neotest.summary.render(positions)
           end
-          neotest.summary.render(positions)
         end)
       )
 

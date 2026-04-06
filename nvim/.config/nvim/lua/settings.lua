@@ -1,3 +1,6 @@
+-- disable netrw before any plugin loads (required by nvim-tree)
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
 
 -- Disable Python provider for rplugins:
 -- I do not use Python rplugins, and the provider takes a long time to load.

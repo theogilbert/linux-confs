@@ -6,10 +6,10 @@
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 
 vim.keymap.set("n", "<leader>f", function()
-    win_list = vim.api.nvim_list_wins()
+    local win_list = vim.api.nvim_list_wins()
     for idx = #win_list, 1, -1 do
-        win_handle = win_list[idx]
-        win_cfg = vim.api.nvim_win_get_config(win_handle)
+        local win_handle = win_list[idx]
+        local win_cfg = vim.api.nvim_win_get_config(win_handle)
         if win_cfg.relative ~= '' then
             vim.api.nvim_set_current_win(win_handle)
             break
@@ -151,7 +151,7 @@ end, { desc = "[T]ests - [T]erminate test session" })
 
 local api = require("nvim-tree.api")
 
-function focus_current_file()
+local function focus_current_file()
 	api.tree.open({ find_file = true })
 end
 

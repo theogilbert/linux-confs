@@ -3,7 +3,7 @@
 -- They are not managed by a plugin manager by purpose:
 -- I want to be sure what code gets executed on my machine, and I do not want a
 
-mini_ai = require('mini.ai')
+local mini_ai = require('mini.ai')
 mini_ai.setup({
     n_lines = 9999,
     search_method = 'cover_or_nearest',

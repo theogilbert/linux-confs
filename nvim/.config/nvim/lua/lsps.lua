@@ -1,12 +1,11 @@
 M = {}
 
 
-vim.lsp.handlers["textDocument/publishDiagnostics"] = vim.lsp.with(vim.lsp.diagnostic.on_publish_diagnostics, {
+vim.diagnostic.config({
 	virtual_text = false,
 	underline = true,
 	signs = true,
 })
-vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { focusable = false })
 
 local cursorHoverGroup = vim.api.nvim_create_augroup("CursorHover", {})
 
@@ -25,7 +24,7 @@ vim.keymap.set("n", "K", function()
 
     if vim.tbl_isempty(diagnostics) then
         -- No diagnostics, just show hover
-        vim.lsp.buf.hover()
+        vim.lsp.buf.hover({ focusable = false })
     else
         -- Capture LSP hover text
         vim.lsp.buf_request(buf, "textDocument/hover", vim.lsp.util.make_position_params(), function(_, result)
@@ -33,8 +32,9 @@ vim.keymap.set("n", "K", function()
             local contents = {}
 
             if result and result.contents then
-                local hover_text = vim.lsp.util.convert_input_to_markdown_lines(result.contents)
-                vim.list_extend(contents, hover_text)
+                local value = type(result.contents) == 'string' and result.contents
+                    or result.contents.value or ''
+                vim.list_extend(contents, vim.split(value, '\n', { trimempty = true }))
             end
 
             -- Add a separator

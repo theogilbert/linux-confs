@@ -13,6 +13,7 @@ gitsigns-config	gitsigns.txt	/*gitsigns-config*
 gitsigns-config-attach_to_untracked	gitsigns.txt	/*gitsigns-config-attach_to_untracked*
 gitsigns-config-auto_attach	gitsigns.txt	/*gitsigns-config-auto_attach*
 gitsigns-config-base	gitsigns.txt	/*gitsigns-config-base*
+gitsigns-config-blame_formatter	gitsigns.txt	/*gitsigns-config-blame_formatter*
 gitsigns-config-count_chars	gitsigns.txt	/*gitsigns-config-count_chars*
 gitsigns-config-culhl	gitsigns.txt	/*gitsigns-config-culhl*
 gitsigns-config-current_line_blame	gitsigns.txt	/*gitsigns-config-current_line_blame*
@@ -21,6 +22,8 @@ gitsigns-config-current_line_blame_formatter_nc	gitsigns.txt	/*gitsigns-config-c
 gitsigns-config-current_line_blame_opts	gitsigns.txt	/*gitsigns-config-current_line_blame_opts*
 gitsigns-config-debug_mode	gitsigns.txt	/*gitsigns-config-debug_mode*
 gitsigns-config-diff_opts	gitsigns.txt	/*gitsigns-config-diff_opts*
+gitsigns-config-diffthis	gitsigns.txt	/*gitsigns-config-diffthis*
+gitsigns-config-gh	gitsigns.txt	/*gitsigns-config-gh*
 gitsigns-config-linehl	gitsigns.txt	/*gitsigns-config-linehl*
 gitsigns-config-max_file_length	gitsigns.txt	/*gitsigns-config-max_file_length*
 gitsigns-config-numhl	gitsigns.txt	/*gitsigns-config-numhl*
@@ -46,6 +49,8 @@ gitsigns-object	gitsigns.txt	/*gitsigns-object*
 gitsigns-revision	gitsigns.txt	/*gitsigns-revision*
 gitsigns-statusline	gitsigns.txt	/*gitsigns-statusline*
 gitsigns-textobject	gitsigns.txt	/*gitsigns-textobject*
+gitsigns-type-gitcontext	gitsigns.txt	/*gitsigns-type-gitcontext*
+gitsigns-types	gitsigns.txt	/*gitsigns-types*
 gitsigns-usage	gitsigns.txt	/*gitsigns-usage*
 gitsigns.attach()	gitsigns.txt	/*gitsigns.attach()*
 gitsigns.blame()	gitsigns.txt	/*gitsigns.blame()*
@@ -72,8 +77,10 @@ gitsigns.setloclist()	gitsigns.txt	/*gitsigns.setloclist()*
 gitsigns.setqflist()	gitsigns.txt	/*gitsigns.setqflist()*
 gitsigns.setup()	gitsigns.txt	/*gitsigns.setup()*
 gitsigns.show()	gitsigns.txt	/*gitsigns.show()*
+gitsigns.show_commit()	gitsigns.txt	/*gitsigns.show_commit()*
 gitsigns.stage_buffer()	gitsigns.txt	/*gitsigns.stage_buffer()*
 gitsigns.stage_hunk()	gitsigns.txt	/*gitsigns.stage_hunk()*
+gitsigns.statuscolumn()	gitsigns.txt	/*gitsigns.statuscolumn()*
 gitsigns.toggle_current_line_blame()	gitsigns.txt	/*gitsigns.toggle_current_line_blame()*
 gitsigns.toggle_deleted()	gitsigns.txt	/*gitsigns.toggle_deleted()*
 gitsigns.toggle_linehl()	gitsigns.txt	/*gitsigns.toggle_linehl()*
@@ -108,6 +115,7 @@ hl-GitSignsDeleteNr	gitsigns.txt	/*hl-GitSignsDeleteNr*
 hl-GitSignsDeletePreview	gitsigns.txt	/*hl-GitSignsDeletePreview*
 hl-GitSignsDeleteVirtLn	gitsigns.txt	/*hl-GitSignsDeleteVirtLn*
 hl-GitSignsDeleteVirtLnInLine	gitsigns.txt	/*hl-GitSignsDeleteVirtLnInLine*
+hl-GitSignsNoEOLPreview	gitsigns.txt	/*hl-GitSignsNoEOLPreview*
 hl-GitSignsStagedAdd	gitsigns.txt	/*hl-GitSignsStagedAdd*
 hl-GitSignsStagedAddCul	gitsigns.txt	/*hl-GitSignsStagedAddCul*
 hl-GitSignsStagedAddLn	gitsigns.txt	/*hl-GitSignsStagedAddLn*

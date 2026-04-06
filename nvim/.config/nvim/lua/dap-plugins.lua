@@ -87,7 +87,7 @@ dap.configurations.python = {
 
 local dapui = require('dapui')
 
-function build_pane_layout(scope)
+local function build_pane_layout(scope)
     return {
         elements = { {
             id = scope,

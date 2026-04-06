@@ -3,7 +3,7 @@
 -- They are not managed by a plugin manager by purpose:
 -- I want to be sure what code gets executed on my machine, and I do not want a
 
-mini_ai = require('mini.ai')
+local mini_ai = require('mini.ai')
 mini_ai.setup({
     n_lines = 9999,
     search_method = 'cover_or_nearest',
@@ -115,9 +115,6 @@ require('suit').setup({
 local wk = require("which-key")
 wk.setup({
     preset = "helix",
-    trigger_blacklist = {
-        n = { '"' },
-    },
 })
 wk.add({
 	{ "<leader>s", desc = "[S]earch" },
@@ -139,10 +136,6 @@ wk.add({
 	{ "<leader>vs", desc = "[V]im [S]essions actions" },
 	{ "<leader>S", desc = "[S]cratch file actions" },
 })
-
--- disable netrw at the very start of your init.lua
-vim.g.loaded_netrw = 1
-vim.g.loaded_netrwPlugin = 1
 
 -- optionally enable 24-bit colour
 vim.opt.termguicolors = true

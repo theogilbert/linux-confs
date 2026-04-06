@@ -56,11 +56,13 @@ local function collect(file_path, query, source, root, opts)
       range = { root:range() },
     },
   }
-  for _, match, metadata in query:iter_matches(root, source, nil, nil, { all = false }) do
+  for _, match, metadata in query:iter_matches(root, source, nil, nil) do
     local captured_nodes = {}
     local node_metadata = {}
     for i, capture in ipairs(query.captures) do
-      captured_nodes[capture] = match[i]
+      local maybe_node = match[i]
+      captured_nodes[capture] = type(maybe_node) == "table" and maybe_node[#maybe_node]
+        or maybe_node
       node_metadata[capture] = metadata[i]
     end
     local res = opts.build_position(file_path, source, captured_nodes, node_metadata)
@@ -111,8 +113,8 @@ end
 ---@return userdata,string
 function neotest.lib.treesitter.get_parse_root(file_path, content, opts)
   local fast = opts.fast ~= false
-  local ft = lib.files.detect_filetype(file_path)
   nio.scheduler()
+  local ft = lib.files.detect_filetype(file_path)
   local lang = vim.treesitter.language.get_lang(ft) or ft
   local lang_tree = vim.treesitter.get_string_parser(
     content,

@@ -685,12 +685,14 @@ See also ~
 |neotest.Config.summary.mappings| for all mappings in the summary window
 
                                                         *neotest.summary.open()*
-`open`()
+`open`({opts})
 
 Open the summary window
 >vim
   lua require("neotest").summary.open()
 <
+Parameters~
+{opts} `(neotest.WindowOpenOpts?)`
 
                                                        *neotest.summary.close()*
 `close`()
@@ -701,13 +703,15 @@ Close the summary window
 <
 
                                                       *neotest.summary.toggle()*
-`toggle`()
+`toggle`({open_opts})
 
 the summary window
 
 >vim
  lua require("neotest").summary.toggle()
 <
+Parameters~
+{open_opts} `(neotest.WindowOpenOpts?)`
 
                                                 *neotest.summmary.RunMarkedArgs*
 Inherits: `neotest.run.RunArgs`

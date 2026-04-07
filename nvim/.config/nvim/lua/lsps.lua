@@ -119,24 +119,40 @@ vim.lsp.config("ruff", {
 })
 vim.lsp.enable("ruff")
 
+local ruff_watcher_enabled = false
+
+local function ruff_format_on_save(args)
+    local buf = args.buf
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local input = table.concat(lines, "\n") .. "\n"
+    local fixed = vim.fn.system({ "ruff", "check", "--fix-only", "--ignore", "F841,F842", "-" }, input)
+    if vim.v.shell_error == 0 then input = fixed end
+    local formatted = vim.fn.system({ "ruff", "format", "-" }, input)
+    if vim.v.shell_error == 0 then input = formatted end
+    local new_lines = vim.split(input, "\n", { trimempty = false })
+    -- remove trailing empty string from split
+    if new_lines[#new_lines] == "" then table.remove(new_lines) end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+end
+
+local function toggle_ruff_watcher()
+    ruff_watcher_enabled = not ruff_watcher_enabled
+    if ruff_watcher_enabled then
+        vim.api.nvim_create_autocmd("BufWritePre", {
+            group = augroup,
+            pattern = "*.py",
+            callback = ruff_format_on_save,
+        })
+        vim.notify("Ruff file watcher enabled")
+    else
+        vim.api.nvim_clear_autocmds({ group = augroup, pattern = "*.py" })
+        vim.notify("Ruff file watcher disabled")
+    end
+end
+
 if vim.fn.executable("ruff") == 1 then
-    vim.api.nvim_create_autocmd("BufWritePre", {
-        group = augroup,
-        pattern = "*.py",
-        callback = function(args)
-            local buf = args.buf
-            local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-            local input = table.concat(lines, "\n") .. "\n"
-            local fixed = vim.fn.system({ "ruff", "check", "--fix-only", "--ignore", "F841,F842", "-" }, input)
-            if vim.v.shell_error == 0 then input = fixed end
-            local formatted = vim.fn.system({ "ruff", "format", "-" }, input)
-            if vim.v.shell_error == 0 then input = formatted end
-            local new_lines = vim.split(input, "\n", { trimempty = false })
-            -- remove trailing empty string from split
-            if new_lines[#new_lines] == "" then table.remove(new_lines) end
-            vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
-        end,
-    })
+    toggle_ruff_watcher()
+    vim.keymap.set("n", "<leader>lw", toggle_ruff_watcher, { desc = "Toggle ruff file[w]atcher" })
 end
 
 vim.lsp.config("yamlls", {

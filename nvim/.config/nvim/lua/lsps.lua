@@ -127,7 +127,7 @@ if vim.fn.executable("ruff") == 1 then
             local buf = args.buf
             local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
             local input = table.concat(lines, "\n") .. "\n"
-            local fixed = vim.fn.system({ "ruff", "check", "--fix", "--ignore", "F841,F842", "-" }, input)
+            local fixed = vim.fn.system({ "ruff", "check", "--fix-only", "--ignore", "F841,F842", "-" }, input)
             if vim.v.shell_error == 0 then input = fixed end
             local formatted = vim.fn.system({ "ruff", "format", "-" }, input)
             if vim.v.shell_error == 0 then input = formatted end

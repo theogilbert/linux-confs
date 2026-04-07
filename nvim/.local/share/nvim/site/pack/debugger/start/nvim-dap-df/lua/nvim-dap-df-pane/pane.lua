@@ -96,6 +96,12 @@ function Pane:prompt_expression()
         })
 end
 
+-- Set expression directly (without prompt) and refresh
+function Pane:set_expression(expr)
+	self.dataview = DataView:new(expr, self.config.limit)
+	self:refresh()
+end
+
 -- Refresh the pane content
 function Pane:refresh()
     if not self:is_open() then

@@ -53,6 +53,21 @@ function M.toggle()
 	end
 end
 
+-- Inspect a DataFrame/Series expression directly (opens the pane if needed)
+function M.inspect(expr)
+	if not expr or expr == "" then
+		return
+	end
+
+	if not dap.session() then
+		vim.notify("No active DAP session", vim.log.levels.WARN)
+		return
+	end
+
+	M.open()
+	state.pane:set_expression(expr)
+end
+
 -- Get the current pane instance (for internal use)
 function M._get_pane()
 	return state.pane

@@ -12,7 +12,7 @@ local _, H = debug.getupvalue(MiniTest.expect.reference_screenshot, 1)
 ---@class MiniTestScreenshot
 
 --- copied over from mini.test
----@param t { text: string[], attr: string[] }
+---@param t { text?: string[], attr?: string[] }
 ---@param opts test.ScreenOpts?
 ---@return MiniTestScreenshot
 local function screenshot_new(t, opts)
@@ -64,7 +64,7 @@ end
 function M.from_lines(text_lines, opts)
   opts = opts or {}
   if opts and opts.normalize_paths then
-    text_lines = vim.tbl_map(function(x) return x:gsub([[\]], [[/]]) end, text_lines)
+    text_lines = vim.tbl_map(function(x) return (x:gsub([[\]], [[/]])) end, text_lines)
   end
   local f = function(x)
     return string_to_chars(x)
@@ -207,7 +207,7 @@ M.reference_screenshot = function(screenshot, path, opts)
   local subject = "screenshot equality to reference at " .. vim.inspect(path)
   local context = string.format("%s\nReference:\n%s\n\nObserved:\n%s", cause, tostring(reference),
     tostring(screenshot))
-  H.error_expect(subject, context)
+  H.error_with_emphasis(subject, context)
 end
 
 -- modified version (no attr, trim trailing whitespace)
@@ -233,7 +233,7 @@ M.compare = function(reference, screenshot, opts)
   local context = string.format("%s\nReference:\n%s\n\nObserved:\n%s", cause,
     ruler .. tostring(reference),
     ruler .. tostring(screenshot))
-  H.error_expect(subject, context)
+  H.error_with_emphasis(subject, context)
 end
 
 return M

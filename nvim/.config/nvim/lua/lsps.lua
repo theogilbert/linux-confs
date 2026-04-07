@@ -1,5 +1,33 @@
 M = {}
 
+-- Sort workspace/symbol LSP responses by match quality.
+-- fzf-lua's live_workspace_symbols uses --disabled (no fzf sorting),
+-- so results appear in whatever order the LSP returns them.
+do
+  local orig_buf_request = vim.lsp.buf_request
+  vim.lsp.buf_request = function(bufnr, method, params, handler, ...)
+    if method ~= "workspace/symbol" then
+      return orig_buf_request(bufnr, method, params, handler, ...)
+    end
+    local query = params and params.query or ""
+    local wrapped = function(err, result, ctx, config)
+      if not err and type(result) == "table" and #query > 0 then
+        local query_lower = query:lower()
+        local function score(sym)
+          local name_lower = sym.name:lower()
+          local pos = name_lower:find(query_lower, 1, true)
+          if not pos then return 1000 + #sym.name end
+          return pos * 10 + #sym.name
+        end
+        table.sort(result, function(a, b)
+          return score(a) < score(b)
+        end)
+      end
+      return handler(err, result, ctx, config)
+    end
+    return orig_buf_request(bufnr, method, params, wrapped, ...)
+  end
+end
 
 vim.diagnostic.config({
 	virtual_text = false,

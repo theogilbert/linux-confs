@@ -46,7 +46,11 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim)
   dependencies = { "nvim-tree/nvim-web-devicons" },
   -- or if using mini.icons/mini.nvim
   -- dependencies = { "nvim-mini/mini.icons" },
+  ---@module "fzf-lua"
+  ---@type fzf-lua.Config|{}
+  ---@diagnostic disable: missing-fields
   opts = {}
+  ---@diagnostic enable: missing-fields
 }
 ```
 
@@ -70,6 +74,7 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim)
   using fzf's native previewer
 - [delta](https://github.com/dandavison/delta) - syntax highlighted git pager
   for git status previews
+- [jj](https://github.com/jj-vcs/jj) - for Jujutsu commands (`jj_files`, `vcs_files`)
 - [nvim-dap](https://github.com/mfussenegger/nvim-dap) - for Debug Adapter
   Protocol (DAP) support
 - [nvim-treesitter-context](https://github.com/nvim-treesitter/nvim-treesitter-context) - for
@@ -197,6 +202,7 @@ Fzf-Lua conveniently comes with a VS-Code like picker by default
 | `buffers`        | open buffers                      |
 | `files`          | `find` or `fd` on a path          |
 | `oldfiles`       | opened files history              |
+| `history`        | opened buffers/files history      |
 | `quickfix`       | quickfix list                     |
 | `quickfix_stack` | quickfix stack                    |
 | `loclist`        | location list                     |
@@ -206,6 +212,7 @@ Fzf-Lua conveniently comes with a VS-Code like picker by default
 | `treesitter`     | current buffer treesitter symbols |
 | `tabs`           | open tabs                         |
 | `args`           | argument list                     |
+| `vcs_files`      | `jj`/`git` files or `find`/`fd`   |
 
 </details>
 <details>
@@ -260,6 +267,7 @@ Fzf-Lua conveniently comes with a VS-Code like picker by default
 | `git_status`    | `git status`             |
 | `git_diff`      | `git diff {ref}`         |
 | `git_hunks`     | `git hunks {ref}`        |
+| `git_reflog`    | `git reflog`             |
 | `git_commits`   | git commit log (project) |
 | `git_bcommits`  | git commit log (buffer)  |
 | `git_blame`     | git blame (buffer)       |
@@ -267,6 +275,16 @@ Fzf-Lua conveniently comes with a VS-Code like picker by default
 | `git_worktrees` | git worktrees            |
 | `git_tags`      | git tags                 |
 | `git_stash`     | git stash                |
+
+</details>
+<details>
+<summary>Jujutsu</summary>
+
+### Jujutsu
+
+| Command    | List                   |
+| ---------- | ---------------------- |
+| `jj_files` | `jj file list` tracked files |
 
 </details>
 <details>
@@ -329,6 +347,7 @@ Fzf-Lua conveniently comes with a VS-Code like picker by default
 | `spellcheck`           | misspelled words in buffer                    |
 | `spell_suggest`        | spelling suggestions                          |
 | `packadd`              | :packadd <package>                            |
+| `undotree`             | history undo tree                             |
 
 </details>
 <details>
@@ -817,9 +836,9 @@ previewers = {
     -- otherwise auto-detect prioritizes `fd`:`rg`:`find`
     -- default options are controlled by 'fd|rg|find|_opts'
     -- cmd            = "rg --files",
-    find_opts         = [[-type f \! -path '*/.git/*']],
-    rg_opts           = [[--color=never --hidden --files -g "!.git"]],
-    fd_opts           = [[--color=never --hidden --type f --type l --exclude .git]],
+    find_opts         = [[-type f \! -path '*/.git/*' \! -path '*/.jj/*']],
+    rg_opts           = [[--color=never --files -g "!.git" -g "!.jj"]],
+    fd_opts           = [[--color=never --type f --type l --exclude .git --exclude .jj]],
     dir_opts          = [[/s/b/a:-d]],
     -- by default, cwd appears in the header only if {opts} contain a cwd
     -- parameter to a different folder than the current working directory
@@ -1045,8 +1064,6 @@ previewers = {
       -- uncomment to enable '.gitignore' toggle for grep
       -- ["ctrl-r"]   = { actions.toggle_ignore }
     },
-    no_header             = false,    -- hide grep|cwd header?
-    no_header_i           = false,    -- hide interactive header?
   },
   args = {
     prompt            = 'Args❯ ',
@@ -1062,6 +1079,7 @@ previewers = {
     -- stat_file = FzfLua.utils.file_is_readable,
     -- stat_file = function() return true end,
     include_current_session = false,  -- include bufs from current session
+    ignore_current_buffer   = true,   -- exclude current buf from session
   },
   buffers = {
     prompt            = 'Buffers❯ ',
@@ -1134,8 +1152,6 @@ previewers = {
       -- this action toggles between 'grep' and 'live_grep'
       ["ctrl-g"]          = { actions.grep_lgrep }
     },
-    no_header             = false,    -- hide grep|cwd header?
-    no_header_i           = false,    -- hide interactive header?
   },
   btags = {
     prompt                = 'BTags❯ ',

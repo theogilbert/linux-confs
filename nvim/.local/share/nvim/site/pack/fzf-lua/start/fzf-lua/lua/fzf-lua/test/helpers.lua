@@ -36,7 +36,7 @@ local os_detect = {
   },
   MAC = { name = "MacOS", fn = function() return vim.fn.has("mac") == 1 end },
   LINUX = { name = "Linux", fn = function() return vim.fn.has("linux") == 1 end },
-  STABLE = { name = "Neovim stable", fn = function() return M.NVIM_VERSION() == "0.11.4" end },
+  STABLE = { name = "Neovim stable", fn = function() return M.NVIM_VERSION() == "0.11.6" end },
   NIGHTLY = { name = "Neovim nightly", fn = function() return vim.fn.has("nvim-0.12") == 1 end },
 }
 
@@ -44,7 +44,7 @@ local os_detect = {
 for k, v in pairs(os_detect) do
   M["IS_" .. k] = function()
     local var = "_IS_" .. k
-    if M[var] == nil then
+    if M[var] == nil then ---@diagnostic disable-next-line: assign-type-mismatch
       M[var] = v.fn()
     end
     return M[var]
@@ -109,6 +109,7 @@ M.expect.equality_partial_tbl = MiniTest.new_expectation(
 
 -- Monkey-patch `MiniTest.new_child_neovim` with helpful wrappers
 M.new_child_neovim = function()
+  ---@class fzf-lua.test.chlid: MiniTest.child
   local child = MiniTest.new_child_neovim()
 
   local prevent_hanging = function(method)
@@ -120,6 +121,7 @@ M.new_child_neovim = function()
 
   child.init = function()
     child.restart({ "-u", "scripts/minimal_init.lua" })
+    child.cmd("cd deps/fzf-lua")
 
     -- Change initial buffer to be readonly. This not only increases execution
     -- speed, but more closely resembles manually opened Neovim.
@@ -158,7 +160,9 @@ M.new_child_neovim = function()
         winopts = {
           on_create = function(e)
             _G._fzf_lua_on_create = true
-            vim.wo[e.winid].statusline = "fzf://"
+            if vim.api.nvim_win_get_config(e.winid).relative == "" then
+              vim.wo[e.winid].statusline = "fzf://"
+            end
           end,
           on_close = function()
             _G._fzf_lua_on_create = nil
@@ -370,6 +374,10 @@ M.new_child_neovim = function()
   return child
 end
 
+---@param child fzf-lua.test.chlid
+---@param opts? table
+---@param setup_opts? table
+---@return table
 M.new_set_with_child = function(child, opts, setup_opts)
   opts = opts or {}
   opts.hooks = opts.hooks or {}
@@ -401,7 +409,8 @@ M.new_set_with_child = function(child, opts, setup_opts)
         end
         -- job may already die
         if pcall(child.unload) then
-          MiniTest.expect.equality("", child.v.errmsg)
+          local errmsg = child.v.errmsg
+          assert(errmsg == "", errmsg)
         end
       end,
       post_once = function()

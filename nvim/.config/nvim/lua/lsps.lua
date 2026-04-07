@@ -158,6 +158,15 @@ vim.lsp.enable("yamlls")
 vim.lsp.enable("ts_ls")
 local cmd_utils = require("utilities.commands")
 
+M.sort_imports = function()
+    vim.lsp.buf.code_action({
+        apply = true,
+        filter = function(action)
+            return action.kind == "source.organizeImports.ruff"
+        end,
+    })
+end
+
 M.run_code_actions = function()
     vim.lsp.buf.code_action({filter = function(x)
         if x.kind == "source.organizeImports.ruff" then
@@ -172,6 +181,17 @@ M.run_code_actions = function()
         end
         return true
     end})
+    if vim.bo.filetype == "python" then
+        local group = vim.api.nvim_create_augroup("RuffSortImportsAfterAction", { clear = true })
+        vim.api.nvim_create_autocmd("TextChanged", {
+            group = group,
+            buffer = 0,
+            once = true,
+            callback = function()
+                vim.defer_fn(M.sort_imports, 100)
+            end,
+        })
+    end
 end
 
 vim.lsp.config("lua_ls", {

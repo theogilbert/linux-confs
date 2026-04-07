@@ -178,3 +178,11 @@ cmp.setup.cmdline(":", {
 cmp.setup.filetype({ "dap-repl", "dapui_watches", "dapui_hover", "dapui_dataframe" }, {
 	sources = cmp.config.sources({ { name = "dap" } })
 })
+
+cmp.event:on("confirm_done", function(evt)
+    if vim.bo.filetype ~= "python" then return end
+    local item = evt.entry:get_completion_item()
+    if item.additionalTextEdits and #item.additionalTextEdits > 0 then
+        vim.defer_fn(function() require("lsps").sort_imports() end, 100)
+    end
+end)

@@ -116,20 +116,28 @@ vim.lsp.config("ruff", {
                 codeAction = { disableRuleComment = { enable = false}}
             }
         },
-	on_attach = function(client, bufnr)
-		if client.supports_method("textDocument/formatting") then
-			vim.api.nvim_clear_autocmds({ group = augroup, buffer = bufnr })
-			vim.api.nvim_create_autocmd("BufWritePre", {
-				group = augroup,
-				buffer = bufnr,
-				callback = function()
-					vim.lsp.buf.format()
-				end,
-			})
-		end
-	end,
 })
 vim.lsp.enable("ruff")
+
+if vim.fn.executable("ruff") == 1 then
+    vim.api.nvim_create_autocmd("BufWritePre", {
+        group = augroup,
+        pattern = "*.py",
+        callback = function(args)
+            local buf = args.buf
+            local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+            local input = table.concat(lines, "\n") .. "\n"
+            local fixed = vim.fn.system({ "ruff", "check", "--fix", "--ignore", "F841,F842", "-" }, input)
+            if vim.v.shell_error == 0 then input = fixed end
+            local formatted = vim.fn.system({ "ruff", "format", "-" }, input)
+            if vim.v.shell_error == 0 then input = formatted end
+            local new_lines = vim.split(input, "\n", { trimempty = false })
+            -- remove trailing empty string from split
+            if new_lines[#new_lines] == "" then table.remove(new_lines) end
+            vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+        end,
+    })
+end
 
 vim.lsp.config("yamlls", {
     filetypes = { "yaml", "yml" },

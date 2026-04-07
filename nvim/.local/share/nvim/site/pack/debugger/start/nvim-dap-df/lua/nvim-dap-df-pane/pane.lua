@@ -73,6 +73,11 @@ function Pane:setup_keymaps()
 	self.buffer:set_keymap("n", "r", function()
 		self:refresh()
 	end, { desc = "Refresh DataFrame display" })
+
+	self.buffer:set_keymap("n", "d", function()
+		self.dataview = nil
+		self:refresh()
+	end, { desc = "Clear DataFrame expression" })
 end
 
 -- Prompt for new expression

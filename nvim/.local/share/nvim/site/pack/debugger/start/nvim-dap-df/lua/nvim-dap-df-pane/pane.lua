@@ -1,6 +1,7 @@
 local DataView = require("nvim-dap-df-pane.dataview")
 local Buffer = require("nvim-dap-df-pane.buffer")
 local prompt = require("nvim-dap-df-pane.prompt")
+local help = require("nvim-dap-df-pane.help")
 local hl = require("nvim-dap-df-pane.hl")
 
 local Pane = {}
@@ -104,6 +105,10 @@ function Pane:setup_keymaps()
 		end
                 self:close()
 	end, { desc = "Close this pane" })
+
+	self.buffer:set_keymap("n", "g?", function()
+		help.show(self.buffer.keymaps)
+	end, { desc = "Show help" })
 end
 
 -- Prompt for new expression

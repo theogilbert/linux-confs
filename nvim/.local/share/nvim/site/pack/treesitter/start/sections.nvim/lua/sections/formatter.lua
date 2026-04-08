@@ -122,6 +122,29 @@ M.build_sequence = function(sections, collapsed, show_private)
     return unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
 end
 
+--- Returns the maximum display width needed to show section names (excluding parameters).
+--- @param sections table The list of sections
+--- @param collapsed table A mapping whose keys represent collapsed sections' node_id
+--- @param show_private boolean If false, private sections are hidden
+--- @return integer width The maximum width in columns
+M.get_max_name_width = function(sections, collapsed, show_private)
+    local cfg = config.get_config()
+    local sequence = unwrap_sections_into_sequence(sections, collapsed, show_private, cfg)
+
+    local max_width = 0
+    for _, section_line in ipairs(sequence) do
+        local section = section_line.value
+        local prefix = string.rep(" ", section_line.depth * cfg.indent)
+        local icon = get_section_icon(section.type)
+        local name_width = vim.api.nvim_strwidth(prefix .. icon .. " " .. section.name)
+        if name_width > max_width then
+            max_width = name_width
+        end
+    end
+
+    return max_width
+end
+
 --- Returns the pane line number of the section closest to the given cursor position.
 --- If the exact section is not visible (collapsed or hidden), the last visible
 --- section before the cursor is returned instead.

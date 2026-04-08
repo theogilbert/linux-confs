@@ -216,6 +216,24 @@ M.focus = function(pane_line)
     end
 end
 
+M.set_width = function(width)
+    local info = get_pane_info()
+    if info == nil then
+        return
+    end
+
+    vim.api.nvim_win_set_width(info.pane_win, width)
+end
+
+M.get_width = function()
+    local info = get_pane_info()
+    if info == nil then
+        return 0
+    end
+
+    return vim.api.nvim_win_get_width(info.pane_win)
+end
+
 M.get_win = function()
     local info = get_pane_info()
     if info == nil then

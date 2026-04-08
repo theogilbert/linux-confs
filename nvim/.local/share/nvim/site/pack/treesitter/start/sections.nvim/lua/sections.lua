@@ -106,6 +106,15 @@ local function refresh_pane(win, buf)
     local sections_lines = formatter.format(sections, info.collapsed, info.show_private)
     pane.write_sections(sections_lines)
 
+    local name_width = formatter.get_max_name_width(sections, info.collapsed, info.show_private)
+    local pane_width = pane.get_width()
+    local total_width = vim.api.nvim_win_get_width(win) + pane_width
+    local max_width = math.floor(total_width / 2)
+    local header_width = vim.api.nvim_strwidth(header.get_lines(info.show_private)[1])
+    local padding = 2
+    local min_width = header_width + padding
+    pane.set_width(math.max(min_width, math.min(name_width + padding, max_width)))
+
     info.watched_win = win
     info.watched_buf = buf
     info.sections = sections

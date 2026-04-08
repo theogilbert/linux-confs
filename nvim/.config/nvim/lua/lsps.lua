@@ -1,40 +1,8 @@
 M = {}
 
--- Sort workspace/symbol and textDocument/references LSP responses.
--- fzf-lua's live_workspace_symbols uses --disabled (no fzf sorting),
--- so results appear in whatever order the LSP returns them.
--- References from test directories are deprioritized (+500 malus).
-do
-  local orig_buf_request = vim.lsp.buf_request
-  vim.lsp.buf_request = function(bufnr, method, params, handler, ...)
-    if method ~= "workspace/symbol" and method ~= "textDocument/references" then
-      return orig_buf_request(bufnr, method, params, handler, ...)
-    end
-    local query = type(params) == "table" and params.query or ""
-    local wrapped = function(err, result, ctx, config)
-      if not err and type(result) == "table" then
-        local query_lower = #query > 0 and query:lower() or nil
-        local function score(item)
-          local s = 0
-          if query_lower then
-            local name = item.name or ""
-            local name_lower = name:lower()
-            local pos = name_lower:find(query_lower, 1, true)
-            if not pos then s = 1000 + #name else s = pos + #name end
-          end
-          local uri = item.uri or ""
-          if uri:match("/tests?/") then s = s + 500 end
-          return s
-        end
-        table.sort(result, function(a, b)
-          return score(a) < score(b)
-        end)
-      end
-      return handler(err, result, ctx, config)
-    end
-    return orig_buf_request(bufnr, method, params, wrapped, ...)
-  end
-end
+local lsp_sort = require("utilities.lsp_sort")
+lsp_sort.sort_workspace_symbols()
+lsp_sort.deprioritize_test_references()
 
 vim.diagnostic.config({
 	virtual_text = false,

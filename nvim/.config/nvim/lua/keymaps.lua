@@ -208,6 +208,19 @@ vim.keymap.set("n", "<leader>dpr", dap_settings.show_repl_pane, { desc = "Show [
 vim.keymap.set("n", "<leader>dpb", dap_settings.show_breakpoints_pane, { desc = "Show [D]AP [p]ane - [b]reakpoints" })
 vim.keymap.set("n", "<leader>dpd", dap_settings.show_dataframe_pane, { desc = "Toggle [D]AP [p]ane - [d]ataframe" })
 
+local dap_df = require("nvim-dap-df-pane")
+vim.keymap.set({ "n", "v" }, "<leader>dI", function()
+    local expr
+    if vim.fn.mode() == "v" then
+        vim.cmd('noautocmd normal! "vy')
+        expr = vim.trim(vim.fn.getreg("v"))
+    else
+        expr = vim.fn.expand("<cword>")
+    end
+    dapui.close()
+    dap_df.inspect(expr)
+end, { desc = "[I]nspect dataframe" })
+
 local gitsigns = require('gitsigns')
 vim.keymap.set({ "n", "v" }, "<leader>gd", gitsigns.preview_hunk_inline, { desc = "[G]it - View chunk [d]ifference" })
 vim.keymap.set({ "n", "v" }, "<leader>gD", ":DiffviewOpen ", { noremap = true, silent = false, desc = "[G]it - Open [d]iffview" })

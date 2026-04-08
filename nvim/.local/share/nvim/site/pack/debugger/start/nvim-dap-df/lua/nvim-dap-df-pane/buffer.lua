@@ -87,10 +87,5 @@ function Buffer:set_keymap(mode, key, callback, opts)
         table.insert(self.keymaps, {mode, key, opts})
 end
 
-function Buffer:clear_keymaps()
-    for _, keymap in ipairs(self.keymaps) do
-        vim.keymap.del(keymap[0], keymap[1], keymap[2])
-    end
-end
 
 return Buffer

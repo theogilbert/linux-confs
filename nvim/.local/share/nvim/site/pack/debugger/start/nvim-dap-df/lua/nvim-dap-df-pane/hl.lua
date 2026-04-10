@@ -7,6 +7,8 @@ local PROMPT_LOADING_FG = "#555555"
 local BORDER_FG = "#555555"
 local ERROR_FG = "#CA2722"
 local TYPE_FG = "#8AA1C2"
+local FILTER_FG = "#e78a4e"
+local SORTED_COL_FG = "#b8bb26"
 
 local function build_highlights()
 	return {
@@ -17,6 +19,8 @@ local function build_highlights()
 		DapDfPromptLoading = { fg = PROMPT_LOADING_FG, bg = EXPR_BG },
 		DapDfHeaderRow = { bold = true },
 		DapDfTypeRow = { fg = TYPE_FG },
+		DapDfFilterRow = { fg = FILTER_FG, italic = true },
+		DapDfSortedColumn = { fg = SORTED_COL_FG, bold = true },
 	}
 end
 

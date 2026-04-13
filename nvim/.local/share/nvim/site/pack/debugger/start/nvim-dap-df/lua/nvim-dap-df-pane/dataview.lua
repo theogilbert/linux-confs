@@ -1,4 +1,4 @@
-local evaluator = require("nvim-dap-df-pane.evaluator")
+local ExpressionEvaluator = require("nvim-dap-df-pane.evaluator")
 local table_fmt = require("utilities.table")
 
 local DataView = {}
@@ -38,6 +38,7 @@ function DataView:new(limit)
 	self.state = State.EVALUATING
 	self.shape = nil
 	self.lines = {}
+	self.evaluator = ExpressionEvaluator:new()
 
 	return self
 end
@@ -135,7 +136,7 @@ function DataView:refresh(expression, on_ready, on_failed)
 	self.state = State.EVALUATING
 	on_ready()
 
-	evaluator.evaluate_expression(expression:build(), self.limit, function(data, shape, err)
+	self.evaluator:evaluate(expression:build(), self.limit, function(data, shape, err)
             local csv_table = nil
 		if err ~= nil then
 			local err_repr = vim.inspect(err)

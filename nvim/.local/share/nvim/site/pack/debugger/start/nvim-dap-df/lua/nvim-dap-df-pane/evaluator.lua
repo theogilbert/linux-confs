@@ -1,7 +1,5 @@
 local dap = require("dap")
 
-local M = {}
-
 --- @enum Types
 local Types = {
 	DataFrame = "DataFrame",
@@ -86,10 +84,9 @@ local function evaluate_expression_type(session, expr, callback)
 	evaluate_expression(session, type_expr, function(err, result)
 		if err ~= nil then
 			callback(err, result)
-                else
-                    callback(nil, result:sub(2, -2))
+		else
+			callback(nil, result:sub(2, -2))
 		end
-
 	end)
 end
 
@@ -152,6 +149,18 @@ local function evaluate_row_count(state, df_expr, session)
 	evaluate_state_field(state, "row_len", row_count_expr, false, session)
 end
 
+--- @class ExpressionEvaluator Evaluates a python DataFrame/Series expression by
+--- collecting data, dtypes, and shape through multiple DAP evaluations.
+--- @field state EvaluationState|nil The in-flight evaluation state
+local ExpressionEvaluator = {}
+ExpressionEvaluator.__index = ExpressionEvaluator
+
+function ExpressionEvaluator:new()
+	local self = setmetatable({}, ExpressionEvaluator)
+	self.state = nil
+	return self
+end
+
 --- @alias EvaluationCallback fun(data: table|nil, shape: table|nil, err: string|nil)
 
 --- Evaluate and collect various information about the provided expression.
@@ -162,7 +171,7 @@ end
 ---        - data (table) - A sequence oof lines representing the data in CSV format
 ---        - shape (table) - A list containing two numbers: the number of columns and rows in the data.
 ---        - err (string|nil) - If the evaluation fails, this parameter will be set to the error message.
-M.evaluate_expression = function(expression, limit, on_result)
+function ExpressionEvaluator:evaluate(expression, limit, on_result)
 	local session = dap.session()
 
 	if session == nil then
@@ -181,11 +190,12 @@ M.evaluate_expression = function(expression, limit, on_result)
 			return
 		end
 
-		local state, err = init_evaluation_state(on_result, type)
+		local state, init_err = init_evaluation_state(on_result, type)
 
-		if err ~= nil then
-			on_result(nil, nil, err)
+		if init_err ~= nil then
+			on_result(nil, nil, init_err)
 		else
+			self.state = state
 			evaluate_df_data(state, expression, limit, session)
 			evaluate_df_dtypes(state, expression, session)
 			evaluate_row_count(state, expression, session)
@@ -194,4 +204,4 @@ M.evaluate_expression = function(expression, limit, on_result)
 	end)
 end
 
-return M
+return ExpressionEvaluator

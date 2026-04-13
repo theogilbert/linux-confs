@@ -219,7 +219,9 @@ function Pane:clear_filter()
 end
 
 -- Refresh the pane content
-function Pane:refresh()
+-- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
+--        Set to false when the DAP context may have changed.
+function Pane:refresh(use_cache)
     if not self:is_open() then
         return
     end
@@ -237,7 +239,8 @@ function Pane:refresh()
         end,
         function(err) -- on failure
             vim.notify(err, vim.log.levels.ERROR)
-        end
+        end,
+        use_cache
     )
 end
 

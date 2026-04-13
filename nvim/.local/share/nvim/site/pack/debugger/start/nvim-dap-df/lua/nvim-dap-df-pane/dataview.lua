@@ -130,13 +130,15 @@ end
 --- @param expression Expression
 --- @param on_ready function Called whenever the view has been refreshed and is ready to be rendered.
 --- @param on_failed FailureCallback Called whenever the view failed to be rendered.
-function DataView:refresh(expression, on_ready, on_failed)
+--- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
+---        Set to false when the DAP context may have changed.
+function DataView:refresh(expression, on_ready, on_failed, use_cache)
         local previous_expr = self.expr -- to rollback in case of failure
-	self.expr = expression:get_base_expr()
+	self.expr = expression
 	self.state = State.EVALUATING
 	on_ready()
 
-	self.evaluator:evaluate(expression:build(), self.limit, function(data, shape, err)
+	self.evaluator:evaluate(expression, self.limit, function(data, shape, err)
             local csv_table = nil
 		if err ~= nil then
 			local err_repr = vim.inspect(err)
@@ -171,7 +173,7 @@ function DataView:refresh(expression, on_ready, on_failed)
                 -- Failure or not, we go back to a ready state to re-render
 		self.state = State.READY
 		on_ready()
-	end)
+	end, use_cache)
 end
 
 --- Generates the data shape part of the prompt line
@@ -198,7 +200,7 @@ local function get_prompt_line(self, width)
 		loading = " Loading..."
 	end
 
-	local base_prompt = "➜ " .. self.expr .. " " .. shape_repr .. loading
+	local base_prompt = "➜ " .. self.expr:get_base_expr() .. " " .. shape_repr .. loading
 	local chars_to_add = math.max(0, width - vim.api.nvim_strwidth(base_prompt))
 
 	return base_prompt .. string.rep(" ", chars_to_add)
@@ -206,7 +208,7 @@ end
 
 --- Generate the highlighting rules which will be applied on the prompt line.
 local function build_hl_rules_for_prompt(self)
-	local shape_start = 3 + #self.expr + 2
+	local shape_start = 3 + #self.expr:get_base_expr() + 2
 	local shape_end = shape_start + #get_shape_repr(self)
 
 	local rules = {

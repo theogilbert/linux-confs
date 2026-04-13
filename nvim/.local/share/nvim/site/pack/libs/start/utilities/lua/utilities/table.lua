@@ -200,7 +200,20 @@ function M.from_structured_data(lines, header_lines)
     }
 end
 
--- TODO get column under cursor
+--- Returns the 1-indexed column number at a given virtual (display) column position.
+--- @param cols_width table The width of each column (from FormattedTable.columns_width)
+--- @param virtual_col integer The 1-indexed display column of the cursor
+--- @return integer|nil col_idx The 1-indexed column index, or nil if the cursor is on a separator
+function M.get_column_at_cursor(cols_width, virtual_col)
+    local pos = 2 -- first content position (after leading │)
+    for i, width in ipairs(cols_width) do
+        if virtual_col >= pos and virtual_col < pos + width then
+            return i
+        end
+        pos = pos + width + 1 -- skip content + │ separator
+    end
+    return nil
+end
 
 return M
 

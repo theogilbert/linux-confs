@@ -47,8 +47,10 @@ function M.setup(opts)
     hl.setup()
 
     dap.listeners.after.scopes["dap-ui-df"] = function()
+        -- The DAP context changed (step / stack navigation / breakpoint hit):
+        -- cached values from the previous context can no longer be trusted.
         for _, pane in ipairs(state.panes) do
-            pane:refresh()
+            pane:refresh(false)
         end
     end
 end

@@ -6,7 +6,7 @@ describe("Pane", function()
 
 	before_each(function()
 		local config = { size = 10 }
-		pane = Pane:new(config)
+		pane = Pane:new(config, 1)
 		hl.setup()
 	end)
 

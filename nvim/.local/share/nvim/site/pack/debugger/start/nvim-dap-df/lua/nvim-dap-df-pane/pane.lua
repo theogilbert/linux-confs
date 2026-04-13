@@ -1,4 +1,5 @@
 local DataView = require("nvim-dap-df-pane.dataview")
+local Expression = require("nvim-dap-df-pane.expression")
 local Buffer = require("nvim-dap-df-pane.buffer")
 local prompt = require("nvim-dap-df-pane.prompt")
 local help = require("nvim-dap-df-pane.help")
@@ -19,7 +20,8 @@ function Pane:new(config, pane_idx, opts)
 	self.win_id = nil
 	self.buffer = Buffer:new("[DAP DF Pane " .. pane_idx .. "]", "dap-df", false, "nofile")
 	self.is_open_flag = false
-	self.dataview = nil
+	self.dataview = DataView:new(config.limit)
+	self.expression = nil
 	opts = opts or {}
 	self.on_split = opts.on_split
 	self.on_close = opts.on_close
@@ -89,7 +91,7 @@ function Pane:setup_keymaps()
 	end, { desc = "Refresh DataFrame display" })
 
 	self.buffer:set_keymap("n", "d", function()
-		self.dataview = nil
+		self.expression = nil
 		self:refresh()
 	end, { desc = "Clear DataFrame expression" })
 
@@ -106,25 +108,54 @@ function Pane:setup_keymaps()
                 self:close()
 	end, { desc = "Close this pane" })
 
+	self.buffer:set_keymap("n", "s", function()
+		self:sort_column()
+	end, { desc = "Sort by column under cursor" })
+
+	self.buffer:set_keymap("n", "f", function()
+		self:filter_column()
+	end, { desc = "Filter column under cursor" })
+
+	self.buffer:set_keymap("n", "F", function()
+		self:clear_filter()
+	end, { desc = "Clear filter on column under cursor" })
+
 	self.buffer:set_keymap("n", "g?", function()
 		help.show(self.buffer.keymaps)
 	end, { desc = "Show help" })
 end
 
+--- Get column info under the cursor (1-indexed column, column name, is_index),
+--- or nil if the cursor is not on a data column.
+--- @return integer|nil col_idx
+--- @return string|nil col_name
+--- @return boolean|nil is_index
+function Pane:get_column_under_cursor()
+	local virtual_col = vim.fn.virtcol(".")
+	local col_idx = self.dataview:get_column_at_cursor(virtual_col)
+	if col_idx == nil then
+		return nil
+	end
+	local col_name = self.dataview:get_column_name(col_idx)
+	if col_name == nil then
+		return nil
+	end
+	return col_idx, col_name, self.dataview:is_index_column(col_idx)
+end
+
 -- Prompt for new expression
 function Pane:prompt_expression()
-        local current_expr = self.dataview and self.dataview.expr or ""
+        local current_expr = self.expression and self.expression:get_base_expr() or ""
         prompt.open({
             title = "DataFrame / Series expression",
             expression = current_expr,
             on_confirm = function(expr)
                 if expr ~= "" then
-                    self.dataview = DataView:new(expr, self.config.limit)
-                    self:refresh()
+                    self.expression = Expression:new(expr)
                 else
-                    self.dataview = nil
-                    self:refresh()
+                    self.expression = nil
                 end
+                self:refresh()
             end,
             on_cancel = function()
                 print("DataFrame prompt cancelled")
@@ -134,25 +165,83 @@ end
 
 -- Set expression directly (without prompt) and refresh
 function Pane:set_expression(expr)
-	self.dataview = DataView:new(expr, self.config.limit)
+	self.expression = Expression:new(expr)
+	self:refresh()
+end
+
+-- Sort by the column under cursor (toggles asc -> desc -> none)
+function Pane:sort_column()
+	if self.expression == nil then
+		return
+	end
+	local _, col_name, is_index = self:get_column_under_cursor()
+	if col_name == nil then
+		return
+	end
+
+	self.expression:toggle_sort(col_name, is_index)
+	self:refresh()
+end
+
+-- Filter the column under cursor
+function Pane:filter_column()
+	if self.expression == nil then
+		return
+	end
+	local _, col_name, is_index = self:get_column_under_cursor()
+	if col_name == nil then
+		return
+	end
+
+	local current = self.expression:get_filter(col_name, is_index) or ""
+
+	vim.ui.input({ prompt = "Filter " .. col_name .. ": ", default = current }, function(condition)
+		if condition == nil then
+			return
+		end
+		self.expression:set_filter(col_name, is_index, condition)
+		self:refresh()
+	end)
+end
+
+-- Clear the filter on the column under cursor
+function Pane:clear_filter()
+	if self.expression == nil then
+		return
+	end
+	local _, col_name, is_index = self:get_column_under_cursor()
+	if col_name == nil then
+		return
+	end
+
+	self.expression:clear_filter(col_name, is_index)
 	self:refresh()
 end
 
 -- Refresh the pane content
-function Pane:refresh()
+-- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
+--        Set to false when the DAP context may have changed.
+function Pane:refresh(use_cache)
     if not self:is_open() then
         return
     end
 
-    if self.dataview == nil then
+    if self.expression == nil then
         self.buffer:set_content("Press 'e' to enter an expression")
         return
-    else
-        self.dataview:refresh(function()
+    end
+
+    self.dataview:refresh(
+        self.expression,
+        function() -- on success
             self.buffer:set_content(self.dataview:get_lines())
             self.buffer:apply_highlight(self.dataview:get_hl_rules())
-        end)
-    end
+        end,
+        function(err) -- on failure
+            vim.notify(err, vim.log.levels.ERROR)
+        end,
+        use_cache
+    )
 end
 
 return Pane

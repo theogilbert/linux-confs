@@ -8,7 +8,7 @@ describe("Buffer", function()
 
 	describe("new()", function()
 		it("should create a new buffer", function()
-			local buffer = Buffer:new()
+			local buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 
 			assert.is_not_nil(buffer)
 			assert.is_not_nil(buffer.buf_id)
@@ -18,7 +18,7 @@ describe("Buffer", function()
 		end)
 
 		it("should set buffer options correctly", function()
-			local buffer = Buffer:new()
+			local buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 
 			assert.equals("nofile", vim.api.nvim_buf_get_option(buffer.buf_id, "buftype"))
 			assert.equals("hide", vim.api.nvim_buf_get_option(buffer.buf_id, "bufhidden"))
@@ -29,7 +29,7 @@ describe("Buffer", function()
 		end)
 
 		it("should set buffer name", function()
-			local buffer = Buffer:new()
+			local buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 			local name = vim.api.nvim_buf_get_name(buffer.buf_id)
 
 			-- Buffer name should end with the expected pattern (may have path prefix)
@@ -42,7 +42,7 @@ describe("Buffer", function()
 		local buffer
 
 		before_each(function()
-			buffer = Buffer:new()
+			buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 		end)
 
 		after_each(function()
@@ -75,7 +75,7 @@ describe("Buffer", function()
 		local buffer
 
 		before_each(function()
-			buffer = Buffer:new()
+			buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 		end)
 
 		after_each(function()
@@ -95,7 +95,7 @@ describe("Buffer", function()
 		local buffer
 
 		before_each(function()
-			buffer = Buffer:new()
+			buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 		end)
 
 		after_each(function()
@@ -116,7 +116,7 @@ describe("Buffer", function()
 		local buffer
 
 		before_each(function()
-			buffer = Buffer:new()
+			buffer = Buffer:new("[DAP DF Pane]", "dap-df", false, "nofile")
 		end)
 
 		after_each(function()

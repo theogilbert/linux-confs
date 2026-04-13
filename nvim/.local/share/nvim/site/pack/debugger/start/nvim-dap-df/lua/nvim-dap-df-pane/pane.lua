@@ -229,10 +229,16 @@ function Pane:refresh()
         return
     end
 
-    self.dataview:refresh(self.expression, function()
-        self.buffer:set_content(self.dataview:get_lines())
-        self.buffer:apply_highlight(self.dataview:get_hl_rules())
-    end)
+    self.dataview:refresh(
+        self.expression,
+        function() -- on success
+            self.buffer:set_content(self.dataview:get_lines())
+            self.buffer:apply_highlight(self.dataview:get_hl_rules())
+        end,
+        function(err) -- on failure
+            vim.notify(err, vim.log.levels.ERROR)
+        end
+    )
 end
 
 return Pane

@@ -10,8 +10,6 @@ local State = {
 	EVALUATING = 0,
 	--- The expression has been evaluated and the data view is ready to be rendered
 	READY = 1,
-	--- The expression failed to be evaluated
-	FAILED = 2,
 }
 
 --- @class DataView Read-only component that evaluates a python DataFrame /
@@ -28,7 +26,7 @@ local State = {
 ---
 --- The DataView is agnostic of nvim UI APIs (no window/buffer/cursor calls).
 --- @field limit number The maximum number of rows to display
---- @field expr string The base expression shown in the prompt line
+--- @field expr Expression The expression to evaluate
 --- @field state State The current state of the data view
 --- @field shape table A table containing the number of columns and rows in the data
 --- @field lines table A sequence of lines to display in the data view. Represents the actual data.
@@ -36,7 +34,7 @@ function DataView:new(limit)
 	local self = setmetatable({}, DataView)
 
 	self.limit = limit
-	self.expr = ""
+	self.expr = nil
 	self.state = State.EVALUATING
 	self.shape = nil
 	self.lines = {}
@@ -76,10 +74,6 @@ function DataView:get_column_at_cursor(virtual_col)
 	return table_fmt.get_column_at_cursor(self.table.columns_width, virtual_col)
 end
 
---- Returns whether the last evaluation failed.
-function DataView:has_failed()
-	return self.state == State.FAILED
-end
 
 --- Decorate the raw display lines with the sort arrow on the sorted column's
 --- header. Records the sorted column index (1-indexed) for later highlighting.
@@ -124,6 +118,8 @@ local function apply_filter_decoration(display_lines, column_names, filters)
 	return 3
 end
 
+--- @alias FailureCallback fun(err: string)
+
 --- Re-evaluate the given expression and signal the caller when the result is
 --- ready to be rendered.
 ---
@@ -131,53 +127,48 @@ end
 --- the prompt line, `build()` produces the python expression sent to the
 --- evaluator, and its sort/filter state drives the display decorations.
 --- @param expression Expression
---- @param on_ready function Called whenever the view should be re-rendered.
-function DataView:refresh(expression, on_ready)
+--- @param on_ready function Called whenever the view has been refreshed and is ready to be rendered.
+--- @param on_failed FailureCallback Called whenever the view failed to be rendered.
+function DataView:refresh(expression, on_ready, on_failed)
+        local previous_expr = self.expr -- to rollback in case of failure
 	self.expr = expression:get_base_expr()
 	self.state = State.EVALUATING
 	on_ready()
 
 	evaluator.evaluate_expression(expression:build(), self.limit, function(data, shape, err)
+            local csv_table = nil
 		if err ~= nil then
-			self.state = State.FAILED
-			self.lines = { "Failed to evaluate expression:" }
-
 			local err_repr = vim.inspect(err)
 			if err.message ~= nil then
 				err_repr = err.message
 			end
-			self.error = err_repr
-
-			local err_lines = vim.split(err_repr, "\n")
-			vim.list_extend(self.lines, err_lines)
-
-			on_ready()
-			return
+                        on_failed("Failed to evaluate expression: " .. err_repr)
+                else
+                        csv_table, fmt_err = table_fmt.from_csv(data, 2)
+                        if fmt_err ~= nil then
+                                on_failed("Failed to format result: " .. vim.inspect(fmt_err))
+                        end
 		end
 
-		local csv_table, fmt_err = table_fmt.from_csv(data, 2)
-		if fmt_err ~= nil then
-			self.state = State.FAILED
-			self.error = "Failed to format result: " .. vim.inspect(fmt_err)
-			self.lines = { self.error }
-			on_ready()
-			return
-		end
+                if err == nil and fmt_err == nil then
+                    -- Store clean column names for lookups
+                    self.column_names = vim.deepcopy(csv_table.lines[1])
 
-		-- Store clean column names for lookups
-		self.column_names = vim.deepcopy(csv_table.lines[1])
+                    -- Build display lines (copy) with sort/filter decorations
+                    local display_lines = vim.deepcopy(csv_table.lines)
+                    self.sort_col_idx = apply_sort_decoration(display_lines, expression:get_sort())
+                    self.header_lines = apply_filter_decoration(display_lines, self.column_names, expression:get_filters())
 
-		-- Build display lines (copy) with sort/filter decorations
-		local display_lines = vim.deepcopy(csv_table.lines)
-		self.sort_col_idx = apply_sort_decoration(display_lines, expression:get_sort())
-		self.header_lines = apply_filter_decoration(display_lines, self.column_names, expression:get_filters())
+                    csv_table = table_fmt.from_structured_data(display_lines, self.header_lines)
+                    self.table = csv_table
+                    self.lines = csv_table.text
+                    self.shape = shape
+                else
+                    self.expr = previous_expr
+                end
 
-		csv_table = table_fmt.from_structured_data(display_lines, self.header_lines)
-		self.table = csv_table
-		self.lines = csv_table.text
-		self.shape = shape
+                -- Failure or not, we go back to a ready state to re-render
 		self.state = State.READY
-
 		on_ready()
 	end)
 end

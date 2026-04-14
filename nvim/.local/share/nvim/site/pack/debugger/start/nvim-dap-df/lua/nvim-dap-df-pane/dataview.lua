@@ -145,7 +145,7 @@ function DataView:refresh(expression, on_ready, on_failed, use_cache)
 			if err.message ~= nil then
 				err_repr = err.message
 			end
-                        on_failed("Failed to evaluate expression: " .. err_repr)
+                        on_failed("Failed to evaluate expression `" .. expression:build() .. "`: " .. err_repr)
                 else
                         csv_table, fmt_err = table_fmt.from_csv(data, 2)
                         if fmt_err ~= nil then

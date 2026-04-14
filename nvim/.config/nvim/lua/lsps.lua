@@ -88,7 +88,10 @@ vim.lsp.config("ruff", {
 	capabilities = capabilities,
         init_options = {
             settings = {
-                codeAction = { disableRuleComment = { enable = false}}
+                codeAction = { disableRuleComment = { enable = false}},
+                lint = {
+                    unfixable = { "F841", "F842" },
+                },
             }
         },
 })
@@ -98,16 +101,39 @@ local ruff_watcher_enabled = false
 
 local function ruff_format_on_save(args)
     local buf = args.buf
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local input = table.concat(lines, "\n") .. "\n"
-    local fixed = vim.fn.system({ "ruff", "check", "--fix-only", "-q", "--ignore", "F841,F842", "-" }, input)
-    if vim.v.shell_error == 0 then input = fixed end
-    local formatted = vim.fn.system({ "ruff", "format", "-" }, input)
-    if vim.v.shell_error == 0 then input = formatted end
-    local new_lines = vim.split(input, "\n", { trimempty = false })
-    -- remove trailing empty string from split
-    if new_lines[#new_lines] == "" then table.remove(new_lines) end
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+    local clients = vim.lsp.get_clients({ bufnr = buf, name = "ruff" })
+    if #clients == 0 then return end
+    local client = clients[1]
+    local encoding = client.offset_encoding or "utf-16"
+    local timeout = 10000
+
+    -- 1. Apply Ruff's "fix all" code action synchronously, equivalent to
+    --    `ruff check --fix-only` but applied as LSP text edits so extmarks
+    --    (including DAP breakpoint signs) on untouched lines survive.
+    local params = vim.lsp.util.make_range_params(0, encoding)
+    params.context = { only = { "source.fixAll.ruff" }, diagnostics = {} }
+    local results = vim.lsp.buf_request_sync(buf, "textDocument/codeAction", params, timeout)
+    for _, res in pairs(results or {}) do
+        for _, action in pairs(res.result or {}) do
+            -- Ruff may return the edit inline, or as an unresolved action
+            -- that requires a follow-up codeAction/resolve request.
+            if not action.edit and action.data then
+                local resolved = vim.lsp.buf_request_sync(buf, "codeAction/resolve", action, timeout)
+                for _, r in pairs(resolved or {}) do
+                    if r.result then action = r.result end
+                end
+            end
+            if action.edit then
+                vim.lsp.util.apply_workspace_edit(action.edit, encoding)
+            end
+            if action.command then
+                client:exec_cmd(action.command, { bufnr = buf })
+            end
+        end
+    end
+
+    -- 2. Format synchronously.
+    vim.lsp.buf.format({ async = false, bufnr = buf, name = "ruff" })
 end
 
 local function toggle_ruff_watcher()

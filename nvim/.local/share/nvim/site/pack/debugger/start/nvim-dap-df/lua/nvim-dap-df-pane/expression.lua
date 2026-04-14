@@ -110,6 +110,7 @@ local function build_query_clause(col_ref, condition)
 	query_condition = query_condition:gsub("(and%s+)([=!<>])", "%1" .. col_ref .. " %2")
 	query_condition = query_condition:gsub("(or%s+)([=!<>])", "%1" .. col_ref .. " %2")
 	query_condition = query_condition:gsub("((%()%s*)([=!<>])", "%1" .. col_ref .. " %3")
+        query_condition = query_condition:gsub("\"", "'")
 	return col_ref .. " " .. query_condition
 end
 

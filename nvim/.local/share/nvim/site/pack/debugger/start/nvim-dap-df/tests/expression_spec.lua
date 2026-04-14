@@ -86,6 +86,12 @@ describe("Expression", function()
 				b:build()
 			)
 		end)
+
+		it("build() replaces double quotes by single quotes", function()
+			local b = Expression:new("df")
+			b:set_filter("name", false, "= \"foo\"")
+			assert.equals([[(df).query("`name` == 'foo'", engine='python')]], b:build())
+		end)
 	end)
 
 	describe("clear_filter()", function()

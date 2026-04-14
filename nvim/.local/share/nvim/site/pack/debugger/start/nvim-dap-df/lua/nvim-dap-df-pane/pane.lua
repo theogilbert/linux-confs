@@ -19,6 +19,9 @@ function Pane:new(config, pane_idx, opts)
 	self.config = config
 	self.win_id = nil
 	self.buffer = Buffer:new("[DAP DF Pane " .. pane_idx .. "]", "dap-df", false, "nofile")
+	-- Set up keymaps for the buffer
+	self:setup_keymaps()
+
 	self.is_open_flag = false
 	self.dataview = DataView:new(config.limit)
 	self.expression = nil
@@ -54,9 +57,6 @@ function Pane:open(split_from)
         vim.api.nvim_set_option_value("winfixwidth", true, {win = self.win_id})
         vim.api.nvim_set_option_value("wrap", false, {win = self.win_id})
 	vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
-
-	-- Set up keymaps for the buffer
-	self:setup_keymaps()
 
 	self.is_open_flag = true
 	self:refresh()

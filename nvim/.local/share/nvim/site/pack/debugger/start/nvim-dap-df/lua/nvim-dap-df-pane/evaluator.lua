@@ -131,8 +131,10 @@ local function update_evaluation_state(state, field, value)
 	send_if_state_ready(state)
 end
 
-local function evaluate_expression(session, expr, callback)
-	local params = { expression = expr, context = "watch", frameId = session.current_frame.id }
+--- Send a request to DAP.
+--- @param context string The DAP context to use for the request
+local function evaluate_expression(session, expr, context, callback)
+	local params = { expression = expr, context = context, frameId = session.current_frame.id }
 	session:request("evaluate", params, function(err, result)
 		if err ~= nil then
 			callback(err, nil)
@@ -144,7 +146,7 @@ end
 
 local function evaluate_expression_type(session, expr, callback)
 	local type_expr = expr .. ".__class__.__name__"
-	evaluate_expression(session, type_expr, function(err, result)
+	evaluate_expression(session, type_expr, "watch", function(err, result)
 		if err ~= nil then
 			callback(err, result)
 		else
@@ -161,9 +163,10 @@ end
 --- @param expr string The expression to evaluate
 --- @param str_value boolean True if the expression resolves to a string that must be properly escaped
 --- @param session any The DAP session object
+--- @param context string The DAP context to use for the request
 --- @param on_cache function|nil Optional callback that receives the parsed value
-local function evaluate_state_field(state, field, expr, str_value, session, on_cache)
-	evaluate_expression(session, expr, function(err, result)
+local function evaluate_state_field(state, field, expr, str_value, session, context, on_cache)
+	evaluate_expression(session, expr, context, function(err, result)
 		if err ~= nil then
 			fail_evaluation_state(state, err)
 		else
@@ -183,7 +186,8 @@ end
 
 local function evaluate_df_data(state, df_expr, limit, session)
 	local limited_expr = df_expr .. ".head(" .. limit .. ").to_csv(na_rep=\"pd.NA\")"
-	evaluate_state_field(state, "data", limited_expr, true, session)
+        -- clipboard context to make sure not to have data truncated.
+	evaluate_state_field(state, "data", limited_expr, true, session, "clipboard")
 end
 
 local function evaluate_df_dtypes(state, df_expr, session, on_cache)
@@ -200,7 +204,7 @@ local function evaluate_df_dtypes(state, df_expr, session, on_cache)
 		dtypes_expr = "','.join([" .. idx_expr .. ", " .. col_expr .. "])"
 	end
 
-	evaluate_state_field(state, "dtypes", dtypes_expr, true, session, on_cache)
+	evaluate_state_field(state, "dtypes", dtypes_expr, true, session, "watch", on_cache)
 end
 
 local function evaluate_col_count(state, df_expr, session, on_cache)
@@ -211,13 +215,13 @@ local function evaluate_col_count(state, df_expr, session, on_cache)
 		update_evaluation_state(state, "col_len", "1")
 	else
 		local cols_count_expr = "len(" .. df_expr .. ".columns)"
-		evaluate_state_field(state, "col_len", cols_count_expr, false, session, on_cache)
+		evaluate_state_field(state, "col_len", cols_count_expr, false, session, "watch", on_cache)
 	end
 end
 
 local function evaluate_row_count(state, df_expr, session, on_cache)
 	local row_count_expr = "len(" .. df_expr .. ")"
-	evaluate_state_field(state, "row_len", row_count_expr, false, session, on_cache)
+	evaluate_state_field(state, "row_len", row_count_expr, false, session, "watch", on_cache)
 end
 
 --- @class ExpressionEvaluator Evaluates a python DataFrame/Series expression by

@@ -19,7 +19,6 @@ local function build_cell_data(start_idx, start_char)
         start_pos = start_idx,
         quoted = start_char == '"',
         pending_quote = false,
-        end_quote = nil,
         end_pos = end_pos,
     }
 end
@@ -32,7 +31,8 @@ local function parse_new_char(cell_data, idx, char)
             cell_data.end_pos = idx - 1
         end
     elseif char ~= '' and cell_data.pending_quote then
-        return "Unexpected quote character at index " .. idx - 1
+        return "Unexpected character '" .. char .. "' at index " .. idx
+            .. " following quote at index " .. (idx - 1)
     end
 
     return nil
@@ -41,6 +41,10 @@ end
 local function process_end_of_line(cell_data, idx)
     if cell_data.quoted and not cell_data.pending_quote then
         return "Expected quoted cell starting at " .. cell_data.start_pos .. " to be closed at " .. idx
+    end
+
+    if not cell_data.quoted and cell_data.pending_quote then
+        return "Unexpected quote character in unquoted cell starting at " .. cell_data.start_pos
     end
 
     cell_data.end_pos = idx
@@ -98,21 +102,13 @@ local parse_csv_line = function(csv_line)
         return {}, "Failed to parse line '" .. csv_line .. "': " .. err
     end
 
-    if current_cell_data.end_pos ~= nil then
-        table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
-    else
-        return {}, "Unexpected end of CSV line '" .. csv_line .. "'"
-    end
+    table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
     return cells, nil
 end
 
 local update_cols_widths = function(columns, cols_width)
     for col_num, col in ipairs(columns) do
-        if cols_width[col_num] == nil then
-            cols_width[col_num] = 2
-        end
-
-        cols_width[col_num] = math.max(cols_width[col_num], vim.api.nvim_strwidth(col) + 2)
+        cols_width[col_num] = math.max(cols_width[col_num] or 2, vim.api.nvim_strwidth(col) + 2)
     end
 
     return cols_width
@@ -142,7 +138,7 @@ end
 function M.from_csv(csv_text, header_lines)
     local lines = {}
 
-    for line in csv_text:gmatch("[^\n]+") do
+    for line in csv_text:gmatch("[^\r\n]+") do
         local cols, err = parse_csv_line(line)
         if err ~= nil then
             return {}, err
@@ -188,7 +184,7 @@ function M.from_structured_data(lines, header_lines)
         table.insert(formatted_lines, formatted_line)
     end
 
-    if header_lines > 0 then
+    if header_lines > 0 and header_lines <= #formatted_lines then
         local separator = build_header_separator_line(cols_width)
         table.insert(formatted_lines, header_lines + 1, separator)
     end

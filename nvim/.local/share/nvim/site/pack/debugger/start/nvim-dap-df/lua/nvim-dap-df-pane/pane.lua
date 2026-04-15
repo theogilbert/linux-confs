@@ -120,9 +120,67 @@ function Pane:setup_keymaps()
 		self:clear_filter()
 	end, { desc = "Clear filter on column under cursor" })
 
+	self.buffer:set_keymap("n", "L", function()
+		self:scroll_columns(1)
+	end, { desc = "Scroll right by one column" })
+
+	self.buffer:set_keymap("n", "H", function()
+		self:scroll_columns(-1)
+	end, { desc = "Scroll left by one column" })
+
 	self.buffer:set_keymap("n", "g?", function()
 		help.show(self.buffer.keymaps)
 	end, { desc = "Show help" })
+end
+
+-- Scroll the pane window left or right, snapping to column boundaries.
+-- @param direction number  1 = right, -1 = left
+function Pane:scroll_columns(direction)
+	if not self:is_open() then
+		return
+	end
+	local boundaries = self.dataview:get_column_boundaries()
+	if #boundaries == 0 then
+		return
+	end
+
+	local leftcol
+	vim.api.nvim_win_call(self.win_id, function()
+		leftcol = vim.fn.winsaveview().leftcol
+	end)
+
+	local target = leftcol
+	if direction > 0 then
+		for _, b in ipairs(boundaries) do
+			if b > leftcol then
+				target = b
+				break
+			end
+		end
+	else
+		target = 0
+		for _, b in ipairs(boundaries) do
+			if b < leftcol then
+				target = b
+			end
+		end
+	end
+
+	if target ~= leftcol then
+		-- Move the cursor before changing leftcol; otherwise Neovim
+		-- overrides leftcol to keep the cursor visible.
+		-- Preserve the cursor's visual offset from the left edge of the window.
+		-- virtcol2col converts a 1-indexed screen column to a 1-indexed byte
+		-- offset; nvim_win_set_cursor wants a 0-indexed byte offset.
+		vim.api.nvim_win_call(self.win_id, function()
+			local cursor_virtcol = vim.fn.virtcol('.')  -- 1-indexed screen col
+			local new_virtcol = math.max(1, target + cursor_virtcol - leftcol)
+			local row = vim.fn.line('.')
+			local byte_col = vim.fn.virtcol2col(0, row, new_virtcol) - 1
+			vim.api.nvim_win_set_cursor(0, { row, byte_col })
+			vim.fn.winrestview({ leftcol = target })
+		end)
+	end
 end
 
 --- Get column info under the cursor (1-indexed column, column name, is_index),

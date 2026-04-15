@@ -234,6 +234,23 @@ local function build_hl_rules_for_prompt(self)
 	return rules
 end
 
+--- Returns the leftcol values that align the view to each column boundary.
+--- boundary[i] is the leftcol needed to show column i at the left edge.
+--- Returns an empty table when no table is loaded yet.
+--- @return integer[]
+function DataView:get_column_boundaries()
+	if self.table == nil then
+		return {}
+	end
+	local boundaries = { 0 }
+	local pos = 0
+	for _, w in ipairs(self.table.columns_width) do
+		pos = pos + w + 1
+		table.insert(boundaries, pos)
+	end
+	return boundaries
+end
+
 --- Returns a render of the evaluation result of the input expression
 --- @return table lines The sequence of the lines of the render
 function DataView:get_lines()

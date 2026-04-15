@@ -157,7 +157,7 @@ function Pane:scroll_columns(direction)
 			if b > leftcol then
 				-- Align the right edge of this column to the right edge of the window.
 				-- Last char of column i is at boundaries[i+1] - 2 (separator is at -1).
-				local new_target = math.max(0, boundaries[i + 1] - win_width - 1)
+				local new_target = math.max(0, boundaries[i + 1] - win_width + 1)
 				if new_target > leftcol then
 					target = new_target
 					break

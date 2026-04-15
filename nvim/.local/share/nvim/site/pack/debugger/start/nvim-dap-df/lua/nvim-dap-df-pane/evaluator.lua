@@ -93,6 +93,9 @@ end
 
 local function merge_data_and_dtypes(data_ret, dtypes_ret)
 	local data_first_eol = data_ret:find("\n")
+	if data_first_eol == nil then
+		return data_ret .. "\n" .. dtypes_ret .. "\n"
+	end
 	return data_ret:sub(1, data_first_eol) .. dtypes_ret .. "\n" .. data_ret:sub(data_first_eol + 1)
 end
 

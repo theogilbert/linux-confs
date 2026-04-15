@@ -192,6 +192,41 @@ M.sort_imports = function()
     })
 end
 
+M.peek_definition = function()
+    local params = vim.lsp.util.make_position_params()
+    local bufnr = vim.api.nvim_get_current_buf()
+    vim.lsp.buf_request(bufnr, "textDocument/definition", params, function(_, result)
+        if not result or (vim.islist(result) and #result == 0) then
+            vim.notify("No definition found", vim.log.levels.INFO)
+            return
+        end
+        local location = vim.islist(result) and result[1] or result
+        local uri = location.targetUri or location.uri
+        local range = location.targetRange or location.range
+
+        local def_bufnr = vim.uri_to_bufnr(uri)
+        vim.fn.bufload(def_bufnr)
+
+        local start_line = range.start.line
+        local end_line = range["end"].line
+        -- Cap to avoid huge floats for very long functions
+        local cap = math.min(end_line, start_line + 40)
+        local lines = vim.api.nvim_buf_get_lines(
+            def_bufnr,
+            math.max(0, start_line - 1),
+            cap + 2,
+            false
+        )
+        local ft = vim.bo[def_bufnr].filetype
+        vim.lsp.util.open_floating_preview(lines, ft, {
+            border = "rounded",
+            focusable = true,
+            max_height = 40,
+            max_width = 120,
+        })
+    end)
+end
+
 M.run_code_actions = function()
     vim.lsp.buf.code_action({filter = function(x)
         if x.kind == "source.organizeImports.ruff" then

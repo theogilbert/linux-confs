@@ -151,10 +151,18 @@ function Pane:scroll_columns(direction)
 
 	local target = leftcol
 	if direction > 0 then
-		for _, b in ipairs(boundaries) do
+		local win_width = vim.api.nvim_win_get_width(self.win_id)
+		for i, b in ipairs(boundaries) do
+			if i == #boundaries then break end  -- skip past-end marker
 			if b > leftcol then
-				target = b
-				break
+				-- Align the right edge of this column to the right edge of the window.
+				-- Last char of column i is at boundaries[i+1] - 2 (separator is at -1).
+				local new_target = math.max(0, boundaries[i + 1] - win_width - 1)
+				if new_target > leftcol then
+					target = new_target
+					break
+				end
+				-- Column already right-aligned or past it; try the next one.
 			end
 		end
 	else

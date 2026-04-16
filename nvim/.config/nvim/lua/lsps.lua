@@ -30,7 +30,9 @@ vim.keymap.set("n", "K", function()
         vim.lsp.buf.hover({ focusable = false })
     else
         -- Capture LSP hover text
-        vim.lsp.buf_request(buf, "textDocument/hover", vim.lsp.util.make_position_params(), function(_, result)
+        local clients = vim.lsp.get_clients({ bufnr = buf })
+        local encoding = clients[1] and clients[1].offset_encoding or "utf-16"
+        vim.lsp.buf_request(buf, "textDocument/hover", vim.lsp.util.make_position_params(0, encoding), function(_, result)
             -- Show both hover and diagnostics in one window
             local contents = {}
 
@@ -193,8 +195,10 @@ M.sort_imports = function()
 end
 
 M.peek_definition = function()
-    local params = vim.lsp.util.make_position_params()
     local bufnr = vim.api.nvim_get_current_buf()
+    local clients = vim.lsp.get_clients({ bufnr = bufnr })
+    local encoding = clients[1] and clients[1].offset_encoding or "utf-16"
+    local params = vim.lsp.util.make_position_params(0, encoding)
     vim.lsp.buf_request(bufnr, "textDocument/definition", params, function(_, result)
         if not result or (vim.islist(result) and #result == 0) then
             vim.notify("No definition found", vim.log.levels.INFO)

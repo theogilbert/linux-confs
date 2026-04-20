@@ -76,27 +76,35 @@ function DataView:get_column_at_cursor(virtual_col)
 end
 
 
---- Decorate the raw display lines with the sort arrow on the sorted column's
---- header. Records the sorted column index (1-indexed) for later highlighting.
+--- Decorate the raw display lines with sort arrows on sorted column headers.
+--- When multiple sorts are active, a priority number is shown (1▲, 2▼, …).
 --- @param display_lines table A deep-copy of the structured CSV rows
---- @param sort table|nil { col_name, is_index, ascending }
---- @return integer|nil sort_col_idx
-local function apply_sort_decoration(display_lines, sort)
-	if sort == nil then
-		return nil
+--- @param sorts table[] Ordered list of { col_name, is_index, ascending }
+--- @return integer[] sort_col_indices 1-indexed column positions of sorted columns
+local function apply_sort_decoration(display_lines, sorts)
+	if sorts == nil or #sorts == 0 then
+		return {}
 	end
 
-	for i, col_name in ipairs(display_lines[1]) do
-		local is_index = (i == 1)
-		local matches = sort.is_index == is_index
-			and (is_index or col_name == sort.col_name)
-		if matches then
-			local arrow = sort.ascending and " ▲" or " ▼"
-			display_lines[1][i] = col_name .. arrow
-			return i
+	local sort_col_indices = {}
+	local multi = #sorts > 1
+
+	for priority, sort in ipairs(sorts) do
+		for i, col_name in ipairs(display_lines[1]) do
+			local is_index = (i == 1)
+			local matches = sort.is_index == is_index
+				and (is_index or col_name == sort.col_name)
+			if matches then
+				local arrow = sort.ascending and "▲" or "▼"
+				local label = multi and (" " .. priority .. arrow) or (" " .. arrow)
+				display_lines[1][i] = col_name .. label
+				table.insert(sort_col_indices, i)
+				break
+			end
 		end
 	end
-	return nil
+
+	return sort_col_indices
 end
 
 --- Insert a filter row into the header (right after the type row) when there
@@ -159,7 +167,7 @@ function DataView:refresh(expression, on_ready, on_failed, use_cache)
 
                     -- Build display lines (copy) with sort/filter decorations
                     local display_lines = vim.deepcopy(csv_table.lines)
-                    self.sort_col_idx = apply_sort_decoration(display_lines, expression:get_sort())
+                    self.sort_col_indices = apply_sort_decoration(display_lines, expression:get_sorts())
                     self.header_lines = apply_filter_decoration(display_lines, self.column_names, expression:get_filters())
 
                     csv_table = table_fmt.from_structured_data(display_lines, self.header_lines)
@@ -261,22 +269,54 @@ function DataView:get_lines()
 	return vim.list_extend(lines, self.lines)
 end
 
-local function build_hl_rules_for_columns(higroup, line, table)
-	local content_rules = {}
+--- Byte length of the │ separator character (U+2502, 3 UTF-8 bytes, 1 display col).
+local SEP_BYTES = #table_fmt.COL_SEPARATOR
 
-	if table == nil then
+--- Compute the byte start/finish (0-indexed, finish exclusive) of each column
+--- cell in a formatted table line. Accounts for multi-byte characters in the
+--- cell text so the positions are usable directly as vim.hl.range byte offsets.
+--- @param row table|nil The structured row (array of cell strings) for this line.
+--- @param cols_width integer[] Display widths from FormattedTable.columns_width.
+--- @return {[1]:integer,[2]:integer}[] Byte {start, finish} pairs, one per column.
+local function column_byte_positions(row, cols_width)
+	local positions = {}
+	local byte_pos = SEP_BYTES  -- skip leading │
+	for i, width in ipairs(cols_width) do
+		local cell_bytes
+		if row and row[i] then
+			local text = row[i]
+			-- Padding is all ASCII spaces: total_bytes = padding_chars + byte_len(text)
+			local padding = width - vim.api.nvim_strwidth(text)
+			cell_bytes = padding + #text
+		else
+			cell_bytes = width  -- fallback: assume ASCII
+		end
+		positions[i] = { byte_pos, byte_pos + cell_bytes }
+		byte_pos = byte_pos + cell_bytes + SEP_BYTES
+	end
+	return positions
+end
+
+--- Build per-column highlight rules for one line of the buffer.
+--- @param higroup string
+--- @param line integer 0-indexed buffer row (also the 1-indexed index into table.lines for header rows)
+--- @param table_data table|nil FormattedTable returned by table_fmt
+--- @return table[]
+local function build_hl_rules_for_columns(higroup, line, table_data)
+	local content_rules = {}
+	if table_data == nil then
 		return content_rules
 	end
 
-	local cur_col = 1
-	for i, width in ipairs(table.columns_width) do
+	local row = table_data.lines[line]
+	local positions = column_byte_positions(row, table_data.columns_width)
+
+	for i, pos in ipairs(positions) do
 		content_rules[i] = {
 			higroup = higroup,
-			start = { line, cur_col },
-			finish = { line, cur_col + width + 2 },
+			start = { line, pos[1] },
+			finish = { line, pos[2] },
 		}
-
-		cur_col = cur_col + width + 3
 	end
 
 	return content_rules
@@ -290,9 +330,10 @@ function DataView:get_hl_rules()
 			{ higroup = "DapDfError", start = { 1, 0 }, finish = { #self.lines + 1, -1 } },
 		}
 	else
+		local header_col_rules = build_hl_rules_for_columns("DapDfHeaderRow", 1, self.table)
 		local column_rules = {
 			build_hl_rules_for_prompt(self),
-			build_hl_rules_for_columns("DapDfHeaderRow", 1, self.table),
+			header_col_rules,
 			build_hl_rules_for_columns("DapDfTypeRow", 2, self.table),
 		}
 		if self.header_lines == 3 then
@@ -302,18 +343,17 @@ function DataView:get_hl_rules()
 			:flatten()
 			:totable()
 
-		if self.sort_col_idx ~= nil and self.table ~= nil then
-			local cur_col = 1
-			for i, width in ipairs(self.table.columns_width) do
-				if i == self.sort_col_idx then
+		-- Reuse the byte positions already computed for the header row.
+		if self.sort_col_indices ~= nil and #self.sort_col_indices > 0 then
+			for _, sort_idx in ipairs(self.sort_col_indices) do
+				local base = header_col_rules[sort_idx]
+				if base then
 					table.insert(hl_rules, {
 						higroup = "DapDfSortedColumn",
-						start = { 1, cur_col },
-						finish = { 1, cur_col + width + 2 },
+						start = base.start,
+						finish = base.finish,
 					})
-					break
 				end
-				cur_col = cur_col + width + 3
 			end
 		end
 	end

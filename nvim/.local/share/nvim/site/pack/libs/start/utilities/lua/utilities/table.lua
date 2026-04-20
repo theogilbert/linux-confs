@@ -1,5 +1,7 @@
 local M = {}
 
+M.COL_SEPARATOR = '│'
+
 local center = function(text, width)
     local rough_whitespace_count = (width - vim.api.nvim_strwidth(text)) / 2
     local before_len = math.floor(rough_whitespace_count)
@@ -180,7 +182,7 @@ function M.from_structured_data(lines, header_lines)
             table.insert(centered_cells, centered)
         end
 
-        local formatted_line = '│' .. table.concat(centered_cells, '│') .. '│'
+        local formatted_line = M.COL_SEPARATOR .. table.concat(centered_cells, M.COL_SEPARATOR) .. M.COL_SEPARATOR
         table.insert(formatted_lines, formatted_line)
     end
 

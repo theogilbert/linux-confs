@@ -14,8 +14,9 @@ Expression.__index = Expression
 function Expression:new(base_expr)
 	local self = setmetatable({}, Expression)
 	self.base_expr = base_expr
-	--- sort = { col_name = string, is_index = bool, ascending = bool } | nil
-	self.sort = nil
+	--- sorts = ordered list of { col_name = string, is_index = bool, ascending = bool }
+	--- sorts[1] is the primary sort key, sorts[2] secondary, etc.
+	self.sorts = {}
 	--- filters = { [filter_key] = condition_string }
 	--- filter_key is "index" for the index column, column name otherwise.
 	self.filters = {}
@@ -66,28 +67,44 @@ function Expression:get_filters()
 	return self.filters
 end
 
---- Toggle the sort state on the given column. Cycles: none -> asc -> desc -> none.
+--- Find the sort entry for the given column. Returns index and entry, or nil.
+--- @param col_name string
+--- @param is_index boolean
+--- @return integer|nil, table|nil
+local function find_sort(sorts, col_name, is_index)
+	for i, s in ipairs(sorts) do
+		if s.is_index == is_index and (is_index or s.col_name == col_name) then
+			return i, s
+		end
+	end
+	return nil, nil
+end
+
+--- Toggle the sort state on the given column.
+--- If not currently sorted: add as lowest-priority sort (ascending).
+--- If ascending: flip to descending.
+--- If descending: remove from sort list.
 --- @param col_name string
 --- @param is_index boolean
 function Expression:toggle_sort(col_name, is_index)
-	local same_column = self.sort
-		and self.sort.is_index == is_index
-		and (is_index or self.sort.col_name == col_name)
-
-	if same_column then
-		if self.sort.ascending then
-			self.sort.ascending = false
-		else
-			self.sort = nil
-		end
+	local idx, existing = find_sort(self.sorts, col_name, is_index)
+	if existing == nil then
+		table.insert(self.sorts, { col_name = col_name, is_index = is_index, ascending = true })
+	elseif existing.ascending then
+		existing.ascending = false
 	else
-		self.sort = { col_name = col_name, is_index = is_index, ascending = true }
+		table.remove(self.sorts, idx)
 	end
 end
 
---- @return table|nil sort The current sort state, or nil
+--- @return table sorts The ordered list of active sorts (primary first). May be empty.
+function Expression:get_sorts()
+	return self.sorts
+end
+
+--- @return table|nil sort The primary (highest-priority) sort, or nil if none.
 function Expression:get_sort()
-	return self.sort
+	return self.sorts[1]
 end
 
 --- Normalizes a user-entered filter condition into a full pandas .query() clause
@@ -127,12 +144,46 @@ function Expression:build()
 		expr = "(" .. expr .. ").query(\"" .. clause .. "\", engine='python')"
 	end
 
-	if self.sort then
-		local direction = self.sort.ascending and "True" or "False"
-		if self.sort.is_index then
-			expr = "(" .. expr .. ").sort_index(ascending=" .. direction .. ")"
+	if #self.sorts == 1 then
+		local s = self.sorts[1]
+		local dir = s.ascending and "True" or "False"
+		if s.is_index then
+			expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
 		else
-			expr = "(" .. expr .. ").sort_values(\"" .. self.sort.col_name .. "\", ascending=" .. direction .. ")"
+			expr = "(" .. expr .. ").sort_values(\"" .. s.col_name .. "\", ascending=" .. dir .. ")"
+		end
+	elseif #self.sorts > 1 then
+		local all_columns = true
+		for _, s in ipairs(self.sorts) do
+			if s.is_index then
+				all_columns = false
+				break
+			end
+		end
+
+		if all_columns then
+			local cols, dirs = {}, {}
+			for _, s in ipairs(self.sorts) do
+				table.insert(cols, "\"" .. s.col_name .. "\"")
+				table.insert(dirs, s.ascending and "True" or "False")
+			end
+			expr = "(" .. expr .. ").sort_values(["
+				.. table.concat(cols, ", ")
+				.. "], ascending=["
+				.. table.concat(dirs, ", ")
+				.. "])"
+		else
+			-- Mixed index + column sorts: apply in reverse priority order so that
+			-- the primary sort (sorts[1]) is applied last and becomes dominant.
+			for i = #self.sorts, 1, -1 do
+				local s = self.sorts[i]
+				local dir = s.ascending and "True" or "False"
+				if s.is_index then
+					expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
+				else
+					expr = "(" .. expr .. ").sort_values(\"" .. s.col_name .. "\", ascending=" .. dir .. ")"
+				end
+			end
 		end
 	end
 

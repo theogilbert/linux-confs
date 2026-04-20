@@ -199,6 +199,7 @@ M.peek_definition = function()
     local clients = vim.lsp.get_clients({ bufnr = bufnr })
     local encoding = clients[1] and clients[1].offset_encoding or "utf-16"
     local params = vim.lsp.util.make_position_params(0, encoding)
+    local max_lines = 80
     vim.lsp.buf_request(bufnr, "textDocument/definition", params, function(_, result)
         if not result or (vim.islist(result) and #result == 0) then
             vim.notify("No definition found", vim.log.levels.INFO)
@@ -214,7 +215,7 @@ M.peek_definition = function()
         local start_line = range.start.line
         local end_line = range["end"].line
         -- Cap to avoid huge floats for very long functions
-        local cap = math.min(end_line, start_line + 40)
+        local cap = math.min(end_line, start_line + max_lines)
         local lines = vim.api.nvim_buf_get_lines(
             def_bufnr,
             math.max(0, start_line - 1),

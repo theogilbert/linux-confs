@@ -31,6 +31,47 @@ function Pane:new(config, pane_idx, opts)
 	return self
 end
 
+--- Update the ◂/▸ truncation indicators.
+--- Shows ◂/▸ on the edge of every buffer line when the table extends beyond
+--- the edge of the window.
+function Pane:update_truncation_indicator()
+	vim.api.nvim_buf_clear_namespace(self.buffer.buf_id, hl.TRUNCATION_NS_ID, 0, -1)
+
+	local boundaries = self.dataview:get_column_boundaries()
+	if #boundaries == 0 then return end
+
+	local win_width = vim.api.nvim_win_get_width(self.win_id)
+	local leftcol = 0
+	vim.api.nvim_win_call(self.win_id, function()
+		leftcol = vim.fn.winsaveview().leftcol
+	end)
+
+	-- boundaries[#boundaries] is the display column of the trailing │.
+	local truncated_right = boundaries[#boundaries] >= leftcol + win_width
+	local truncated_left = leftcol > 0
+
+	if not truncated_right and not truncated_left then return end
+
+	local line_count = vim.api.nvim_buf_line_count(self.buffer.buf_id)
+	for row = 0, line_count - 1 do
+		if truncated_right then
+			vim.api.nvim_buf_set_extmark(self.buffer.buf_id, hl.TRUNCATION_NS_ID, row, 0, {
+				virt_text = { { "▸", "DapDfTruncated" } },
+				virt_text_pos = "right_align",
+			})
+		end
+		if truncated_left then
+			-- virt_text_win_col pins the text to a fixed window column (not a line
+			-- byte offset), so ◂ always appears at the visible left edge regardless
+			-- of how far the user has scrolled horizontally.
+			vim.api.nvim_buf_set_extmark(self.buffer.buf_id, hl.TRUNCATION_NS_ID, row, 0, {
+				virt_text = { { "◂", "DapDfTruncated" } },
+				virt_text_win_col = 0,
+			})
+		end
+	end
+end
+
 -- Open the pane window
 -- @param split_from number|nil If provided, create a horizontal split from this window
 function Pane:open(split_from)
@@ -59,11 +100,23 @@ function Pane:open(split_from)
 	vim.api.nvim_win_set_hl_ns(self.win_id, hl.NS_ID)
 
 	self.is_open_flag = true
+
+	self.scroll_autocmd_id = vim.api.nvim_create_autocmd("WinScrolled", {
+		pattern = tostring(self.win_id),
+		callback = function()
+			self:update_truncation_indicator()
+		end,
+	})
+
 	self:refresh()
 end
 
 -- Close the pane window
 function Pane:close()
+	if self.scroll_autocmd_id then
+		vim.api.nvim_del_autocmd(self.scroll_autocmd_id)
+		self.scroll_autocmd_id = nil
+	end
 	if self.win_id and vim.api.nvim_win_is_valid(self.win_id) then
 		vim.api.nvim_win_close(self.win_id, true)
 	end
@@ -302,6 +355,7 @@ function Pane:refresh(use_cache)
         function() -- on success
             self.buffer:set_content(self.dataview:get_lines())
             self.buffer:apply_highlight(self.dataview:get_hl_rules())
+            self:update_truncation_indicator()
         end,
         function(err) -- on failure
             vim.notify(err, vim.log.levels.ERROR)

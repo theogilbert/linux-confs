@@ -9,6 +9,7 @@ local ERROR_FG = "#CA2722"
 local TYPE_FG = "#8AA1C2"
 local FILTER_FG = "#e78a4e"
 local SORTED_COL_FG = "#b8bb26"
+local TRUNCATED_FG = "#666666"
 
 local function build_highlights()
 	return {
@@ -21,11 +22,13 @@ local function build_highlights()
 		DapDfTypeRow = { fg = TYPE_FG },
 		DapDfFilterRow = { fg = FILTER_FG, italic = true },
 		DapDfSortedColumn = { fg = SORTED_COL_FG, bold = true },
+		DapDfTruncated = { fg = TRUNCATED_FG, bold = true },
 	}
 end
 
 local function setup_highlights()
 	M.NS_ID = vim.api.nvim_create_namespace("DapDfNs")
+	M.TRUNCATION_NS_ID = vim.api.nvim_create_namespace("DapDfTruncationNs")
 
 	for group, opts in pairs(build_highlights()) do
 		vim.api.nvim_set_hl(M.NS_ID, group, opts)

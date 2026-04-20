@@ -173,7 +173,7 @@ endif
 if s:configuration.dim_inactive_windows
   call sonokai#highlight('VertSplit', s:palette.bg4, s:palette.bg_dim)
 else
-  call sonokai#highlight('VertSplit', s:palette.black, s:palette.none)
+  call sonokai#highlight('VertSplit', s:palette.grey, s:palette.none)
 endif
 highlight! link WinSeparator VertSplit
 call sonokai#highlight('Visual', s:palette.none, s:palette.grey_dim)

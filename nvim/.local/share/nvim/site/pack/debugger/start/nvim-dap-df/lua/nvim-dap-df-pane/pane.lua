@@ -181,9 +181,24 @@ function Pane:setup_keymaps()
 		self:scroll_columns(-1)
 	end, { desc = "Scroll left by one column" })
 
+	self.buffer:set_keymap("n", "+", function()
+		self:resize(vim.v.count1)
+	end, { desc = "Grow pane height" })
+
+	self.buffer:set_keymap("n", "-", function()
+		self:resize(-vim.v.count1)
+	end, { desc = "Shrink pane height" })
+
 	self.buffer:set_keymap("n", "g?", function()
 		help.show(self.buffer.keymaps)
 	end, { desc = "Show help" })
+end
+
+-- Grow or shrink the pane by delta lines (positive = taller, negative = shorter).
+function Pane:resize(delta)
+	if not self:is_open() then return end
+	local current = vim.api.nvim_win_get_height(self.win_id)
+	vim.api.nvim_win_set_height(self.win_id, math.max(1, current + delta))
 end
 
 -- Scroll the pane window left or right, snapping to column boundaries.

@@ -2,7 +2,7 @@ describe("table-from-csv", function()
     local table_fmt = require("utilities.table")
 
     it("should properly format table", function()
-        local result = table_fmt.from_csv(",\"a\"\",as\",b\n0,1,1")
+        local result, err = table_fmt.from_csv(",\"a\"\",as\",b\n0,1,1")
 
         assert.are.same({
             "│   │ a\",as │ b │",
@@ -20,7 +20,7 @@ describe("table-from-csv", function()
         }, result.text)
     end)
 
-    it("should properly handle trailing line", function()
+    it("should ignore trailing line", function()
         local result = table_fmt.from_csv(",col\n0,\"value\"\n\n")
         assert.are.same({
             "│   │  col  │",
@@ -36,6 +36,16 @@ describe("table-from-csv", function()
             "│ a │ b │",
             "├───┼───┤",
             "│ 1 │ 2 │"
+        }, result.text)
+    end)
+
+    it("should handle LF characters in quoted cells", function()
+        local result = table_fmt.from_csv("a,b\n1,\"2\n3\"\n")
+        assert.are.same({ { "a", "b" }, { "1", "2<LF>3" } }, result.lines)
+        assert.are.same({
+            "│ a │   b    │",
+            "├───┼────────┤",
+            "│ 1 │ 2<LF>3 │"
         }, result.text)
     end)
 
@@ -71,5 +81,10 @@ describe("table-from-csv", function()
     it("should escape doubled quotes inside a quoted cell", function()
         local result = table_fmt.from_csv("\"a\"\"b\"")
         assert.are.same({ { "a\"b" } }, result.lines)
+    end)
+
+    it("should handle empty cells", function()
+        local result = table_fmt.from_csv(",\n,")
+        assert.are.same({ { "", "" }, { "", "" } }, result.lines)
     end)
 end)

@@ -9,9 +9,19 @@ local center = function(text, width)
     return string.rep(' ', before_len) .. text .. string.rep(' ', after_len)
 end
 
---- @return table data A structure keeping track of the state of a single CSV
+--- @class CellState
+--- @field start_pos integer The position at which the cell starts.
+--- @field end_pos integer The position at which the cell ends.
+--- @field quoted boolean Whether the current cell is in quote or not.
+--- @field pending_quote boolean If true, indicates that the last parsed
+--- character was a quote. If the next character is also a quote,
+--- then both quotes represent an escaped quote `"` charater within a
+--- quoted cell. Otherwise, it means that the quoted cell ends here.
+
+
+--- @return CellState state The state of the cell we are starting to read.
 --- cell being parsed character by character.
-local function build_cell_data(start_idx, start_char)
+local function new_cell_state(start_idx, start_char)
     local end_pos = nil
     if start_char == ',' then
         end_pos = start_idx - 1
@@ -25,38 +35,65 @@ local function build_cell_data(start_idx, start_char)
     }
 end
 
-local function parse_new_char(cell_data, idx, char)
-    if char == '"' then
-        cell_data.pending_quote = not cell_data.pending_quote
-    elseif char == ',' then
-        if not cell_data.quoted or cell_data.pending_quote then
-            cell_data.end_pos = idx - 1
+--- @class ParserState
+--- @field text string A full copy of the CSV text.
+--- @field cur_cell CellState|nil The state of the currently parsed cell.
+--- @field cur_line string[] The current line being parsed.
+--- @field lines string[][] Lines which have already been completely parsed.
+--- nil if the first line is not complete.
+--- @field add_empty_cell function Add a new empty cell to the line currently being parsed.
+--- @field complete_cell function Reads the text from the current cell and merge it to the current line.
+--- @field complete_line function Complete the current cell, and merge the current line to the list of parsed lines.
+
+
+
+--- @param parser_state ParserState the current state of the parser.
+--- @param idx integer The position of the parsed character in the document.
+--- @param char string The new character to parse.
+--- @return string|nil err An error message if something went wrong.
+local function parse_new_char(parser_state, idx, char)
+    local cell = parser_state.cur_cell
+    local err = nil
+
+    if cell == nil then
+        if char == ',' then
+            parser_state.add_empty_cell()
+        elseif char == '\n' then
+            err = parser_state.complete_line(idx - 1)
+        else
+            parser_state.cur_cell = new_cell_state(idx, char)
         end
-    elseif char ~= '' and cell_data.pending_quote then
-        return "Unexpected character '" .. char .. "' at index " .. idx
-            .. " following quote at index " .. (idx - 1)
+    else
+        if char == '"' then
+            if cell.quoted then
+                cell.pending_quote = not cell.pending_quote
+            else
+                return "Lone quote character found in unquoted cell at position " .. vim.inspect(idx)
+            end
+        elseif (cell.pending_quote or not cell.quoted) and (char == ',' or char == '\n') then
+            -- A pending quote followed by `,` or `\n` means an end of quoted cell.
+            if char == '\n' then
+                err = parser_state.complete_line(idx - 1)
+            else
+                err = parser_state.complete_cell(idx - 1)
+            end
+        end
     end
 
-    return nil
+    return err
 end
 
-local function process_end_of_line(cell_data, idx)
-    if cell_data.quoted and not cell_data.pending_quote then
-        return "Expected quoted cell starting at " .. cell_data.start_pos .. " to be closed at " .. idx
+
+--- @param cell_state CellState|nil The state of the cell whose text to read.
+--- @param csv_content string The full string of the CSV content.
+local function read_cell_text(cell_state, csv_content)
+    if cell_state == nil then
+        return ""
     end
 
-    if not cell_data.quoted and cell_data.pending_quote then
-        return "Unexpected quote character in unquoted cell starting at " .. cell_data.start_pos
-    end
+    local cell = csv_content:sub(cell_state.start_pos, cell_state.end_pos)
 
-    cell_data.end_pos = idx
-    return nil
-end
-
-local function extract_text_from_cell_data(cell_data, line)
-    local cell = line:sub(cell_data.start_pos, cell_data.end_pos)
-
-    if cell_data.quoted then
+    if cell_state.quoted then
         local trimmed = cell:sub(2, #cell - 1)
         cell = trimmed:gsub('""', '"')
     end
@@ -65,47 +102,83 @@ local function extract_text_from_cell_data(cell_data, line)
 end
 
 
+--- Create an empty parser state, ready to parse a new document.
+--- @param csv_content string A full copy of the CSV text.
+--- @return ParserState state A newly initialized parser state.
+local function new_parser_state(csv_content)
+    local parser = {
+        text = csv_content,
+        cur_cell = nil,
+        cur_line = {},
+        lines = {}
+    }
+
+    parser.add_empty_cell = function()
+        table.insert(parser.cur_line, "")
+    end
+
+    parser.complete_cell = function(idx)
+        --- @type CellState|nil
+        local cell = parser.cur_cell
+
+        if cell ~= nil then
+            if cell.quoted and not cell.pending_quote then
+                return "Unclosed quoted cell at index " .. vim.inspect(idx)
+            end
+
+            cell.end_pos = idx
+        end
+
+        local cell_text = read_cell_text(cell, csv_content)
+        cell_text = string.gsub(cell_text, "\n", "<LF>")
+        table.insert(parser.cur_line, cell_text)
+
+        parser.cur_cell = nil
+        return nil
+    end
+
+    parser.complete_line = function(idx)
+        if #parser.cur_line == 0 and parser.cur_cell == nil then
+            -- Empty line - we ignore it.
+            return nil
+        end
+
+        local err = parser.complete_cell(idx)
+
+        table.insert(parser.lines, parser.cur_line)
+        parser.cur_line = {}
+
+        return err
+    end
+
+    return parser
+end
+
+
 --- Extract columns from a CSV line
 ---
---- @param csv_line string A single CSV line, using comma `,` as a separator.
---- @return table columns The list of columns extracted from the CSV line.
+--- @param csv_content string The full CSV text
+--- @return table lines The list of lines extracted from the CSV content.
 ---   In case of a failure to parse the CSV line, the table will be empty.
 --- @return string|nil err An error message if the CSV line could not be parsed.
 ---   Nil otherwise.
-local parse_csv_line = function(csv_line)
-    local cells = {}
-    local current_cell_data = nil
+local parse_csv_content = function(csv_content)
+    csv_content = string.gsub(csv_content, "\r\n", "\n")
+    local parser_state = new_parser_state(csv_content)
 
-    for idx = 1, #csv_line + 1 do
-        local char = csv_line:sub(idx, idx)
+    for idx = 1, #csv_content do
+        local char = csv_content:sub(idx, idx)
 
-        if current_cell_data == nil then
-            current_cell_data = build_cell_data(idx, char)
-        else
-            local err = parse_new_char(current_cell_data, idx, char)
-            if err ~= nil then
-                return {}, "Error parsing CSV line '" .. csv_line .. "': " .. err
-            end
-        end
-
-        if current_cell_data.end_pos ~= nil then
-            table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
-            current_cell_data = nil
+        local err = parse_new_char(parser_state, idx, char)
+        if err ~= nil then
+            return {}, "Error parsing CSV content at position " .. idx .. ": " .. err
         end
     end
 
-    if current_cell_data == nil then
-        return cells, nil
-    end
+    local err = parser_state.complete_line()
 
-    -- We have a trailing cell to parse
-    local err = process_end_of_line(current_cell_data, #csv_line)
-    if err ~= nil then
-        return {}, "Failed to parse line '" .. csv_line .. "': " .. err
-    end
 
-    table.insert(cells, extract_text_from_cell_data(current_cell_data, csv_line))
-    return cells, nil
+    return parser_state.lines, err
 end
 
 local update_cols_widths = function(columns, cols_width)
@@ -138,14 +211,9 @@ end
 ---  - `text` (table): The formatted text of the table, in the form of a table of textual lines.
 ---@return string|nil err: Error message if parsing failed, or nil on success.
 function M.from_csv(csv_text, header_lines)
-    local lines = {}
-
-    for line in csv_text:gmatch("[^\r\n]+") do
-        local cols, err = parse_csv_line(line)
-        if err ~= nil then
-            return {}, err
-        end
-        table.insert(lines, cols)
+    local lines, err = parse_csv_content(csv_text)
+    if err ~= nil then
+        return {}, err
     end
 
     return M.from_structured_data(lines, header_lines)

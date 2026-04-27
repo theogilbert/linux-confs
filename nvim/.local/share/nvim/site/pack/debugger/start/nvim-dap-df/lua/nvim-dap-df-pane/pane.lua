@@ -74,14 +74,15 @@ end
 
 -- Open the pane window
 -- @param split_from number|nil If provided, create a horizontal split from this window
-function Pane:open(split_from)
+-- @param split_dir "horizontal"|"vertical"|nil If provided, must be 'horizontal' or 'vertical'. Defaults to 'horizontal'.
+function Pane:open(split_from, split_dir)
 	if self:is_open() then
 		return
 	end
 
 	if split_from and vim.api.nvim_win_is_valid(split_from) then
 		vim.api.nvim_set_current_win(split_from)
-		vim.cmd("split")
+		vim.cmd(split_dir == 'vertical' and "vsplit" or "split")
 	else
 		local cmd = string.format("botright %dsplit", self.config.size)
 		vim.cmd(cmd)
@@ -148,11 +149,17 @@ function Pane:setup_keymaps()
 		self:refresh()
 	end, { desc = "Clear DataFrame expression" })
 
-	self.buffer:set_keymap("n", "v", function()
+	self.buffer:set_keymap("n", "_", function()
 		if self.on_split then
 			self.on_split(self)
 		end
-	end, { desc = "Split pane" })
+	end, { desc = "Split pane horizontally" })
+
+	self.buffer:set_keymap("n", "|", function()
+		if self.on_split then
+			self.on_split(self, "vertical")
+		end
+	end, { desc = "Split pane vertically" })
 
 	self.buffer:set_keymap("n", "q", function()
 		if self.on_close then

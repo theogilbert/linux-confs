@@ -30,9 +30,9 @@ local pane_count = 0
 local function create_pane()
     pane_count = pane_count + 1
     local pane = Pane:new(state.config, pane_count, {
-        on_split = function(source)
+        on_split = function(source, split_dir)
             local new_pane = create_pane()
-            new_pane:open(source.win_id)
+            new_pane:open(source.win_id, split_dir)
         end,
         on_close = remove_pane,
     })

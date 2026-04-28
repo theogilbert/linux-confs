@@ -92,7 +92,7 @@ vim.keymap.set("n", "<leader>swd", fzflua.lsp_workspace_diagnostics, { desc = "[
 vim.keymap.set("n", "<leader>sws", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [W]orkspace [S]ymbols" })
 vim.keymap.set("n", "<leader>k", function()
     fzflua.lsp_live_workspace_symbols({regex_filter = function(item, ctx)
-        local supported_kinds = {'Class', 'Interface', 'Enum', 'Function', 'Constant'}
+        local supported_kinds = {'Class', 'Interface', 'Enum', 'Function', 'Constant', 'Method'}
         return vim.tbl_contains(supported_kinds, item.kind)
     end})
 end, { desc = "[S]earch Workspace [S]ymbols" })

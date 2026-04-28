@@ -192,6 +192,8 @@ local function get_shape_repr(self)
 	return self.shape and "[" .. self.shape[1] .. "×" .. self.shape[2] .. "]" or ""
 end
 
+local LOADING_SYMBOL = "Loading... "
+
 --- Generates the whole prompt line for the dataview
 ---
 --- @param self DataView The DataView for which to generate the shape representation
@@ -202,26 +204,36 @@ end
 ---          - Optionally a label indicating that the data is being evaluated.
 local function get_prompt_line(self, width)
 	local shape_repr = get_shape_repr(self)
+        local base_expr = self.expr:get_base_expr()
+        base_expr = string.gsub(base_expr, '%s+', ' ')
 
 	local loading = ""
 	if self.state == State.EVALUATING then
-		loading = " Loading..."
+		loading = LOADING_SYMBOL
 	end
 
-	local base_prompt = "➜ " .. self.expr:get_base_expr() .. " " .. shape_repr .. loading
+	local base_prompt = loading .. shape_repr .. " ➜ " .. base_expr
 	local chars_to_add = math.max(0, width - vim.api.nvim_strwidth(base_prompt))
 
 	return base_prompt .. string.rep(" ", chars_to_add)
 end
 
+
+
 --- Generate the highlighting rules which will be applied on the prompt line.
 local function build_hl_rules_for_prompt(self)
-	local shape_start = 3 + #self.expr:get_base_expr() + 2
+	local shape_start = self.state == State.EVALUATING and #LOADING_SYMBOL or 0
 	local shape_end = shape_start + #get_shape_repr(self)
 
-	local rules = {
-		{ higroup = "DapDfPrompt", start = { 0, 0 }, finish = { 0, -1 } },
-	}
+	local rules = {}
+
+	if self.state == State.EVALUATING then
+		table.insert(rules, {
+			higroup = "DapDfPromptLoading",
+			start = { 0, 0 },
+			finish = { 0, shape_start },
+		})
+	end
 
 	if self.shape ~= nil then
 		table.insert(rules, {
@@ -231,13 +243,7 @@ local function build_hl_rules_for_prompt(self)
 		})
 	end
 
-	if self.state == State.EVALUATING then
-		table.insert(rules, {
-			higroup = "DapDfPromptLoading",
-			start = { 0, shape_end + 1 },
-			finish = { 0, -1 },
-		})
-	end
+        table.insert(rules, { higroup = "DapDfPrompt", start = { 0, shape_end }, finish = { 0, -1 } })
 
 	return rules
 end

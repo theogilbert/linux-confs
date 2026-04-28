@@ -69,6 +69,13 @@ describe("Buffer", function()
 			buffer:set_content({ "Test" })
 			assert.is_false(vim.api.nvim_buf_get_option(buffer.buf_id, "modifiable"))
 		end)
+
+		it("should support multiline content with newlines", function()
+			buffer:set_content({ "Line 1\n", "Line 2" })
+
+			local content = vim.api.nvim_buf_get_lines(buffer.buf_id, 0, -1, false)
+			assert.are.same({ "Line 1", "Line 2" }, content)
+		end)
 	end)
 
 	describe("get_content()", function()

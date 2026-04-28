@@ -50,6 +50,10 @@ function Buffer:set_content(lines)
 		lines = vim.split(lines, "\n")
 	end
 
+        for i, line in ipairs(lines) do
+            lines[i] = line:gsub("\n", "")
+        end
+
 	vim.bo[self.buf_id].modifiable = true
 	vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, lines)
 	vim.bo[self.buf_id].modifiable = self.modifiable

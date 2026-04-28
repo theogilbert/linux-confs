@@ -141,7 +141,7 @@ function Pane:setup_keymaps()
 	end, { desc = "Enter DataFrame expression" })
 
 	self.buffer:set_keymap("n", "r", function()
-		self:refresh()
+		self:refresh(false)
 	end, { desc = "Refresh DataFrame display" })
 
 	self.buffer:set_keymap("n", "d", function()
@@ -363,10 +363,6 @@ end
 -- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
 --        Set to false when the DAP context may have changed.
 function Pane:refresh(use_cache)
-    if not self:is_open() then
-        return
-    end
-
     if self.expression == nil then
         self.buffer:set_content("Press 'e' to enter an expression")
         return

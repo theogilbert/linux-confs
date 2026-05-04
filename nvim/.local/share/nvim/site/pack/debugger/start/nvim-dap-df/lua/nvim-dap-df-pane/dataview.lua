@@ -1,4 +1,5 @@
 local ExpressionEvaluator = require("nvim-dap-df-pane.evaluator")
+local Expression = require("nvim-dap-df-pane.expression")
 local table_fmt = require("utilities.table")
 
 local DataView = {}
@@ -26,21 +27,85 @@ local State = {
 ---
 --- The DataView is agnostic of nvim UI APIs (no window/buffer/cursor calls).
 --- @field limit number The maximum number of rows to display
---- @field expr Expression The expression to evaluate
+--- @field expression Expression The expression to evaluate
 --- @field state State The current state of the data view
 --- @field shape table A table containing the number of columns and rows in the data
 --- @field lines table A sequence of lines to display in the data view. Represents the actual data.
-function DataView:new(limit)
+
+--- @param expression string The expression to evaluate and display
+--- @param limit integer How many rows to display at most
+function DataView:new(expression, limit)
 	local self = setmetatable({}, DataView)
 
 	self.limit = limit
-	self.expr = nil
+	self.expression = Expression:new(expression)
 	self.state = State.EVALUATING
 	self.shape = nil
 	self.lines = {}
 	self.evaluator = ExpressionEvaluator:new()
 
 	return self
+end
+
+--- Get column info under the cursor (1-indexed column, column name, is_index),
+--- or nil if the cursor is not on a data column.
+--- @return string|nil col_name
+--- @return boolean|nil is_index
+function DataView:get_column_under_cursor(cursor_col)
+	local col_idx = self:get_column_at_cursor(cursor_col)
+	if col_idx == nil then
+		return nil
+	end
+	local col_name = self:get_column_name(col_idx)
+	if col_name == nil then
+		return nil
+	end
+	return col_name, self:is_index_column(col_idx)
+end
+
+--- Change the sorting order of the column at the specified location.
+--- alternating between ascending, descending or no sort.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+function DataView:sort_column_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
+	if col_name ~= nil then
+            self.expression:toggle_sort(col_name, is_index)
+	end
+end
+
+--- Retrieve the current filter value for the column under cursor, if any.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+--- @return string|nil filter The condition applied to the column under the cursor
+function DataView:get_column_filter_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
+	if col_name == nil then
+            return nil
+	end
+
+        return self.expression:get_filter(col_name, is_index)
+end
+
+--- Add a filter to apply to the column at the specified location.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+--- @return string|nil filter The condition applied to the column under the cursor
+function DataView:filter_column_under_cursor(virtual_col, position)
+        if self.expression == nil then
+		return
+	end
+
+	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+	if col_name ~= nil then
+                self.expression:set_filter(col_name, is_index, position)
+	end
+end
+
+--- Remove any filter that is applied to the column at the specified location.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+function DataView:clear_filter_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
+	if col_name ~= nil then
+            self.expression:clear_filter(col_name, is_index)
+	end
 end
 
 --- Returns the column name at the given 1-indexed column position in the table.
@@ -135,25 +200,22 @@ end
 --- The Expression object is the single source of truth: its base form drives
 --- the prompt line, `build()` produces the python expression sent to the
 --- evaluator, and its sort/filter state drives the display decorations.
---- @param expression Expression
 --- @param on_ready function Called whenever the view has been refreshed and is ready to be rendered.
 --- @param on_failed FailureCallback Called whenever the view failed to be rendered.
 --- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
 ---        Set to false when the DAP context may have changed.
-function DataView:refresh(expression, on_ready, on_failed, use_cache)
-        local previous_expr = self.expr -- to rollback in case of failure
-	self.expr = expression
+function DataView:refresh(on_ready, on_failed, use_cache)
 	self.state = State.EVALUATING
 	on_ready()
 
-	self.evaluator:evaluate(expression, self.limit, function(data, shape, err)
+	self.evaluator:evaluate(self.expression, self.limit, function(data, shape, err)
             local csv_table = nil
 		if err ~= nil then
 			local err_repr = vim.inspect(err)
 			if err.message ~= nil then
 				err_repr = err.message
 			end
-                        on_failed("Failed to evaluate expression `" .. expression:build() .. "`: " .. err_repr)
+                        on_failed("Failed to evaluate expression `" .. self.expression:build() .. "`: " .. err_repr)
                 else
                         csv_table, fmt_err = table_fmt.from_csv(data, 2)
                         if fmt_err ~= nil then
@@ -167,15 +229,13 @@ function DataView:refresh(expression, on_ready, on_failed, use_cache)
 
                     -- Build display lines (copy) with sort/filter decorations
                     local display_lines = vim.deepcopy(csv_table.lines)
-                    self.sort_col_indices = apply_sort_decoration(display_lines, expression:get_sorts())
-                    self.header_lines = apply_filter_decoration(display_lines, self.column_names, expression:get_filters())
+                    self.sort_col_indices = apply_sort_decoration(display_lines, self.expression:get_sorts())
+                    self.header_lines = apply_filter_decoration(display_lines, self.column_names, self.expression:get_filters())
 
                     csv_table = table_fmt.from_structured_data(display_lines, self.header_lines)
                     self.table = csv_table
                     self.lines = csv_table.text
                     self.shape = shape
-                else
-                    self.expr = previous_expr
                 end
 
                 -- Failure or not, we go back to a ready state to re-render
@@ -204,7 +264,7 @@ local LOADING_SYMBOL = "Loading... "
 ---          - Optionally a label indicating that the data is being evaluated.
 local function get_prompt_line(self, width)
 	local shape_repr = get_shape_repr(self)
-        local base_expr = self.expr:get_base_expr()
+        local base_expr = self.expression:get_base()
         base_expr = string.gsub(base_expr, '%s+', ' ')
 
 	local loading = ""

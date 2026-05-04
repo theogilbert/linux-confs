@@ -259,7 +259,7 @@ function ExpressionEvaluator:evaluate(expression, limit, on_result, use_cache)
 	end
 
 	local expr = expression:build()
-	local base_expr = expression:get_base_expr()
+	local base_expr = expression:get_base()
 	local filters = expression:get_filters()
 
 	local session = dap.session()

@@ -63,15 +63,21 @@ function DataView:get_column_under_cursor(cursor_col)
 	return col_name, self:is_index_column(col_idx)
 end
 
-function DataView:sort_column_under_cursor(virtual_col)
-	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+--- Change the sorting order of the column at the specified location.
+--- alternating between ascending, descending or no sort.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+function DataView:sort_column_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
 	if col_name ~= nil then
             self.expression:toggle_sort(col_name, is_index)
 	end
 end
 
-function DataView:get_column_filter_under_cursor(virtual_col)
-	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+--- Retrieve the current filter value for the column under cursor, if any.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+--- @return string|nil filter The condition applied to the column under the cursor
+function DataView:get_column_filter_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
 	if col_name == nil then
             return nil
 	end
@@ -79,19 +85,24 @@ function DataView:get_column_filter_under_cursor(virtual_col)
         return self.expression:get_filter(col_name, is_index)
 end
 
-function DataView:filter_column_under_cursor(virtual_col, condition)
+--- Add a filter to apply to the column at the specified location.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+--- @return string|nil filter The condition applied to the column under the cursor
+function DataView:filter_column_under_cursor(virtual_col, position)
         if self.expression == nil then
 		return
 	end
 
 	local col_name, is_index = self:get_column_under_cursor(virtual_col)
 	if col_name ~= nil then
-                self.expression:set_filter(col_name, is_index, condition)
+                self.expression:set_filter(col_name, is_index, position)
 	end
 end
 
-function DataView:clear_filter_under_cursor(virtual_col)
-	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+--- Remove any filter that is applied to the column at the specified location.
+--- @param position number The column position of the cursor covering the column (starts at 1)
+function DataView:clear_filter_under_cursor(position)
+	local col_name, is_index = self:get_column_under_cursor(position)
 	if col_name ~= nil then
             self.expression:clear_filter(col_name, is_index)
 	end

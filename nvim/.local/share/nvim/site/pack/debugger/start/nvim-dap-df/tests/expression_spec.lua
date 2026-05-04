@@ -4,7 +4,7 @@ describe("Expression", function()
 	describe("new()", function()
 		it("stores the base expression", function()
 			local b = Expression:new("df")
-			assert.equals("df", b:get_base_expr())
+			assert.equals("df", b:get_base())
 		end)
 
 		it("starts with no sort and no filters", function()

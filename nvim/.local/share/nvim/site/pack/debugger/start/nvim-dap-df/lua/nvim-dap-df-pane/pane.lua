@@ -1,5 +1,4 @@
 local DataView = require("nvim-dap-df-pane.dataview")
-local Expression = require("nvim-dap-df-pane.expression")
 local Buffer = require("nvim-dap-df-pane.buffer")
 local prompt = require("nvim-dap-df-pane.prompt")
 local help = require("nvim-dap-df-pane.help")
@@ -23,8 +22,7 @@ function Pane:new(config, pane_idx, opts)
 	self:setup_keymaps()
 
 	self.is_open_flag = false
-	self.dataview = DataView:new(config.limit)
-	self.expression = nil
+	self.dataview = nil
 	opts = opts or {}
 	self.on_split = opts.on_split
 	self.on_close = opts.on_close
@@ -145,7 +143,7 @@ function Pane:setup_keymaps()
 	end, { desc = "Refresh DataFrame display" })
 
 	self.buffer:set_keymap("n", "d", function()
-		self.expression = nil
+		self.dataview = nil
 		self:refresh()
 	end, { desc = "Clear DataFrame expression" })
 
@@ -286,17 +284,19 @@ end
 
 -- Prompt for new expression
 function Pane:prompt_expression()
-        local current_expr = self.expression and self.expression:get_base_expr() or ""
+        local current_dataview = self.dataview
+        local current_expr = self.dataview and self.dataview.expression:get_base() or ""
+
         prompt.open({
             title = "DataFrame / Series expression",
             expression = current_expr,
             on_confirm = function(expr)
                 if expr ~= "" then
-                    self.expression = Expression:new(expr)
+                    self.dataview = DataView:new(expr, self.config.limit)
                 else
-                    self.expression = nil
+                    self.dataview = nil
                 end
-                self:refresh()
+                self:refresh(true, current_dataview)
             end,
             on_cancel = function()
                 print("DataFrame prompt cancelled")
@@ -305,13 +305,16 @@ function Pane:prompt_expression()
 end
 
 -- Set expression directly (without prompt) and refresh
+--- @param expr string The expression to set
 function Pane:set_expression(expr)
-	self.expression = Expression:new(expr)
-	self:refresh()
+        local current_dataview = self.dataview
+
+        self.dataview = DataView:new(expr, self.config.limit)
+	self:refresh(true, current_dataview)
 end
 
 -- Sort by the column under cursor (toggles asc -> desc -> none)
-function Pane:sort_column()
+function Pane:sort_column()  -- TODO move to dataview
 	if self.expression == nil then
 		return
 	end
@@ -325,7 +328,7 @@ function Pane:sort_column()
 end
 
 -- Filter the column under cursor
-function Pane:filter_column()
+function Pane:filter_column()  -- TODO move to dataview
 	if self.expression == nil then
 		return
 	end
@@ -346,7 +349,7 @@ function Pane:filter_column()
 end
 
 -- Clear the filter on the column under cursor
-function Pane:clear_filter()
+function Pane:clear_filter()  -- TODO move to dataview
 	if self.expression == nil then
 		return
 	end
@@ -359,23 +362,26 @@ function Pane:clear_filter()
 	self:refresh()
 end
 
--- Refresh the pane content
--- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
---        Set to false when the DAP context may have changed.
-function Pane:refresh(use_cache)
-    if self.expression == nil then
+--- Refresh the pane content
+--- @param use_cache boolean|nil Whether the evaluator may reuse cached values. Defaults to true.
+---        Set to false when the DAP context may have changed.
+--- @param rollback_dataview DataView|nil Optional Dataview to rollback to in case of refresh failure.
+function Pane:refresh(use_cache, rollback_dataview)
+    if self.dataview == nil then
         self.buffer:set_content("Press 'e' to enter an expression")
         return
     end
 
     self.dataview:refresh(
-        self.expression,
         function() -- on success
             self.buffer:set_content(self.dataview:get_lines())
             self.buffer:apply_highlight(self.dataview:get_hl_rules())
             self:update_truncation_indicator()
         end,
         function(err) -- on failure
+            if self.dataview ~= nil then
+                self.dataview = rollback_dataview
+            end
             vim.notify(err, vim.log.levels.ERROR)
         end,
         use_cache

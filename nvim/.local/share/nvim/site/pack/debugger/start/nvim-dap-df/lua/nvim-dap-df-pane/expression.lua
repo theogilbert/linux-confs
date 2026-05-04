@@ -1,4 +1,5 @@
 --- @class Expression A user-provided DataFrame / Series expression plus the
+--- @field base string The base expression, before any sorting / ordering operation is added by this plugin.
 --- sort and filter instructions layered on top of it.
 ---
 --- Owns the mutable sort/filter state. Callers manipulate that state through
@@ -13,19 +14,19 @@ Expression.__index = Expression
 --- @param base_expr string The user-provided DataFrame / Series expression
 function Expression:new(base_expr)
 	local self = setmetatable({}, Expression)
-	self.base_expr = base_expr
+	self.base = base_expr
 	--- sorts = ordered list of { col_name = string, is_index = bool, ascending = bool }
 	--- sorts[1] is the primary sort key, sorts[2] secondary, etc.
-	self.sorts = {}
+	self._sorts = {}
 	--- filters = { [filter_key] = condition_string }
 	--- filter_key is "index" for the index column, column name otherwise.
-	self.filters = {}
+	self._filters = {}
 	return self
 end
 
---- @return string base_expr The user-provided expression (as entered)
-function Expression:get_base_expr()
-	return self.base_expr
+--- @return string base The user-provided expression
+function Expression:get_base()
+	return self.base
 end
 
 --- Private helper: maps a (col_name, is_index) pair to the filter key used
@@ -42,9 +43,9 @@ end
 function Expression:set_filter(col_name, is_index, condition)
 	local key = filter_key_for(col_name, is_index)
 	if condition == "" then
-		self.filters[key] = nil
+		self._filters[key] = nil
 	else
-		self.filters[key] = condition
+		self._filters[key] = condition
 	end
 end
 
@@ -52,19 +53,19 @@ end
 --- @param is_index boolean
 --- @return string|nil condition The active filter condition on the column, or nil
 function Expression:get_filter(col_name, is_index)
-	return self.filters[filter_key_for(col_name, is_index)]
+	return self._filters[filter_key_for(col_name, is_index)]
 end
 
 --- @param col_name string
 --- @param is_index boolean
 function Expression:clear_filter(col_name, is_index)
-	self.filters[filter_key_for(col_name, is_index)] = nil
+	self._filters[filter_key_for(col_name, is_index)] = nil
 end
 
 --- @return table filters A map { [filter_key] = condition }. Keys follow the
 ---         same convention as filter_key_for (index col uses "index").
 function Expression:get_filters()
-	return self.filters
+	return self._filters
 end
 
 --- Find the sort entry for the given column. Returns index and entry, or nil.
@@ -87,24 +88,24 @@ end
 --- @param col_name string
 --- @param is_index boolean
 function Expression:toggle_sort(col_name, is_index)
-	local idx, existing = find_sort(self.sorts, col_name, is_index)
+	local idx, existing = find_sort(self._sorts, col_name, is_index)
 	if existing == nil then
-		table.insert(self.sorts, { col_name = col_name, is_index = is_index, ascending = true })
+		table.insert(self._sorts, { col_name = col_name, is_index = is_index, ascending = true })
 	elseif existing.ascending then
 		existing.ascending = false
 	else
-		table.remove(self.sorts, idx)
+		table.remove(self._sorts, idx)
 	end
 end
 
 --- @return table sorts The ordered list of active sorts (primary first). May be empty.
 function Expression:get_sorts()
-	return self.sorts
+	return self._sorts
 end
 
 --- @return table|nil sort The primary (highest-priority) sort, or nil if none.
 function Expression:get_sort()
-	return self.sorts[1]
+	return self._sorts[1]
 end
 
 --- Normalizes a user-entered filter condition into a full pandas .query() clause
@@ -136,25 +137,25 @@ end
 --- sort_values / sort_index call.
 --- @return string expr
 function Expression:build()
-	local expr = self.base_expr
+	local expr = self.base
 
-	for col_name, condition in pairs(self.filters) do
+	for col_name, condition in pairs(self._filters) do
 		local col_ref = "`" .. col_name .. "`"
 		local clause = build_query_clause(col_ref, condition)
 		expr = "(" .. expr .. ").query(\"" .. clause .. "\", engine='python')"
 	end
 
-	if #self.sorts == 1 then
-		local s = self.sorts[1]
+	if #self._sorts == 1 then
+		local s = self._sorts[1]
 		local dir = s.ascending and "True" or "False"
 		if s.is_index then
 			expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
 		else
 			expr = "(" .. expr .. ").sort_values(\"" .. s.col_name .. "\", ascending=" .. dir .. ")"
 		end
-	elseif #self.sorts > 1 then
+	elseif #self._sorts > 1 then
 		local all_columns = true
-		for _, s in ipairs(self.sorts) do
+		for _, s in ipairs(self._sorts) do
 			if s.is_index then
 				all_columns = false
 				break
@@ -163,7 +164,7 @@ function Expression:build()
 
 		if all_columns then
 			local cols, dirs = {}, {}
-			for _, s in ipairs(self.sorts) do
+			for _, s in ipairs(self._sorts) do
 				table.insert(cols, "\"" .. s.col_name .. "\"")
 				table.insert(dirs, s.ascending and "True" or "False")
 			end
@@ -175,8 +176,8 @@ function Expression:build()
 		else
 			-- Mixed index + column sorts: apply in reverse priority order so that
 			-- the primary sort (sorts[1]) is applied last and becomes dominant.
-			for i = #self.sorts, 1, -1 do
-				local s = self.sorts[i]
+			for i = #self._sorts, 1, -1 do
+				local s = self._sorts[i]
 				local dir = s.ascending and "True" or "False"
 				if s.is_index then
 					expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"

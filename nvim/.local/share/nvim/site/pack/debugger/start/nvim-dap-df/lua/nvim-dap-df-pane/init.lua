@@ -85,6 +85,22 @@ function M.destroy()
     state.panes = {}
 end
 
+--- Retrieve the next pane that should be used to display an expression
+--- set programmatically.
+--- That is, a pane which has currently no expression. If none are available,
+--- returns the first pane instead.
+--- This function expects state.panes to contain at least one pane.
+local function get_available_pane()
+    local available_pane = nil
+    for _, pane in ipairs(state.panes) do
+        if pane.dataview == nil then
+            available_pane = pane
+        end
+    end
+
+    return available_pane or state.panes[1]
+end
+
 -- Inspect a DataFrame/Series expression directly (opens the pane if needed)
 function M.inspect(expr)
     if not expr or expr == "" then
@@ -97,8 +113,10 @@ function M.inspect(expr)
     end
 
     M.open()
-    state.panes[1]:set_expression(expr)
+    local available_pane = get_available_pane()
+    available_pane:set_expression(expr)
 end
+
 
 -- Get the current pane instance (for internal use)
 function M._get_pane()

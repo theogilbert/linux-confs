@@ -314,51 +314,43 @@ function Pane:set_expression(expr)
 end
 
 -- Sort by the column under cursor (toggles asc -> desc -> none)
-function Pane:sort_column()  -- TODO move to dataview
-	if self.expression == nil then
-		return
-	end
-	local _, col_name, is_index = self:get_column_under_cursor()
-	if col_name == nil then
+function Pane:sort_column()
+	if self.dataview == nil then
 		return
 	end
 
-	self.expression:toggle_sort(col_name, is_index)
+	local virtual_col = vim.fn.virtcol(".")
+        self.dataview:sort_column_under_cursor(virtual_col)
 	self:refresh()
 end
 
 -- Filter the column under cursor
-function Pane:filter_column()  -- TODO move to dataview
-	if self.expression == nil then
-		return
-	end
-	local _, col_name, is_index = self:get_column_under_cursor()
-	if col_name == nil then
+function Pane:filter_column()
+	if self.dataview == nil then
 		return
 	end
 
-	local current = self.expression:get_filter(col_name, is_index) or ""
+	local virtual_col = vim.fn.virtcol(".")
+        local col_name, _ = self.dataview:get_column_under_cursor(virtual_col)
+        local current = self.dataview:get_column_filter_under_cursor(virtual_col) or ""
 
 	vim.ui.input({ prompt = "Filter " .. col_name .. ": ", default = current }, function(condition)
 		if condition == nil then
 			return
 		end
-		self.expression:set_filter(col_name, is_index, condition)
+                self.dataview:filter_column_under_cursor(virtual_col, condition)
 		self:refresh()
 	end)
 end
 
 -- Clear the filter on the column under cursor
-function Pane:clear_filter()  -- TODO move to dataview
-	if self.expression == nil then
-		return
-	end
-	local _, col_name, is_index = self:get_column_under_cursor()
-	if col_name == nil then
+function Pane:clear_filter()
+	if self.dataview == nil then
 		return
 	end
 
-	self.expression:clear_filter(col_name, is_index)
+	local virtual_col = vim.fn.virtcol(".")
+	self.dataview:clear_filter_under_cursor(virtual_col)
 	self:refresh()
 end
 
@@ -374,6 +366,10 @@ function Pane:refresh(use_cache, rollback_dataview)
 
     self.dataview:refresh(
         function() -- on success
+            if self.dataview == nil then
+                return  -- abort if dataview was removed during refresh operation.
+            end
+
             self.buffer:set_content(self.dataview:get_lines())
             self.buffer:apply_highlight(self.dataview:get_hl_rules())
             self:update_truncation_indicator()

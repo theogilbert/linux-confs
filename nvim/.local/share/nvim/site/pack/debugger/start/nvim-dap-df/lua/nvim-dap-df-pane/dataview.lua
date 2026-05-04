@@ -47,6 +47,56 @@ function DataView:new(expression, limit)
 	return self
 end
 
+--- Get column info under the cursor (1-indexed column, column name, is_index),
+--- or nil if the cursor is not on a data column.
+--- @return string|nil col_name
+--- @return boolean|nil is_index
+function DataView:get_column_under_cursor(cursor_col)
+	local col_idx = self:get_column_at_cursor(cursor_col)
+	if col_idx == nil then
+		return nil
+	end
+	local col_name = self:get_column_name(col_idx)
+	if col_name == nil then
+		return nil
+	end
+	return col_name, self:is_index_column(col_idx)
+end
+
+function DataView:sort_column_under_cursor(virtual_col)
+	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+	if col_name ~= nil then
+            self.expression:toggle_sort(col_name, is_index)
+	end
+end
+
+function DataView:get_column_filter_under_cursor(virtual_col)
+	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+	if col_name == nil then
+            return nil
+	end
+
+        return self.expression:get_filter(col_name, is_index)
+end
+
+function DataView:filter_column_under_cursor(virtual_col, condition)
+        if self.expression == nil then
+		return
+	end
+
+	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+	if col_name ~= nil then
+                self.expression:set_filter(col_name, is_index, condition)
+	end
+end
+
+function DataView:clear_filter_under_cursor(virtual_col)
+	local col_name, is_index = self:get_column_under_cursor(virtual_col)
+	if col_name ~= nil then
+            self.expression:clear_filter(col_name, is_index)
+	end
+end
+
 --- Returns the column name at the given 1-indexed column position in the table.
 --- Column 1 is the DataFrame index.
 --- @param col_idx integer 1-indexed column in the formatted table

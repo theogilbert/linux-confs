@@ -269,6 +269,7 @@ vim.api.nvim_create_autocmd("FileType", {
     pattern = "python",
     callback = function()
         vim.keymap.set("n", "<leader>r", runner.run_python_file, { buffer = true, desc = "[R]un python file" })
+        vim.keymap.set("v", "<leader>r", runner.send_selection_to_repl, { buffer = true, desc = "[R]un selection in REPL" })
     end,
 })
 

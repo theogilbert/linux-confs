@@ -95,11 +95,23 @@ vim.opt.updatetime = 250
 -- Displays which-key popup sooner
 -- vim.opt.timeoutlen = 300
 
-vim.g.clipboard = {
-    name = 'OSC 52',
-    copy = { ['+'] = require('vim.ui.clipboard.osc52').copy('+'), ['*'] = require('vim.ui.clipboard.osc52').copy('*') },
-    paste = { ['+'] = require('vim.ui.clipboard.osc52').paste('+'), ['*'] = require('vim.ui.clipboard.osc52').paste('*') },
-}
+if os.getenv("SSH_TTY") then
+    local osc52 = require('vim.ui.clipboard.osc52')
+    local _clipboard = { {''}, 'c' }
+    local function osc52_copy(reg)
+        local send = osc52.copy(reg)
+        return function(lines, regtype)
+            _clipboard = { lines, regtype }
+            send(lines, regtype)
+        end
+    end
+    vim.g.clipboard = {
+        name = 'OSC 52',
+        copy  = { ['+'] = osc52_copy('+'), ['*'] = osc52_copy('*') },
+        -- OSC 52 paste hangs in tmux; return local copy instead.
+        paste = { ['+'] = function() return _clipboard end, ['*'] = function() return _clipboard end },
+    }
+end
 -- Sync clipboard between OS and Neovim.
 -- Schedule the setting after 'UiEnter' because it can increase startup-time.
 -- Remove this option if you want your clipboard to remain independant.

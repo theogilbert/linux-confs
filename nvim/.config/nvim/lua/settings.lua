@@ -7,7 +7,7 @@ vim.g.loaded_netrwPlugin = 1
 vim.g.loaded_python3_provider = 0
 vim.g.bytes_info_statusline = false
 
-vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff'}
+vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff', 'xml'}
 
 vim.g.xml_syntax_folding = 1
 vim.api.nvim_create_autocmd("FileType", {

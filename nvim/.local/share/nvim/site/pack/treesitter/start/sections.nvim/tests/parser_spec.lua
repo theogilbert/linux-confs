@@ -163,6 +163,22 @@ function function2(p3, p4, p5) end
             build_function("function2", 2, { "p3", "p4", "p5" }),
         }, root_nodes)
     end)
+
+    it("should parse method", function()
+        local buf = create_buf_with_text(
+            [[
+function Pane:clear_filter() end
+        ]],
+            "lua"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_function("Pane:clear_filter", 1),
+        }, root_nodes)
+    end)
 end)
 
 describe("parsing python sections", function()

@@ -114,6 +114,7 @@ vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it bu
 
 vim.keymap.set("n", "<leader>sdb", fzflua.dap_breakpoints, { desc = "[S]earch [D]AP [b]reakpoints" })
 
+local runner = require("utilities.runner")
 local session = require("session")
 vim.keymap.set("n", "<leader>vsl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
 vim.keymap.set("n", "<leader>vsc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
@@ -263,4 +264,11 @@ vim.keymap.set({ "n", "x", "o" }, "S", function() require("flash").treesitter() 
 vim.keymap.set({ "o" }, "r", function() require("flash").remote() end, { desc = "Remote Flash" })
 vim.keymap.set({ "o", "x" }, "R", function() require("flash").treesitter_search() end, { desc = "Treesitter Search" })
 vim.keymap.set({ "n", "x", "o" }, "<c-s>", function() require("flash").toggle() end, { desc = "Toggle Flash Search" })
+
+vim.api.nvim_create_autocmd("FileType", {
+    pattern = "python",
+    callback = function()
+        vim.keymap.set("n", "<leader>r", runner.run_python_file, { buffer = true, desc = "[R]un python file" })
+    end,
+})
 

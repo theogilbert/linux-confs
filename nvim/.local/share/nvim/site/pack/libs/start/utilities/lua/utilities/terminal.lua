@@ -3,7 +3,7 @@ local M = {}
 local buf_utils = require("utilities.buffer")
 
 -- Send the selected text to the terminal
-M.send_sel_to_terminal = function()
+M.send_sel_to_terminals = function()
     local selection = buf_utils.get_selection()
 
     if selection == nil or selection == "" then
@@ -11,7 +11,7 @@ M.send_sel_to_terminal = function()
         return
     end
 
-    return M.send_to_terminal(selection)
+    return M.send_to_terminals(selection)
 end
 
 M.send_to_terminals = function(text)

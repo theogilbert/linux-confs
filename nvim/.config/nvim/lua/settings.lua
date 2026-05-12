@@ -97,19 +97,31 @@ vim.opt.updatetime = 250
 
 if os.getenv("SSH_TTY") then
     local osc52 = require('vim.ui.clipboard.osc52')
-    local _clipboard = { {''}, 'c' }
+
     local function osc52_copy(reg)
         local send = osc52.copy(reg)
         return function(lines, regtype)
-            _clipboard = { lines, regtype }
+            -- tmux buffer: enables cross-nvim paste, no terminal round-trip
+            vim.fn.system('tmux set-buffer --', table.concat(lines, '\n'))
+            -- OSC 52: propagates to host's clipboard
             send(lines, regtype)
         end
     end
+
+    local function tmux_paste()
+        local lines = vim.fn.systemlist('tmux save-buffer -')
+        if vim.v.shell_error == 0 then
+            return { lines, 'c' }
+        else
+            return { {''}, 'c' }
+        end
+    end
+
     vim.g.clipboard = {
         name = 'OSC 52',
         copy  = { ['+'] = osc52_copy('+'), ['*'] = osc52_copy('*') },
-        -- OSC 52 paste hangs in tmux; return local copy instead.
-        paste = { ['+'] = function() return _clipboard end, ['*'] = function() return _clipboard end },
+        -- tmux save-buffer: cross-nvim paste without OSC 52 query hang
+        paste = { ['+'] = tmux_paste, ['*'] = tmux_paste },
     }
 end
 -- Sync clipboard between OS and Neovim.

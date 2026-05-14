@@ -174,6 +174,8 @@ vim.keymap.set("n", "<leader>er", api.tree.reload, { desc = "File [E]xplorer - [
 vim.keymap.set("n", "<leader>ec", focus_current_file, { desc = "File [E]xplorer - Focus [C]urrent file" })
 
 vim.keymap.set("n", "<leader>p", lsp_settings.peek_definition, { desc = "LSP - [P]eek definition" })
+
+vim.keymap.set("n", "<leader>P", require("class-peek").peek, { desc = "LSP - [P]eek class structure" })
 vim.keymap.set("n", "<leader>lR", function()
 	vim.cmd("LspRestart")
 end, { desc = "[L]SP - [R]estart" })

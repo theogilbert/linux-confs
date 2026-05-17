@@ -80,11 +80,14 @@ end
 
 local function build_member(sym, uri)
     local row = sym.selectionRange.start.line
+    -- __init__ is grouped with public methods (as the constructor it conceptually
+    -- belongs there) rather than buried in the Magic section.
+    local visibility = sym.name == "__init__" and 0 or visibility_rank(sym.name)
     return {
         name       = sym.name,
         detail     = sym.detail or "",
         is_method  = METHOD_KINDS[sym.kind] or false,
-        visibility = visibility_rank(sym.name),
+        visibility = visibility,
         row        = row,
         col        = sym.selectionRange.start.character,
         uri        = uri,
@@ -161,45 +164,64 @@ local function source_signature(uri, row)
     return parse_method_signature(text)
 end
 
-local function format_member(m)
-    -- 1. Authoritative: read the def line directly. This is the only way to
-    -- recover the impl signature for @overloaded methods (hover only exposes
-    -- the overload variants).
+-- Decides how a member should be displayed and returns (kind, content) where
+-- kind is "method" or "attr". For methods, content is the signature (may be
+-- nil for the default "()"); for attributes, content is the type string.
+-- Result is cached on `m` so this is safe to call multiple times.
+local function classify(m)
+    if m._classified then return m._kind, m._content end
+
+    local kind, content
+    -- 1. Authoritative: read the def line directly from source. The only way
+    -- to recover the impl signature for @overloaded methods, since ty's
+    -- hover only exposes the overload variants.
     local src_sig = source_signature(m.uri, m.row)
     if src_sig then
-        return "  def " .. m.name .. src_sig
+        kind, content = "method", src_sig
+    elseif m.detail:sub(1, 1) == "(" then
+        kind, content = "method", m.detail
+    else
+        local hover = clean_hover(m.hover_text)
+        local hover_sig = hover and parse_method_signature(hover)
+        if hover_sig then
+            kind, content = "method", hover_sig
+        else
+            -- Explicit type annotation → attribute
+            local type_str = m.detail ~= "" and m.detail or parse_attr_type(hover, m.name)
+            if type_str then
+                kind, content = "attr", type_str
+            else
+                -- No info: default to method (most class members are methods,
+                -- and unresolved aliases like `agg = aggregate` end up here).
+                kind, content = "method", nil
+            end
+        end
     end
 
-    local hover = clean_hover(m.hover_text)
+    m._classified = true
+    m._kind       = kind
+    m._content    = content
+    return kind, content
+end
 
-    -- 2. Method signature recovered from detail or hover.
-    local sig
-    if m.detail:sub(1, 1) == "(" then
-        sig = m.detail
-    elseif hover then
-        sig = parse_method_signature(hover)
+local function format_member(m)
+    local kind, content = classify(m)
+    if kind == "method" then
+        return "  def " .. m.name .. (content or "()")
     end
-    if sig then
-        return "  def " .. m.name .. sig
-    end
-
-    -- 3. Type annotation present: treat as attribute.
-    local type_str = m.detail ~= "" and m.detail or parse_attr_type(hover, m.name)
-    if type_str then
-        return "  " .. m.name .. ": " .. type_str
-    end
-
-    -- 4. Nothing useful: default to method (typical for class members).
-    return "  def " .. m.name .. "()"
+    return "  " .. m.name .. ": " .. content
 end
 
 -- Public first, then private (_), then magic (__).
 -- Within each visibility, attributes precede methods.
--- Within each (visibility, kind) bucket, sort alphabetically by name.
+-- Within each (visibility, kind) bucket, sort alphabetically by name —
+-- except __init__ which always leads its bucket.
 local function sort_members(members)
     table.sort(members, function(a, b)
         if a.visibility ~= b.visibility then return a.visibility < b.visibility end
         if a.is_method ~= b.is_method then return not a.is_method end
+        if a.name == "__init__" and b.name ~= "__init__" then return true end
+        if b.name == "__init__" then return false end
         return a.name < b.name
     end)
 end
@@ -313,21 +335,84 @@ local function chase_via_type_definition(client, members, on_done)
     end
 end
 
+-- Sections are tried in order; each member is placed in the first matching
+-- one. `foldable = false` keeps the section always visible (no manual fold).
+local SECTIONS = {
+    { title = "Public attributes", open = false,
+      accept = function(m) return m.visibility == 0 and not m.is_method end },
+    { title = "Public methods",    open = true,
+      accept = function(m) return m.visibility == 0 and m.is_method end },
+    { title = "Private",           open = false,
+      accept = function(m) return m.visibility == 1 end },
+    { title = "Magic",             open = false,
+      accept = function(m) return m.visibility == 2 end },
+}
+
 -- Builds the lines shown in the float plus a parallel `locations` array
--- mapping each line index back to its source uri/row/col (for jump-to-symbol).
+-- and a list of `folds` (each {start, finish, open}) for collapsible sections.
+-- Section headers map to the class location so <C-]>/K on a header jump to
+-- the class definition.
 local function render_structure(class_name, class_range, class_uri, members)
+    -- Recompute is_method from how the member will actually be displayed.
+    -- LSP-assigned kinds are often wrong (e.g. ty marks `agg = aggregate`
+    -- as Variable but we display it as `def agg()`); using `classify` here
+    -- keeps section assignment consistent with the rendered line.
+    for _, m in ipairs(members) do
+        m.is_method = (classify(m) == "method")
+    end
     sort_members(members)
-    local lines     = { "class " .. class_name .. ":" }
-    local locations = { {
+
+    local class_loc = {
         uri = class_uri,
         row = class_range.start.line,
         col = class_range.start.character,
-    } }
-    for _, m in ipairs(members) do
-        table.insert(lines, format_member(m))
-        table.insert(locations, { uri = m.uri, row = m.row, col = m.col })
+    }
+    local lines     = { "class " .. class_name .. ":" }
+    local locations = { class_loc }
+    local folds     = {}
+    local placed   = {}
+
+    for _, section in ipairs(SECTIONS) do
+        local sec_members = {}
+        for _, m in ipairs(members) do
+            if not placed[m] and section.accept(m) then
+                table.insert(sec_members, m)
+                placed[m] = true
+            end
+        end
+        if #sec_members > 0 then
+            local fold_start = #lines + 1
+            table.insert(lines, section.title .. " (" .. #sec_members .. "):")
+            table.insert(locations, class_loc)
+            for _, m in ipairs(sec_members) do
+                table.insert(lines, format_member(m))
+                table.insert(locations, { uri = m.uri, row = m.row, col = m.col })
+            end
+            if section.foldable ~= false then
+                table.insert(folds, { start = fold_start, finish = #lines, open = section.open })
+            end
+        end
     end
-    return lines, locations
+
+    return lines, locations, folds
+end
+
+local function apply_folds(win, folds)
+    vim.api.nvim_win_call(win, function()
+        vim.opt_local.foldmethod = "manual"
+        vim.opt_local.foldenable = true
+        vim.opt_local.foldtext   = "getline(v:foldstart)"
+        vim.opt_local.fillchars:append("fold: ")
+        -- `:N,Mfold` creates a closed fold; reopen the ones marked open.
+        for _, f in ipairs(folds) do
+            vim.cmd(string.format("%d,%dfold", f.start, f.finish))
+        end
+        for _, f in ipairs(folds) do
+            if f.open then
+                vim.cmd(string.format("%dfoldopen", f.start))
+            end
+        end
+    end)
 end
 
 local function open_float(lines, filetype)
@@ -501,9 +586,10 @@ local function show_structure(client, class_name, location, def_bufnr, symbols)
 
             enrich_with_hover(client, members, function()
                 chase_via_type_definition(client, members, function()
-                    local lines, locations = render_structure(
+                    local lines, locations, folds = render_structure(
                         class_name, location.range, location.uri, members)
                     local buf, win = open_float(lines, get_filetype(def_bufnr) or "text")
+                    apply_folds(win, folds)
                     setup_keymaps(buf, win, locations, client)
                 end)
             end)

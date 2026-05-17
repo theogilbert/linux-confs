@@ -12,8 +12,9 @@ local K = view.KIND
 ---@field uri        string
 ---@field overloaded boolean
 ---@field hover_text string?
----@field kind       string?  -- one of K.*; set by finalize_members
----@field content    string?  -- signature or type; set by finalize_members
+---@field kind       string?  -- one of K.*;     set by finalize_members
+---@field content    string?  -- signature/type; set by finalize_members
+---@field async      boolean? -- true for `async def`; set by finalize_members
 
 ---@class class-peek.Location
 ---@field uri string
@@ -174,22 +175,24 @@ local function extract_hover_text(result)
 end
 
 ---Reads up to 30 lines from `row` and parses a method signature directly.
----Authoritative when the line is a `def`: ty's hover for an overloaded method
----only shows the overload variants, so the implementation's signature must
----come from the source.
+---Authoritative when the line is a `def`/`async def`: ty's hover for an
+---overloaded method only shows the overload variants, so the implementation's
+---signature must come from the source.
 ---@param uri string
 ---@param row integer  -- 0-indexed line
----@return string?
+---@return string? signature
+---@return boolean? is_async
 local function source_signature(uri, row)
     local bufnr = vim.uri_to_bufnr(uri)
     if not vim.api.nvim_buf_is_loaded(bufnr) then return nil end
     local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 30, false)
     if #lines == 0 then return nil end
     local text = table.concat(lines, "\n")
-    if not text:match("^%s*def%s") and not text:match("^%s*async%s+def%s") then
+    local is_async = text:match("^%s*async%s+def%s") ~= nil
+    if not is_async and not text:match("^%s*def%s") then
         return nil
     end
-    return parse_method_signature(text)
+    return parse_method_signature(text), is_async
 end
 
 ---Classifies a member name into a visibility bucket. __init__ is grouped
@@ -222,38 +225,42 @@ local function build_member(sym, uri)
     }
 end
 
----Decides display kind (K.METHOD or K.ATTR) and the corresponding content
----(signature or type) for a member.
+---Decides display kind (K.METHOD or K.ATTR), the corresponding content
+---(signature or type), and whether the member is `async def`.
 ---@param m class-peek.Member
----@return string kind     -- one of K.*
----@return string? content -- signature for methods, type for attrs
+---@return string  kind     -- one of K.*
+---@return string? content  -- signature for methods, type for attrs
+---@return boolean async    -- true if the def is async
 local function classify_member(m)
-    local sig = source_signature(m.uri, m.row)
-    if sig then return K.METHOD, sig end
+    local sig, src_async = source_signature(m.uri, m.row)
+    if sig then return K.METHOD, sig, src_async == true end
 
-    if m.detail:sub(1, 1) == "(" then return K.METHOD, m.detail end
+    if m.detail:sub(1, 1) == "(" then return K.METHOD, m.detail, false end
 
     local hover = clean_hover(m.hover_text)
     local hover_sig = hover and parse_method_signature(hover)
-    if hover_sig then return K.METHOD, hover_sig end
+    if hover_sig then
+        return K.METHOD, hover_sig, hover:match("^async%s+def%s") ~= nil
+    end
 
     local type_str = m.detail ~= "" and m.detail or parse_attr_type(hover, m.name)
-    if type_str then return K.ATTR, type_str end
+    if type_str then return K.ATTR, type_str, false end
 
     -- No signal: default to method. Most class members are methods, and
     -- unresolved aliases (e.g. `agg = aggregate` when ty returns Unknown)
     -- end up here.
-    return K.METHOD, nil
+    return K.METHOD, nil, false
 end
 
----Resolves display kind/content for every member and aligns `is_method`
----with what will actually be shown. Done once after enrichment.
+---Resolves display kind/content/async for every member and aligns
+---`is_method` with what will actually be shown. Done once after enrichment.
 ---@param members class-peek.Member[]
 local function finalize_members(members)
     for _, m in ipairs(members) do
-        local kind, content = classify_member(m)
+        local kind, content, async = classify_member(m)
         m.kind      = kind
         m.content   = content
+        m.async     = async
         m.is_method = (kind == K.METHOD)
     end
 end

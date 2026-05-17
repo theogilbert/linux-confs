@@ -45,7 +45,8 @@ end
 ---@return string
 local function format_member(m)
     if m.kind == K.METHOD then
-        return "  def " .. m.name .. (m.content or "()")
+        local prefix = m.async and "async def " or "def "
+        return "  " .. prefix .. m.name .. (m.content or "()")
     end
     return "  " .. m.name .. ": " .. m.content
 end

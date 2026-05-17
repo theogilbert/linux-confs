@@ -195,10 +195,12 @@ end
 
 -- Public first, then private (_), then magic (__).
 -- Within each visibility, attributes precede methods.
+-- Within each (visibility, kind) bucket, sort alphabetically by name.
 local function sort_members(members)
     table.sort(members, function(a, b)
         if a.visibility ~= b.visibility then return a.visibility < b.visibility end
-        return (a.is_method and 1 or 0) < (b.is_method and 1 or 0)
+        if a.is_method ~= b.is_method then return not a.is_method end
+        return a.name < b.name
     end)
 end
 

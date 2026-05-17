@@ -62,15 +62,33 @@ local function visibility_rank(name)
     return 0                                    -- public
 end
 
+-- Walks backwards from `row`, skipping blanks and other decorators, and
+-- returns true if any line in the decorator stack is `@overload`.
+local function is_overload_decorated(uri, row)
+    if row == 0 then return false end
+    local bufnr = vim.uri_to_bufnr(uri)
+    if not vim.api.nvim_buf_is_loaded(bufnr) then return false end
+    for r = row - 1, math.max(0, row - 10), -1 do
+        local line = vim.api.nvim_buf_get_lines(bufnr, r, r + 1, false)[1]
+        if not line then break end
+        local trimmed = line:match("^%s*(.-)%s*$") or ""
+        if trimmed:match("^@[%w_%.]*overload") then return true end
+        if trimmed ~= "" and trimmed:sub(1, 1) ~= "@" then break end
+    end
+    return false
+end
+
 local function build_member(sym, uri)
+    local row = sym.selectionRange.start.line
     return {
         name       = sym.name,
         detail     = sym.detail or "",
         is_method  = METHOD_KINDS[sym.kind] or false,
         visibility = visibility_rank(sym.name),
-        row        = sym.selectionRange.start.line,
+        row        = row,
         col        = sym.selectionRange.start.character,
         uri        = uri,
+        overloaded = is_overload_decorated(uri, row),
     }
 end
 
@@ -86,8 +104,9 @@ local function clean_hover(text)
     return text
 end
 
--- Parses "(params) -> Return" from a (possibly multi-line) method signature.
--- Returns nil if no parenthesized params are found.
+-- Parses "(params) -> Return" from a (possibly multi-line) method signature
+-- starting at the beginning of `text`. The caller is responsible for slicing
+-- `text` so the signature it wants is the first one.
 local function parse_method_signature(text)
     if not text then return nil end
     local pstart = text:find("%(")
@@ -106,7 +125,9 @@ local function parse_method_signature(text)
     if not pend then return nil end
 
     local params = collapse_whitespace(text:sub(pstart + 1, pend - 1)):gsub(",%s*$", "")
-    local return_type = text:sub(pend + 1):match("%->%s*([^:]+)")
+    -- [^:\n]+ stops at a newline so multi-overload hover output doesn't bleed
+    -- the next def's signature into the current one's return type.
+    local return_type = text:sub(pend + 1):match("%->%s*([^:\n]+)")
     if return_type and return_type ~= "" then
         return "(" .. params .. ") -> " .. collapse_whitespace(return_type)
     end
@@ -124,10 +145,34 @@ local function parse_attr_type(text, name)
     return first
 end
 
+-- Reads up to 30 lines starting at `row` and tries to parse a method signature
+-- directly from the source. Authoritative when the line is a `def`/`async def`:
+-- ty's hover for an overloaded method only shows the overload variants, so the
+-- implementation's actual signature has to come from the source itself.
+local function source_signature(uri, row)
+    local bufnr = vim.uri_to_bufnr(uri)
+    if not vim.api.nvim_buf_is_loaded(bufnr) then return nil end
+    local lines = vim.api.nvim_buf_get_lines(bufnr, row, row + 30, false)
+    if #lines == 0 then return nil end
+    local text = table.concat(lines, "\n")
+    if not text:match("^%s*def%s") and not text:match("^%s*async%s+def%s") then
+        return nil
+    end
+    return parse_method_signature(text)
+end
+
 local function format_member(m)
+    -- 1. Authoritative: read the def line directly. This is the only way to
+    -- recover the impl signature for @overloaded methods (hover only exposes
+    -- the overload variants).
+    local src_sig = source_signature(m.uri, m.row)
+    if src_sig then
+        return "  def " .. m.name .. src_sig
+    end
+
     local hover = clean_hover(m.hover_text)
 
-    -- 1. Method signature recovered from detail or hover.
+    -- 2. Method signature recovered from detail or hover.
     local sig
     if m.detail:sub(1, 1) == "(" then
         sig = m.detail
@@ -138,13 +183,13 @@ local function format_member(m)
         return "  def " .. m.name .. sig
     end
 
-    -- 2. Type annotation present: treat as attribute.
+    -- 3. Type annotation present: treat as attribute.
     local type_str = m.detail ~= "" and m.detail or parse_attr_type(hover, m.name)
     if type_str then
         return "  " .. m.name .. ": " .. type_str
     end
 
-    -- 3. Nothing useful: default to method (typical for class members).
+    -- 4. Nothing useful: default to method (typical for class members).
     return "  def " .. m.name .. "()"
 end
 
@@ -191,6 +236,81 @@ local function enrich_with_hover(client, members, on_done)
     end
 end
 
+-- For members where neither detail nor hover yielded a parseable signature
+-- or type (e.g. ty returning "Unknown" for method aliases like
+-- `agg = aggregate`), follow textDocument/typeDefinition to find the function
+-- being aliased and hover there. Only commits the new location when the
+-- chase yields an actual method signature — bare type strings are rejected.
+local function chase_via_type_definition(client, members, on_done)
+    if not client.server_capabilities.typeDefinitionProvider then
+        on_done() return
+    end
+
+    local function has_anything_useful(m)
+        local hover = clean_hover(m.hover_text)
+        if not hover then return false end
+        return parse_method_signature(hover) ~= nil
+            or parse_attr_type(hover, m.name) ~= nil
+    end
+
+    local todo = {}
+    for _, m in ipairs(members) do
+        if m.detail == "" and not has_anything_useful(m) then
+            table.insert(todo, m)
+        end
+    end
+    if #todo == 0 then on_done() return end
+
+    local pending = #todo
+    local function step()
+        pending = pending - 1
+        if pending == 0 then on_done() end
+    end
+
+    for _, m in ipairs(todo) do
+        client:request("textDocument/typeDefinition", {
+            textDocument = { uri = m.uri },
+            position = { line = m.row, character = m.col },
+        }, function(_, result)
+            if not result then step() return end
+            local loc = vim.islist(result) and result[1] or result
+            if not loc then step() return end
+
+            local new_uri   = loc.targetUri or loc.uri
+            local new_range = loc.targetSelectionRange or loc.targetRange or loc.range
+            if not new_uri or not new_range then step() return end
+
+            local new_row = new_range.start.line
+            local new_col = new_range.start.character
+            if new_uri == m.uri and new_row == m.row and new_col == m.col then
+                step() return -- typeDef points back at itself; no new info
+            end
+
+            local target_bufnr = vim.uri_to_bufnr(new_uri)
+            vim.fn.bufload(target_bufnr)
+            ensure_lsp_attached(target_bufnr, client)
+
+            client:request("textDocument/hover", {
+                textDocument = { uri = new_uri },
+                position = { line = new_row, character = new_col },
+            }, function(_, hover_result)
+                local text = extract_hover_text(hover_result)
+                -- Only accept the chase result if it gives an actual method
+                -- signature. Bare type strings like "_SpecialForm" (what ty
+                -- returns for @overload-decorated methods) would otherwise
+                -- mislead us into showing methods as attributes.
+                if text and parse_method_signature(clean_hover(text)) then
+                    m.uri        = new_uri
+                    m.row        = new_row
+                    m.col        = new_col
+                    m.hover_text = text
+                end
+                step()
+            end)
+        end)
+    end
+end
+
 -- Builds the lines shown in the float plus a parallel `locations` array
 -- mapping each line index back to its source uri/row/col (for jump-to-symbol).
 local function render_structure(class_name, class_range, class_uri, members)
@@ -230,7 +350,7 @@ local function open_float(lines, filetype)
     return buf, win
 end
 
-local function setup_keymaps(buf, win, locations)
+local function setup_keymaps(buf, win, locations, client)
     local function close()
         vim.api.nvim_win_close(win, true)
     end
@@ -246,6 +366,22 @@ local function setup_keymaps(buf, win, locations)
         vim.cmd("edit " .. vim.fn.fnameescape(vim.api.nvim_buf_get_name(target)))
         vim.api.nvim_win_set_cursor(0, { loc.row + 1, loc.col })
     end, { buffer = buf, noremap = true, desc = "Jump to symbol" })
+
+    vim.keymap.set("n", "K", function()
+        local loc = locations[vim.api.nvim_win_get_cursor(0)[1]]
+        if not loc then return end
+        client:request("textDocument/hover", {
+            textDocument = { uri = loc.uri },
+            position = { line = loc.row, character = loc.col },
+        }, function(_, result)
+            local text = extract_hover_text(result)
+            if not text or text == "" then return end
+            vim.lsp.util.open_floating_preview(
+                vim.split(text, "\n"),
+                "markdown",
+                { border = "rounded" })
+        end)
+    end, { buffer = buf, noremap = true, desc = "Show hover" })
 end
 
 -- Loads `uri`, ensures the client is attached, then requests documentSymbol.
@@ -275,8 +411,16 @@ local function fetch_class_members(client, uri, class_name, on_done)
             return
         end
         local members = {}
+        local index_of = {}
         for _, child in ipairs(class_sym.children) do
-            table.insert(members, build_member(child, uri))
+            local m = build_member(child, uri)
+            local existing_idx = index_of[m.name]
+            if not existing_idx then
+                table.insert(members, m)
+                index_of[m.name] = #members
+            elseif members[existing_idx].overloaded or not m.overloaded then
+                members[existing_idx] = m
+            end
         end
         on_done(members)
     end)
@@ -327,28 +471,39 @@ local function show_structure(client, class_name, location, def_bufnr, symbols)
     end
 
     local members = {}
-    local seen    = {}
+    local index_of = {} -- name -> position in `members`
+
+    -- Prefer the non-@overload definition (the implementation). When all
+    -- candidates are @overload-decorated (typical of stub files), keep the
+    -- last one seen.
     for _, child in ipairs(class_sym.children) do
         local m = build_member(child, location.uri)
-        table.insert(members, m)
-        seen[m.name] = true
+        local existing_idx = index_of[m.name]
+        if not existing_idx then
+            table.insert(members, m)
+            index_of[m.name] = #members
+        elseif members[existing_idx].overloaded or not m.overloaded then
+            members[existing_idx] = m
+        end
     end
 
     gather_inherited(client, location.uri, class_sym.selectionRange.start, {},
         function(inherited)
             for _, m in ipairs(inherited) do
                 -- Own members shadow inherited ones (Python override semantics).
-                if not seen[m.name] then
+                if not index_of[m.name] then
                     table.insert(members, m)
-                    seen[m.name] = true
+                    index_of[m.name] = #members
                 end
             end
 
             enrich_with_hover(client, members, function()
-                local lines, locations = render_structure(
-                    class_name, location.range, location.uri, members)
-                local buf, win = open_float(lines, get_filetype(def_bufnr) or "text")
-                setup_keymaps(buf, win, locations)
+                chase_via_type_definition(client, members, function()
+                    local lines, locations = render_structure(
+                        class_name, location.range, location.uri, members)
+                    local buf, win = open_float(lines, get_filetype(def_bufnr) or "text")
+                    setup_keymaps(buf, win, locations, client)
+                end)
             end)
         end)
 end

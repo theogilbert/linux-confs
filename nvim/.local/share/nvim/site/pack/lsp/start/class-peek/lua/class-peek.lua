@@ -457,9 +457,30 @@ local function setup_keymaps(buf, win, locations, client)
     vim.keymap.set("n", "K", function()
         local loc = locations[vim.api.nvim_win_get_cursor(0)[1]]
         if not loc then return end
+
+        -- Resolve the word under cursor (param type, return type, etc.) by
+        -- locating it in the source near the member's definition. Falls back
+        -- to the member's own position if the word isn't found.
+        local row, col = loc.row, loc.col
+        local word = vim.fn.expand("<cword>")
+        if word and word ~= "" then
+            local bufnr = vim.uri_to_bufnr(loc.uri)
+            if vim.api.nvim_buf_is_loaded(bufnr) then
+                local source_lines = vim.api.nvim_buf_get_lines(bufnr, loc.row, loc.row + 30, false)
+                local pattern = "%f[%w_]" .. vim.pesc(word) .. "%f[^%w_]"
+                for i, line in ipairs(source_lines) do
+                    local s = line:find(pattern)
+                    if s then
+                        row, col = loc.row + i - 1, s - 1
+                        break
+                    end
+                end
+            end
+        end
+
         client:request("textDocument/hover", {
             textDocument = { uri = loc.uri },
-            position = { line = loc.row, character = loc.col },
+            position = { line = row, character = col },
         }, function(_, result)
             local text = extract_hover_text(result)
             if not text or text == "" then return end

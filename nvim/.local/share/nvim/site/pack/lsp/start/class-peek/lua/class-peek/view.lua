@@ -19,7 +19,7 @@ local K = M.KIND
 ---@class class-peek.Fold
 ---@field start  integer  -- 1-indexed line number
 ---@field finish integer  -- 1-indexed line number
----@field open   boolean
+---@field open   boolean  -- whether the fold starts open
 
 local SECTIONS = {
     { title = "Public attributes", open = false,
@@ -44,11 +44,16 @@ end
 ---@param m class-peek.Member
 ---@return string
 local function format_member(m)
+    local line
     if m.kind == K.METHOD then
         local prefix = m.async and "async def " or "def "
-        return "  " .. prefix .. m.name .. (m.content or "()")
+        line = "  " .. prefix .. m.name .. (m.content or "()")
+    else
+        line = "  " .. m.name .. ": " .. m.content
     end
-    return "  " .. m.name .. ": " .. m.content
+    -- LSP `detail` can be multi-line; flatten so each member is exactly one
+    -- buffer line. Otherwise fold line ranges drift and break the display.
+    return (line:gsub("[\r\n]+", " "))
 end
 
 ---Public first, then private (_), then magic (__). Within each visibility,
@@ -98,6 +103,13 @@ local function render_structure(class_name, class_range, class_uri, members)
             end
         end
         if #sec_members > 0 then
+            -- Blank separator before each section after the first keeps folds
+            -- non-adjacent. Vim's manual folds can merge or misbehave when
+            -- one fold ends on line N and another starts on line N+1.
+            if #folds > 0 then
+                -- table.insert(lines, "")
+                table.insert(locations, class_loc)
+            end
             local fold_start = #lines + 1
             table.insert(lines, section.title .. " (" .. #sec_members .. "):")
             table.insert(locations, class_loc)
@@ -141,20 +153,26 @@ end
 ---@param win integer
 ---@param folds class-peek.Fold[]
 local function apply_folds(win, folds)
+    if #folds == 0 then return end
     vim.api.nvim_win_call(win, function()
         vim.opt_local.foldmethod = "manual"
         vim.opt_local.foldenable = true
         vim.opt_local.foldtext   = "getline(v:foldstart)"
         vim.opt_local.fillchars:append("fold: ")
-        -- `:N,Mfold` creates a closed fold; reopen the ones marked open.
         for _, f in ipairs(folds) do
             vim.cmd(string.format("%d,%dfold", f.start, f.finish))
         end
+        -- :fold creates closed folds. Force-open everything via foldlevel,
+        -- then close the ones that should start closed. Going through
+        -- foldlevel avoids the per-fold `:foldopen` flakiness we hit before.
+        vim.opt_local.foldlevel = 99
         for _, f in ipairs(folds) do
-            if f.open then
-                vim.cmd(string.format("%dfoldopen", f.start))
+            if not f.open then
+                vim.api.nvim_win_set_cursor(win, { f.start, 0 })
+                vim.cmd("normal! zc")
             end
         end
+        vim.api.nvim_win_set_cursor(win, { 1, 0 })
     end)
 end
 

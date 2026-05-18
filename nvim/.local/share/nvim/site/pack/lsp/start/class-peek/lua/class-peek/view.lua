@@ -22,10 +22,10 @@ local K = M.KIND
 ---@field open   boolean  -- whether the fold starts open
 
 local SECTIONS = {
-    { title = "Public attributes", open = false,
-      accept = function(m) return m.visibility == V.PUBLIC and not m.is_method end },
     { title = "Public methods",    open = true,
       accept = function(m) return m.visibility == V.PUBLIC and m.is_method end },
+    { title = "Public attributes", open = false,
+      accept = function(m) return m.visibility == V.PUBLIC and not m.is_method end },
     { title = "Private",           open = false,
       accept = function(m) return m.visibility == V.PRIVATE end },
     { title = "Magic",             open = false,

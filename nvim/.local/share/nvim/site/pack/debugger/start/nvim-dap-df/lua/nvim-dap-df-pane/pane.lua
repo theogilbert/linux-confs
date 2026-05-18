@@ -186,6 +186,10 @@ function Pane:setup_keymaps()
 		self:scroll_columns(-1)
 	end, { desc = "Scroll left by one column" })
 
+	self.buffer:set_keymap("n", "c", function()
+		self:prompt_jump_to_column()
+	end, { desc = "Jump to column" })
+
 	self.buffer:set_keymap("n", "+", function()
 		self:resize(vim.v.count1)
 	end, { desc = "Grow pane height" })
@@ -341,6 +345,58 @@ function Pane:filter_column()
                 self.dataview:filter_column_under_cursor(virtual_col, condition)
 		self:refresh()
 	end)
+end
+
+-- Scroll the window so the named column sits at the left edge and move
+-- the cursor onto its first character on the current row.
+--- @param col_name string
+function Pane:jump_to_column(col_name)
+	if not self:is_open() or self.dataview == nil then
+		return
+	end
+	local target = self.dataview:get_leftcol_for_column(col_name)
+	if target == nil then
+		return
+	end
+
+	vim.api.nvim_win_call(self.win_id, function()
+		local row = vim.fn.line(".")
+		-- The first visible character at leftcol=target is at virtcol target+1.
+		local byte_col = vim.fn.virtcol2col(0, row, target + 1) - 1
+		vim.api.nvim_win_set_cursor(self.win_id, { row, math.max(0, byte_col) })
+		vim.fn.winrestview({ leftcol = target })
+	end)
+
+	self:update_truncation_indicator()
+end
+
+-- Prompt the user with fzf-lua to pick a column then jump to it.
+function Pane:prompt_jump_to_column()
+	if self.dataview == nil then
+		return
+	end
+
+	local columns = self.dataview:get_column_names()
+	if #columns == 0 then
+		return
+	end
+
+	local ok, fzf = pcall(require, "fzf-lua")
+	if not ok then
+		vim.notify("fzf-lua is required to jump to columns", vim.log.levels.ERROR)
+		return
+	end
+
+	fzf.fzf_exec(columns, {
+		prompt = "Column> ",
+		actions = {
+			["default"] = function(selected)
+				if selected and selected[1] then
+					self:jump_to_column(selected[1])
+				end
+			end,
+		},
+	})
 end
 
 -- Clear the filter on the column under cursor

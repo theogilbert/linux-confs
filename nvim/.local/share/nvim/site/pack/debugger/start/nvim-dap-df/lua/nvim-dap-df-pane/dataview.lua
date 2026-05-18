@@ -122,6 +122,34 @@ function DataView:get_column_name(col_idx)
 	return self.column_names[col_idx]
 end
 
+--- Returns the list of column names in display order. Column 1 is the
+--- DataFrame index. Returns an empty list when no data has been evaluated.
+--- @return string[]
+function DataView:get_column_names()
+	if self.column_names == nil then
+		return {}
+	end
+	return vim.deepcopy(self.column_names)
+end
+
+--- Returns the leftcol value that aligns the named column to the left edge
+--- of the window. Returns nil when the column is unknown or no table is
+--- loaded yet.
+--- @param col_name string
+--- @return integer|nil
+function DataView:get_leftcol_for_column(col_name)
+	if self.column_names == nil or self.table == nil then
+		return nil
+	end
+	local boundaries = self:get_column_boundaries()
+	for i, name in ipairs(self.column_names) do
+		if name == col_name then
+			return boundaries[i]
+		end
+	end
+	return nil
+end
+
 --- Returns whether the given column is the DataFrame index.
 --- @param col_idx integer 1-indexed column
 --- @return boolean

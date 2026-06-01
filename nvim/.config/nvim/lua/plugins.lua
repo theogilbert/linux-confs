@@ -45,6 +45,9 @@ require("mini.surround").setup({
     delete = 'md', -- Delete surrounding
     replace = 'ms', -- Replace surrounding
     find = 'mf', -- Find surrounding (to the right)
+    find_left = '', -- Disable Find surrounding (to the left)
+    highlight = '', -- Disable Highlight surrounding
+    update_n_lines = '', -- Disable Update `n_lines`
   },
   search_method = 'cover_or_nearest',
 })

@@ -97,18 +97,15 @@ local function render_structure(class_name, class_range, class_uri, members)
             end
         end
 
-        table.insert(locations, nil)  -- Insert nil loc on header sections
         if #sec_members > 0 then
             table.insert(lines, section.title .. " (" .. #sec_members .. "):")
-            table.insert(locations, class_loc)
+            table.insert(locations, class_loc)  -- Insert nil loc on header sections
             for _, m in ipairs(sec_members) do
                 table.insert(lines, format_member(m))
                 table.insert(locations, { uri = m.uri, row = m.row, col = m.col })
             end
         end
     end
-
-    vim.notify("Lines: " .. #lines .. " - Locs: " .. #locations)
 
     return lines, locations
 end

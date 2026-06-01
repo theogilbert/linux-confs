@@ -16,10 +16,6 @@ M.KIND = {
 }
 local K = M.KIND
 
----@class class-peek.Fold
----@field start  integer  -- 1-indexed line number
----@field finish integer  -- 1-indexed line number
----@field open   boolean  -- whether the fold starts open
 
 local SECTIONS = {
     { title = "Public methods",    open = true,
@@ -70,9 +66,9 @@ local function sort_members(members)
     end)
 end
 
----Builds the lines shown in the float, a parallel `locations` array mapping
----each line to source uri/row/col, and a list of folds for collapsible
----sections. Section header lines map to the class location so <C-]>/K on a
+---Builds the lines shown in the float and a parallel `locations` array mapping
+---each line to source uri/row/col.
+---Section header lines map to the class location so <C-]>/K on a
 ---header target the class definition.
 ---@param class_name string
 ---@param class_range table   -- LSP Range
@@ -80,7 +76,6 @@ end
 ---@param members class-peek.Member[]
 ---@return string[] lines
 ---@return class-peek.Location[] locations
----@return class-peek.Fold[] folds
 local function render_structure(class_name, class_range, class_uri, members)
     sort_members(members)
 
@@ -91,7 +86,6 @@ local function render_structure(class_name, class_range, class_uri, members)
     }
     local lines     = { "class " .. class_name .. ":" }
     local locations = { class_loc }
-    local folds     = {}
     local placed    = {}
 
     for _, section in ipairs(SECTIONS) do
@@ -102,26 +96,21 @@ local function render_structure(class_name, class_range, class_uri, members)
                 placed[m] = true
             end
         end
+
+        table.insert(locations, nil)  -- Insert nil loc on header sections
         if #sec_members > 0 then
-            -- Blank separator before each section after the first keeps folds
-            -- non-adjacent. Vim's manual folds can merge or misbehave when
-            -- one fold ends on line N and another starts on line N+1.
-            if #folds > 0 then
-                -- table.insert(lines, "")
-                table.insert(locations, class_loc)
-            end
-            local fold_start = #lines + 1
             table.insert(lines, section.title .. " (" .. #sec_members .. "):")
             table.insert(locations, class_loc)
             for _, m in ipairs(sec_members) do
                 table.insert(lines, format_member(m))
                 table.insert(locations, { uri = m.uri, row = m.row, col = m.col })
             end
-            table.insert(folds, { start = fold_start, finish = #lines, open = section.open })
         end
     end
 
-    return lines, locations, folds
+    vim.notify("Lines: " .. #lines .. " - Locs: " .. #locations)
+
+    return lines, locations
 end
 
 ---@param lines string[]
@@ -151,28 +140,18 @@ local function open_float(lines, filetype)
 end
 
 ---@param win integer
----@param folds class-peek.Fold[]
-local function apply_folds(win, folds)
-    if #folds == 0 then return end
+local function apply_folds(win)
     vim.api.nvim_win_call(win, function()
-        vim.opt_local.foldmethod = "manual"
         vim.opt_local.foldenable = true
-        vim.opt_local.foldtext   = "getline(v:foldstart)"
         vim.opt_local.fillchars:append("fold: ")
-        for _, f in ipairs(folds) do
-            vim.cmd(string.format("%d,%dfold", f.start, f.finish))
-        end
-        -- :fold creates closed folds. Force-open everything via foldlevel,
-        -- then close the ones that should start closed. Going through
-        -- foldlevel avoids the per-fold `:foldopen` flakiness we hit before.
-        vim.opt_local.foldlevel = 99
-        for _, f in ipairs(folds) do
-            if not f.open then
-                vim.api.nvim_win_set_cursor(win, { f.start, 0 })
-                vim.cmd("normal! zc")
-            end
-        end
-        vim.api.nvim_win_set_cursor(win, { 1, 0 })
+        vim.opt_local.foldmethod = 'expr'
+        -- A fold is defined as a block of lines which all start with a space:
+        vim.opt_local.foldexpr = 'getline(v:lnum)[0]==" "'
+        -- When folded, a fold is rendered as "  {n} members..."
+        vim.opt_local.foldtext = '"  " .. (v:foldend - v:foldstart + 1) .. " members..."'
+        vim.cmd("normal! zM") -- close all folds
+        vim.cmd("normal! zj") -- jump to the next (first) fold region
+        vim.cmd("normal! zo") -- open it
     end)
 end
 
@@ -250,10 +229,10 @@ end
 ---@param filetype string
 ---@param client vim.lsp.Client
 M.show = function(class_name, class_range, class_uri, members, filetype, client)
-    local lines, locations, folds = render_structure(
+    local lines, locations = render_structure(
         class_name, class_range, class_uri, members)
     local buf, win = open_float(lines, filetype)
-    apply_folds(win, folds)
+    apply_folds(win)
     setup_keymaps(buf, win, locations, client)
 end
 

@@ -146,7 +146,7 @@ local function toggle_ruff_watcher()
             pattern = "*.py",
             callback = ruff_format_on_save,
         })
-        vim.notify("Ruff file watcher enabled")
+        vim.notify("Ruff file watcher enabled for Python files")
     else
         vim.api.nvim_clear_autocmds({ group = augroup, pattern = "*.py" })
         vim.notify("Ruff file watcher disabled")

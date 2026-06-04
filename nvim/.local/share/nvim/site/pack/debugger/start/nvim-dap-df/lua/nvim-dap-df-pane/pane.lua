@@ -33,6 +33,7 @@ end
 --- Shows ◂/▸ on the edge of every buffer line when the table extends beyond
 --- the edge of the window.
 function Pane:update_truncation_indicator()
+	if not self:is_open() then return end
 	vim.api.nvim_buf_clear_namespace(self.buffer.buf_id, hl.TRUNCATION_NS_ID, 0, -1)
 
 	local boundaries = self.dataview:get_column_boundaries()
@@ -107,20 +108,46 @@ function Pane:open(split_from, split_dir)
 		end,
 	})
 
+	-- Detect the window being closed without going through Pane:close()
+	-- (e.g. <C-w>q or :q). Pane:close() deregisters this before closing the
+	-- window, so it only fires on external closes.
+	self.close_autocmd_id = vim.api.nvim_create_autocmd("WinClosed", {
+		pattern = tostring(self.win_id),
+		once = true,
+		callback = function()
+			self:_teardown()
+			if self.on_close then
+				self.on_close(self)
+			end
+		end,
+	})
+
 	self:refresh()
+end
+
+-- Delete the pane's autocmds and reset window state. Safe to call repeatedly.
+function Pane:_teardown()
+	if self.scroll_autocmd_id then
+		pcall(vim.api.nvim_del_autocmd, self.scroll_autocmd_id)
+		self.scroll_autocmd_id = nil
+	end
+	if self.close_autocmd_id then
+		pcall(vim.api.nvim_del_autocmd, self.close_autocmd_id)
+		self.close_autocmd_id = nil
+	end
+	self.win_id = nil
+	self.is_open_flag = false
 end
 
 -- Close the pane window
 function Pane:close()
-	if self.scroll_autocmd_id then
-		vim.api.nvim_del_autocmd(self.scroll_autocmd_id)
-		self.scroll_autocmd_id = nil
+	-- Tear down first so closing the window does not trigger the WinClosed
+	-- (external close) handler, which would call on_close.
+	local win_id = self.win_id
+	self:_teardown()
+	if win_id and vim.api.nvim_win_is_valid(win_id) then
+		vim.api.nvim_win_close(win_id, true)
 	end
-	if self.win_id and vim.api.nvim_win_is_valid(self.win_id) then
-		vim.api.nvim_win_close(self.win_id, true)
-	end
-	self.win_id = nil
-	self.is_open_flag = false
 end
 
 -- Check if the pane is open

@@ -5,6 +5,11 @@
 --  See `:help hlsearch`
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 
+vim.keymap.set("n", "<C-Up>",    "<Cmd>resize +1<CR>", { silent = true })
+vim.keymap.set("n", "<C-Down>",  "<Cmd>resize -1<CR>", { silent = true })
+vim.keymap.set("n", "<C-Left>",  "<Cmd>vertical resize +1<CR>", { silent = true })
+vim.keymap.set("n", "<C-Right>", "<Cmd>vertical resize +1<CR>", { silent = true })
+
 vim.keymap.set("n", "<leader>f", function()
     local win_list = vim.api.nvim_list_wins()
     for idx = #win_list, 1, -1 do

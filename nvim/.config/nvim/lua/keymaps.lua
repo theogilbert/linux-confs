@@ -7,7 +7,7 @@ vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 
 vim.keymap.set("n", "<C-Up>",    "<Cmd>resize +1<CR>", { silent = true })
 vim.keymap.set("n", "<C-Down>",  "<Cmd>resize -1<CR>", { silent = true })
-vim.keymap.set("n", "<C-Left>",  "<Cmd>vertical resize +1<CR>", { silent = true })
+vim.keymap.set("n", "<C-Left>",  "<Cmd>vertical resize -1<CR>", { silent = true })
 vim.keymap.set("n", "<C-Right>", "<Cmd>vertical resize +1<CR>", { silent = true })
 
 vim.keymap.set("n", "<leader>f", function()

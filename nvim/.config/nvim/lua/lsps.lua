@@ -77,6 +77,9 @@ vim.lsp.config("basedpyright", {
 vim.lsp.config("ty", {
     settings = {
         ty = {
+            completions = {
+                completeFunctionParentheses = true,
+            },
         }
     },
     capabilities = capabilities,

@@ -7,7 +7,8 @@ local SHORT_LEN = 50
 
 local namespace_hi_test_id = vim.api.nvim_create_namespace("NvimTreeHiTest")
 
----@class (exact) HighlightDisplay: Class for :NvimTreeHiTest
+---For :NvimTreeHiTest
+---@class (exact) HighlightDisplay: nvim_tree.Class
 ---@field group string nvim-tree highlight group name
 ---@field links string link chain to a concretely defined group
 ---@field def string :hi concrete definition after following any links
@@ -137,11 +138,7 @@ return function()
   render_displays("other, long", displays_long, bufnr, l)
 
   -- finalise and focus the buffer
-  if vim.fn.has("nvim-0.10") == 1 then
-    vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
-  else
-    vim.api.nvim_buf_set_option(bufnr, "modifiable", false) ---@diagnostic disable-line: deprecated
-  end
+  vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
 
   vim.cmd.buffer(bufnr)
 end

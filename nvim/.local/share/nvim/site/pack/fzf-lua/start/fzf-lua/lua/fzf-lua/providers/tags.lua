@@ -201,8 +201,8 @@ M.btags = function(opts)
   -- Used as fallback to pipe the tags into fzf from stdout
   opts._btags_cmd = string.format("%s %s %s",
     opts.ctags_bin or "ctags",
-    opts.ctags_args or "-f -",
-    opts.filename)
+    opts.ctags_args or string.format("-f - %s", utils.is_darwin() and "" or "--excmd=combine"),
+    libuv.shellescape(opts.filename))
   if opts.ctags_autogen then
     opts.cmd = opts.cmd or opts._btags_cmd
   end
@@ -251,7 +251,7 @@ end
 M.grep_cword = function(opts)
   if not opts then opts = {} end
   opts.no_esc = true
-  opts.search = [[\b]] .. utils.rg_escape(vim.fn.expand("<cword>")) .. [[\b]]
+  opts.search = utils.rg_escape_cword(vim.fn.expand("<cword>"))
   return M.grep(opts)
 end
 

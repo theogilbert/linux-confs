@@ -151,16 +151,7 @@ function neotest.Client:get_nearest(file_path, row, args)
   if not positions then
     return
   end
-  local nearest
-  for _, node in positions:iter_nodes() do
-    node = node:closest_node_with("range") or node
-    local range = node:data().range
-    if range and range[1] <= row then
-      nearest = node
-    else
-      return nearest, adapter_id
-    end
-  end
+  local nearest = lib.positions.nearest(positions, row)
   return nearest, adapter_id
 end
 
@@ -582,7 +573,7 @@ function neotest.Client:_update_adapters(dir)
     to_add[#to_add + 1] = entry.adapter.is_test_file
   end
   if #to_add > 0 and lib.subprocess.enabled() then
-    local suc, err = pcall(lib.subprocess.add_to_rtp, to_add)
+    local suc, err = pcall(lib.subprocess.add_paths_to_rtp, to_add)
     if not suc then
       logger.error("Failed to add adapter to rtp", err)
     end

@@ -145,11 +145,11 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 	pattern = "*",
 	callback = function()
 		if cmp_timer then
-			vim.loop.timer_stop(cmp_timer)
+			vim.uv.timer_stop(cmp_timer)
 			cmp_timer = nil
 		end
 
-		cmp_timer = vim.loop.new_timer()
+		cmp_timer = vim.uv.new_timer()
 		cmp_timer:start(
 			300,
 			0,

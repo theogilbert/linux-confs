@@ -24,29 +24,27 @@ local FzfLua = require("fzf-lua")
 ---@field cmd? string[] cmd used to generated content
 ---@field cmd_stream? boolean stream process cmd content
 ---@field cmd_opts? vim.SystemOpts vim.system opts for cmd
+---@field _is_ueberzug? boolean ueberzug cmd
+---@field pty? boolean require pty for cmd
 
 ---@class fzf-lua.buffer_or_file.Entry : fzf-lua.path.Entry, fzf-lua.cmd.Entry,{}
 ---@field do_not_cache? boolean
 ---@field no_scrollbar? boolean
 ---@field tick? integer
 ---@field no_syntax? boolean
----@field cached? fzf-lua.buffer_or_file.Bcache
+---@field cached? fzf-lua.BcacheEntry
 ---@field filetype? string
 ---@field content? (string|fzf-lua.line)[]
 ---@field end_line? integer 1-based
 ---@field end_col? integer 1-based
 ---@field open_term? boolean open_term for content (cmd always open_term)
+---@field cache_key? any unique cache key for entry (to reuse preview buffer)
+---@field _scratch_buf? integer "unmanaged" buffer
 
----@class fzf-lua.keymap.Entry
+---@class fzf-lua.keymap.Entry: fzf-lua.buffer_or_file.Entry
 ---@field vmap string?
 ---@field mode string?
 ---@field key string?
-
----@class fzf-lua.buffer_or_file.Bcache
----@field bufnr integer
----@field min_winopts? boolean
----@field invalid? boolean buffer content changed
----@field tick? integer
 
 ---@alias fzf-lua.config.Action fzf-lua.ActionSpec|fzf-lua.shell.data2|fzf-lua.shell.data2[]|false
 ---@alias fzf-lua.config.Actions { [1]?: boolean, [string]: fzf-lua.config.Action }
@@ -58,6 +56,7 @@ local FzfLua = require("fzf-lua")
 ---@field reload? boolean
 ---@field field_index? string
 ---@field desc? string
+---@field header? string|false
 ---@field prefix? string
 ---@field postfix? string
 ---@field reuse? boolean
@@ -204,7 +203,7 @@ local FzfLua = require("fzf-lua")
 ---@field _actions? fun():fzf-lua.config.Actions?
 ---@field __ACT_TO? function
 ---@field _start? boolean
----@field _treesitter? (fun(line: string):string?,string?,string?,string?)|boolean?
+---@field _treesitter? (fun(line: string):string?,string?,string|table?,string?)|boolean?
 ---@field help_open_win? fun(buf: integer, enter: boolean, config: vim.api.keyset.win_config): integer
 ---Auto close fzf-lua interface when a terminal is opened, set to `false` to keep the interface open.
 ---@field autoclose? boolean

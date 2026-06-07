@@ -68,6 +68,7 @@ require("cmp-plugins")
 
 vim.cmd("packadd! sonokai")
 vim.g.sonokai_style = "shusia"
+vim.g.sonokai_colors_override = { bg0 = { '#262626', '235' } }
 vim.cmd.colorscheme("sonokai")
 
 -- fzf-lua

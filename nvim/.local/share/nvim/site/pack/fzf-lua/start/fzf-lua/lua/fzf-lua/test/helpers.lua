@@ -36,8 +36,8 @@ local os_detect = {
   },
   MAC = { name = "MacOS", fn = function() return vim.fn.has("mac") == 1 end },
   LINUX = { name = "Linux", fn = function() return vim.fn.has("linux") == 1 end },
-  STABLE = { name = "Neovim stable", fn = function() return M.NVIM_VERSION() == "0.11.6" end },
-  NIGHTLY = { name = "Neovim nightly", fn = function() return vim.fn.has("nvim-0.12") == 1 end },
+  STABLE = { name = "Neovim stable", fn = function() return M.NVIM_VERSION() == "0.12.2" end },
+  NIGHTLY = { name = "Neovim nightly", fn = function() return vim.fn.has("nvim-0.13") == 1 end },
 }
 
 -- Creates M.IS_WIN(), M.IS_NOT_WIN(), M.SKIP_IF_WIN(), etc
@@ -131,7 +131,7 @@ M.new_child_neovim = function()
   local child_lua = child.lua
   child.lua = function(code, arg)
     if type(code) == "string" then return child_lua(code, arg) end
-    return require("fzf-lua.test.exec_lua").run(child, 2, code, arg)
+    return require("fzf-lua.test.exec_lua").run(child_lua, 2, code, arg)
   end
 
   -- TODO: support "function" upvalue
@@ -331,7 +331,7 @@ M.new_child_neovim = function()
   end
 
   local wait_timeout = (M.IS_LINUX() and 2000 or 5000)
-  wait_timeout = os.getenv("CI") and wait_timeout * 2 or wait_timeout
+  wait_timeout = os.getenv("CI") and wait_timeout * 3 or wait_timeout
   --- waits until condition fn evals to true, checking every interval ms
   --- times out at timeout ms
   ---@param condition fun(): boolean

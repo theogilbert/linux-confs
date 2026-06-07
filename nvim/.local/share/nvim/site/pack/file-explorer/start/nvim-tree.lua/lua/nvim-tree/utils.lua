@@ -1,12 +1,8 @@
+local config = require("nvim-tree.config")
+
 local M = {
   debouncers = {},
 }
-
-M.is_unix = vim.fn.has("unix") == 1
-M.is_macos = vim.fn.has("mac") == 1 or vim.fn.has("macunix") == 1
-M.is_wsl = vim.fn.has("wsl") == 1
--- false for WSL
-M.is_windows = vim.fn.has("win32") == 1 or vim.fn.has("win32unix") == 1
 
 ---@param haystack string
 ---@param needle string
@@ -78,7 +74,7 @@ function M.path_relative(path, relative_to)
   end
 
   local norm_path = path
-  if M.is_windows then
+  if config.os.windows then
     norm_path = win_norm_path(norm_path)
   end
 
@@ -168,12 +164,7 @@ function M.rename_loaded_buffers(old_path, new_path)
         vim.api.nvim_buf_set_name(buf, new_path .. buf_name:sub(#old_path + 1))
         -- to avoid the 'overwrite existing file' error message on write for
         -- normal files
-        local buftype
-        if vim.fn.has("nvim-0.10") == 1 then
-          buftype = vim.api.nvim_get_option_value("buftype", { buf = buf })
-        else
-          buftype = vim.api.nvim_buf_get_option(buf, "buftype") ---@diagnostic disable-line: deprecated
-        end
+        local buftype = vim.api.nvim_get_option_value("buftype", { buf = buf })
 
         if buftype == "" then
           vim.api.nvim_buf_call(buf, function()
@@ -187,14 +178,14 @@ function M.rename_loaded_buffers(old_path, new_path)
 end
 
 local is_windows_drive = function(path)
-  return (M.is_windows) and (path:match("^%a:\\$") ~= nil)
+  return (config.os.windows) and (path:match("^%a:\\$") ~= nil)
 end
 
 ---@param path string path to file or directory
 ---@return boolean
 function M.file_exists(path)
-  if not (M.is_windows or M.is_wsl) then
-    local _, error = vim.loop.fs_stat(path)
+  if not (config.os.windows or config.os.wsl) then
+    local _, error = vim.uv.fs_stat(path)
     return error == nil
   end
 
@@ -214,14 +205,14 @@ function M.file_exists(path)
   local parent = vim.fn.fnamemodify(path, ":h")
   local filename = vim.fn.fnamemodify(path, ":t")
 
-  local handle = vim.loop.fs_scandir(parent)
+  local handle = vim.uv.fs_scandir(parent)
   if not handle then
     -- File can not exist if its parent directory does not exist
     return false
   end
 
   while true do
-    local name, _ = vim.loop.fs_scandir_next(handle)
+    local name, _ = vim.uv.fs_scandir_next(handle)
     if not name then
       break
     end
@@ -236,7 +227,7 @@ end
 ---@param path string
 ---@return string
 function M.canonical_path(path)
-  if M.is_windows and path:match("^%a:") then
+  if config.os.windows and path:match("^%a:") then
     return path:sub(1, 1):upper() .. path:sub(2)
   end
   return path
@@ -257,7 +248,7 @@ function M.escape_special_chars(path)
   if path == nil then
     return path
   end
-  return M.is_windows and escape_special_char_for_windows(path) or path
+  return config.os.windows and escape_special_char_for_windows(path) or path
 end
 
 local function round(value)
@@ -340,7 +331,7 @@ function M.debounce(context, timeout, callback)
     timer_stop_close(debouncer.timer)
   end
 
-  local timer = vim.loop.new_timer()
+  local timer = vim.uv.new_timer()
   if not timer then
     return
   end
@@ -447,11 +438,11 @@ end
 ---@param absolute_path string
 ---@return boolean
 function M.is_executable(absolute_path)
-  if M.is_windows or M.is_wsl then
+  if config.os.windows or config.os.wsl then
     --- executable detection on windows is buggy and not performant hence it is disabled
     return false
   else
-    return vim.loop.fs_access(absolute_path, "X") or false
+    return vim.uv.fs_access(absolute_path, "X") or false
   end
 end
 
@@ -481,6 +472,75 @@ function M.enumerate_options(opts, was_set)
   end
 
   return res
+end
+
+---Filter out nodes that are descendants of other nodes in the list.
+---When a directory is selected along with its children, only the directory needs to be operated on.
+---@param nodes Node[]
+---@return Node[]
+function M.filter_descendant_nodes(nodes)
+  return vim.tbl_filter(function(node)
+    local parent = node.parent
+    while parent do
+      if vim.tbl_contains(nodes, parent) then
+        return false
+      end
+      parent = parent.parent
+    end
+    return true
+  end, nodes)
+end
+
+---Build confirmation prompt strings based on default_yes config.
+---@param prompt_select string
+---@param default_yes boolean
+---@return string prompt_input
+---@return string[] items_short
+---@return string[] items_long
+function M.confirm_prompt(prompt_select, default_yes)
+  if default_yes then
+    return prompt_select .. " Y/n: ", { "", "n" }, { "Yes", "No" }
+  else
+    return prompt_select .. " y/N: ", { "", "y" }, { "No", "Yes" }
+  end
+end
+
+---Check if the current mode is visual or select (v, V, CTRL-V, s, S, CTRL-S).
+---@return boolean
+function M.is_visual_mode()
+  local mode = vim.api.nvim_get_mode().mode
+  local visual_modes = {
+    v = true,
+    V = true,
+    ["\22"] = true, -- \22 is CTRL-V
+    s = true,
+    S = true,
+    ["\19"] = true, -- \19 is CTRL-S
+  }
+  return visual_modes[mode] == true or false
+end
+
+---Exit visual mode synchronously.
+function M.exit_visual_mode()
+  local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+  vim.api.nvim_feedkeys(esc, "nx", false)
+end
+
+---Get the visual selection range nodes, exiting visual mode.
+---@return Node[]?
+function M.get_visual_nodes()
+  local explorer = require("nvim-tree.core").get_explorer()
+  if not explorer then
+    return nil
+  end
+  local start_line = vim.fn.line("v")
+  local end_line = vim.fn.line(".")
+  if start_line > end_line then
+    start_line, end_line = end_line, start_line
+  end
+  local nodes = explorer:get_nodes_in_range(start_line, end_line)
+  M.exit_visual_mode()
+  return nodes
 end
 
 return M

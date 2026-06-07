@@ -15,27 +15,31 @@ check: luals
 luacheck:
 	luacheck --codes --quiet lua --exclude-files "**/_meta/**"
 
-# --diagnosis-as-error does not function for workspace, hence we post-process the output
 style-check:
-	CodeFormat check --config .editorconfig --diagnosis-as-error --workspace lua
+	scripts/luals-check.sh codestyle-check
 
 style-doc:
 	scripts/doc-comments.sh
 
 luals:
-	@scripts/luals-check.sh
+	scripts/luals-check.sh
 
 #
-# fixes
+# format
 #
-style-fix:
+format-fix:
 	CodeFormat format --config .editorconfig --workspace lua
+
+format-check:
+	CodeFormat format --config .editorconfig --workspace lua
+	git diff --exit-code lua
 
 #
 # utility
 #
 help-update:
-	scripts/help-update.sh
+	scripts/vimdoc.sh doc
+	scripts/help-defaults.sh
 
 #
 # CI
@@ -44,5 +48,5 @@ help-check: help-update
 	git diff --exit-code doc/nvim-tree-lua.txt
 
 
-.PHONY: all lint style check luacheck style-check style-doc luals style-fix help-update help-check
+.PHONY: all lint style check luacheck style-check style-doc luals format-fix format-check help-update help-check
 

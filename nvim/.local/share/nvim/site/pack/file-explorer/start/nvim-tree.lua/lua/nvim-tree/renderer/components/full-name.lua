@@ -1,12 +1,14 @@
+local config = require("nvim-tree.config")
+local view_state = require("nvim-tree.view-state")
+
 local M = {}
 
 local utils = require("nvim-tree.utils")
-local view = require("nvim-tree.view")
 
-local function hide(win)
-  if win then
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
+function M.hide()
+  if M.popup_win and utils.is_nvim_tree_buf(0) then
+    if vim.api.nvim_win_is_valid(M.popup_win) then
+      vim.api.nvim_win_close(M.popup_win, true)
     end
   end
 end
@@ -33,7 +35,11 @@ local function effective_win_width()
   return win_width - win_info[1].textoff
 end
 
-local function show(opts)
+function M.show()
+  if not utils.is_nvim_tree_buf(0) then
+    return
+  end
+
   local line_nr = vim.api.nvim_win_get_cursor(0)[1]
   if vim.wo.wrap then
     return
@@ -70,9 +76,10 @@ local function show(opts)
     height    = 1,
     noautocmd = true,
     style     = "minimal",
+    zindex    = 40,
     border    = "none"
   })
-  vim.wo[M.popup_win].winhl = view.View.winopts.winhl
+  vim.wo[M.popup_win].winhl = view_state.Active.winopts.winhl
 
   local ns_id = vim.api.nvim_get_namespaces()["NvimTreeHighlights"]
   local extmarks = vim.api.nvim_buf_get_extmarks(0, ns_id, { line_nr - 1, 0 }, { line_nr - 1, -1 }, { details = true })
@@ -96,38 +103,10 @@ local function show(opts)
       end
     end
     vim.cmd([[ setlocal nowrap noswapfile nobuflisted buftype=nofile bufhidden=wipe ]])
-    if opts.view.cursorline then
+    if config.g.view.cursorline then
       vim.cmd([[ setlocal cursorline cursorlineopt=both ]])
     end
   end)
-end
-
-M.setup = function(opts)
-  M.config = opts.renderer
-  if not M.config.full_name then
-    return
-  end
-
-  local group = vim.api.nvim_create_augroup("nvim_tree_floating_node", { clear = true })
-  vim.api.nvim_create_autocmd({ "BufLeave", "CursorMoved" }, {
-    group = group,
-    pattern = { "NvimTree_*" },
-    callback = function()
-      if utils.is_nvim_tree_buf(0) then
-        hide(M.popup_win)
-      end
-    end,
-  })
-
-  vim.api.nvim_create_autocmd({ "CursorMoved" }, {
-    group = group,
-    pattern = { "NvimTree_*" },
-    callback = function()
-      if utils.is_nvim_tree_buf(0) then
-        show(opts)
-      end
-    end,
-  })
 end
 
 return M

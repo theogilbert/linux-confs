@@ -44,6 +44,7 @@
 --- `MiniStatusline.config`. See |mini.nvim-buffer-local-config| for more details.
 ---
 --- # Highlight groups ~
+--- *MiniStatusline-hl-groups*
 ---
 --- Highlight depending on mode (second |MiniStatusline.section_mode()| output):
 --- - `MiniStatuslineModeNormal` - Normal mode.
@@ -60,7 +61,7 @@
 --- - `MiniStatuslineFileinfo` - for |MiniStatusline.section_fileinfo()| section.
 ---
 --- Other groups:
---- - `MiniStatuslineInactive` - highliting in not focused window.
+--- - `MiniStatuslineInactive` - highlighting in not focused window.
 ---
 --- To change any highlight group, set it directly with |nvim_set_hl()|.
 ---
@@ -130,6 +131,15 @@ local H = {}
 ---   require('mini.statusline').setup({}) -- replace {} with your config table
 --- <
 MiniStatusline.setup = function(config)
+  -- TODO: Remove after Neovim=0.9 support is dropped
+  if vim.fn.has('nvim-0.10') == 0 then
+    vim.notify(
+      '(mini.statusline) Neovim<0.10 is soft deprecated (module works but is not supported).'
+        .. " It will be deprecated after the next 'mini.nvim' release (module might not work)."
+        .. ' Please update your Neovim version.'
+    )
+  end
+
   -- Export module
   _G.MiniStatusline = MiniStatusline
 

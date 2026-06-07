@@ -46,6 +46,7 @@ You can override runtime config settings locally to buffer inside
 `MiniStatusline.config`. See |mini.nvim-buffer-local-config| for more details.
 
 # Highlight groups ~
+*MiniStatusline-hl-groups*
 
 Highlight depending on mode (second |MiniStatusline.section_mode()| output):
 - `MiniStatuslineModeNormal` - Normal mode.
@@ -62,7 +63,7 @@ Highlight used in default statusline:
 - `MiniStatuslineFileinfo` - for |MiniStatusline.section_fileinfo()| section.
 
 Other groups:
-- `MiniStatuslineInactive` - highliting in not focused window.
+- `MiniStatuslineInactive` - highlighting in not focused window.
 
 To change any highlight group, set it directly with |nvim_set_hl()|.
 

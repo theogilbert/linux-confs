@@ -1,6 +1,8 @@
 MiniAi	mini-ai.txt	/*MiniAi*
 MiniAi-algorithm	mini-ai.txt	/*MiniAi-algorithm*
 MiniAi-builtin-textobjects	mini-ai.txt	/*MiniAi-builtin-textobjects*
+MiniAi-default-al-il	mini-ai.txt	/*MiniAi-default-al-il*
+MiniAi-default-an-in	mini-ai.txt	/*MiniAi-default-an-in*
 MiniAi-glossary	mini-ai.txt	/*MiniAi-glossary*
 MiniAi-textobject-specification	mini-ai.txt	/*MiniAi-textobject-specification*
 MiniAi.config	mini-ai.txt	/*MiniAi.config*
@@ -16,6 +18,7 @@ MiniAi.select_textobject()	mini-ai.txt	/*MiniAi.select_textobject()*
 MiniAi.setup()	mini-ai.txt	/*MiniAi.setup()*
 MiniStatusline	mini-statusline.txt	/*MiniStatusline*
 MiniStatusline-example-content	mini-statusline.txt	/*MiniStatusline-example-content*
+MiniStatusline-hl-groups	mini-statusline.txt	/*MiniStatusline-hl-groups*
 MiniStatusline.active()	mini-statusline.txt	/*MiniStatusline.active()*
 MiniStatusline.combine_groups()	mini-statusline.txt	/*MiniStatusline.combine_groups()*
 MiniStatusline.config	mini-statusline.txt	/*MiniStatusline.config*
@@ -35,6 +38,7 @@ MiniSurround	mini-surround.txt	/*MiniSurround*
 MiniSurround-builtin-surroundings	mini-surround.txt	/*MiniSurround-builtin-surroundings*
 MiniSurround-count-with-actions	mini-surround.txt	/*MiniSurround-count-with-actions*
 MiniSurround-glossary	mini-surround.txt	/*MiniSurround-glossary*
+MiniSurround-hl-groups	mini-surround.txt	/*MiniSurround-hl-groups*
 MiniSurround-search-algorithm	mini-surround.txt	/*MiniSurround-search-algorithm*
 MiniSurround-surrounding-specification	mini-surround.txt	/*MiniSurround-surrounding-specification*
 MiniSurround-vim-surround-config	mini-surround.txt	/*MiniSurround-vim-surround-config*

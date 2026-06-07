@@ -4,6 +4,36 @@ Thank you for contributing.
 
 See [wiki: Development](https://github.com/nvim-tree/nvim-tree.lua/wiki/Development) for environment setup, tips and tools.
 
+<!-- 
+https://github.com/jonschlinkert/markdown-toc
+markdown-toc --maxdepth=2 -i CONTRIBUTING.md
+-->
+
+<!-- toc -->
+
+- [Tools](#tools)
+- [Quality](#quality)
+  * [lint](#lint)
+  * [style](#style)
+  * [format-fix](#format-fix)
+  * [check](#check)
+  * [format-check](#format-check)
+- [Diagnostics](#diagnostics)
+- [Backwards Compatibility](#backwards-compatibility)
+- [:help Documentation](#help-documentation)
+  * [Generated Content](#generated-content)
+  * [Updating And Generating](#updating-and-generating)
+  * [Checking And Linting](#checking-and-linting)
+- [Windows](#windows)
+- [Pull Request](#pull-request)
+  * [Subject](#subject)
+- [AI Usage Policy: Highly Discouraged](#ai-usage-policy-highly-discouraged)
+  * [nvim-tree Is A Community Project](#nvim-tree-is-a-community-project)
+  * [The Burden Of Review Must Not Increase](#the-burden-of-review-must-not-increase)
+  * [AI Generated PR Rules](#ai-generated-pr-rules)
+
+<!-- tocstop -->
+
 # Tools
 
 Following are used during CI and strongly recommended during local development.
@@ -12,9 +42,9 @@ Language server: [luals](https://luals.github.io)
 
 Lint: [luacheck](https://github.com/lunarmodules/luacheck/)
 
-Style: [EmmyLuaCodeStyle](https://github.com/CppCXY/EmmyLuaCodeStyle): `CodeCheck`
+nvim-tree migrated from stylua to EmmyLuaCodeStyle ~2024/10. `vim.lsp.buf.format()` may be used as it is the default formatter for luals, using an embedded [EmmyLuaCodeStyle](https://github.com/CppCXY/EmmyLuaCodeStyle)
 
-nvim-tree.lua migrated from stylua to EmmyLuaCodeStyle ~2024/10. `vim.lsp.buf.format()` may be used as it is the default formatter for luals
+Formatting: [EmmyLuaCodeStyle](https://github.com/CppCXY/EmmyLuaCodeStyle): `CodeFormat` executable
 
 You can install them via you OS package manager e.g. `pacman`, `brew` or other via other package managers such as `cargo` or `luarocks`
 
@@ -36,17 +66,19 @@ make lint
 
 ## style
 
-1. Runs CodeCheck using `.editorconfig` settings
-1. Runs `scripts/doc-comments.sh` to validate annotated documentation
+1. Runs lua language server `codestyle-check` only, using `.luarc.json` settings
+1. Runs `scripts/doc-comments.sh` to normalise annotated documentation
 
 ```sh
 make style
 ```
 
-You can automatically fix `CodeCheck` issues via:
+## format-fix
+
+You can automatically fix most style issues using `CodeFormat`:
 
 ```sh
-make style-fix
+make format-fix
 ```
 
 ## check
@@ -63,32 +95,105 @@ Assumes `$VIMRUNTIME` is `/usr/share/nvim/runtime`. Adjust as necessary e.g.
 VIMRUNTIME="/my/path/to/runtime" make check
 ```
 
-If `lua-language-server` is not available or `--check` doesn't function (e.g. Arch Linux 3.9.1-1) you can manually install it as per `ci.yml` e.g.
+If `lua-language-server` is not available or `--check` doesn't function (e.g. Arch Linux 3.9.1-1) you can manually install it as per `ci.yml` using its current `luals_version` e.g.
 
 ```sh
 mkdir luals
-curl -L "https://github.com/LuaLS/lua-language-server/releases/download/3.9.1/lua-language-server-3.9.1-linux-x64.tar.gz" | tar zx --directory luals
+curl -L "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lua-language-server-3.15.0-linux-x64.tar.gz" | tar zx --directory luals
 
 PATH="luals/bin:${PATH}" make check
 ```
 
-# Adding New Actions
+## format-check
 
-To add a new action, add a file in `actions/name-of-the-action.lua`. You should export a `setup` function if some configuration is needed.
+This is run in CI. Commit or stage your changes and run:
 
-Once you did, you should run `make help-update`
+```sh
+make format-check
+```
 
-# Documentation
+- Re-runs `make format-fix`
+- Checks that `git diff` is empty, to ensure that all content has been generated. This is why a stage or commit is necessary.
 
-## Opts
+# Diagnostics
 
-When adding new options, you should declare the defaults in the main `nvim-tree.lua` file.
+Diagnostics issues may not be suppressed. See [luals](https://luals.github.io) documentation for details on how to structure the code and comments.
 
-Documentation for options should also be added to `nvim-tree-opts` in `doc/nvim-tree-lua.txt`
+Suppressions are permitted only in the following cases:
 
-## API
+- Backwards compatibility shims
+- neovim API metadata incorrect, awaiting upstream fix
+- classic class framework
 
-When adding or changing API please update :help nvim-tree-api
+# Backwards Compatibility
+
+Whenever new neovim API is introduced, please ensure that it is available in older versions. See `:help deprecated.txt` and `$VIMRUNTIME/lua/vim/_meta/api.lua`
+
+See `nvim-tree.setup` for the oldest supported version of neovim. If the API is not availble in that version, a backwards compatibility shim must be used e.g.
+
+```lua
+if vim.fn.has("nvim-0.11") == 1 and vim.hl and vim.hl.range then
+  vim.hl.range(0, ns_id, details.hl_group, { 0, col }, { 0, details.end_col, }, {})
+else
+  vim.api.nvim_buf_add_highlight(0, ns_id, details.hl_group, 0, col, details.end_col) ---@diagnostic disable-line: deprecated
+end
+```
+
+# :help Documentation
+
+Please update or add to `doc/nvim-tree-lua.txt` as needed.
+
+## Generated Content
+
+`doc/nvim-tree-lua.txt` content starting at `*nvim-tree-config*` will be replaced with generated content. Do not manually edit that content.
+
+### API and Config
+
+Help is generated for:
+- `nvim_tree.config` classes from `lua/nvim-tree/_meta/config/`
+- `nvim_tree.api` functions from `lua/nvim-tree/_meta/api/`
+
+Please add or update documentation when you make changes, see `:help dev-lua-doc` for docstring format.
+
+`scripts/vimdoc_config.lua` contains the manifest of help sources.
+
+### Config And Mappings
+
+Help is updated for:
+- Default keymap at `keymap.on_attach_default`
+- Default config at `--- config-default-start`
+
+## Updating And Generating
+
+Nvim sources are required. You will be prompted with instructions on fetching and using the sources.
+
+See comments at the start of each script for complete details.
+
+```sh
+make help-update
+```
+
+- `scripts/help-defaults.sh`
+  - Update config defaults `*nvim-tree-config-default*`
+  - Update default mappings:
+    - `*nvim-tree-mappings-default*`
+    - `*nvim-tree-quickstart-help*`
+
+- `scripts/vimdoc.sh doc`
+  - Remove content starting at `*nvim-tree-config*`
+  - Generate config classes `*nvim-tree-config*`
+  - Generate API `*nvim-tree-api*`
+
+## Checking
+
+This is run in CI. Commit or stage your changes and run:
+
+```sh
+make help-check
+```
+
+- Re-runs `make help-update`
+- Checks that `git diff` is empty, to ensure that all content has been generated. This is why a stage or commit is necessary.
 
 # Windows
 
@@ -103,6 +208,8 @@ Please ensure that windows specific features and fixes are behind the appropriat
 Please reference any issues in the description e.g. "resolves #1234", which will be closed upon merge.
 
 Please check "allow edits by maintainers" to allow nvim-tree developers to make small changes such as documentation tweaks.
+
+Do not enable or use any AI review tools (e.g. Copilot) on the Pull Request.
 
 ## Subject
 
@@ -128,3 +235,45 @@ Available types:
 If in doubt, look at previous commits.
 
 See also [The Conventional Commits ultimate cheatsheet](https://gist.github.com/gabrielecanepa/fa6cca1a8ae96f77896fe70ddee65527)
+
+# AI Usage Policy: Highly Discouraged
+
+## nvim-tree Is A Community Project
+
+nvim-tree is a work of passion, building a community of free thinking individuals who contribute highly polished, elegant and maintainable code. Community members range from novices to professionals and all are welcome. Teaching, encouraging and celebrating the growth of less experienced developers is of great importance.
+
+AI generated code is discouraged as this doesn't match these nvim-tree values.
+
+Human PR reviews will always be prioritised over AI generated PRs.
+
+## The Burden Of Review Must Not Increase
+
+There must be a human in the loop at all times. The contributor is the author of and is fully accountable for AI generated contributions.
+
+AI generated PRs have low, or even non-existent entry level. Human generated PRs require you to be motivated, do research, familiarise yourself with code, make effort to write the code and test it.
+
+Low effort or unqualified code increases the burden of review and testing on maintainers, who are limited in time.
+
+Contributors must:
+
+- Read and review all generated code and documentation before raising a PR
+- Fully understand all code and documentation
+- Be able to answer any questions during review
+
+## AI Generated PR Rules
+
+The PR description and comments must be written by the contributor, with no AI assistance beyond grammar or English translations.
+
+The description must:
+
+- Describe the solution design, justifying all decisions
+- Clearly state which AI was used
+- List which code and documentation was written by a human and which was written by AI
+- Detail all testing performed
+
+There must be far greater than usual number of detailed, explicit comments:
+
+- File level: overview of the changes made
+- Line level: 1-2 comments per function/method
+
+Do not enable or use any AI review tools (e.g. Copilot) on the Pull Request.

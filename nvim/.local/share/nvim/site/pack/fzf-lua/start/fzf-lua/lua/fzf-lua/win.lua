@@ -723,7 +723,7 @@ function FzfWin.new(o)
   self.preview_hidden = not not o.winopts.preview.hidden -- force boolean
   self.keymap = o.keymap
   self.previewer = o.previewer
-  self:set_autoclose(vim.F.if_nil(o.autoclose, true))
+  self:set_autoclose(utils.nonnil(o.autoclose, true))
   self.winopts = self:normalize_winopts()
   self.on_closes = {}
   _self = self
@@ -866,12 +866,10 @@ function FzfWin:redraw_main()
   }, self.layout.fzf)
 
   if self:validate() then
-    if self._previewer
-        and self._previewer.clear_on_redraw
-        and self._previewer.clear_preview_buf
-        and self._previewer.clear_cached_buffers then
-      self._previewer:clear_preview_buf(true)
-      self._previewer:clear_cached_buffers()
+    local prev = self._previewer
+    if prev and prev.clear_on_redraw then
+      if prev.clear_preview_buf then prev:clear_preview_buf(true) end
+      if prev.bcache then prev.bcache:clear() end
     end
     utils.win_set_config(self.fzf_winid, winopts)
   else
@@ -1068,11 +1066,14 @@ function FzfWin:create()
       -- if we're not doing this the result might be all over the place
       local winnrs = vim.tbl_map(api.nvim_win_get_number, api.nvim_tabpage_list_wins(0))
       local parts = vim.split(winrestcmd, "|")
-      local cmd = vim.tbl_map(function(cmd_part)
-        local winnr = tonumber(cmd_part:match("(.)resize"))
-        return utils.tbl_contains(winnrs, winnr) and cmd_part or ""
-      end, parts)
-      vim.cmd(table.concat(cmd, "|"))
+      local cmd = {}
+      for _, cmd_part in ipairs(parts) do
+        local winnr = tonumber(cmd_part:match("(%d+)resize"))
+        if utils.tbl_contains(winnrs, winnr) then
+          table.insert(cmd, cmd_part)
+        end
+      end
+      if #cmd > 0 then vim.cmd(table.concat(cmd, "|")) end
       -- Also restore cmdheight, will be wrong if vim resized (#1462)
       vim.o.cmdheight = cmdheight
     end
@@ -1143,12 +1144,18 @@ end
 ---@param winid? integer
 ---@param last_winid? integer
 local restore_lastwin = function(winid, last_winid)
-  if winid and last_winid and api.nvim_win_is_valid(last_winid) then
-    utils.eventignore(function()
-      api.nvim_set_current_win(last_winid)
-      api.nvim_set_current_win(winid)
-    end)
+  if
+      not winid
+      or not last_winid
+      or not api.nvim_win_is_valid(last_winid)
+      or not api.nvim_win_is_valid(winid)
+  then
+    return
   end
+  utils.eventignore(function()
+    api.nvim_set_current_win(last_winid)
+    api.nvim_set_current_win(winid)
+  end)
 end
 
 ---@param buf? integer
@@ -1160,6 +1167,25 @@ local restore_altbuf = function(buf)
     fn.setreg("#", tmpbuf)
     api.nvim_buf_delete(tmpbuf, { force = true })
   end
+end
+
+local stopinsert = function(ctx)
+  _G.fzf_lua_stopinsert_hack = nil
+  if not (ctx.mode == "nt" and api.nvim_get_mode() ~= "nt") then return end
+  vim.cmd "stopinsert"
+  local pat = "FzfLuaStopInsertHack"
+  _G.fzf_lua_stopinsert_hack = function(cb)
+    api.nvim_create_autocmd("User", { pattern = pat, once = true, callback = cb })
+  end
+  api.nvim_create_autocmd("ModeChanged", {
+    pattern = "*:nt",
+    once = true,
+    callback = function()
+      -- nvim_get_mode don't get correct mode without schedule_wrap
+      vim.schedule_wrap(api.nvim_exec_autocmds)("User", { pattern = pat, modeline = false })
+      _G.fzf_lua_stopinsert_hack = nil
+    end,
+  })
 end
 
 ---@param fzf_bufnr? integer
@@ -1175,7 +1201,7 @@ function FzfWin:close(fzf_bufnr, hide)
   -- switching from a term win to another term win preserves terminal mode
   -- even if the target window was in normal terminal mode (#2054 #2419)
   local ctx = utils.__CTX() or {}
-  if ctx.mode == "nt" then vim.cmd "stopinsert" end
+  stopinsert(ctx)
   if self.fzf_winid and api.nvim_win_is_valid(self.fzf_winid) then
     -- restore the original last window
     restore_lastwin(ctx.winid, ctx.last_winid)

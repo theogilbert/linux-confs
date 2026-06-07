@@ -1,5 +1,89 @@
 # Changelog
 
+## [1.17.0](https://github.com/nvim-tree/nvim-tree.lua/compare/nvim-tree-v1.16.0...nvim-tree-v1.17.0) (2026-04-07)
+
+
+### Features
+
+* **#3292:** add nvim_tree.config.filesystem_watchers.whitelist_dirs - strongly recommended for windows ([#3298](https://github.com/nvim-tree/nvim-tree.lua/issues/3298)) ([6eaf74c](https://github.com/nvim-tree/nvim-tree.lua/commit/6eaf74c9919d121d2806ac3c20e757e66bd29c31))
+* **#3310:** minimum neovim version 0.10 ([#3311](https://github.com/nvim-tree/nvim-tree.lua/issues/3311)) ([7adc567](https://github.com/nvim-tree/nvim-tree.lua/commit/7adc5679feb439275255aa9e95c434cca206d10c))
+
+
+### Bug Fixes
+
+* **#3257:** error when calling api.tree.find_file ([#3304](https://github.com/nvim-tree/nvim-tree.lua/issues/3304)) ([b548cfe](https://github.com/nvim-tree/nvim-tree.lua/commit/b548cfef00a79f0b3e3af24f91ae6bd14f22af95))
+* **#3293:** marks.bulk operations filter descendant nodes ([#3294](https://github.com/nvim-tree/nvim-tree.lua/issues/3294)) ([f37ebac](https://github.com/nvim-tree/nvim-tree.lua/commit/f37ebac81164e1445c499cdd6de86e6d8e5d57e4))
+* **#3301:** setup with empty config fails ([#3303](https://github.com/nvim-tree/nvim-tree.lua/issues/3303)) ([ec0efb0](https://github.com/nvim-tree/nvim-tree.lua/commit/ec0efb06b0abfa56492acfc8c34ac8958d18601e))
+* system open native requires nvim 0.10 ([#3309](https://github.com/nvim-tree/nvim-tree.lua/issues/3309)) ([02ccbcd](https://github.com/nvim-tree/nvim-tree.lua/commit/02ccbcd4af9a7fa159251f721d763c0d16f91703))
+
+
+### Performance Improvements
+
+* **#3231:** decrease setup time: optimise setup and defer requires until tree open ([#3308](https://github.com/nvim-tree/nvim-tree.lua/issues/3308)) ([31503ad](https://github.com/nvim-tree/nvim-tree.lua/commit/31503ad5d869fca61461d82a9126f62480ecb0ab))
+* **#3257:** remove setup for actions modules, full-name and explorer ([#3299](https://github.com/nvim-tree/nvim-tree.lua/issues/3299)) ([43a3bb4](https://github.com/nvim-tree/nvim-tree.lua/commit/43a3bb4b26b4578a704f24bb6a4889b454c0eb65))
+* **#3257:** remove setup for modules: buffers, diagnostics, git, help, keymap, lib, watcher ([#3295](https://github.com/nvim-tree/nvim-tree.lua/issues/3295)) ([3d385d3](https://github.com/nvim-tree/nvim-tree.lua/commit/3d385d3346e4883d60dc37cf642bd47bed78a46e))
+* **#3257:** remove setup for renderer, log, appearance ([#3307](https://github.com/nvim-tree/nvim-tree.lua/issues/3307)) ([3603f06](https://github.com/nvim-tree/nvim-tree.lua/commit/3603f069ff783c31986894a56c2a6755331b0802))
+* **#3257:** remove setup for view, extracting view-state ([#3306](https://github.com/nvim-tree/nvim-tree.lua/issues/3306)) ([4cbe795](https://github.com/nvim-tree/nvim-tree.lua/commit/4cbe79526f8bc0bdb1a500d261dc5cc1be4e77d5))
+
+## [1.16.0](https://github.com/nvim-tree/nvim-tree.lua/compare/nvim-tree-v1.15.0...nvim-tree-v1.16.0) (2026-03-17)
+
+
+### Features
+
+* **#2994:** add visual mode operations: copy, cut, delete, trash, toggle bookmark ([#3268](https://github.com/nvim-tree/nvim-tree.lua/issues/3268)) ([9197f3e](https://github.com/nvim-tree/nvim-tree.lua/commit/9197f3ee3f0c9a754aab5b16500db6d7da5f68fd))
+* add default &lt;Del&gt; mapping for api.fs.remove ([#3238](https://github.com/nvim-tree/nvim-tree.lua/issues/3238)) ([ca8d82f](https://github.com/nvim-tree/nvim-tree.lua/commit/ca8d82fff26cb12ced239713e3222f4a9dcd0da0))
+
+
+### Bug Fixes
+
+* **##3288:** restore single-item paste conflict prompts ([#3289](https://github.com/nvim-tree/nvim-tree.lua/issues/3289)) ([b3772ad](https://github.com/nvim-tree/nvim-tree.lua/commit/b3772adec8db61ba9098c5624a0823a77be3a23d))
+* **#3178:** handle Windows paths in ignore_dirs and add .zig-cache to defaults ([#3261](https://github.com/nvim-tree/nvim-tree.lua/issues/3261)) ([5499299](https://github.com/nvim-tree/nvim-tree.lua/commit/5499299746b95c49ef4fc89b30c29a79b577881f))
+* **#3187:** prevent closing the last non-floating window when deleting files ([#3282](https://github.com/nvim-tree/nvim-tree.lua/issues/3282)) ([018a078](https://github.com/nvim-tree/nvim-tree.lua/commit/018a078c1e149bcd0c4e65c92aabb8e12501d769))
+* **#3198:** add filesystem_watchers.max_events to handle runaway filesystem events on PowerShell ([#3232](https://github.com/nvim-tree/nvim-tree.lua/issues/3232)) ([c07ce43](https://github.com/nvim-tree/nvim-tree.lua/commit/c07ce43527e5f0242121f4eb1feb7ac0ecea8275))
+* **#3248:** bookmark filter shows contents of marked directories ([#3249](https://github.com/nvim-tree/nvim-tree.lua/issues/3249)) ([5757bcf](https://github.com/nvim-tree/nvim-tree.lua/commit/5757bcf0447d22d8f78826bc5c59b28da2824c3b))
+* **#3251:** pass git.timeout to all vim.system git calls ([#3277](https://github.com/nvim-tree/nvim-tree.lua/issues/3277)) ([e49b0d9](https://github.com/nvim-tree/nvim-tree.lua/commit/e49b0d9bfa70989cf8b5abf5557f51e6e57f68d6))
+* **#3265:** rename module api.health to api.appearance, to avoid :checkhealth detection ([#3266](https://github.com/nvim-tree/nvim-tree.lua/issues/3266)) ([1df1960](https://github.com/nvim-tree/nvim-tree.lua/commit/1df1960d0e3a26643a4100f64fa03b991b9f4b85))
+* **#3267:** renderer.icons.*_placement 'right_align' at the right hand edge, not the right of the name ([#3270](https://github.com/nvim-tree/nvim-tree.lua/issues/3270)) ([fa3c458](https://github.com/nvim-tree/nvim-tree.lua/commit/fa3c45875f9b1f56ace57711c6f2ac22484ed956))
+* **#3281:** fix a bug when a view width of -1 is returned from a function ([#3283](https://github.com/nvim-tree/nvim-tree.lua/issues/3283)) ([c988e28](https://github.com/nvim-tree/nvim-tree.lua/commit/c988e289428d9202b28ba27479647033c7dd2956))
+* allow 0 (unlimited) filesystem_watchers.max_events which is the new default, except for windows at 1000 ([#3279](https://github.com/nvim-tree/nvim-tree.lua/issues/3279)) ([87594aa](https://github.com/nvim-tree/nvim-tree.lua/commit/87594aa7c8808701b418b285e9adf690acead201))
+* increase filesystem_watchers.max_events from 100 to 1000 ([#3263](https://github.com/nvim-tree/nvim-tree.lua/issues/3263)) ([0f4d2d6](https://github.com/nvim-tree/nvim-tree.lua/commit/0f4d2d6998dc324d54d6adce94186bee43725afb))
+* restore bookmark filter for marked directories ([5757bcf](https://github.com/nvim-tree/nvim-tree.lua/commit/5757bcf0447d22d8f78826bc5c59b28da2824c3b))
+
+
+### Performance Improvements
+
+* **#3284:** re-draw instead of refreshing the tree when a buffer is modified ([#3285](https://github.com/nvim-tree/nvim-tree.lua/issues/3285)) ([c8d8d51](https://github.com/nvim-tree/nvim-tree.lua/commit/c8d8d515c29f0f0b1a352e0d75616f74f42fc03b))
+
+## [1.15.0](https://github.com/nvim-tree/nvim-tree.lua/compare/nvim-tree-v1.14.0...nvim-tree-v1.15.0) (2026-01-11)
+
+
+### Features
+
+* **#1826:** add diagnostics.diagnostic_opts: vim.diagnostic.Opts will override diagnostics.severity and diagnostics.icons ([#3190](https://github.com/nvim-tree/nvim-tree.lua/issues/3190)) ([fefa335](https://github.com/nvim-tree/nvim-tree.lua/commit/fefa335f1c8f690eb668a1efd18ee4fc6d64cd3e))
+* **#1851:** add bookmarks.persist, default path: vim.fn.stdpath("data") .. "/nvim-tree-bookmarks.json", disabled by default ([#3033](https://github.com/nvim-tree/nvim-tree.lua/issues/3033)) ([c89215d](https://github.com/nvim-tree/nvim-tree.lua/commit/c89215d6a1107a3c0c134750be48657ba8e6a9aa))
+* **#3213:** add `view.width.lines_excluded` option ([776a5cd](https://github.com/nvim-tree/nvim-tree.lua/commit/776a5cdfac948b490e06f1d1d22c4cb986e40699))
+* **#3213:** add view.width.lines_excluded option ([#3214](https://github.com/nvim-tree/nvim-tree.lua/issues/3214)) ([776a5cd](https://github.com/nvim-tree/nvim-tree.lua/commit/776a5cdfac948b490e06f1d1d22c4cb986e40699))
+* add NvimTreeFilter filetype ([64e2192](https://github.com/nvim-tree/nvim-tree.lua/commit/64e2192f5250796aa4a7f33c6ad888515af50640))
+* load command definitions at nvim startup ([#3211](https://github.com/nvim-tree/nvim-tree.lua/issues/3211)) ([1eda256](https://github.com/nvim-tree/nvim-tree.lua/commit/1eda2569394f866360e61f590f1796877388cb8a))
+* load command definitions in `plugin` directory ([1eda256](https://github.com/nvim-tree/nvim-tree.lua/commit/1eda2569394f866360e61f590f1796877388cb8a))
+* set filter input filetype to NvimTreeFilter ([#3207](https://github.com/nvim-tree/nvim-tree.lua/issues/3207)) ([64e2192](https://github.com/nvim-tree/nvim-tree.lua/commit/64e2192f5250796aa4a7f33c6ad888515af50640))
+* use `add_trailing` also for symlink destination ([81ede55](https://github.com/nvim-tree/nvim-tree.lua/commit/81ede55c47528ff7c81b2a498fbee61b298c4e2f))
+
+
+### Bug Fixes
+
+* **#3226:** set &swapfile=false before setting tree buffer name, avoiding any potential collisions with a swapfile ([#3227](https://github.com/nvim-tree/nvim-tree.lua/issues/3227)) ([8298117](https://github.com/nvim-tree/nvim-tree.lua/commit/8298117311a1f23f039c278e4e4977ab80a15e33))
+* api.tree.change_root_to_node on a file now changes directory to parent as per documentation ([#3228](https://github.com/nvim-tree/nvim-tree.lua/issues/3228)) ([b8b44b6](https://github.com/nvim-tree/nvim-tree.lua/commit/b8b44b6a2494d086a9177251a119f9daec6cace8))
+* correctly assign extmarks to lines when computing tree window width in `grow` when `nvim-tree.view.width.lines_excluded` contains "root" ([e66994d](https://github.com/nvim-tree/nvim-tree.lua/commit/e66994d40db2d57c91bf9aeaee8bf7ab8b1131f6))
+* incorrect window width when right_align icons present ([#3239](https://github.com/nvim-tree/nvim-tree.lua/issues/3239)) ([e66994d](https://github.com/nvim-tree/nvim-tree.lua/commit/e66994d40db2d57c91bf9aeaee8bf7ab8b1131f6))
+* prevent NvimTree to be alternate buffer when tab open ([#3205](https://github.com/nvim-tree/nvim-tree.lua/issues/3205)) ([e397756](https://github.com/nvim-tree/nvim-tree.lua/commit/e397756d2a79d74314ea4cd3efc41300e91c0ff0))
+* renderer.add_trailing applies to symlink destination ([#3217](https://github.com/nvim-tree/nvim-tree.lua/issues/3217)) ([81ede55](https://github.com/nvim-tree/nvim-tree.lua/commit/81ede55c47528ff7c81b2a498fbee61b298c4e2f))
+
+
+### Performance Improvements
+
+* **commands:** defer module loading ([#3210](https://github.com/nvim-tree/nvim-tree.lua/issues/3210)) ([68c67ad](https://github.com/nvim-tree/nvim-tree.lua/commit/68c67adfabfd1ce923839570507ef2e81ab8a408))
+
 ## [1.14.0](https://github.com/nvim-tree/nvim-tree.lua/compare/nvim-tree-v1.13.0...nvim-tree-v1.14.0) (2025-08-12)
 
 

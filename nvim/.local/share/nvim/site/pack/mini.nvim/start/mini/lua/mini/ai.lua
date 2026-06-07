@@ -419,6 +419,15 @@ local H = {}
 ---   require('mini.ai').setup({}) -- replace {} with your config table
 --- <
 MiniAi.setup = function(config)
+  -- TODO: Remove after Neovim=0.9 support is dropped
+  if vim.fn.has('nvim-0.10') == 0 then
+    vim.notify(
+      '(mini.ai) Neovim<0.10 is soft deprecated (module works but is not supported).'
+        .. " It will be deprecated after the next 'mini.nvim' release (module might not work)."
+        .. ' Please update your Neovim version.'
+    )
+  end
+
   -- Export module
   _G.MiniAi = MiniAi
 
@@ -435,8 +444,8 @@ end
 ---
 --- User can define own textobjects by supplying `config.custom_textobjects`.
 --- It should be a table with keys being single character textobject identifier
---- (supported by |getcharstr()|) and values - textobject specification
---- (see |MiniAi-textobject-specification|).
+--- (supported by |getcharstr()|, except <Esc> and <C-c> which are used to cancel)
+--- and values - textobject specification (see |MiniAi-textobject-specification|).
 ---
 --- General recommendations:
 --- - This can be used to override builtin ones (|MiniAi-builtin-textobjects|).
@@ -528,18 +537,64 @@ end
 --- Mappings `around_next` / `inside_next` and `around_last` / `inside_last` are
 --- essentially `around` / `inside` but using search method `'next'` and `'prev'`.
 ---
---- NOTE: with default config, built-in LSP mappings |v_an| and |v_in| on Neovim>=0.12
---- are overridden. Either use different `around_next` / `inside_next` keys or
---- map manually using |vim.lsp.buf.selection_range()|. For example: >lua
+--- ## Overriding default `an` and `in` ~
+--- *MiniAi-default-an-in*
 ---
----   local map_lsp_selection = function(lhs, desc)
----     local s = vim.startswith(desc, 'Increase') and 1 or -1
----     local rhs = function() vim.lsp.buf.selection_range(s * vim.v.count1) end
----     vim.keymap.set('x', lhs, rhs, { desc = desc })
----   end
----   map_lsp_selection('<Leader>ls', 'Increase selection')
----   map_lsp_selection('<Leader>lS', 'Decrease selection')
+--- Default `around_next` / `inside_next` mappings override newly added in Neovim=0.12
+--- built-in mappings |v_an| and |v_in|. This is intentional for better usability
+--- and backwards compatibility. There are several ways to work around this:
+---
+--- - Remap Neovim's `an` / `in` to something else before calling |MiniAi.setup()|: >lua
+---
+---     -- Use `<Leader>ls` and `<Leader>lS` for incremental selection
+---     local copy_keymap = function(mode, from_lhs, to_lhs)
+---       local keymap = vim.fn.maparg(from_lhs, mode, false, true)
+---       local rhs = keymap.callback or keymap.rhs
+---       vim.keymap.set(mode, to_lhs, rhs, { desc = keymap.desc })
+---     end
+---     copy_keymap('x', 'an', '<Leader>ls')
+---     copy_keymap('x', 'in', '<Leader>lS')
+---
+---     -- ...
+---     require('mini.ai').setup({...})
 --- <
+--- - Use |MiniAi.gen_spec.treesitter()| with one or many captures for versatile
+---   tree-sitter based textobjects. It also allows consecutive application in
+---   Visual mode: similar to incremental selection, with `next` / `last` variants,
+---   but without "decrease selection".
+---
+--- - Use other values for "next" / "last" variants. For example: >lua
+---
+---   require('mini.ai').setup({
+---     mappings = {
+---       around_next = 'aN',
+---       inside_next = 'iN',
+---       around_last = 'aL',
+---       inside_last = 'iL',
+---     }
+---   })
+--- <
+--- ## Overriding default `al` and `il` ~
+--- *MiniAi-default-al-il*
+---
+--- Default `around_last` / `inside_last` mappings override newly added in Neovim=0.13
+--- built-in mappings |al| and |il|. This is intentional for better usability
+--- and backwards compatibility. There are several ways to work around this:
+---
+--- - Use |MiniExtra.gen_ai_spec.buffer()| and |MiniExtra.gen_ai_spec.line()| to
+---   create custom textobjects for buffer and line: >lua
+---
+---     require('mini.extra').setup()
+---     require('mini.ai').setup({
+---       custom_textobjects = {
+---         -- Makes `aB` equivalent to built-in `al`
+---         B = MiniExtra.gen_ai_spec.buffer(),
+---         -- Makes `iL` equivalent to built-in `il`
+---         L = MiniExtra.gen_ai_spec.line(),
+---       },
+---     })
+--- <
+--- - Use other values for "next" / "last" variants. See |MiniAi-default-an-in|.
 MiniAi.config = {
   -- Table with textobject id as fields, textobject specification as values.
   -- Also use this to disable builtin textobjects. See |MiniAi.config|.
@@ -552,8 +607,8 @@ MiniAi.config = {
     inside = 'i',
 
     -- Next/last textobjects
-    -- NOTE: These override built-in LSP selection mappings on Neovim>=0.12
-    -- Map LSP selection manually to use it (see `:h MiniAi.config`)
+    -- NOTE: This (deliberately) overrides Neovim>=0.12 built-in incremental
+    -- selection mappings. See `:h MiniAi-default-an-in` for more details.
     around_next = 'an',
     inside_next = 'in',
     around_last = 'al',
@@ -959,6 +1014,11 @@ end
 ---   Verify with `:=vim.treesitter.query.get('lang', 'textobjects')` and see
 ---   if the target capture is recognized as one.
 --- - It uses buffer's |filetype| to determine query language.
+--- - It first searches the language under cursor for matches. If no matches are
+---   found, it falls back to searching parent languages (up to the buffer's root
+---   language). If no matches are found again, it falls back to recursively
+---   searching all children languages (from the language under cursor). If no
+---   matches again - report no matches.
 --- - On large files it is slower than pattern-based textobjects. Still very
 ---   fast though (one search should be magnitude of milliseconds or tens of
 ---   milliseconds on really large file).
@@ -1023,6 +1083,7 @@ end
 --- Specification from user prompt
 ---
 --- - Ask user for left and right textobject edges as raw strings (no pattern).
+---   It uses |MiniInput.get()| (if enabled) or |input().
 --- - Construct specification for a textobject that matches from left edge string
 ---   to right edge string: `a` includes both strings, `i` only insides.
 ---
@@ -1125,7 +1186,7 @@ MiniAi.select_textobject = function(ai_type, id, opts)
     vim.cmd('normal! zv')
     vim.cmd('normal! ' .. vis_mode)
     set_cursor(tobj.to)
-    if vim.o.selection == 'exclusive' then vim.cmd('set whichwrap=l | normal! l') end
+    if vim.o.selection == 'exclusive' and not tobj_is_empty then vim.cmd('set whichwrap=l | normal! l') end
     vim.cmd('normal! zv')
 
     -- Restore horizontal view which was possibly affected by moving cursor
@@ -1574,21 +1635,29 @@ H.get_matched_ranges_builtin = function(captures)
   -- Get parser (LanguageTree) at cursor (important for injected languages)
   local pos = vim.api.nvim_win_get_cursor(0)
   local lang_tree = parser:language_for_range({ pos[1] - 1, pos[2], pos[1] - 1, pos[2] })
+  local init_lang_tree = lang_tree
 
   local missing_query_langs = {}
   local res = {}
-  -- Maybe go up parent trees to work with injected languages
+  -- Go up parent trees to work with injected languages
   while vim.tbl_isempty(res) and lang_tree ~= nil do
-    local lang = lang_tree:lang()
-    -- Get query file depending on the local language
-    local query = vim.treesitter.query.get(lang, 'textobjects')
+    H.append_lang_ranges(res, missing_query_langs, buf_id, captures, lang_tree)
 
-    if query ~= nil then H.append_ranges(res, buf_id, query, captures, lang_tree) end
-    if query == nil then missing_query_langs[lang] = true end
-
-    -- `LanguageTree:parent()` was added in Neovim<0.10
+    -- `LanguageTree:parent()` was added in Neovim=0.10
     -- TODO: Drop extra check after compatibility with Neovim=0.9 is dropped
     lang_tree = lang_tree.parent and lang_tree:parent() or nil
+  end
+
+  -- Fall back to children trees for injected languages
+  if vim.tbl_isempty(res) then
+    local check_children
+    check_children = function(l_tree)
+      for _, child in pairs(l_tree:children()) do
+        H.append_lang_ranges(res, missing_query_langs, buf_id, captures, child)
+        check_children(child)
+      end
+    end
+    check_children(init_lang_tree)
   end
 
   if vim.tbl_isempty(res) and not vim.tbl_isempty(missing_query_langs) then
@@ -1596,6 +1665,14 @@ H.get_matched_ranges_builtin = function(captures)
   end
 
   return res
+end
+
+H.append_lang_ranges = function(res, missing_query_langs, buf_id, captures, lang_tree)
+  local lang = lang_tree:lang()
+  local query = vim.treesitter.query.get(lang, 'textobjects')
+
+  if query ~= nil then H.append_ranges(res, buf_id, query, captures, lang_tree) end
+  if query == nil then missing_query_langs[lang] = true end
 end
 
 H.append_ranges = function(res, buf_id, query, captures, lang_tree)
@@ -1987,44 +2064,38 @@ end
 -- Work with user input -------------------------------------------------------
 H.user_textobject_id = function(ai_type)
   -- Get from user single character textobject identifier
-  local needs_help_msg = true
+  local needs_reminder = true
   vim.defer_fn(function()
-    if not needs_help_msg then return end
+    if not needs_reminder then return end
 
-    local msg = string.format('Enter `%s` textobject identifier (single character) ', ai_type)
+    local msg = string.format('Reminder to press `%s` textobject id ', ai_type)
     H.echo(msg)
     H.cache.msg_shown = true
   end, 1000)
   local ok, char = pcall(vim.fn.getcharstr)
-  needs_help_msg = false
+  needs_reminder = false
   H.unecho()
 
-  -- Terminate if couldn't get input (like with <C-c>) or it is `<Esc>`
-  if not ok or char == '\27' then return nil end
+  -- Terminate if couldn't get input (like with <C-c>) or on `<Esc>`
+  if not ok or char == '' or char == '\3' or char == '\27' then return nil end
   return char
 end
 
 H.user_input = function(prompt, text)
-  -- Register temporary keystroke listener to distinguish between cancel with
-  -- `<Esc>` and immediate `<CR>`.
-  local on_key = vim.on_key or vim.register_keystroke_callback
+  prompt = '(mini.ai) ' .. prompt
+  if _G.MiniInput ~= nil then return MiniInput.get({ prompt = prompt, scope = 'cursor', init_keys = { text } }) end
+
+  -- Use `on_key` to distinguish cancel with `<Esc>` and immediate `<CR>`
   local was_cancelled = false
-  on_key(function(key)
-    if key == '27' then was_cancelled = true end
-  end, H.ns_id.input)
+  vim.on_key(function(key) was_cancelled = was_cancelled or key == '\27' end, H.ns_id.input)
 
-  -- Ask for input
-  local opts = { prompt = '(mini.ai) ' .. prompt .. ': ', default = text or '' }
+  -- Ask for input. Use `pcall` to allow `<C-c>` to cancel user input
   vim.cmd('echohl Question')
-  -- Use `pcall` to allow `<C-c>` to cancel user input
-  local ok, res = pcall(vim.fn.input, opts)
-  vim.cmd([[echohl None | echo '' | redraw]])
+  local ok, res = pcall(vim.fn.input, { prompt = prompt .. ': ', default = text or '' })
+  vim.cmd('echohl None | echo "" | redraw')
 
-  -- Stop key listening
-  on_key(nil, H.ns_id.input)
-
-  if not ok or was_cancelled then return end
-  return res
+  vim.on_key(nil, H.ns_id.input)
+  return (ok and not was_cancelled) and res or nil
 end
 
 -- Work with Visual mode ------------------------------------------------------

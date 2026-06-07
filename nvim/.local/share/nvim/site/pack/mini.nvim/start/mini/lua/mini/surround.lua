@@ -122,6 +122,7 @@
 ---           textobject, while 'mini.surround' - both.
 ---
 --- # Highlight groups ~
+--- *MiniSurround-hl-groups*
 ---
 --- - `MiniSurround` - highlighting of requested surrounding.
 ---
@@ -484,6 +485,15 @@ local H = {}
 ---   require('mini.surround').setup({}) -- replace {} with your config table
 --- <
 MiniSurround.setup = function(config)
+  -- TODO: Remove after Neovim=0.9 support is dropped
+  if vim.fn.has('nvim-0.10') == 0 then
+    vim.notify(
+      '(mini.surround) Neovim<0.10 is soft deprecated (module works but is not supported).'
+        .. " It will be deprecated after the next 'mini.nvim' release (module might not work)."
+        .. ' Please update your Neovim version.'
+    )
+  end
+
   -- Export module
   _G.MiniSurround = MiniSurround
 
@@ -524,8 +534,8 @@ end
 ---   `output`). Other fields will be taken from builtin surroundings.
 --- - Function returning surround info at <input> or <output> fields of
 ---   specification is helpful when user input is needed (like asking for
----   function name). Use |input()| or |MiniSurround.user_input()|. Return
----   `nil` to stop any current surround operation.
+---   function name). Use |MiniSurround.user_input()| or |MiniInput.get()|.
+---   Return `nil` to stop any current surround operation.
 --- - Keys should use character representation which can be |getcharstr()| output.
 ---   For example, `'\r'` and not `'<CR>'`.
 ---
@@ -909,6 +919,9 @@ end
 --- cancelling with `<Esc>` and `<C-c>`, and slightly modifies prompt. Use it
 --- to ask for input inside function custom surrounding (see |MiniSurround.config|).
 MiniSurround.user_input = function(prompt, text)
+  prompt = '(mini.surround) ' .. prompt
+  if _G.MiniInput ~= nil then return MiniInput.get({ prompt = prompt, scope = 'cursor', init_keys = { text } }) end
+
   -- Major issue with both `vim.fn.input()` is that the only way to distinguish
   -- cancelling with `<Esc>` and entering empty string with immediate `<CR>` is
   -- through `cancelreturn` option (see `:h input()`). In that case the return
@@ -916,13 +929,10 @@ MiniSurround.user_input = function(prompt, text)
   -- using that string. Although doable with very obscure string, this is not
   -- very clean.
   -- Overcome this by adding temporary keystroke listener.
-  local on_key = vim.on_key or vim.register_keystroke_callback
   local was_cancelled = false
-  on_key(function(key)
-    if key == vim.api.nvim_replace_termcodes('<Esc>', true, true, true) then was_cancelled = true end
-  end, H.ns_id.input)
+  vim.on_key(function(key) was_cancelled = was_cancelled or key == '\27' or key == '\3' end, H.ns_id.input)
 
-  -- Ask for input
+  -- Ask for input. Use `pcall` to allow `<C-c>` to cancel user input
   -- NOTE: it would be GREAT to make this work with `vim.ui.input()` but I
   -- didn't find a way to make it work without major refactor of whole module.
   -- The main issue is that `vim.ui.input()` is designed to perform action in
@@ -933,17 +943,12 @@ MiniSurround.user_input = function(prompt, text)
   -- immediately and proceed in main event loop. Couldn't find a relatively
   -- simple way to stop execution of this current function until `ui.input()`'s
   -- callback finished execution.
-  local opts = { prompt = '(mini.surround) ' .. prompt .. ': ', default = text or '' }
   vim.cmd('echohl Question')
-  -- Use `pcall` to allow `<C-c>` to cancel user input
-  local ok, res = pcall(vim.fn.input, opts)
-  vim.cmd([[echohl None | echo '' | redraw]])
+  local ok, res = pcall(vim.fn.input, { prompt = prompt .. ': ', default = text or '' })
+  vim.cmd('echohl None | echo "" | redraw')
 
-  -- Stop key listening
-  on_key(nil, H.ns_id.input)
-
-  if not ok or was_cancelled then return end
-  return res
+  vim.on_key(nil, H.ns_id.input)
+  return (ok and not was_cancelled) and res or nil
 end
 
 --- Generate common surrounding specifications
@@ -1004,6 +1009,11 @@ MiniSurround.gen_spec = { input = {}, output = {} }
 ---   Verify with `:=vim.treesitter.query.get('lang', 'textobjects')` and see
 ---   if the target capture is recognized as one.
 --- - It uses buffer's |filetype| to determine query language.
+--- - It first searches the language under cursor for matches. If no matches are
+---   found, it falls back to searching parent languages (up to the buffer's root
+---   language). If no matches are found again, it falls back to recursively
+---   searching all children languages (from the language under cursor). If no
+---   matches again - report no matches.
 --- - On large files it is slower than pattern-based textobjects. Still very
 ---   fast though (one search should be magnitude of milliseconds or tens of
 ---   milliseconds on really large file).
@@ -1188,53 +1198,51 @@ end
 H.apply_config = function(config)
   MiniSurround.config = config
 
-  local expr_map = function(lhs, rhs, desc) H.map('n', lhs, rhs, { expr = true, desc = desc }) end
-  local map = function(lhs, rhs, desc) H.map('n', lhs, rhs, { desc = desc }) end
+  local maps, maps_l, maps_n = config.mappings, {}, {}
+  local suf_l, suf_n = maps.suffix_last, maps.suffix_next
+  for k, v in pairs(maps) do
+    -- Don't create extended mapping if user chose not to create a regular one
+    maps_l[k] = (v ~= '' and suf_l ~= '') and (v .. suf_l) or ''
+    maps_n[k] = (v ~= '' and suf_n ~= '') and (v .. suf_n) or ''
+  end
+
+  local m = function(mode, lhs, rhs, desc) H.map(mode, lhs, rhs, { expr = true, desc = desc }) end
 
   --stylua: ignore start
-  -- Make regular mappings
-  local m = config.mappings
+  m('n', maps.add, H.make_operator('add', nil, true), 'Add surrounding')
+  H.map('x', maps.add, ':<C-u>lua MiniSurround.add("visual")<CR>', { desc = 'Add surrounding to selection' })
 
-  expr_map(m.add,     H.make_operator('add', nil, true), 'Add surrounding')
-  expr_map(m.delete,  H.make_operator('delete'),         'Delete surrounding')
-  expr_map(m.replace, H.make_operator('replace'),        'Replace surrounding')
+  m('n', maps.delete,   H.make_operator('delete', nil),    'Delete surrounding')
+  m('n', maps_l.delete, H.make_operator('delete', 'prev'), 'Delete previous surrounding')
+  m('n', maps_n.delete, H.make_operator('delete', 'next'), 'Delete next surrounding')
 
-  map(m.find,      H.make_action('find', 'right'), 'Find right surrounding')
-  map(m.find_left, H.make_action('find', 'left'),  'Find left surrounding')
-  map(m.highlight, H.make_action('highlight'),     'Highlight surrounding')
+  m('n', maps.replace,   H.make_operator('replace', nil),    'Replace surrounding')
+  m('n', maps_l.replace, H.make_operator('replace', 'prev'), 'Replace previous surrounding')
+  m('n', maps_n.replace, H.make_operator('replace', 'next'), 'Replace next surrounding')
 
-  H.map('x', m.add, [[:<C-u>lua MiniSurround.add('visual')<CR>]], { desc = 'Add surrounding to selection' })
+  m('n', maps.find,   H.make_action('find', 'right', nil),    'Find right surrounding')
+  m('x', maps.find,   H.make_action('find', 'right', nil),    'Find right surrounding')
+  m('o', maps.find,   H.make_action('find', 'right', nil),    'Find right surrounding')
+  m('n', maps_l.find, H.make_action('find', 'right', 'prev'), 'Find previous right surrounding')
+  m('x', maps_l.find, H.make_action('find', 'right', 'prev'), 'Find previous right surrounding')
+  m('o', maps_l.find, H.make_action('find', 'right', 'prev'), 'Find previous right surrounding')
+  m('n', maps_n.find, H.make_action('find', 'right', 'next'), 'Find next right surrounding')
+  m('x', maps_n.find, H.make_action('find', 'right', 'next'), 'Find next right surrounding')
+  m('o', maps_n.find, H.make_action('find', 'right', 'next'), 'Find next right surrounding')
 
-  -- Make extended mappings
-  local suffix_expr_map = function(lhs, suffix, rhs, desc)
-    -- Don't create extended mapping if user chose not to create regular one
-    if lhs == '' then return end
-    expr_map(lhs .. suffix, rhs, desc)
-  end
-  local suffix_map = function(lhs, suffix, rhs, desc)
-    if lhs == '' then return end
-    map(lhs .. suffix, rhs, desc)
-  end
+  m('n', maps.find_left,   H.make_action('find', 'left', nil),    'Find left surrounding')
+  m('x', maps.find_left,   H.make_action('find', 'left', nil),    'Find left surrounding')
+  m('o', maps.find_left,   H.make_action('find', 'left', nil),    'Find left surrounding')
+  m('n', maps_l.find_left, H.make_action('find', 'left', 'prev'), 'Find previous left surrounding')
+  m('x', maps_l.find_left, H.make_action('find', 'left', 'prev'), 'Find previous left surrounding')
+  m('o', maps_l.find_left, H.make_action('find', 'left', 'prev'), 'Find previous left surrounding')
+  m('n', maps_n.find_left, H.make_action('find', 'left', 'next'), 'Find next left surrounding')
+  m('x', maps_n.find_left, H.make_action('find', 'left', 'next'), 'Find next left surrounding')
+  m('o', maps_n.find_left, H.make_action('find', 'left', 'next'), 'Find next left surrounding')
 
-  if m.suffix_last ~= '' then
-    local suff = m.suffix_last
-    suffix_expr_map(m.delete,  suff, H.make_operator('delete',  'prev'), 'Delete previous surrounding')
-    suffix_expr_map(m.replace, suff, H.make_operator('replace', 'prev'), 'Replace previous surrounding')
-
-    suffix_map(m.find,      suff, H.make_action('find', 'right',  'prev'), 'Find previous right surrounding')
-    suffix_map(m.find_left, suff, H.make_action('find', 'left',   'prev'), 'Find previous left surrounding')
-    suffix_map(m.highlight, suff, H.make_action('highlight', nil, 'prev'), 'Highlight previous surrounding')
-  end
-
-  if m.suffix_next ~= '' then
-    local suff = m.suffix_next
-    suffix_expr_map(m.delete,  suff, H.make_operator('delete',  'next'), 'Delete next surrounding')
-    suffix_expr_map(m.replace, suff, H.make_operator('replace', 'next'), 'Replace next surrounding')
-
-    suffix_map(m.find,      suff, H.make_action('find', 'right',  'next'), 'Find next right surrounding')
-    suffix_map(m.find_left, suff, H.make_action('find', 'left',   'next'), 'Find next left surrounding')
-    suffix_map(m.highlight, suff, H.make_action('highlight', nil, 'next'), 'Highlight next surrounding')
-  end
+  m('n', maps.highlight,   H.make_action('highlight', nil, nil),    'Highlight surrounding')
+  m('n', maps_l.highlight, H.make_action('highlight', nil, 'prev'), 'Highlight previous surrounding')
+  m('n', maps_n.highlight, H.make_action('highlight', nil, 'next'), 'Highlight next surrounding')
   --stylua: ignore end
 end
 
@@ -1284,9 +1292,9 @@ end
 
 H.make_action = function(task, direction, search_method)
   return function()
-    if H.is_disabled() then return end
+    if H.is_disabled() then return '<Esc>' end
     H.cache = { count = vim.v.count1, direction = direction, search_method = search_method }
-    return MiniSurround[task]()
+    return '<Cmd>lua MiniSurround.' .. task .. '()<CR>'
   end
 end
 
@@ -1545,35 +1553,37 @@ H.get_matched_range_pairs_builtin = function(captures)
   -- Get parser (LanguageTree) at cursor (important for injected languages)
   local pos = vim.api.nvim_win_get_cursor(0)
   local lang_tree = parser:language_for_range({ pos[1] - 1, pos[2], pos[1] - 1, pos[2] })
+  local init_lang_tree = lang_tree
 
   local missing_query_langs = {}
   -- Compute matched ranges for both outer and inner captures
-  -- Maybe go up parent trees to work with injected languages
-  local outer_ranges, inner_ranges = {}, {}
-  while (vim.tbl_isempty(inner_ranges) or vim.tbl_isempty(outer_ranges)) and lang_tree ~= nil do
-    local lang = lang_tree:lang()
-    -- Get query file depending on the local language
-    local query = vim.treesitter.query.get(lang, 'textobjects')
-
-    if query ~= nil then
-      for _, tree in ipairs(lang_tree:trees()) do
-        local root = tree:root()
-        vim.list_extend(outer_ranges, H.get_match_ranges_builtin(root, buf_id, query, captures.outer:sub(2)))
-        vim.list_extend(inner_ranges, H.get_match_ranges_builtin(root, buf_id, query, captures.inner:sub(2)))
-      end
-    end
-    if query == nil then missing_query_langs[lang] = true end
+  local outer, inner = {}, {}
+  -- Go up parent trees to work with injected languages
+  while (vim.tbl_isempty(inner) or vim.tbl_isempty(outer)) and lang_tree ~= nil do
+    H.append_lang_ranges(outer, inner, missing_query_langs, buf_id, captures, lang_tree)
 
     -- `LanguageTree:parent()` was added in Neovim<0.10
     -- TODO: Drop extra check after compatibility with Neovim=0.9 is dropped
     lang_tree = lang_tree.parent and lang_tree:parent() or nil
   end
 
+  -- Fall back to children trees for injected languages
+  if vim.tbl_isempty(inner) or vim.tbl_isempty(outer) then
+    local check_children
+    check_children = function(l_tree)
+      for _, child in pairs(l_tree:children()) do
+        H.append_lang_ranges(outer, inner, missing_query_langs, buf_id, captures, child)
+        check_children(child)
+      end
+    end
+    check_children(init_lang_tree)
+  end
+
   -- Match outer and inner ranges: for each outer range pick the biggest inner
   -- range that lies within outer
   local res = {}
-  for i, outer in ipairs(outer_ranges) do
-    res[i] = { outer = outer, inner = H.get_biggest_nested_range(inner_ranges, outer) }
+  for i, o in ipairs(outer) do
+    res[i] = { outer = o, inner = H.get_biggest_nested_range(inner, o) }
   end
 
   if vim.tbl_isempty(res) and not vim.tbl_isempty(missing_query_langs) then
@@ -1581,6 +1591,22 @@ H.get_matched_range_pairs_builtin = function(captures)
   end
 
   return res
+end
+
+H.append_lang_ranges = function(outer, inner, missing_query_langs, buf_id, captures, lang_tree)
+  local lang = lang_tree:lang()
+  local query = vim.treesitter.query.get(lang, 'textobjects')
+
+  if query ~= nil then H.append_ranges(outer, inner, buf_id, query, captures, lang_tree) end
+  if query == nil then missing_query_langs[lang] = true end
+end
+
+H.append_ranges = function(outer, inner, buf_id, query, captures, lang_tree)
+  for _, tree in ipairs(lang_tree:trees()) do
+    local root = tree:root()
+    vim.list_extend(outer, H.get_match_ranges_builtin(root, buf_id, query, captures.outer:sub(2)))
+    vim.list_extend(inner, H.get_match_ranges_builtin(root, buf_id, query, captures.inner:sub(2)))
+  end
 end
 
 H.get_match_ranges_builtin = function(root, buf_id, query, capture)
@@ -1616,8 +1642,9 @@ end
 H.get_biggest_nested_range = function(ranges, parent)
   local best_range, best_byte_count = nil, -math.huge
   for _, r in ipairs(ranges) do
+    local is_nested = parent[3] <= r[3] and r[6] <= parent[6] and not (parent[3] == r[3] and r[6] == parent[6])
     local byte_count = r[6] - r[3] + 1
-    if parent[3] <= r[3] and r[6] <= parent[6] and best_byte_count < byte_count then
+    if is_nested and best_byte_count < byte_count then
       best_range, best_byte_count = r, byte_count
     end
   end
@@ -1877,6 +1904,12 @@ H.is_point_inside_spans = function(point, spans)
   return false
 end
 
+H.str_utfindex = function(s, i) return vim.str_utfindex(s, 'utf-32', i) end
+if vim.fn.has('nvim-0.11') == 0 then H.str_utfindex = function(s, i) return (vim.str_utfindex(s, i)) end end
+
+H.str_byteindex = function(s, i) return vim.str_byteindex(s, 'utf-32', i) end
+if vim.fn.has('nvim-0.11') == 0 then H.str_byteindex = function(s, i) return vim.str_byteindex(s, i) end end
+
 -- Work with operator marks ---------------------------------------------------
 H.get_marks_pos = function(mode)
   -- Region is inclusive on both ends
@@ -1922,10 +1955,10 @@ H.get_marks_pos = function(mode)
     -- Use `math.min()` because it might lead to 'index out of range' error
     -- when mark is positioned at the end of line (that extra space which is
     -- selected when selecting with `v$`)
-    local utf_index = vim.str_utfindex(line2, math.min(#line2, pos2[2]))
+    local utf_index = H.str_utfindex(line2, math.min(#line2, pos2[2]))
     -- This returns the last byte inside character because `vim.str_byteindex()`
     -- 'rounds upwards to the end of that sequence'.
-    pos2[2] = vim.str_byteindex(line2, utf_index)
+    pos2[2] = H.str_byteindex(line2, utf_index)
   end
 
   return {
@@ -1981,20 +2014,20 @@ end
 -- Work with user input -------------------------------------------------------
 H.user_surround_id = function(sur_type)
   -- Get from user single character surrounding identifier
-  local needs_help_msg = true
+  local needs_reminder = true
   vim.defer_fn(function()
-    if not needs_help_msg then return end
+    if not needs_reminder then return end
 
-    local msg = string.format('Enter %s surrounding identifier (single character) ', sur_type)
+    local msg = string.format('Reminder to press %s surrounding id ', sur_type)
     H.echo(msg)
     H.cache.msg_shown = true
   end, 1000)
   local ok, char = pcall(vim.fn.getcharstr)
-  needs_help_msg = false
+  needs_reminder = false
   H.unecho()
 
-  -- Terminate if couldn't get input (like with <C-c>) or it is `<Esc>`
-  if not ok or char == '\27' then return nil end
+  -- Terminate if couldn't get input (like with <C-c>) or on `<Esc>`
+  if not ok or char == '' or char == '\3' or char == '\27' then return nil end
   return char
 end
 

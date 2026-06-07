@@ -56,9 +56,6 @@ local function toggleBytesInfo()
 end
 vim.keymap.set("n", "<Leader>Ob", toggleBytesInfo, { desc = "Toggle [O]ption [B]ytes info" })
 
-vim.keymap.set("n", "<Leader>m", function()
-	vim.cmd("MaximizerToggle!")
-end, { desc = "Toggle [M]aximize the window" })
 -- Diagnostic keymaps
 --
 

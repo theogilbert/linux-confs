@@ -180,7 +180,7 @@ vim.keymap.set("n", "<leader>p", lsp_settings.peek_definition, { desc = "LSP - [
 
 vim.keymap.set("n", "<C-k>", require("class-peek").peek, { desc = "LSP - [P]eek class structure" })
 vim.keymap.set("n", "<leader>lR", function()
-	vim.cmd("LspRestart")
+	vim.cmd("lsp restart")
 end, { desc = "[L]SP - [R]estart" })
 vim.keymap.set("n", "<leader>lr", vim.lsp.buf.rename, { desc = "[L]SP - [R]ename symbol under cursor" })
 

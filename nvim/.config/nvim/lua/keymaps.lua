@@ -238,7 +238,8 @@ vim.keymap.set({ "n", "v" }, "<leader>gr", gitsigns.reset_hunk, { desc = "[G]it 
 vim.keymap.set({ "n", "v" }, "<leader>gb", function()
     gitsigns.blame_line({ full  = true })
 end, { desc = "[G]it - View line [b]lame" })
-vim.keymap.set("n", "<leader>gl", require("utilities.lazygit").open, { desc = "[G]it - Open [l]azygit" })
+local float_term = require("utilities.float_term")
+vim.keymap.set("n", "<leader>gl", float_term.runner({ cmd = "lazygit" }), { desc = "[G]it - Open [l]azygit" })
 
 vim.keymap.set("n", "]c", function()
     if vim.wo.diff then

@@ -14,9 +14,15 @@ local function input(opts, on_confirm)
 end
 
 local function select(items, opts, on_choice)
-  if not items or #items == 0 then
-    return
+  -- Guard against nil and vim.NIL (JSON null — truthy but not iterable).
+  if not items or items == vim.NIL then return end
+  -- vim.json.decode may return a Vim list userdata; normalize to Lua table.
+  if type(items) ~= "table" then
+    local t = {}
+    for _, v in ipairs(items) do t[#t + 1] = v end
+    items = t
   end
+  if #items == 0 then return end
   select_open(items, opts or {}, on_choice)
 end
 

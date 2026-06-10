@@ -1,0 +1,142 @@
+*quick_term.txt*   Run shell commands in a floating or bottom-split terminal
+
+==============================================================================
+CONTENTS                                                  *quick_term-contents*
+
+    1. Introduction ......................... |quick_term-introduction|
+    2. Usage ................................ |quick_term-usage|
+    3. Functions ............................ |quick_term-functions|
+    4. Options .............................. |quick_term-options|
+    5. Mappings ............................. |quick_term-mappings|
+    6. Examples ............................. |quick_term-examples|
+
+==============================================================================
+1. INTRODUCTION                                       *quick_term-introduction*
+
+The `utilities.quick_term` module runs a command in a throwaway terminal
+shown either in a centered floating window or in a bottom split. It is meant
+for one-off operations such as `lazygit`, `make ci`, or `uv lock`.
+
+When the process exits the window can be closed automatically, so an
+interactive TUI like lazygit disappears immediately on quit instead of leaving
+a "[Process exited]" buffer behind.
+
+==============================================================================
+2. USAGE                                                     *quick_term-usage*
+
+Require the module and call |quick_term.run()|, or use |quick_term.runner()|
+to build a function for |vim.keymap.set()|: >lua
+
+    local quick_term = require("utilities.quick_term")
+
+    -- Run immediately.
+    quick_term.run({ cmd = "lazygit" })
+
+    -- Bind to a key.
+    vim.keymap.set("n", "<leader>gl",
+        quick_term.runner({ cmd = "lazygit" }),
+        { desc = "Open lazygit" })
+<
+==============================================================================
+3. FUNCTIONS                                             *quick_term-functions*
+
+quick_term.run({opts})                                       *quick_term.run()*
+
+    Open a terminal running {opts.cmd}. {opts} is a table; see
+    |quick_term-options|. `cmd` is required.
+
+    Returns a table: >lua
+        { buf = <bufnr>, win = <winid>, close = <function> }
+<
+    `close()` closes the window and wipes the buffer. It is safe to call more
+    than once.
+
+quick_term.runner({opts})                                 *quick_term.runner()*
+
+    Returns a function that calls |quick_term.run()| with {opts} when invoked.
+    Convenient as the second argument to |vim.keymap.set()|.
+
+==============================================================================
+4. OPTIONS                                                 *quick_term-options*
+
+The {opts} table accepts the following keys (defaults in brackets):
+
+    cmd            string | string[]                          (required)
+                   Command to run. A string is run via the shell; a list is
+                   run directly without shell parsing.
+
+    position       "float" | "bottom"                         ["float"]
+                   "float"  centered floating window; the cursor moves into
+                            it (use for interactive TUIs).
+                   "bottom" horizontal split at the bottom; the cursor STAYS
+                            in the current window and insert mode is not
+                            entered.
+
+    width          number                                     [0.9]
+                   Float width as a fraction of 'columns'. Float only.
+
+    height         number                                     [float 0.9,
+                                                                bottom 0.3]
+                   Window height as a fraction of 'lines'.
+
+    border         string                                     ["rounded"]
+                   Float border style, see |nvim_open_win()|. Float only.
+
+    bg             string                                     ["#222327"]
+                   Background color of the terminal window (hex).
+
+    title          string                                     [nil]
+                   Centered float border title. Float only.
+
+    insert         boolean                                    [true]
+                   Enter terminal insert mode after opening. Float only
+                   (ignored for "bottom", which never steals the cursor).
+
+    close_on_exit  true | false | "success"                   [true]
+                   true       always close when the process exits.
+                   false      keep the output; press `q` to close.
+                   "success"  close only on exit code 0; on failure keep the
+                              output on screen for inspection.
+
+==============================================================================
+5. MAPPINGS                                               *quick_term-mappings*
+
+Inside the terminal window a buffer-local normal-mode mapping is created:
+
+    q          Close the window and wipe the buffer.
+
+This fires only from terminal-normal mode (reach it with `<C-\><C-n>`, or
+automatically once the process exits). Interactive applications keep grabbing
+keys in terminal-insert mode, so this never shadows their own `q`.
+
+==============================================================================
+6. EXAMPLES                                               *quick_term-examples*
+
+lazygit in a float that closes the moment you quit: >lua
+
+    vim.keymap.set("n", "<leader>gl",
+        quick_term.runner({ cmd = "lazygit" }),
+        { desc = "Open lazygit" })
+<
+A build in a bottom pane, keeping your cursor in the code; the pane stays open
+on failure so you can read the error, and closes itself on success: >lua
+
+    vim.keymap.set("n", "<leader>rc",
+        quick_term.runner({
+            cmd = "make ci",
+            position = "bottom",
+            close_on_exit = "success",
+        }),
+        { desc = "Run CI" })
+<
+A dependency lock in a titled float: >lua
+
+    vim.keymap.set("n", "<leader>rl",
+        quick_term.runner({
+            cmd = "uv lock",
+            title = " uv lock ",
+            close_on_exit = "success",
+        }),
+        { desc = "uv lock" })
+<
+ vim:tw=78:ts=8:noet:ft=help:norl:

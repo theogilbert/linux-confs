@@ -53,30 +53,56 @@ local function open_window(opts)
     return buf, win, true
 end
 
--- Run `opts.cmd` in a floating or bottom-split terminal.
+-- There is only ever one quick_term at a time.
+local active = nil -- { buf, win, job, close }
+
+local function teardown(state)
+    if not state then
+        return
+    end
+    if state.job and not state.exited then
+        pcall(vim.fn.jobstop, state.job)
+        vim.notify("quick_term: running job aborted", vim.log.levels.WARN)
+    end
+    if state.win and vim.api.nvim_win_is_valid(state.win) then
+        vim.api.nvim_win_close(state.win, true)
+    end
+    if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+        vim.api.nvim_buf_delete(state.buf, { force = true })
+    end
+end
+
+-- Run `opts.cmd` in a floating or bottom-split terminal. Any existing
+-- quick_term is replaced, so only one window/buffer ever exists.
 -- Returns { buf, win, close } so callers can manage the window if needed.
 M.run = function(opts)
     opts = vim.tbl_extend("force", defaults, opts or {})
     assert(opts.cmd, "quick_term.run requires a `cmd`")
 
+    -- Replace any existing quick_term with this new one.
+    teardown(active)
+    active = nil
+
     local buf, win, jumped = open_window(opts)
+    local state = { buf = buf, win = win }
+    active = state
 
     local function close()
-        if vim.api.nvim_win_is_valid(win) then
-            vim.api.nvim_win_close(win, true)
-        end
-        if vim.api.nvim_buf_is_valid(buf) then
-            vim.api.nvim_buf_delete(buf, { force = true })
+        teardown(state)
+        if active == state then
+            active = nil
         end
     end
+    state.close = close
 
     -- jobstart(term=true) attaches to the current buffer, so run it while the
     -- terminal window/buffer is current, then restore focus if we didn't jump.
     local prev_win = vim.api.nvim_get_current_win()
     vim.api.nvim_set_current_win(win)
-    vim.fn.jobstart(opts.cmd, {
+    state.job = vim.fn.jobstart(opts.cmd, {
         term = true,
         on_exit = function(_, code)
+            state.exited = true
             local should_close = opts.close_on_exit == true
                 or (opts.close_on_exit == "success" and code == 0)
             if should_close then
@@ -98,7 +124,7 @@ M.run = function(opts)
         vim.api.nvim_set_current_win(prev_win)
     end
 
-    return { buf = buf, win = win, close = close }
+    return state
 end
 
 -- Convenience wrapper returning a function suitable for vim.keymap.set.

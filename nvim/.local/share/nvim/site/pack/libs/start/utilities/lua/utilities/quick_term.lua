@@ -53,8 +53,8 @@ local function open_window(opts)
     return buf, win, true
 end
 
--- There is only ever one quick_term at a time.
-local active = nil -- { buf, win, job, close }
+-- One quick_term per position, so a float and a bottom term can coexist.
+local active = {} -- position -> { buf, win, job, close }
 
 local function teardown(state)
     if not state then
@@ -73,24 +73,27 @@ local function teardown(state)
 end
 
 -- Run `opts.cmd` in a floating or bottom-split terminal. Any existing
--- quick_term is replaced, so only one window/buffer ever exists.
+-- quick_term at the same position is replaced, so there is one window/buffer
+-- per position (a float and a bottom term can coexist).
 -- Returns { buf, win, close } so callers can manage the window if needed.
 M.run = function(opts)
     opts = vim.tbl_extend("force", defaults, opts or {})
     assert(opts.cmd, "quick_term.run requires a `cmd`")
 
-    -- Replace any existing quick_term with this new one.
-    teardown(active)
-    active = nil
+    local position = opts.position
+
+    -- Replace any existing quick_term at this position with the new one.
+    teardown(active[position])
+    active[position] = nil
 
     local buf, win, jumped = open_window(opts)
     local state = { buf = buf, win = win }
-    active = state
+    active[position] = state
 
     local function close()
         teardown(state)
-        if active == state then
-            active = nil
+        if active[position] == state then
+            active[position] = nil
         end
     end
     state.close = close

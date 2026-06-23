@@ -122,6 +122,9 @@ vim.g.scroll_setting = 8
 vim.opt.scroll = vim.g.scroll_setting
 
 vim.filetype.add({
+    extension = {
+        cypher = 'cypher',
+    },
     pattern = {
         ['.*Jenkinsfile.*'] = 'groovy'
     }

@@ -66,11 +66,13 @@ The {opts} table accepts the following keys (defaults in brackets):
                    run directly without shell parsing.
 
     position       "float" | "bottom"                         ["float"]
-                   "float"  centered floating window; the cursor moves into
-                            it (use for interactive TUIs).
-                   "bottom" horizontal split at the bottom; the cursor STAYS
-                            in the current window and insert mode is not
-                            entered.
+                   "float"  centered floating window.
+                   "bottom" horizontal split at the bottom.
+
+    focus          boolean                                    [true for float,
+                                                               false for bottom]
+                   Move the cursor into the terminal after opening. When false
+                   the cursor stays in the calling window.
 
     width          number                                     [0.9]
                    Float width as a fraction of 'columns'. Float only.
@@ -89,8 +91,8 @@ The {opts} table accepts the following keys (defaults in brackets):
                    Centered float border title. Float only.
 
     insert         boolean                                    [true]
-                   Enter terminal insert mode after opening. Float only
-                   (ignored for "bottom", which never steals the cursor).
+                   Enter terminal insert mode after opening. Applies to both
+                   positions, but only when `focus` is true.
 
     close_on_exit  true | false | "success"                   [true]
                    true       always close when the process exits.
@@ -118,8 +120,8 @@ lazygit in a float that closes the moment you quit: >lua
         quick_term.runner({ cmd = "lazygit" }),
         { desc = "Open lazygit" })
 <
-A build in a bottom pane, keeping your cursor in the code; the pane stays open
-on failure so you can read the error, and closes itself on success: >lua
+A build in a bottom pane (cursor stays in the code by default); the pane stays
+open on failure so you can read the error, and closes itself on success: >lua
 
     vim.keymap.set("n", "<leader>rc",
         quick_term.runner({

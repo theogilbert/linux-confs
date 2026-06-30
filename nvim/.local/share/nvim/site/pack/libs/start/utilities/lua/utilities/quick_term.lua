@@ -10,6 +10,7 @@ local defaults = {
     title = nil,               -- float border title
     focus = nil,               -- move cursor into terminal (default: true for float, false for bottom)
     insert = true,             -- enter terminal insert mode when focus is true
+    auto_scroll = false,       -- keep terminal window scrolled to bottom as output arrives
     -- close_on_exit: true | false | "success"
     --   true     -> always close when the process exits (good for TUIs)
     --   false    -> keep output visible; press `q` to close
@@ -114,6 +115,16 @@ M.run = function(opts)
             end
         end,
     })
+
+    if opts.auto_scroll then
+        vim.api.nvim_buf_attach(buf, false, {
+            on_lines = function()
+                if vim.api.nvim_win_is_valid(win) then
+                    vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
+                end
+            end,
+        })
+    end
 
     -- Close from terminal-normal mode (`<C-\><C-n>` then `q`). Interactive TUIs
     -- such as lazygit grab keys in insert mode, so this never shadows their own

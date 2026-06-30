@@ -94,6 +94,11 @@ The {opts} table accepts the following keys (defaults in brackets):
                    Enter terminal insert mode after opening. Applies to both
                    positions, but only when `focus` is true.
 
+    auto_scroll    boolean                                    [false]
+                   Automatically scroll the terminal window to the bottom as
+                   new output arrives. Useful for log-tailing commands where
+                   `focus` is false and the cursor stays in another window.
+
     close_on_exit  true | false | "success"                   [true]
                    true       always close when the process exits.
                    false      keep the output; press `q` to close.
@@ -140,5 +145,18 @@ A dependency lock in a titled float: >lua
             close_on_exit = "success",
         }),
         { desc = "uv lock" })
+<
+Tailing logs in a bottom pane while keeping focus in the code; the window
+scrolls automatically as new lines arrive: >lua
+
+    vim.keymap.set("n", "<leader>rl",
+        quick_term.runner({
+            cmd = "journalctl -f",
+            position = "bottom",
+            focus = false,
+            auto_scroll = true,
+            close_on_exit = false,
+        }),
+        { desc = "Tail logs" })
 <
  vim:tw=78:ts=8:noet:ft=help:norl:

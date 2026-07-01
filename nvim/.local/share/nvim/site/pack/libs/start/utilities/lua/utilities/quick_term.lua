@@ -10,7 +10,7 @@ local defaults = {
     title = nil,               -- float border title
     focus = nil,               -- move cursor into terminal (default: true for float, false for bottom)
     insert = true,             -- enter terminal insert mode when focus is true
-    auto_scroll = false,       -- keep terminal window scrolled to bottom as output arrives
+    auto_scroll = nil,         -- keep terminal window scrolled to bottom (default: true when focus is false)
     -- close_on_exit: true | false | "success"
     --   true     -> always close when the process exits (good for TUIs)
     --   false    -> keep output visible; press `q` to close
@@ -80,6 +80,9 @@ M.run = function(opts)
     assert(opts.cmd, "quick_term.run requires a `cmd`")
     if opts.focus == nil then
         opts.focus = opts.position == "float"
+    end
+    if opts.auto_scroll == nil then
+        opts.auto_scroll = not opts.focus
     end
 
     local position = opts.position

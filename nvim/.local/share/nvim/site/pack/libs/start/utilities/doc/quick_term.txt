@@ -94,7 +94,7 @@ The {opts} table accepts the following keys (defaults in brackets):
                    Enter terminal insert mode after opening. Applies to both
                    positions, but only when `focus` is true.
 
-    auto_scroll    boolean                                    [false]
+    auto_scroll    boolean                        [true when focus is false]
                    Automatically scroll the terminal window to the bottom as
                    new output arrives. Useful for log-tailing commands where
                    `focus` is false and the cursor stays in another window.

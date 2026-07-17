@@ -12,18 +12,7 @@ vim.keymap.set("n", "<C-Right>", "<Cmd>vertical resize +1<CR>", { silent = true 
 
 vim.keymap.set("n", "<C-w>Q", "<Cmd>tabclose<CR>", { silent = true })
 
-vim.keymap.set("n", "<leader>f", function()
-    local win_list = vim.api.nvim_list_wins()
-    for idx = #win_list, 1, -1 do
-        local win_handle = win_list[idx]
-        local win_cfg = vim.api.nvim_win_get_config(win_handle)
-        if win_cfg.relative ~= '' then
-            vim.api.nvim_set_current_win(win_handle)
-            break
-        end
-    end
-
-end, { desc = "[F]ocus floating window" })
+vim.keymap.set("n", "<leader>f", require("utilities.window_picker").pick, { desc = "[F]ocus window" })
 
 -- If the number column is displayed, hide it and hide the sign column
 -- Otherwise, display both.

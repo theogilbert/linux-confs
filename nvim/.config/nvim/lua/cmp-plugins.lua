@@ -140,16 +140,11 @@ cmp.setup({
 
 
 -- define a timer to activate delayed auto-complete after 300ms
-local cmp_timer = nil
+local cmp_timer = vim.uv.new_timer()
 vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 	pattern = "*",
 	callback = function()
-		if cmp_timer then
-			vim.uv.timer_stop(cmp_timer)
-			cmp_timer = nil
-		end
-
-		cmp_timer = vim.uv.new_timer()
+		cmp_timer:stop()
 		cmp_timer:start(
 			300,
 			0,

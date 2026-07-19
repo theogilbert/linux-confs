@@ -110,7 +110,7 @@ local function ruff_format_on_save(args)
     if #clients == 0 then return end
     local client = clients[1]
     local encoding = client.offset_encoding or "utf-16"
-    local timeout = 10000
+    local timeout = 1000
 
     -- 1. Apply Ruff's "fix all" code action synchronously, equivalent to
     --    `ruff check --fix-only` but applied as LSP text edits so extmarks

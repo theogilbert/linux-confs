@@ -135,7 +135,6 @@ wk.add({
 	{ "<leader>l", desc = "[L]SP actions" },
 	{ "<leader>t", desc = "[T]ests actions" },
 	{ "<leader>ld", desc = "[L]SP actions - [D]iagnostics" },
-	{ "<leader>M", desc = "[M]arkdown actions" },
 	{ "<leader>v", desc = "[V]im actions", mode = {"n", "v"} },
 	{ "<leader>vs", desc = "[V]im [S]essions actions" },
 	{ "<leader>S", desc = "[S]cratch file actions" },

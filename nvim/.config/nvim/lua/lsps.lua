@@ -292,7 +292,7 @@ vim.lsp.config("lua_ls", {
   }
 })
 
-if vim.fn.executable("lua-language-server") then
+if vim.fn.executable("lua-language-server") == 1 then
     vim.lsp.enable("lua_ls")
 end
 

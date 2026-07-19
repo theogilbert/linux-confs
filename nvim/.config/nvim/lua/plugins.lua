@@ -5,7 +5,7 @@
 
 local mini_ai = require('mini.ai')
 mini_ai.setup({
-    n_lines = 9999,
+    n_lines = 500,
     search_method = 'cover_or_nearest',
     custom_textobjects = {
         c = mini_ai.gen_spec.treesitter({

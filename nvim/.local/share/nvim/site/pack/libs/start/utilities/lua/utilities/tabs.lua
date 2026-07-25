@@ -40,7 +40,7 @@ function M.render()
 end
 
 function M.setup()
-    vim.api.nvim_create_user_command("TabRename", function(opts)
+    vim.api.nvim_create_user_command("TabName", function(opts)
         M.name_current_tab(opts.args)
     end, {
         nargs = 1,

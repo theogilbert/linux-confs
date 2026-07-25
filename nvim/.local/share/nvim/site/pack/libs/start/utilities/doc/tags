@@ -1,5 +1,5 @@
 :TabClearName	tabs.txt	/*:TabClearName*
-:TabRename	tabs.txt	/*:TabRename*
+:TabName	tabs.txt	/*:TabRename*
 quick_term-contents	quick_term.txt	/*quick_term-contents*
 quick_term-examples	quick_term.txt	/*quick_term-examples*
 quick_term-functions	quick_term.txt	/*quick_term-functions*

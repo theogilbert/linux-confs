@@ -20,7 +20,7 @@ instead, stored as a tab-local variable and rendered by a custom tabline.
 2. USAGE                                                           *tabs-usage*
 
 Call |utilities.tabs.setup()| once during startup. It registers
-|:TabRename| and |:TabClearName|, and installs a 'tabline' that shows each
+|:TabName| and |:TabClearName|, and installs a 'tabline' that shows each
 tab's assigned name, falling back to the active buffer's name for tabs that
 have none: >lua
 
@@ -29,7 +29,7 @@ have none: >lua
 ==============================================================================
 3. COMMANDS                                                     *tabs-commands*
 
-:TabRename {name}                                                 *:TabRename*
+:TabName {name}                                                 *:TabName*
 
     Assign {name} to the current tab. {name} is required. The tabline shows
     this name instead of the active buffer's name, regardless of which
@@ -45,7 +45,7 @@ have none: >lua
 
 utilities.tabs.name_current_tab({name})            *utilities.tabs.name_current_tab()*
 
-    Assign {name} to the current tab. This is the function |:TabRename|
+    Assign {name} to the current tab. This is the function |:TabName|
     calls.
 
 utilities.tabs.clear_current_tab_name()      *utilities.tabs.clear_current_tab_name()*
@@ -60,7 +60,7 @@ utilities.tabs.render()                                *utilities.tabs.render()*
 
 utilities.tabs.setup()                                   *utilities.tabs.setup()*
 
-    Register |:TabRename| and |:TabClearName|, and install the custom
+    Register |:TabName| and |:TabClearName|, and install the custom
     'tabline'.
 
  vim:tw=78:ts=8:noet:ft=help:norl:

@@ -80,7 +80,8 @@ local function render_header(tab_info)
     pane.apply_highlight(header.get_hl_rules(tab_info.show_private))
 end
 
-local function refresh_pane(win, buf)
+local function refresh_pane(win, buf, opts)
+    opts = opts or {}
     local info = get_tab_info()
     if info == nil or win == nil or buf == nil then
         return
@@ -101,6 +102,11 @@ local function refresh_pane(win, buf)
     if err ~= nil then
         pane.write_error({ err })
         return
+    end
+
+    if opts.reset_collapse then
+        local cursor = vim.api.nvim_win_get_cursor(win)
+        info.collapsed = formatter.get_default_collapsed(sections, cursor[1], cursor[2])
     end
 
     local sections_lines = formatter.format(sections, info.collapsed, info.show_private)
@@ -251,7 +257,7 @@ M.toggle = function()
             },
             on_close = clear_tab_info,
         })
-        refresh_pane(watched_win, watched_buf)
+        refresh_pane(watched_win, watched_buf, { reset_collapse = true })
     else
         pane.close()
         clear_tab_info()

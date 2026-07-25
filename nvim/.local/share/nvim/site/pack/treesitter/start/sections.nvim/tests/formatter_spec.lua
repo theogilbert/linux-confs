@@ -305,6 +305,65 @@ describe("should get current section pane line", function()
     end)
 end)
 
+describe("should compute default collapsed state", function()
+    local formatter = require("sections.formatter")
+
+    it("collapses every top-level section when cursor precedes them all", function()
+        local sections = {
+            { name = "foo", type = "function", position = { 5, 0 }, node_id = "1", children = {} },
+            { name = "bar", type = "function", position = { 10, 0 }, node_id = "2", children = {} },
+        }
+
+        assert.are.same({ ["1"] = true, ["2"] = true }, formatter.get_default_collapsed(sections, 1, 0))
+    end)
+
+    it("leaves the section under the cursor expanded, collapsing its siblings", function()
+        local sections = {
+            { name = "foo", type = "function", position = { 1, 0 }, node_id = "1", children = {} },
+            { name = "bar", type = "function", position = { 10, 0 }, node_id = "2", children = {} },
+        }
+
+        assert.are.same({ ["1"] = true }, formatter.get_default_collapsed(sections, 10, 0))
+    end)
+
+    it("expands the whole ancestor chain down to the nested section under the cursor", function()
+        local sections = {
+            {
+                name = "MyClass",
+                type = "class",
+                position = { 1, 0 },
+                node_id = "1",
+                children = {
+                    { name = "foo", type = "function", position = { 5, 0 }, node_id = "2", children = {} },
+                    { name = "bar", type = "function", position = { 15, 0 }, node_id = "3", children = {} },
+                },
+            },
+        }
+
+        assert.are.same({ ["3"] = true }, formatter.get_default_collapsed(sections, 5, 0))
+    end)
+
+    it("collapses everything when the cursor precedes any section, even nested ones", function()
+        local sections = {
+            {
+                name = "MyClass",
+                type = "class",
+                position = { 1, 0 },
+                node_id = "1",
+                children = {
+                    { name = "foo", type = "function", position = { 5, 0 }, node_id = "2", children = {} },
+                },
+            },
+            { name = "bar", type = "function", position = { 20, 0 }, node_id = "3", children = {} },
+        }
+
+        assert.are.same(
+            { ["1"] = true, ["2"] = true, ["3"] = true },
+            formatter.get_default_collapsed(sections, 0, 0)
+        )
+    end)
+end)
+
 describe("should get section pos", function()
     local formatter = require("sections.formatter")
 

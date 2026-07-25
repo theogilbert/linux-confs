@@ -145,6 +145,53 @@ M.get_max_name_width = function(sections, collapsed, show_private)
     return max_width
 end
 
+--- Computes the `collapsed` map to use when the pane is first opened: every
+--- section is collapsed except the ancestor chain leading down to the
+--- section under the cursor, which is left expanded so that section stays
+--- visible.
+--- @param sections table The list of top-level sections
+--- @param cursor_line integer The 1-indexed cursor line in the source buffer
+--- @param cursor_col integer The 0-indexed cursor column in the source buffer
+--- @return table collapsed A mapping whose keys represent the collapsed sections' `node_id`
+M.get_default_collapsed = function(sections, cursor_line, cursor_col)
+    local collapsed = {}
+
+    local function is_at_or_before_cursor(pos)
+        return pos[1] < cursor_line or (pos[1] == cursor_line and pos[2] <= cursor_col)
+    end
+
+    -- Recurses into every branch (not just the active one) so that
+    -- descendants of collapsed sections are themselves marked collapsed;
+    -- otherwise expanding a collapsed ancestor later would reveal
+    -- children that were never meant to default-open.
+    local function walk(section_list)
+        local active = nil
+
+        for _, section in pairs(section_list) do
+            collapsed[section.node_id] = true
+            walk(section.children)
+
+            if is_at_or_before_cursor(section.position) then
+                if
+                    active == nil
+                    or section.position[1] > active.position[1]
+                    or (section.position[1] == active.position[1] and section.position[2] > active.position[2])
+                then
+                    active = section
+                end
+            end
+        end
+
+        if active ~= nil then
+            collapsed[active.node_id] = nil
+        end
+    end
+
+    walk(sections)
+
+    return collapsed
+end
+
 --- Returns the pane line number of the section closest to the given cursor position.
 --- If the exact section is not visible (collapsed or hidden), the last visible
 --- section before the cursor is returned instead.

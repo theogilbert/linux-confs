@@ -158,6 +158,7 @@ require("neotest").setup({
 
 require("sections").setup({})
 require("utilities.scratch").setup()
+require("utilities.tabs").setup()
 
 require("flash").setup({
     modes = { char = { enabled = false } }

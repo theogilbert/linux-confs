@@ -1,3 +1,5 @@
+:TabClearName	tabs.txt	/*:TabClearName*
+:TabRename	tabs.txt	/*:TabRename*
 quick_term-contents	quick_term.txt	/*quick_term-contents*
 quick_term-examples	quick_term.txt	/*quick_term-examples*
 quick_term-functions	quick_term.txt	/*quick_term-functions*
@@ -8,3 +10,13 @@ quick_term-usage	quick_term.txt	/*quick_term-usage*
 quick_term.run()	quick_term.txt	/*quick_term.run()*
 quick_term.runner()	quick_term.txt	/*quick_term.runner()*
 quick_term.txt	quick_term.txt	/*quick_term.txt*
+tabs-commands	tabs.txt	/*tabs-commands*
+tabs-contents	tabs.txt	/*tabs-contents*
+tabs-functions	tabs.txt	/*tabs-functions*
+tabs-introduction	tabs.txt	/*tabs-introduction*
+tabs-usage	tabs.txt	/*tabs-usage*
+tabs.txt	tabs.txt	/*tabs.txt*
+utilities.tabs.clear_current_tab_name()	tabs.txt	/*utilities.tabs.clear_current_tab_name()*
+utilities.tabs.name_current_tab()	tabs.txt	/*utilities.tabs.name_current_tab()*
+utilities.tabs.render()	tabs.txt	/*utilities.tabs.render()*
+utilities.tabs.setup()	tabs.txt	/*utilities.tabs.setup()*

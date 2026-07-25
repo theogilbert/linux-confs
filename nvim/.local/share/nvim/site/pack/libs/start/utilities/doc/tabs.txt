@@ -1,0 +1,66 @@
+*tabs.txt*   Assign display names to tabs
+
+==============================================================================
+CONTENTS                                                        *tabs-contents*
+
+    1. Introduction ......................... |tabs-introduction|
+    2. Usage ................................ |tabs-usage|
+    3. Commands ............................. |tabs-commands|
+    4. Functions ............................ |tabs-functions|
+
+==============================================================================
+1. INTRODUCTION                                             *tabs-introduction*
+
+In Neovim, a tab has no name of its own: the tabline shows the active
+buffer's name, so a tab renames itself every time you switch buffers inside
+it. The `utilities.tabs` module lets you pin an explicit name to a tab
+instead, stored as a tab-local variable and rendered by a custom tabline.
+
+==============================================================================
+2. USAGE                                                           *tabs-usage*
+
+Call |utilities.tabs.setup()| once during startup. It registers
+|:TabRename| and |:TabClearName|, and installs a 'tabline' that shows each
+tab's assigned name, falling back to the active buffer's name for tabs that
+have none: >lua
+
+    require("utilities.tabs").setup()
+<
+==============================================================================
+3. COMMANDS                                                     *tabs-commands*
+
+:TabRename {name}                                                 *:TabRename*
+
+    Assign {name} to the current tab. {name} is required. The tabline shows
+    this name instead of the active buffer's name, regardless of which
+    buffer is later focused in that tab.
+
+:TabClearName                                                 *:TabClearName*
+
+    Clear the current tab's assigned name and notify that it was cleared;
+    the tabline falls back to showing the active buffer's name again.
+
+==============================================================================
+4. FUNCTIONS                                                   *tabs-functions*
+
+utilities.tabs.name_current_tab({name})            *utilities.tabs.name_current_tab()*
+
+    Assign {name} to the current tab. This is the function |:TabRename|
+    calls.
+
+utilities.tabs.clear_current_tab_name()      *utilities.tabs.clear_current_tab_name()*
+
+    Clear the current tab's assigned name and notify that it was cleared.
+    This is the function |:TabClearName| calls.
+
+utilities.tabs.render()                                *utilities.tabs.render()*
+
+    Build the 'tabline' string for the current set of tabs. Assigned to
+    'tabline' by |utilities.tabs.setup()|; not normally called directly.
+
+utilities.tabs.setup()                                   *utilities.tabs.setup()*
+
+    Register |:TabRename| and |:TabClearName|, and install the custom
+    'tabline'.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

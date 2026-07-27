@@ -272,3 +272,15 @@ vim.api.nvim_create_autocmd("FileType", {
     end,
 })
 
+local grannos = require("grannos")
+vim.keymap.set("n", "<leader>bC", grannos.open_connections, { desc = "Data[b]ase - [c]onnections" })
+vim.keymap.set("n", "<leader>ba", grannos.attach, { desc = "Data[b]ase - [a]ttach" })
+vim.keymap.set("n", "<leader>bh", function() grannos.open_current_driver_help({ position = "bottom" }) end, { desc = "Data[b]ase [h]elp" })
+vim.keymap.set("n", "<leader>bx", grannos.open_explorer, { desc = "Data[b]ase - open e[x]plorer" })
+vim.keymap.set({"n", "v"}, "<leader>be", grannos.execute,        { desc = "Data[b]ase - [e]xecute" })
+vim.keymap.set("n", "<leader>bA", grannos.cancel_query, { desc = "Data[b]ase - [a]bort current query" })
+vim.keymap.set("n", "<leader>bL", grannos.query_log, { desc = "Data[b]ase - view query [L]ogs" })
+vim.keymap.set({"n", "v"}, "<leader>bs", grannos.save_query, { desc = "Data[b]ase - [s]ave query" })
+vim.keymap.set({"n", "v"}, "<leader>bl", grannos.load_query, { desc = "Data[b]ase - [l]oad query" })
+vim.keymap.set("n", "<leader>bp", grannos.open_session_settings, { desc = "Data[b]ase - session [p]arameters" })
+

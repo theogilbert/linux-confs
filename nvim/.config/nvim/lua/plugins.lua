@@ -138,6 +138,7 @@ wk.add({
 	{ "<leader>v", desc = "[V]im actions", mode = {"n", "v"} },
 	{ "<leader>vs", desc = "[V]im [S]essions actions" },
 	{ "<leader>S", desc = "[S]cratch file actions" },
+	{ "<leader>b", desc = "Data[b]ase operations" },
 })
 
 -- optionally enable 24-bit colour
@@ -162,4 +163,8 @@ require("utilities.tabs").setup()
 
 require("flash").setup({
     modes = { char = { enabled = false } }
+})
+
+require("grannos").setup({
+    server_cmd = "grannos --log -v"
 })

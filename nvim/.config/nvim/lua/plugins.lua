@@ -168,3 +168,5 @@ require("flash").setup({
 require("grannos").setup({
     server_cmd = "grannos --log -v"
 })
+
+require("uatis")

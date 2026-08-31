@@ -135,49 +135,6 @@ function M.verify_ref(root, name, cb)
   end)
 end
 
---- Everything worth offering as a base, in the order worth offering it:
---- tags first, then local branches, then remote-tracking ones.
---- cb({ { name, kind = "tag"|"branch"|"remote" }, ... }).
----
---- Tags first because of when you reach for one. A branch you can name
---- from memory; "what has changed since the release" is the question you
---- ask when you cannot, and the tag is the only answer to it.
----
---- One `for-each-ref` rather than three calls, sorted by creatordate so
---- each group is newest first. `origin/HEAD` is dropped: it is a pointer
---- at another entry in the same list, and offering both is offering one
---- branch twice.
-function M.candidates(root, cb)
-  run(root, {
-    "for-each-ref", "--format=%(refname)", "--sort=-creatordate",
-    "refs/tags", "refs/heads", "refs/remotes",
-  }, function(ok, out)
-    if not ok then
-      cb({})
-      return
-    end
-    local groups = { tag = {}, branch = {}, remote = {} }
-    for line in out:gmatch("[^\r\n]+") do
-      local kind, name
-      if vim.startswith(line, "refs/tags/") then
-        kind, name = "tag", line:sub(#"refs/tags/" + 1)
-      elseif vim.startswith(line, "refs/heads/") then
-        kind, name = "branch", line:sub(#"refs/heads/" + 1)
-      elseif vim.startswith(line, "refs/remotes/") then
-        kind, name = "remote", line:sub(#"refs/remotes/" + 1)
-      end
-      if name and name ~= "" and not name:match("/HEAD$") then
-        table.insert(groups[kind], { name = name, kind = kind })
-      end
-    end
-    local ordered = {}
-    for _, kind in ipairs({ "tag", "branch", "remote" }) do
-      vim.list_extend(ordered, groups[kind])
-    end
-    cb(ordered)
-  end)
-end
-
 --- Branch and tag names, for command completion.
 function M.refs(root, cb)
   run(root, { "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/tags", "refs/remotes" }, function(ok, out)

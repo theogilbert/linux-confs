@@ -110,6 +110,7 @@ end
 function M.build_list(pane, width)
   local b = new_buf()
   local inner = math.max(width - 2, 10)
+  local fold = require("uatis.config").list.fold
 
   local function pad(text)
     return " " .. text
@@ -133,14 +134,62 @@ function M.build_list(pane, width)
 
   b:add(string.rep("─", width), "UatisHint")
 
-  local rows = {}
+  -- What each directory is worth, summed over everything beneath it --
+  -- drawn only where the directory is shut. Open, every one of those
+  -- files is on screen carrying its own count one row below, and the
+  -- total restates them; shut, it is the whole of what the row has to
+  -- say and the reason you would open it again. Counted over every
+  -- prefix rather than rolled up from the children, since a file
+  -- already knows all of its own ancestors.
+  local dir_stat = {}
+  for _, f in ipairs(pane.files) do
+    for _, d in ipairs(M.dirs_of(f.path)) do
+      local t = dir_stat[d] or { added = 0, removed = 0, files = 0 }
+      t.added = t.added + (f.added or 0)
+      t.removed = t.removed + (f.removed or 0)
+      t.files = t.files + 1
+      dir_stat[d] = t
+    end
+  end
+
+  local rows, dirs = {}, {}
   if #pane.files == 0 then
     b:add(pad("(no changes)"), "UatisMeta")
   end
-  for _, entry in ipairs(M.tree_rows(pane.files)) do
+
+  -- Drawn from the fold exactly as the reader left it. Keeping the
+  -- current file's directories open is `pane.reveal`'s job and is done
+  -- on ARRIVAL: doing it again here, every render, quietly overrode the
+  -- reader instead of backing them up -- folding the directory you are
+  -- standing in did nothing at all, which in a repo whose files all live
+  -- under one top-level directory is every fold that matters.
+  for _, entry in ipairs(M.tree_rows(pane.files, pane.collapsed)) do
     local indent = string.rep("  ", entry.depth)
     if entry.kind == "dir" then
-      b:add(" " .. indent .. entry.name .. "/", "UatisDir")
+      -- A shut directory takes the shape of a file row -- marker, name,
+      -- churn against the right edge -- because it is standing in for
+      -- the rows underneath it and has to be read the same way they
+      -- would be. An open one is just the name: its files are right
+      -- there, each with its own count.
+      local twisty = entry.collapsed and fold.closed or fold.open
+      local head_prefix = " " .. indent .. twisty .. " "
+      local line
+      if entry.collapsed then
+        local t = dir_stat[entry.path] or { added = 0, removed = 0 }
+        local stat = stat_text(t.added, t.removed)
+        -- Measured in display cells: the twisty is multi-byte, and
+        -- padding a row out by byte count leaves its churn column short.
+        local avail = math.max(inner - vim.fn.strdisplaywidth(head_prefix) - #stat, 6)
+        local shown = M.truncate_path(entry.name .. "/", avail)
+        local head = head_prefix .. shown
+          .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
+        line = b:add(head .. stat)
+        b:hl(line, 0, #head, "UatisDir")
+        stat_hl(b, line, #head, t.added, t.removed)
+      else
+        line = b:add(head_prefix .. entry.name .. "/", "UatisDir")
+      end
+      dirs[line] = entry.path
     else
       local f = pane.files[entry.index]
       local stat = f.binary and "bin" or stat_text(f.added, f.removed)
@@ -164,7 +213,7 @@ function M.build_list(pane, width)
     end
   end
 
-  return { lines = b.lines, hls = b.hls, rows = rows }
+  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs }
 end
 
 --- Flattens a changed-file list into directory and file rows.
@@ -178,26 +227,65 @@ end
 --- Relies on the list already being in path order, which is how git
 --- reports a diff -- so a directory's files are always contiguous and a
 --- component only has to be compared against the previous row's.
-function M.tree_rows(files)
+---
+--- `collapsed` is a set of directory paths, full and slash-separated,
+--- whose contents are left out: the directory row itself is still
+--- emitted -- a fold you cannot see is a file list that silently lost
+--- rows -- and everything under it, nested directories included, is
+--- skipped. Directory rows carry their `path` so the caller can name
+--- them back, and whether they are shut.
+function M.tree_rows(files, collapsed)
+  collapsed = collapsed or {}
   local rows, prev = {}, {}
+  -- The shut directory we are currently inside, if any. A path is under
+  -- it while it still starts with it, which is a cheaper question than
+  -- rebuilding the prefix set for every file.
+  local hidden = nil
   for i, f in ipairs(files) do
-    local parts = vim.split(f.path, "/", { plain = true })
-    local name = table.remove(parts)
-    for d = 1, #parts do
-      if prev[d] ~= parts[d] then
-        table.insert(rows, { kind = "dir", name = parts[d], depth = d - 1 })
-        for k = d, #prev do
+    if hidden and f.path:sub(1, #hidden + 1) ~= hidden .. "/" then
+      hidden = nil
+    end
+    if not hidden then
+      local parts = vim.split(f.path, "/", { plain = true })
+      local name = table.remove(parts)
+      for d = 1, #parts do
+        if prev[d] ~= parts[d] then
+          local path = table.concat(parts, "/", 1, d)
+          table.insert(rows, {
+            kind = "dir", name = parts[d], depth = d - 1,
+            path = path, collapsed = collapsed[path] or false,
+          })
+          for k = d, #prev do
+            prev[k] = nil
+          end
+          prev[d] = parts[d]
+          if collapsed[path] then
+            hidden = path
+            break
+          end
+        end
+      end
+      if not hidden then
+        for k = #parts + 1, #prev do
           prev[k] = nil
         end
-        prev[d] = parts[d]
+        table.insert(rows, { kind = "file", index = i, name = name, depth = #parts })
       end
     end
-    for k = #parts + 1, #prev do
-      prev[k] = nil
-    end
-    table.insert(rows, { kind = "file", index = i, name = name, depth = #parts })
   end
   return rows
+end
+
+--- Every directory prefix of `path`, outermost first: `lua/uatis/x.lua`
+--- gives `lua` and `lua/uatis`.
+function M.dirs_of(path)
+  local parts = vim.split(path, "/", { plain = true })
+  table.remove(parts)
+  local out = {}
+  for d = 1, #parts do
+    table.insert(out, table.concat(parts, "/", 1, d))
+  end
+  return out
 end
 
 -- ------------------------------------------------------------------

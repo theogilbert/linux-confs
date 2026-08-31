@@ -128,24 +128,6 @@ function M.resolve(root, cb)
   end)
 end
 
---- Completion for the revision prompt: every ref in the repository, tags
---- first, filtered by what has been typed.
----
---- A module-local pool rather than an argument because the completion is
---- reached through `v:lua`, from inside `input()`, where there is nowhere
---- to put a closure -- and emptied again when the prompt closes, so a
---- stale list cannot be offered against another repository.
----
---- Matched on the prefix, which is what every other completion in the
---- editor does: `orig<Tab>` for `origin/main`.
-local completing = {}
-
-function M.complete_rev(lead)
-  return vim.tbl_filter(function(name)
-    return name:find(lead, 1, true) == 1
-  end, completing)
-end
-
 --- Checks a revision names something before it becomes the base.
 ---
 --- `^{commit}` rather than a bare `rev-parse`, so a tag resolves to what
@@ -161,41 +143,26 @@ local function verify(root, name, commit)
   end)
 end
 
---- Anything the list did not show: a remote branch, a tag from a hundred
---- of them, `HEAD~3`, a hash off a forge page.
----
---- A list you scroll is a list you stop reading, so the picker holds the
---- answers worth reading and this holds the rest, completed on as you
---- type -- tags first, then branches, then remotes, which is the order
---- `git.candidates` gives them in.
-local function prompt(root, candidates, commit)
-  completing = vim.tbl_map(function(c) return c.name end, candidates)
-  -- Asked through `vim.ui.input`, like everything else this plugin asks,
-  -- and `completion` is part of that contract -- `:h vim.ui.input`. Not
-  -- every replacement honours it: a floating-window input has no wildmenu
-  -- to offer and drops the field silently, and there is nothing to be done
-  -- about that from here. Calling `vim.fn.input` to force the command line
-  -- would take the user's own prompt away from them to work around their
-  -- own plugin.
-  vim.ui.input({
-    prompt = "uatis: base revision: ",
-    completion = "customlist,v:lua.require'uatis.base'.complete_rev",
-  }, function(input)
-    completing = {}
-    local name = input and vim.trim(input) or ""
-    if name == "" then
-      commit(nil)
-      return
-    end
-    verify(root, name, commit)
-  end)
-end
-
 --- Chooses the base: `name` if given, otherwise by asking.
 ---
 --- The picker is `vim.ui.select`, so it is whatever the user has already
 --- configured for choosing things rather than a list widget of this
 --- plugin's own devising.
+---
+--- It offers the branch a review is almost always against -- whatever is
+--- in force, and the conventional default names that exist here -- and
+--- nothing else. Everything else is `:Uatis <ref>`, which takes any
+--- revision git resolves, on the command line, with the plugin's own ref
+--- completion behind it.
+---
+--- Two attempts at "everything else" came out of this picker and went
+--- back in. A free-text row opening `vim.ui.input` was only usable
+--- because it completed as you type, and `completion` is a field a
+--- `vim.ui.input` replacement is free to drop -- the common ones do,
+--- leaving a bare prompt for exactly the input nobody types from memory.
+--- Listing every tag and branch instead is a list nobody reads, and
+--- `vim.ui.select` may be a plain cursor list with nothing to filter it
+--- by. The command line was better at this than either.
 ---
 --- `cb(picked, root)` -- the root as well as the name, because what a
 --- choice of base branch is worth doing to is everything already open
@@ -226,52 +193,67 @@ function M.select(name, cb)
       return
     end
 
-    git.candidates(root, function(candidates)
-      M.get(root, function(default)
-        -- The detected default first and once: it is remote-qualified
-        -- (`origin/main`) and so is usually not in the local branch list at
-        -- all, and it is the answer most likely to be wanted.
-        local items = {}
-        if default then
-          table.insert(items, { name = default, kind = "branch" })
+    -- The conventional default branches, and nothing else.
+    --
+    -- The list used to be every tag and every local branch. In a
+    -- repository with a hundred of either that is not a list anyone
+    -- reads -- and `vim.ui.select` is whatever picker the user has, which
+    -- may be a plain cursor list with no way to filter it, so a long one
+    -- cannot even be searched. A picker is for the answer you almost
+    -- always want; `:Uatis <ref>` is for the rest, on the command line,
+    -- with git's own ref completion behind it.
+    --
+    -- Verified before being offered, in `config.base.fallbacks` order:
+    -- most repositories have exactly one of these three, and offering
+    -- the two that are not there makes the short list wrong instead of
+    -- merely short.
+    M.get(root, function(current)
+      local items, seen = {}, {}
+      local function add(name)
+        if name and name ~= "" and not seen[name] then
+          seen[name] = true
+          table.insert(items, { name = name })
         end
-        -- Then tags, then local branches, in the order they came. Remotes
-        -- are left to the prompt: one per branch anybody ever pushed is
-        -- most of what a repository has, and almost none of it is what you
-        -- are about to pick.
-        for _, c in ipairs(candidates) do
-          if c.kind ~= "remote" and c.name ~= default then
-            table.insert(items, c)
+      end
+      -- Whatever is in force first, detected or chosen: it is the answer
+      -- most likely to be wanted, it is the one worth being able to see
+      -- without leaving the picker, and when it was detected from
+      -- `origin/HEAD` it is remote-qualified and in no other list here.
+      add(current)
+
+      local names = config.base.fallbacks
+      local function try(i)
+        local name = names[i]
+        if not name then
+          if #items == 0 then
+            vim.notify("uatis: nothing to compare against in " .. root,
+              vim.log.levels.ERROR)
+            if cb then cb(nil) end
+            return
           end
-        end
-        if #items == 0 then
-          vim.notify("uatis: nothing to compare against in " .. root,
-            vim.log.levels.ERROR)
-          if cb then cb(nil) end
+          vim.ui.select(items, {
+            prompt = "uatis: base revision",
+            format_item = function(item)
+              return item.name == current and (item.name .. "  (current)")
+                or item.name
+            end,
+          }, function(choice)
+            commit(choice and choice.name or nil)
+          end)
           return
         end
-        -- ...and the way out of the list, for everything it does not hold.
-        table.insert(items, { kind = "prompt" })
-
-        vim.ui.select(items, {
-          prompt = "uatis: base revision",
-          format_item = function(item)
-            if item.kind == "prompt" then
-              return "…another revision, by name or hash"
-            end
-            local label = item.kind == "tag" and (item.name .. "  (tag)") or item.name
-            return item.name == M.current(root) and (label .. "  (current)") or label
-          end,
-        }, function(choice)
-          if not choice then
-            commit(nil)
-          elseif choice.kind == "prompt" then
-            prompt(root, candidates, commit)
-          else
-            commit(choice.name)
+        if seen[name] then
+          try(i + 1)
+          return
+        end
+        git.verify_ref(root, name, function(exists)
+          if exists then
+            add(name)
           end
+          try(i + 1)
         end)
-      end)
+      end
+      try(1)
     end)
   end)
 end

@@ -16,6 +16,7 @@ local config = require("uatis.config")
 local git = require("uatis.git")
 local patch = require("uatis.patch")
 local filelist = require("uatis.filelist")
+local ui = require("uatis.ui")
 local view_mod = require("uatis.view")
 local base = require("uatis.base")
 local keys = require("uatis.keys")
@@ -108,6 +109,9 @@ local function rebuild(pane, keep_path)
       end
     end
   end
+  -- Re-reading the list lands on a file the same way stepping to one
+  -- does, so it opens the way to it for the same reason.
+  M.reveal(pane, pane.file_idx)
 end
 
 --- A view's counts moved, so the list says so.
@@ -239,12 +243,104 @@ local function pinned(pane, file)
   }
 end
 
+--- Opens the directories `idx` lives under, so the list can point at it.
+---
+--- Arriving somewhere is what reopens a fold: the alternative is a list
+--- that has to special-case the row it is highlighting, and then the
+--- twisty on a shut directory says shut while its contents are on
+--- screen. Only ever opens -- nothing the reader folded away closes
+--- itself again behind them.
+function M.reveal(pane, idx)
+  local f = pane.files[idx]
+  if not f then
+    return
+  end
+  pane.collapsed = pane.collapsed or {}
+  for _, d in ipairs(ui.dirs_of(f.path)) do
+    pane.collapsed[d] = nil
+  end
+end
+
+--- Redraws after a fold and leaves the cursor on `path`'s row.
+---
+--- Every redraw ends by moving the cursor onto the current file
+--- (`filelist.sync_cursor`), which is right for arriving at a file and
+--- wrong for folding: the row you just acted on would slide out from
+--- under you. Where `path` has no row left -- nothing does, after `zR`
+--- -- the cursor stays where sync_cursor put it.
+local function redraw_at(pane, path)
+  if not pane.list_buf then
+    return
+  end
+  filelist.render(pane)
+  local win = pane.list_win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  for line, p in pairs(pane.list_dirs or {}) do
+    if p == path then
+      pcall(vim.api.nvim_win_set_cursor, win, { line, 0 })
+      return
+    end
+  end
+end
+
+--- Folds one directory row shut, opens it, or toggles it -- `shut` true,
+--- false, or nil.
+local function set_fold(pane, path, shut)
+  if not path then
+    return
+  end
+  if shut == nil then
+    shut = not pane.collapsed[path]
+  end
+  pane.collapsed[path] = shut or nil
+  redraw_at(pane, path)
+end
+
+--- The whole tree at once.
+---
+--- Shut means every directory, not just the outermost: opening one back
+--- up then shows the directories inside it still folded, a level at a
+--- time, which is what `zM` followed by `zo` does anywhere else.
+---
+--- The cursor lands on the outermost directory the current file is
+--- under, since after `zM` that is the row standing in for where you
+--- are -- and the row you would open to get back to it.
+local function set_all(pane, shut)
+  pane.collapsed = {}
+  if shut then
+    for _, f in ipairs(pane.files) do
+      for _, d in ipairs(ui.dirs_of(f.path)) do
+        pane.collapsed[d] = true
+      end
+    end
+  end
+  local cur = pane.files[pane.file_idx]
+  redraw_at(pane, cur and ui.dirs_of(cur.path)[1] or nil)
+end
+
+--- Which directory the cursor is asking about: the row itself where that
+--- is a directory, and otherwise the innermost directory the file on
+--- that row is in -- which is the fold a line inside a fold belongs to.
+local function fold_target(pane)
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local path = (pane.list_dirs or {})[line]
+  if path then
+    return path
+  end
+  local f = pane.files[(pane.list_rows or {})[line] or 0]
+  local ds = f and ui.dirs_of(f.path) or {}
+  return ds[#ds]
+end
+
 function M.goto_file(pane, idx)
   local f = pane.files[idx]
   if not f then
     return
   end
   pane.file_idx = idx
+  M.reveal(pane, idx)
   if pane.list_buf then
     filelist.render(pane)
   end
@@ -473,8 +569,33 @@ local function setup_keymaps(pane)
       local idx = (pane.list_rows or {})[line]
       if idx then
         M.goto_file(pane, idx)
+      else
+        -- On a directory row there is nothing else for "open this" to
+        -- mean, so it means the fold.
+        set_fold(pane, (pane.list_dirs or {})[line])
       end
     end, opts = { desc = "uatis: open file under cursor" } },
+    { lhs = k.fold, rhs = function()
+      set_fold(pane, fold_target(pane))
+    end, opts = { desc = "uatis: fold the directory under the cursor" } },
+    { lhs = k.fold_close, rhs = function()
+      local path = fold_target(pane)
+      -- Already shut, so what `zc` is being asked to close is the fold
+      -- AROUND this one -- which is how it walks out of a nested tree
+      -- everywhere else.
+      if path and pane.collapsed[path] then
+        local up = ui.dirs_of(path)
+        path = up[#up]
+      end
+      set_fold(pane, path, true)
+    end, opts = { desc = "uatis: fold the directory under the cursor shut" } },
+    { lhs = k.fold_open, rhs = function()
+      set_fold(pane, fold_target(pane), false)
+    end, opts = { desc = "uatis: open the directory under the cursor" } },
+    { lhs = k.fold_close_all, rhs = function() set_all(pane, true) end,
+      opts = { desc = "uatis: fold every directory shut" } },
+    { lhs = k.fold_open_all, rhs = function() set_all(pane, false) end,
+      opts = { desc = "uatis: open every directory" } },
     { lhs = k.file_next, rhs = function() M.step_file(pane, 1) end,
       opts = { desc = "uatis: next changed file" } },
     { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
@@ -532,6 +653,45 @@ local function setup_watchers(pane)
     end,
   })
 
+  -- ...and reading is the other half of that. `:e` puts the file back on
+  -- screen from the disk, and what a reader is usually saying with it is
+  -- that something ELSE wrote the file -- a formatter, a rebase, a
+  -- checkout, a colleague's branch pulled in. The list is `git diff`
+  -- against that disk, so it is stale for exactly as long as nobody
+  -- asks git again.
+  --
+  -- Only for a buffer the review already knew about, which is what tells
+  -- a re-read from a first open: every file opened while a list is up
+  -- fires this too, and a `git diff` per jump-to-definition is a cost
+  -- nobody asked for. A file the list has a row for, or one carrying a
+  -- view, is one that was already on screen.
+  vim.api.nvim_create_autocmd("BufReadPost", {
+    group = pane.augroup,
+    callback = function(ev)
+      if panes[pane.tab] ~= pane then
+        return
+      end
+      local name = vim.api.nvim_buf_get_name(ev.buf)
+      if name == ""
+        or not vim.startswith(vim.fs.normalize(name), vim.fs.normalize(pane.root)) then
+        return
+      end
+      local known = view_mod.get(ev.buf) ~= nil
+      if not known then
+        local rel = view_mod.relpath(pane.root, name)
+        for _, f in ipairs(pane.files or {}) do
+          if f.path == rel or f.old_path == rel then
+            known = true
+            break
+          end
+        end
+      end
+      if known then
+        M.refresh(pane)
+      end
+    end,
+  })
+
   -- Following the buffer that gets focus, so the highlighted row is
   -- whatever is actually on screen -- including files reached by `:e`, a
   -- jump to definition or anything else that has never heard of this pane.
@@ -562,6 +722,7 @@ local function setup_watchers(pane)
         if f.path == view.relpath or f.old_path == view.relpath then
           if pane.file_idx ~= i then
             pane.file_idx = i
+            M.reveal(pane, i)
             if pane.list_buf then
               filelist.render(pane)
             end
@@ -633,6 +794,11 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     files = {},
     file_idx = 1,
     list_rows = {},
+    -- Directory rows folded shut, by full path. The reader's, and kept
+    -- across every redraw -- a fold that reopened whenever the list was
+    -- re-read would be gone the first time you moved.
+    collapsed = {},
+    list_dirs = {},
     -- Buffers this pane has lent `]f`/`[f` to, with whatever was mapped
     -- there before, to be handed back when it closes.
     lent = {},
@@ -646,6 +812,7 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     src = "working tree",
     hint = config.keys.pane.file_next .. "/" .. config.keys.pane.file_prev
       .. " file · " .. config.keys.pane.select .. " open · "
+      .. config.keys.pane.fold .. " fold · "
       .. config.keys.pane.quit .. " close",
     code_win = vim.api.nvim_get_current_win(),
   }
@@ -681,6 +848,25 @@ local function with_list(opts, cb)
   if existing and opts.resolve then
     M.close(existing)
     existing = nil
+  end
+  -- ...and a list that no longer agrees with the view under the cursor is
+  -- re-read rather than handed back. The view was re-pointed by name
+  -- while the list was hidden or standing beside something else --
+  -- `<leader>gu` against a base with nothing in it, then `:Uatis
+  -- HEAD~10` -- and this call is the reader asking for the two to be
+  -- next to each other. Handing back the old list answers with the
+  -- revision they moved off.
+  --
+  -- Compared on the REVISION and not the label. Files opened from the
+  -- list are pinned to its sha and carry that sha as their ref, so a
+  -- list called `main` is beside views called `4f6c20b` all day long and
+  -- the two agree perfectly.
+  if existing then
+    local v = view_mod.get(vim.api.nvim_get_current_buf())
+    if v and v.root == existing.root and v.rev ~= existing.rev then
+      M.close(existing)
+      existing = nil
+    end
   end
   if existing then
     if opts.on_ready then

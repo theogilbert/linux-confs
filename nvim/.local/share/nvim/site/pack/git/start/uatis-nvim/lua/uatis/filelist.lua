@@ -63,6 +63,7 @@ function M.render(pane)
   end
 
   pane.list_rows = built.rows
+  pane.list_dirs = built.dirs
   M.sync_cursor(pane)
 end
 

@@ -463,24 +463,56 @@ function M.refresh(view)
   end
 
   local count = vim.api.nvim_buf_line_count(old.buf)
+  local function row_text(row)
+    return vim.api.nvim_buf_get_lines(old.buf, row, row + 1, false)[1] or ""
+  end
+
   if view.del_spans then
     -- Token by token, as difftastic reported it. Its own display tints
     -- the words it called changed and leaves the rest of the line in
     -- ordinary colour -- including a line inside a changed region that
     -- came through untouched -- and this window is that column.
+    --
+    -- Keyed by ROW rather than by revision line from here on: laid out
+    -- against the other side, a line of the revision sits wherever its
+    -- partner put it, and the blank rows between are what make the two
+    -- windows scroll together. The prose pass reads rows, and reads the
+    -- blank ones as the gaps inside a node rather than as its end.
+    local spans_by_row, fine_by_row = {}, {}
     for line, spans in pairs(view.del_spans) do
       local row = row_of(line)
       if row >= 0 and row < count then
-        local text = vim.api.nvim_buf_get_lines(old.buf, row, row + 1, false)[1] or ""
+        spans_by_row[row] = spans
+        fine_by_row[row] = (view.del_fine or {})[line]
+      end
+    end
+
+    -- Which of those rows are prose, and which words of them actually
+    -- went away: the same statement the new side makes, made about the
+    -- side it was taken from. A removed docstring reports every word
+    -- removed, so without this the old window answers a reworded
+    -- sentence with a solid red block.
+    local marks = overlay.prose_marks(spans_by_row, row_text, function(row)
+      return fine_by_row[row]
+    end, view.prose)
+
+    for row, spans in pairs(spans_by_row) do
+      local text = row_text(row)
+      local p = marks[row]
+      if p and p.narrowed and p.full then
+        -- The atom is the row, so the row steps back and the words that
+        -- went keep the red -- the new side's rule, in the new side's
+        -- colours' opposite number.
+        overlay.paint_row(old.buf, M.ns, row, "UatisDeleteBandDim", p.fine,
+          text, count, "UatisDeleteBand")
+      elseif overlay.covers_all(spans, text) then
         -- A line every token of which went is a line that went.
-        if overlay.covers_all(spans, text) then
-          vim.api.nvim_buf_set_extmark(old.buf, M.ns, row, 0, {
-            line_hl_group = "UatisDeleteBand",
-            priority = 100,
-          })
-          goto continue
-        end
-        for _, span in ipairs(spans) do
+        vim.api.nvim_buf_set_extmark(old.buf, M.ns, row, 0, {
+          line_hl_group = "UatisDeleteBand",
+          priority = 100,
+        })
+      else
+        for _, span in ipairs(overlay.joined(spans, text)) do
           local s2 = math.min(span.col_start, #text)
           local e2 = math.min(span.col_end, #text)
           if e2 > s2 then
@@ -491,8 +523,20 @@ function M.refresh(view)
             })
           end
         end
+        -- ...and an atom sharing its line with code steps back inside
+        -- its own columns, over the marks just drawn.
+        for _, r in ipairs((p and p.narrowed) and p.quiet or {}) do
+          local s2 = math.min(r.col_start, #text)
+          local e2 = math.min(r.col_end, #text)
+          if e2 > s2 then
+            vim.api.nvim_buf_set_extmark(old.buf, M.ns, row, s2, {
+              end_col = e2,
+              hl_group = "UatisDeleteBandDim",
+              priority = 110,
+            })
+          end
+        end
       end
-      ::continue::
     end
   else
     -- A line backend knows lines and nothing finer, so the line is what

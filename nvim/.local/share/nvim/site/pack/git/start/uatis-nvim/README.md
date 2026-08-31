@@ -41,12 +41,12 @@ when you ask.
 completing on your refs.
 
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
-`main`. `<leader>gB` picks another through `vim.ui.select` — the detected
-default, then your tags, then your branches — with a last entry for
-anything else: a remote branch, `HEAD~3`, a hash off a forge page —
-`vim.ui.input`, offering completion over every ref you have, tags first,
-where your input UI supports it. One choice per repository for
-the editing session. Picking one re-points what is already
+`main`. `<leader>gB` picks another through `vim.ui.select`, offering the
+one in force and whichever of those conventional names this repository
+actually has — a short list, because a picker is for the answer you
+almost always want. Anything else — another branch, a tag, `HEAD~3`, a
+hash off a forge page — is `:Uatis <ref>`, which completes on your refs.
+One choice per repository for the editing session. Picking one re-points what is already
 open — every view against the base branch, and the file list beside them,
 move to the new fork point together. Views you named a revision for with
 `:Uatis <gitref>` stay where you put them.
@@ -60,6 +60,20 @@ move to the new fork point together. Views you named a revision for with
 | `<leader>gs` | side by side / in place |
 | `<leader>gm` | structural / line diff |
 | `<leader>gf` | the changed-file list, on and off |
+
+In the list, `za` folds the directory under the cursor away, `zc` and
+`zo` say which way, and `<CR>` on a directory row toggles it. Over a
+file row they act on the directory that file is in, the same thing they
+mean over a line inside a fold anywhere else; `zc` over a directory
+already shut closes its parent, so it walks back out of a nested tree.
+`zM` folds the whole tree shut and `zR` opens it again — after `zM` the
+list is the directories that changed and you open your way in, a level
+per `zo`. The row stays; only what is under it goes. Walking into a
+folded directory opens it, so the file you are reading always has a row.
+
+Every directory row carries what changed beneath it — its whole subtree,
+nested directories included — in the same `+N -M` the files use. Folded
+shut, that count is the reason you would open it again.
 
 `q` in the list closes that window and nothing else: the review goes on,
 `]f` still steps it, and `<leader>gf` brings the window back to the same

@@ -182,6 +182,18 @@ local function seq_diff(a, b)
   if #a == 0 and #b == 0 then
     return {}
   end
+  -- An empty side is answered here rather than handed on. Joining no
+  -- tokens gives `""`, and the termination below turns that into `"\n"`
+  -- -- one empty line, not none -- so vim.diff reports a replacement of
+  -- one token that is not there, and the caller indexes past the end of
+  -- the array. Comparing an empty line against a real one is enough to
+  -- reach it.
+  if #a == 0 then
+    return { { 0, 0, 1, #b } }
+  end
+  if #b == 0 then
+    return { { 1, #a, 0, 0 } }
+  end
   -- Terminated, for the same reason line_hunks terminates its input:
   -- otherwise an edit at the end of a line stops being reported
   -- minimally, and every intra-line diff has an end.

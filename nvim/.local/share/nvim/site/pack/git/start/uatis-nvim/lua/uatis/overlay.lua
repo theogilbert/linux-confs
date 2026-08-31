@@ -231,6 +231,14 @@ function M.setup_highlights()
   -- side deliberately avoids -- so where there are real groups to put
   -- underneath, only the background and the strikethrough come from here.
   local del = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
+  -- The old side's band, stepped back the same way the new side's tint
+  -- is: a removed docstring reports every word of it removed, and the
+  -- words that actually went are a handful. Same relationship, same
+  -- distance, so the two windows read as one statement.
+  local del_band = del.bg and deepen(del.bg, config.highlight.saturation, del_l)
+  vim.api.nvim_set_hl(0, "UatisDeleteBandDim", (del_band and normal)
+    and { bg = mix(normal, del_band, config.highlight.dim_contrast) }
+    or { link = "DiffDelete" })
   vim.api.nvim_set_hl(0, "UatisDeleteBg", del.bg
     and { bg = deepen(del.bg, config.highlight.saturation, del_l),
       strikethrough = true }
@@ -364,6 +372,49 @@ end
 
 M.covers_all = covers_all
 
+--- Neighbouring ranges merged into one, across whitespace and across
+--- whitespace only -- so two marks with real code between them stay two.
+---
+--- Wanted in two places for what turns out to be one reason. A changed
+--- string arrives from difftastic as one range per word and is a single
+--- atom (see `atoms`); and on a line of code, the space between two
+--- tokens it BOTH called changed is a hole in the middle of one
+--- insertion. `edges` gaining `, spacing.channel_padding` comes back as
+--- a range on the comma and a range on the argument, with the space
+--- between them belonging to neither.
+---
+--- That hole is a difference between difftastic's display and this one
+--- rather than a disagreement with it. difftastic colours FOREGROUNDS,
+--- where an uncoloured space is indistinguishable from a coloured one
+--- and leaving it out costs nothing -- its own inline display draws that
+--- line as green comma, plain space, green argument, and it reads as one
+--- addition. Marks here are BACKGROUNDS, and an untinted space between
+--- two tinted tokens is the most deliberate-looking thing on the row.
+--- Joining them is what says the same thing in this medium; drawing the
+--- gap is what would add something difftastic never said.
+---
+--- Whitespace only, because whitespace is the one run of characters a
+--- reader cannot be asked to recognise. Anything else between two marks
+--- is code that came through unchanged, and covering it would claim an
+--- edit that did not happen.
+local function joined(ranges, text)
+  table.sort(ranges, function(a, b)
+    return a.col_start < b.col_start
+  end)
+  local out = {}
+  for _, r in ipairs(ranges) do
+    local last = out[#out]
+    if last and text:sub(last.col_end + 1, r.col_start):match("^%s*$") then
+      last.col_end = math.max(last.col_end, r.col_end)
+    else
+      table.insert(out, { col_start = r.col_start, col_end = r.col_end })
+    end
+  end
+  return out
+end
+
+M.joined = joined
+
 --- Where on `row` difftastic's own display would go further than its
 --- tint: the PROSE atoms -- a docstring, a comment, a long literal --
 --- as whole ranges.
@@ -395,19 +446,7 @@ local function atoms(spans, text, all)
       table.insert(ranges, { col_start = sp.col_start, col_end = sp.col_end })
     end
   end
-  table.sort(ranges, function(a, b)
-    return a.col_start < b.col_start
-  end)
-  local out = {}
-  for _, r in ipairs(ranges) do
-    local last = out[#out]
-    if last and text:sub(last.col_end + 1, r.col_start):match("^%s*$") then
-      last.col_end = math.max(last.col_end, r.col_end)
-    else
-      table.insert(out, { col_start = r.col_start, col_end = r.col_end })
-    end
-  end
-  return out
+  return joined(ranges, text)
 end
 
 --- The emphasis, kept to where difftastic's own display would draw it:
@@ -492,6 +531,94 @@ local function refines(fine, spans)
     end
   end
   return out
+end
+
+--- The prose atoms of a change, grouped into NODES and asked -- once for
+--- each node -- whether the emphasis narrowed it.
+---
+--- A node is what the emphasis is a statement about. difftastic reports a
+--- changed docstring as changed word by word on every row of it, and the
+--- words that are actually new are usually on one; deciding row by row
+--- said the opposite of what was meant, because the rows that gained
+--- nothing had nothing to compare against and so kept the full tint. The
+--- only quiet row was the one that had changed.
+---
+--- Rows belong to the same node while they are consecutive, and a blank
+--- row is passed through rather than ending one: a docstring with a
+--- paragraph break in it is one docstring, difftastic reports nothing at
+--- all for a row with no words on it, and side by side the old revision
+--- is laid out with blank rows between its lines.
+---
+--- `spans_by_row` is what the backend called changed, per row; `text_of`
+--- and `fine_of` read the row's text and the emphasis found in it; `all`
+--- is a file difftastic never parsed, where every atom is prose. What
+--- comes back, per row that carries prose:
+---
+---   regions   the atoms, whole, joined across whitespace
+---   fine      the emphasis inside them
+---   quiet     the complement: what to step back
+---   full      the atoms ARE the row, indentation aside
+---   narrowed  the node this row belongs to had an emphasis somewhere
+function M.prose_marks(spans_by_row, text_of, fine_of, all)
+  local rows, marks = {}, {}
+  for row in pairs(spans_by_row) do
+    table.insert(rows, row)
+  end
+  table.sort(rows)
+
+  local order, narrowed, node, prev = {}, {}, 0, nil
+  for _, row in ipairs(rows) do
+    local text = text_of(row)
+    local regions = atoms(spans_by_row[row], text, all)
+    if #regions > 0 then
+      local joined = false
+      if prev then
+        joined = true
+        for gap = prev + 1, row - 1 do
+          if not text_of(gap):match("^%s*$") then
+            joined = false
+            break
+          end
+        end
+      end
+      if not joined then
+        node = node + 1
+      end
+      local fine = fine_of(row)
+      marks[row] = {
+        regions = regions,
+        fine = prose(fine, regions),
+        -- Whether the atom IS the row, quotes and indentation aside.
+        -- Where it is, the row is what steps back; where it shares the
+        -- line with code, only its own columns do.
+        full = covers_all(regions, text),
+        node = node,
+      }
+      table.insert(order, row)
+      -- What makes the rest of a node the part that did not change is
+      -- that the node was COMPARED against something -- not that the
+      -- comparison found anything. A docstring that only gained a word
+      -- lost none, so the old side's answer is empty, and the whole of
+      -- the old sentence is what did not change: all of it steps back.
+      -- Read the other way, `#fine > 0` said "nothing was removed here,
+      -- so this is a removal", and painted the old window solid red.
+      --
+      -- `nil` is the real absence: no comparison was made, because there
+      -- was nothing on the other side to make one against. A docstring
+      -- with no counterpart is new, or gone, in its entirety.
+      if fine ~= nil then
+        narrowed[node] = true
+      end
+      prev = row
+    end
+  end
+
+  for _, row in ipairs(order) do
+    local m = marks[row]
+    m.narrowed = narrowed[m.node] or false
+    m.quiet = m.narrowed and unstressed(m.fine, m.regions) or {}
+  end
+  return marks, order
 end
 
 -- There is deliberately no "and nothing but punctuation survived" case
@@ -663,14 +790,18 @@ end
 --- band is banded with a multiline range and `hl_eol` instead, which
 --- reaches the window edge the same way and does compose with a range on
 --- top. A plain row keeps the simpler mark.
-local function paint_row(bufnr, row, hl, over, text, count, over_hl)
+---
+--- Takes its namespace, because the old revision's window draws the same
+--- shape in its own (see `oldside.refresh`) and this is not a trick to
+--- have written down twice.
+local function paint_row(bufnr, ns, row, hl, over, text, count, over_hl)
   if #over == 0 or row + 1 >= count then
-    vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
+    vim.api.nvim_buf_set_extmark(bufnr, ns, row, 0, {
       line_hl_group = hl,
       priority = 100,
     })
   else
-    vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
+    vim.api.nvim_buf_set_extmark(bufnr, ns, row, 0, {
       end_row = row + 1,
       end_col = 0,
       hl_group = hl,
@@ -682,7 +813,7 @@ local function paint_row(bufnr, row, hl, over, text, count, over_hl)
     local s = math.min(r.col_start, #text)
     local e = math.min(r.col_end, #text)
     if e > s then
-      vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, s, {
+      vim.api.nvim_buf_set_extmark(bufnr, ns, row, s, {
         end_col = e,
         hl_group = over_hl or "UatisAddText",
         priority = 110,
@@ -690,6 +821,8 @@ local function paint_row(bufnr, row, hl, over, text, count, over_hl)
     end
   end
 end
+
+M.paint_row = paint_row
 
 --- Where a hunk's removed lines belong, as a (row0, above) pair.
 ---
@@ -710,7 +843,10 @@ end
 --- Renders `result` (from diff.compute) onto `bufnr`, which must already
 --- hold the new-side text. `old_lines` is the old side, split into lines.
 ---
---- Returns the sorted list of buffer lines a chunk jump should visit.
+--- Returns the sorted list of buffer lines a chunk jump should visit,
+--- and -- since it is here that the two blocks are compared -- which
+--- words each removed line actually lost, for the old revision's own
+--- window to draw.
 function M.render(bufnr, win, result, old_lines, opts)
   opts = opts or {}
   -- Side-by-side puts the old revision in a window of its own, so drawing
@@ -826,9 +962,19 @@ function M.render(bufnr, win, result, old_lines, opts)
   local line_marked, token_marked, unpaired = {}, {}, {}
 
   -- Rows carrying a changed PROSE atom, held back until every hunk has
-  -- had its say. What to draw on one of them is not a question about the
-  -- row -- see the pass below `hunks`.
-  local prose_rows = {}
+  -- had its say: what to draw on one of them is a question about the
+  -- node, and a node can run past a hunk (the blank row in the middle of
+  -- a docstring is a row difftastic calls unchanged). See the pass below
+  -- `hunks`, and `prose_marks`.
+  local prose_spans, prose_fine, prose_band = {}, {}, {}
+
+  -- ...and the same for the OLD side, which is a window of its own in
+  -- side-by-side and needs the same statement made about it: which words
+  -- of a changed atom actually went away. Worked out here, where the two
+  -- blocks are already sliced and compared, and handed back for
+  -- `oldside.refresh` to draw -- so the two windows cannot end up
+  -- disagreeing about what changed.
+  local del_fine = {}
 
   local function line_text(row)
     return vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
@@ -964,22 +1110,42 @@ function M.render(bufnr, win, result, old_lines, opts)
     local emphasis
     local pair = inline
     if not pair and result.precise and hunk.count_a > 0 and hunk.count_b > 0 then
-      pair = diff.block_diff(olds, news)
-      if pair then
-        local grouped = {}
-        for _, a in ipairs(pair.adds) do
-          grouped[a.line] = grouped[a.line] or {}
-          table.insert(grouped[a.line], a)
+      local r = diff.block_diff(olds, news)
+      if r then
+        local adds, dels = {}, {}
+        for _, a in ipairs(r.adds) do
+          adds[a.line] = adds[a.line] or {}
+          table.insert(adds[a.line], a)
         end
-        pair = { adds = grouped }
+        -- Both sides of the same comparison. What a docstring gained is
+        -- the emphasis on the new side; what it lost is the emphasis on
+        -- the old one, and dropping it here left the old window with a
+        -- solid red block where this window has a sentence with two
+        -- words picked out of it.
+        for _, d in ipairs(r.dels) do
+          dels[d.line] = dels[d.line] or {}
+          table.insert(dels[d.line], d)
+        end
+        pair = { adds = adds, dels = dels }
       end
     end
     emphasis = pair and pair.adds or nil
+    -- An empty answer where there WAS a comparison, and nil where there
+    -- was none: a line that lost nothing is not the same as a line
+    -- nothing was asked about. See `prose_marks`.
+    if pair and pair.dels then
+      for i = 1, hunk.count_a do
+        del_fine[hunk.start_a + i - 1] = pair.dels[i] or {}
+      end
+    end
 
     -- Lines whose removals are small enough to draw inside the line that
-    -- replaced them, instead of on a row of their own above it. Keyed by
-    -- line, holding where each removal goes.
-    local merged = {}
+    -- replaced them, instead of on a row of their own above it. `merged`
+    -- is keyed by the removed line's index in the hunk, which is what the
+    -- before-image loop asks it; `merged_at` by the new row the removals
+    -- get drawn on. The two are the same index only where the sides pair
+    -- up position by position, which difftastic's pairing does not.
+    local merged, merged_at = {}, {}
     if inline and hunk.count_b > 0 then
       for i = 1, hunk.count_a do
         local dels = inline.dels[i] or {}
@@ -998,6 +1164,51 @@ function M.render(bufnr, win, result, old_lines, opts)
           merged[i] = {}
         elseif readable_inline(dels, old_text) then
           merged[i] = inline_places(old_text, dels, new_text, inline.adds[i] or {})
+        end
+        merged_at[hunk.start_b + i - 2] = merged[i]
+      end
+    elseif result.precise and result.pairs and hunk.count_b > 0 then
+      -- A new row difftastic paired with an old one and reported no
+      -- changed tokens for. That is not the same as a row that did not
+      -- change: it is what comes back whenever every token the new line
+      -- kept was matched somewhere in the old one, so the whole edit
+      -- lands on the old side as removals and the new side has nothing
+      -- left to mark. `"|".join(col.types)` becoming `types` is the
+      -- shape -- the surviving `types` matches the one inside
+      -- `col.types`, difftastic reports the RHS as unchanged, and the
+      -- line that changed comes out with no mark on it at all while a
+      -- full red copy of the old line sits above saying nothing about
+      -- which part of it went. Side by side that reads fine, because the
+      -- two rows are level with each other; inline it does not, because
+      -- the correspondence is exactly what the layout has spent.
+      --
+      -- So the removals are drawn where they happened, in the line that
+      -- replaced them -- the same statement line mode already makes, and
+      -- the only one that puts the change back on the changed row
+      -- without claiming difftastic found an addition it did not.
+      --
+      -- Compared as a PAIR rather than block against block. difftastic
+      -- already said which old row this one answers to, and a one-line
+      -- comparison is the only one whose untouched text is the same
+      -- sequence on both sides -- which is what `inline_places` needs to
+      -- place anything at all.
+      for i = 0, hunk.count_b - 1 do
+        local row = hunk.start_b - 1 + i
+        local old_row = result.pairs[row + 1]
+        if (not by_row[row] or #by_row[row] == 0)
+          and old_row and old_row >= hunk.start_a
+          and old_row < hunk.start_a + hunk.count_a then
+          local old_text = old_lines[old_row] or ""
+          local new_text = line_text(row)
+          local r = old_text ~= new_text and diff.block_diff({ old_text }, { new_text }) or nil
+          local dels = r and r.dels or {}
+          if #dels > 0 and readable_inline(dels, old_text) then
+            local places = inline_places(old_text, dels, new_text, r.adds)
+            if places then
+              merged[old_row - hunk.start_a + 1] = places
+              merged_at[row] = places
+            end
+          end
         end
       end
     end
@@ -1063,18 +1274,8 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- landed in steps back from them. Nothing difftastic called
             -- changed is drawn as unchanged -- only as less of the
             -- story, which is what it is.
-            local regions = atoms(by_row[row], text, result.prose)
-            if #regions > 0 then
-              prose_rows[row] = {
-                regions = regions,
-                fine = prose(emphasis and emphasis[i + 1], regions),
-                text = text,
-                -- Whether the atom IS the row, quotes and indentation
-                -- aside. Where it is, the row is what steps back; where
-                -- it shares the line with code, only its own columns do.
-                full = covers_all(regions, text),
-              }
-            end
+            prose_spans[row] = by_row[row]
+            prose_fine[row] = emphasis and (emphasis[i + 1] or {}) or nil
           elseif not result.precise and inline then
             spans = inline.adds[i + 1] or {}
             -- Inserted text is inserted text whichever side of a
@@ -1095,18 +1296,14 @@ function M.render(bufnr, win, result, old_lines, opts)
           if result.precise and (not by_row[row] or #by_row[row] == 0) then
             token_marked[row] = true
           elseif whole then
-            if prose_rows[row] then
-              -- Painted below, with the rest of its node: whether
-              -- anything on it steps back depends on rows this hunk may
-              -- not even contain.
-              prose_rows[row].band = hl
-            else
-              paint_row(bufnr, row, hl, {}, text, line_count)
-            end
+            -- Painted below. Whether anything on it steps back depends
+            -- on whether it is prose, and if it is, on rows this hunk
+            -- may not even contain.
+            prose_band[row] = hl
             line_marked[row] = true
             token_marked[row] = true
           elseif ranged then
-            for _, span in ipairs(spans) do
+            for _, span in ipairs(joined(spans, text)) do
               local s = math.min(span.col_start, #text)
               local e = math.min(span.col_end, #text)
               if e > s then
@@ -1138,9 +1335,9 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- one per removal, because two removals from the same gap are
           -- drawn in the order Neovim happens to stack marks in, and that
           -- is not the order they were taken out.
-          if merged[i + 1] and show_old then
+          if merged_at[row] and show_old then
             local at, order = {}, {}
-            for _, place in ipairs(merged[i + 1]) do
+            for _, place in ipairs(merged_at[row]) do
               local col = math.max(0, math.min(place.col, #text))
               if not at[col] then
                 at[col] = {}
@@ -1258,82 +1455,50 @@ function M.render(bufnr, win, result, old_lines, opts)
   end
 
   -- The emphasis is a statement about a NODE, so it is drawn once the
-  -- whole node is known -- which is here, and not in the loop above: a
-  -- docstring is one atom over many rows, and difftastic reports every
-  -- word of it changed on every one of them.
-  --
-  -- Asking row by row said the opposite of what was meant. The row that
-  -- gained the new words stepped back around them, and the rows that
-  -- gained none -- the ones that did not really change at all -- had
-  -- nothing to compare against and so kept the full tint. The quietest
-  -- row was the only one that had changed.
-  --
-  -- Rows belong to the same node while they are consecutive, and a blank
-  -- row is passed through rather than ending one: a docstring with a
-  -- paragraph break in it is one docstring, and difftastic reports
-  -- nothing at all for a row with no words on it.
-  local prose_order = {}
-  for row in pairs(prose_rows) do
-    table.insert(prose_order, row)
-  end
-  table.sort(prose_order)
+  -- whole node is known -- which is here, and not in the loop above.
+  local marks, order = M.prose_marks(prose_spans, line_text, function(row)
+    return prose_fine[row]
+  end, result.prose)
 
-  local narrowed, node, prev = {}, 0, nil
-  for _, row in ipairs(prose_order) do
-    local joined = false
-    if prev then
-      joined = true
-      for gap = prev + 1, row - 1 do
-        if not line_text(gap):match("^%s*$") then
-          joined = false
-          break
-        end
-      end
+  -- A banded row with no prose on it: nothing here to narrow, and the
+  -- band is the whole of what it has to say.
+  for row, band in pairs(prose_band) do
+    if not marks[row] then
+      paint_row(bufnr, M.ns, row, band, {}, line_text(row), line_count)
     end
-    if not joined then
-      node = node + 1
-    end
-    prose_rows[row].node = node
-    -- One new word anywhere in the node is what makes the rest of it the
-    -- part that did not change. Without one there is no comparison to
-    -- draw, and the node keeps the plain tint.
-    if #prose_rows[row].fine > 0 then
-      narrowed[node] = true
-    end
-    prev = row
   end
 
-  for _, row in ipairs(prose_order) do
-    local p = prose_rows[row]
-    if not narrowed[p.node] then
-      if p.band then
-        paint_row(bufnr, row, p.band, {}, p.text, line_count)
+  for _, row in ipairs(order) do
+    local p, text = marks[row], line_text(row)
+    local band = prose_band[row]
+    if not p.narrowed then
+      if band then
+        paint_row(bufnr, M.ns, row, band, {}, text, line_count)
       end
-    elseif p.full and p.band then
+    elseif p.full and band then
       -- The atom is the whole row, so the ROW is what steps back --
       -- indentation, quotes and the run out to the window edge with it.
       -- Stepping back only the words would leave those at full strength
       -- around a sentence that is quieter than they are, which reads as
-      -- a line striped rather than as a line the reader can skim.
-      paint_row(bufnr, row, "UatisAddDim", p.fine, p.text, line_count, p.band)
-    else
+      -- a line striped rather than as a line to skim.
+      paint_row(bufnr, M.ns, row, "UatisAddDim", p.fine, text, line_count, band)
+    elseif band then
       -- An atom sharing its line with code steps back inside its own
       -- columns: the code beside it is a change of its own and has
       -- nothing to do with what the sentence gained.
-      local quiet = unstressed(p.fine, p.regions)
-      if p.band then
-        paint_row(bufnr, row, p.band, quiet, p.text, line_count, "UatisAddDim")
-      else
-        for _, r in ipairs(quiet) do
-          local s = math.min(r.col_start, #p.text)
-          local e = math.min(r.col_end, #p.text)
-          if e > s then
-            vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, s, {
-              end_col = e,
-              hl_group = "UatisAddDim",
-              priority = 110,
-            })
-          end
+      paint_row(bufnr, M.ns, row, band, p.quiet, text, line_count, "UatisAddDim")
+    else
+      -- ...and where the row was drawn token by token, the tints are
+      -- already there and only the stepping back is left to do.
+      for _, r in ipairs(p.quiet) do
+        local s = math.min(r.col_start, #text)
+        local e = math.min(r.col_end, #text)
+        if e > s then
+          vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, s, {
+            end_col = e,
+            hl_group = "UatisAddDim",
+            priority = 110,
+          })
         end
       end
     end
@@ -1370,7 +1535,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       -- Re-drawn rather than added to: the band this row already carries
       -- is a `line_hl_group`, which no range can be seen on top of.
       vim.api.nvim_buf_clear_namespace(bufnr, M.ns, row, row + 1)
-      paint_row(bufnr, row, "UatisAdd", spans, text, line_count)
+      paint_row(bufnr, M.ns, row, "UatisAdd", spans, text, line_count)
     end
   end
 
@@ -1381,7 +1546,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       table.insert(uniq, a)
     end
   end
-  return uniq
+  return uniq, del_fine
 end
 
 return M

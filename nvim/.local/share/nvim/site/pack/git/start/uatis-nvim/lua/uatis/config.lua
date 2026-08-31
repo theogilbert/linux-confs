@@ -15,6 +15,12 @@ return {
     -- not in the code pane's winbar, which is a statusline expression and
     -- is strictly one line.
     width = 38,
+    -- The twisty on a directory row. A collapsed directory is the only
+    -- row in the pane that hides something, so it is the one row that has
+    -- to say so -- and it says it in the same column whether open or
+    -- shut, because a marker that changes width makes the tree wander
+    -- as you fold it.
+    fold = { open = "▾", closed = "▸" },
   },
 
   base = {
@@ -22,6 +28,12 @@ return {
     -- default branch off -- a repo that was `git init`ed rather than
     -- cloned, which is most of them on a laptop. First one that exists
     -- wins; asking the user is the last resort, not the first move.
+    --
+    -- The same list is what `<leader>gB` offers, minus the ones this
+    -- repository does not have. A picker is for the answer you almost
+    -- always want, and in a repo with a hundred branches or tags a list
+    -- of all of them is one nobody reads; `:Uatis <ref>` takes anything
+    -- else, on the command line, where there is real ref completion.
     fallbacks = { "develop", "master", "main" },
   },
 
@@ -55,6 +67,22 @@ return {
       refresh = "R",
       focus_code = "<C-t>l",
       quit = "q",
+      -- Folding a directory away, on the keys that fold anything else:
+      -- the toggle and the pair that say which way. On a directory row
+      -- they act on that directory; on a file row, on the directory the
+      -- file is in, which is what they mean over a line inside a fold.
+      -- `zc` over a directory already shut closes its parent, so it
+      -- walks out of a tree the way it does everywhere else. `<CR>` on a
+      -- directory row toggles too, since there is nothing else for "open
+      -- this row" to mean there.
+      fold = "za",
+      fold_close = "zc",
+      fold_open = "zo",
+      -- ...and the whole tree at once, which on a branch that touched
+      -- forty files is the first thing you reach for: shut, the list is
+      -- the directories that changed, and you open your way in.
+      fold_close_all = "zM",
+      fold_open_all = "zR",
       -- The view's own key for the list, bound in here too, because it
       -- is a toggle and opening the list moves the cursor into it: the
       -- second press has to be answered by the window it is asking to

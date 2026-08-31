@@ -134,7 +134,10 @@ local function render(view)
         end
       end
       view.del_spans = result.precise and dels or nil
-      view.anchors = overlay.render(view.bufnr, view.win, result,
+      -- ...and the same question asked of the old side, which the old
+      -- window draws: `render` is where the two blocks are compared, so
+      -- it is where the answer is.
+      view.anchors, view.del_fine = overlay.render(view.bufnr, view.win, result,
         vim.split(old_text, "\n", { plain = true }),
         -- Side by side, the old revision is a window of its own: drawing
         -- it here too would say everything twice.
@@ -383,23 +386,49 @@ local function setup_watchers(view)
   -- firing it, and the overlay would go on describing text that is no
   -- longer there. `on_lines` sees every change to the buffer whatever made
   -- it.
-  vim.api.nvim_buf_attach(view.bufnr, false, {
-    on_lines = function()
-      -- Detaches itself once the view is gone: a buffer that outlives the
-      -- view should not keep waking a callback up.
-      if views[view.bufnr] ~= view then
-        return true
-      end
-      -- A fast context -- no API calls here. Arming a libuv timer is
-      -- allowed, and its callback is scheduled back onto the main loop.
-      schedule_render(view)
-    end,
-    on_detach = function()
-      vim.schedule(function()
-        M.close(view.bufnr)
-      end)
-    end,
-  })
+  --
+  -- Wrapped in a function because the attachment has to be renewable: see
+  -- `on_detach`.
+  local function attach()
+    vim.api.nvim_buf_attach(view.bufnr, false, {
+      on_lines = function()
+        -- Detaches itself once the view is gone: a buffer that outlives
+        -- the view should not keep waking a callback up.
+        if views[view.bufnr] ~= view then
+          return true
+        end
+        -- A fast context -- no API calls here. Arming a libuv timer is
+        -- allowed, and its callback is scheduled back onto the main loop.
+        schedule_render(view)
+      end,
+      -- Detached is not the same as gone. `:e` re-reads the file into the
+      -- SAME buffer, and Neovim drops every attachment doing it -- so
+      -- reloading a file ended the review, and reloading is exactly what
+      -- a reader does when something else has written the file they are
+      -- reviewing.
+      --
+      -- Asked on the next tick, by when the reload has finished: a buffer
+      -- still loaded is a buffer that came back, and it gets its
+      -- attachment and its marks again rather than a teardown. The marks
+      -- are not optional there -- re-reading replaces the buffer's
+      -- contents, and extmarks go with the lines they were on.
+      on_detach = function()
+        vim.schedule(function()
+          if views[view.bufnr] ~= view then
+            return
+          end
+          if vim.api.nvim_buf_is_valid(view.bufnr)
+            and vim.api.nvim_buf_is_loaded(view.bufnr) then
+            attach()
+            render(view)
+            return
+          end
+          M.close(view.bufnr)
+        end)
+      end,
+    })
+  end
+  attach()
 
   view.augroup = vim.api.nvim_create_augroup(
     "UatisInline" .. tostring(view.bufnr), { clear = true })
@@ -429,8 +458,19 @@ local function setup_watchers(view)
   vim.api.nvim_create_autocmd({ "BufWinLeave", "BufUnload" }, {
     group = view.augroup,
     buffer = view.bufnr,
-    callback = function()
+    callback = function(ev)
       vim.schedule(function()
+        -- ...but unloading is not leaving. `:e` unloads the buffer and
+        -- reads it straight back into the same buffer number and the same
+        -- window, so by this tick there is nothing here to close --
+        -- `on_detach` has already put the attachment and the marks back.
+        -- `BufWinLeave` is the honest signal for the window losing the
+        -- buffer, and it does not fire for a reload.
+        if ev.event == "BufUnload" and views[view.bufnr] == view
+          and vim.api.nvim_buf_is_valid(view.bufnr)
+          and vim.api.nvim_buf_is_loaded(view.bufnr) then
+          return
+        end
         M.close(view.bufnr)
       end)
     end,
@@ -587,12 +627,23 @@ function M.attach(bufnr, win, root, relpath, opts)
       -- Re-running over a buffer that already has a view re-points it
       -- rather than stacking a second one: the mappings, the winbar and
       -- the buffer attachment are already in place and correct.
+      --
+      -- `on_open` still runs. It is not "a view was created", it is
+      -- "there is now a view here measuring against this" -- which is
+      -- how the changed-file list learns what it is beside, and is just
+      -- as true of the second `:Uatis <ref>` in a buffer as of the
+      -- first. Returning before it left the list pinned to whatever the
+      -- reader had asked for previously, showing an empty pane next to a
+      -- buffer full of marks.
       local existing = views[bufnr]
       if existing then
         existing.ref, existing.rev, existing.win = label, sha, win
         existing.old_path = opts.old_path
         existing.tracks_base = opts.tracks_base or false
         render(existing)
+        if opts.on_open then
+          opts.on_open(existing)
+        end
         return
       end
 

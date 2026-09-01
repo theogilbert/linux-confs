@@ -1,0 +1,669 @@
+*nemeton.txt*   Review GitLab merge requests where you read the code
+
+                    N E M E T O N    ~
+
+A nemeton was the sacred grove a Gaulish tribe assembled in to
+deliberate. This is where the argument about your branch happens.
+
+==============================================================================
+CONTENTS                                                    *nemeton-contents*
+
+  1. Introduction ............................. |nemeton-introduction|
+  2. Requirements ............................. |nemeton-requirements|
+  3. Getting started .......................... |nemeton-getting-started|
+  4. Commands ................................. |nemeton-commands|
+  5. Mappings ................................. |nemeton-mappings|
+  6. Windows .................................. |nemeton-windows|
+  7. Writing a comment ........................ |nemeton-writing|
+  8. Configuration ............................ |nemeton-configuration|
+  9. Credentials .............................. |nemeton-credentials|
+ 10. Highlight groups ......................... |nemeton-highlights|
+ 11. Health ................................... |nemeton-health|
+ 12. The log .................................. |nemeton-log|
+ 13. Limitations .............................. |nemeton-limitations|
+ 14. License .................................. |nemeton-license|
+
+==============================================================================
+1. INTRODUCTION                                         *nemeton-introduction*
+                                                                     *nemeton*
+
+Nemeton reviews GitLab merge requests in ordinary buffers. It checks the
+branch out, fetches every discussion on the merge request, and marks the
+lines that carry one in the gutter of whatever file you open. You read
+the code as code -- with your LSP, your treesitter, your keys -- and the
+conversation is drawn on top of it.
+
+It talks to GitLab through the `glab` command line client. There is no
+HTTP client in here and no token in a config file: every call is a
+`glab` subprocess, and `glab` already knows how to authenticate.
+
+What it does:
+
+  - lists the open merge requests of the project this repository points
+    at, as a table you can read -- number, CI, size, author, staleness,
+    conversation -- with the commits of the row under the cursor, or
+    what it says it is for, in a pane under the list;
+  - opens one: `glab mr checkout`, then every discussion on it;
+  - marks the lines carrying a thread, in every file you open, for as
+    long as the review is on;
+  - shows a thread in a float, or all of them at once as virtual lines
+    under the code they are about;
+  - writes new threads, replies, suggestions and overall comments, and
+    keeps them unsent until you publish the review as a whole;
+  - resolves and reopens threads, approves the merge request, and says
+    what CI did, job by job.
+
+==============================================================================
+2. REQUIREMENTS                                         *nemeton-requirements*
+
+  - Neovim 0.10 or newer. `vim.system()`, `vim.ui.open()` and the
+    extmark fields this draws with are all 0.10, and none of them
+    degrade: on anything older nemeton says so and does nothing.
+  - `git`, and a repository with a GitLab remote.
+  - `glab` -- https://gitlab.com/gitlab-org/cli -- authenticated, or a
+    token nemeton can reach. See |nemeton-credentials|.
+  - GitLab 15.10 or newer to keep a comment unsent (the draft notes
+    API). Everything else works on anything current; an older GitLab
+    loses the unsent comments and keeps the rest.
+  - A Nerd Font, or new glyphs. See `comments.sign_open` and its
+    neighbours in |nemeton-config-comments|.
+
+`:checkhealth nemeton` answers all of this. See |nemeton-health|.
+
+==============================================================================
+3. GETTING STARTED                                   *nemeton-getting-started*
+
+>
+    glab auth login          " nemeton does nothing without a token
+    cd <a repository with a GitLab remote>
+    nvim
+    :Nemeton                 " the list; <CR> checks one out
+<
+Calling `setup()` is optional. The command and the one global key are
+registered when Neovim starts and load nothing until they are used; the
+first of them to be used wires up the rest. Call it to pass a table in:
+>
+    require("nemeton").setup({
+      glab = {
+        host = "gitlab.example.com",
+        token = function()
+          return vim.trim(vim.fn.system("pass show gitlab/token"))
+        end,
+      },
+    })
+<
+Every key of |nemeton-configuration| can go in there, in the same shape.
+
+A review, end to end:
+
+  1. `<leader>mm` -- the list. `c` shows the commits of the row under
+     the cursor, `d` what it says it is for.
+  2. `<CR>` -- check that one out and fetch its threads. The window
+     stays up, saying what it is doing, until the review is loaded.
+  3. Read the code. Threads are marked in the gutter; `]m` and `[m`
+     walk them, `<leader>mp` reads one, `<leader>mx` opens all of them
+     inline.
+  4. `<leader>ma` on a line -- write a comment. `:w` keeps it for the
+     review. `<leader>ms` in visual mode suggests a change instead.
+  5. `<leader>md` -- the merge request itself: CI, approvals, size,
+     how much conversation. `a` approves it from there.
+  6. `<leader>md` then `s` -- send everything you kept, as one review.
+
+==============================================================================
+4. COMMANDS                                                 *nemeton-commands*
+
+                                                                    *:Nemeton*
+:Nemeton                Open the merge request list. |nemeton-list-window|
+
+:Nemeton list           The same thing, spelled out.
+
+:Nemeton open {iid}     Check merge request {iid} out with `glab mr
+                        checkout` and load its threads. Without {iid},
+                        the list.
+
+:Nemeton close          End the review: the markers and the review keys
+                        go away. The branch stays checked out.
+
+:Nemeton comments       Markers on or off. A redraw, not a refetch.
+
+:Nemeton expand         The conversations themselves, as virtual lines
+                        under the code they are about. Again to fold
+                        them back to gutter markers.
+
+:Nemeton peek           The thread under the cursor, in a float that
+                        closes on the next cursor movement.
+
+:Nemeton description    The merge request's own window: what it is for,
+                        what CI made of it, who has approved it, how
+                        much conversation is on it -- and the keys to
+                        act on all three. |nemeton-detail-window|
+
+:Nemeton comment        A new thread on the line under the cursor.
+
+:Nemeton reply          A reply into the thread under the cursor.
+
+:Nemeton edit           Rewrite one of your comments in the thread under
+                        the cursor.
+
+:Nemeton delete         Delete one, after asking.
+
+:Nemeton resolve        Resolve the thread under the cursor, or reopen
+                        it if it is already resolved.
+
+:Nemeton suggest        Suggest a change to the line under the cursor,
+                        or to the lines of the last visual selection.
+                        The composer opens with the current text in a
+                        `suggestion` fence; what you leave in it is what
+                        the author can apply with one click.
+
+:Nemeton note           A comment on the merge request rather than on a
+                        line of it.
+
+:Nemeton notes          Every comment on the merge request, one line
+                        each, in a window that reads and answers them.
+                        |nemeton-notes-window|
+
+:Nemeton threads        Every thread on the merge request, into the
+                        |quickfix| list.
+
+:Nemeton conversation   The same threads, to read rather than to walk.
+                        |nemeton-conversation-window|
+
+:Nemeton jobs           What CI did, job by job. |nemeton-jobs-window|
+
+:Nemeton publish        Send every comment you have kept unsent, as one
+                        review.
+
+:Nemeton approve        Approve the open merge request.
+
+:Nemeton unapprove      Take the approval back.
+
+:Nemeton refresh        Refetch the discussions. The forge is the source
+                        of truth; this is how you pick up what somebody
+                        else said while you were reading.
+
+:Nemeton status         Which merge request is open, and how much is on
+                        it.
+
+:Nemeton token          Type a token in for this editor session.
+                        |nemeton-credentials|
+
+:Nemeton forget-token   Drop it again.
+
+==============================================================================
+5. MAPPINGS                                                 *nemeton-mappings*
+
+Every key here is `config.keys.*` and every one of them can be set to
+`false` to unbind it. See |nemeton-config-keys|.
+
+GLOBAL                                               *nemeton-mappings-global*
+
+    <leader>mm      the merge request list
+
+BUFFER-LOCAL                                        *nemeton-mappings-session*
+
+Bound on every file buffer inside the repository while a review is open,
+and taken away again by `:Nemeton close`. Bound again whenever something
+else has had a turn at the buffer: a filetype plugin maps into the
+buffer it is loaded for -- Neovim's own ftplugin/python.vim takes `]m`
+and `[m` for its method motions -- and it is loaded again every time the
+file is re-read, which a checkout makes it do.
+
+    <leader>mx      expand the conversations inline
+    <leader>mp      peek at the thread on this line
+    <leader>ma      comment on this line
+    <leader>mr      reply to the thread on this line
+    <leader>mR      resolve it, or reopen it
+    <leader>me      edit one of its comments
+    <leader>mD      delete one of them, after asking
+    <leader>ms      (visual) suggest a change to these lines
+    <leader>md      the merge request's own window
+    ]m  [m          next / previous thread, across the whole merge
+                    request -- not just this file
+
+What is bound out here is what acts on the line under the cursor. A
+dozen keys under one prefix is a menu nobody has learnt, so the rest are
+`false` in `config.keys.session` and live where the question they answer
+is asked -- one letter further in, on `<leader>md`
+(|nemeton-detail-window|), or as a `:Nemeton` verb typed once in a
+review:
+
+    notes = false       `c` on <leader>md -- every comment on it
+    approve = false     `a` there
+    jobs = false        `p` there
+    publish = false     `s` there
+    threads = false     |:Nemeton| `threads`
+    toggle = false      |:Nemeton| `comments`
+
+Give any of them a string to have it out in the buffer as well; nothing
+else has to change.
+
+==============================================================================
+6. WINDOWS                                                   *nemeton-windows*
+
+Every window here is a float with its keys written across the top of it.
+None of them takes over `hjkl`, `/` or anything else you read with.
+
+THE LIST                                                 *nemeton-list-window*
+
+One row per merge request: number, CI, title, how much it changes, who
+wrote it, how stale it is, how many comments -- and, at the end of the
+row in the colour an unsent comment is drawn in everywhere else, how
+many of them are yours and still unsent.
+
+    <CR>            check this one out and load its threads
+    c               the commits of the row under the cursor
+    d               what it says it is for
+    r               refetch
+    o               open it on GitLab
+    q               close
+
+The window is up before the answer is: it opens on the keypress saying
+that it is fetching, fills in when the queue lands, and each row's CI
+and size arrive afterwards and are drawn where the row stands. `<CR>`
+does not close it either -- it says which merge request it is opening
+and stays up until the review is loaded, so a slow checkout looks like a
+slow checkout rather than like nothing at all.
+
+A checkout that fails -- the working tree has changes in it, the branch
+is checked out in another worktree -- says so in the window, folded to
+fit and whole: what git said was in the way and what to do about it,
+and what `glab` concluded from that, without the fetch report, the
+banner between them, or an "exit status 1" that says only that
+something failed. `<CR>` puts the queue back underneath it without
+asking the forge for it again. What `glab` said in full is in the log.
+|nemeton-log|
+
+`c` and `d` open a pane under the list for the row the cursor is on, and
+follow the cursor down the queue. `d` shows exactly what the merge
+request's own window shows.
+
+The list does not move when the pane opens: its top edge stays where it
+is and the pane takes the room below. Where there is not enough of it
+the list gives up rows from the bottom, and only when it has none left
+to give does the pair come up the screen. `list.preview_height` is the
+most the pane will take. |nemeton-config-list|
+
+THE MERGE REQUEST                                      *nemeton-detail-window*
+
+`<leader>md`, or `:Nemeton description`. What it is for, and the state
+it is in: CI, approvals, how big the change is, how much conversation
+there is and how much of it is yours and unsent.
+
+    a               approve it, or take the approval back
+    s               send every comment kept unsent
+    c               every comment on it, one line each
+    p               what CI did, job by job
+    o               open it on GitLab
+    r               refetch the approvals and the diff
+    q               close
+
+The threads that are on the code are not here: they are read where the
+code is -- in the gutter, on `]m`, in the quickfix list.
+
+THE COMMENTS                                            *nemeton-notes-window*
+
+`:Nemeton notes`, or `c` from the window above. Every conversation on
+the merge request, in one place: the ones on code, by file and line,
+then the ones that are about no line at all.
+
+    <CR>            go to the code this comment is about
+    r               reply to it
+    a               write a comment on the merge request
+    t               write one people can reply to
+    e               edit one of its comments
+    d               delete one, after asking
+    R               refetch
+    q               close
+
+The same keys as the every-thread window below, because it is the same
+threads read at a different depth. `<CR>` on a comment that is about no
+line -- one on the merge request itself -- says so and leaves the window
+where it is, rather than closing it to go nowhere.
+
+An index rather than a transcript. Each thread is its opening note and
+nothing else, on two lines: who wrote it and when, and what they said.
+The first line carries what a list has to say and a block does not --
+where the thread sits, as `path:line`, for the ones that sit anywhere;
+`✓ resolved` when the argument is over; `unsent` when it is yours and
+has not gone; and `+2` for the answers under it that are not on the
+screen. |:Nemeton| `conversation` is where those are read.
+
+GitLab will not take a reply to a comment that was posted on its own;
+nemeton says so rather than failing the post, and `t` is how you start
+one that can be answered.
+
+EVERY THREAD                                     *nemeton-conversation-window*
+
+`:Nemeton conversation`. All of it, to read rather than to walk.
+
+    <CR>            go to the code this thread is about
+    r               reply
+    e               edit one of its comments
+    d               delete one
+    R               refetch
+    q               close
+
+THE PIPELINE                                             *nemeton-jobs-window*
+
+`p` on the window above, or `:Nemeton jobs`. Every job of the head
+pipeline, its stage, its status and how long it took.
+
+    o               open the job under the cursor on GitLab
+    r               refetch
+    q               close
+
+THE PEEK FLOAT                                           *nemeton-peek-window*
+
+`<leader>mp`. The thread on this line, over the code, gone on the next
+cursor movement. For reading; the keys that answer it are the
+buffer-local ones.
+
+==============================================================================
+7. WRITING A COMMENT                                         *nemeton-writing*
+
+`<leader>ma` opens a small split. What you write in it goes to GitLab
+anchored to the line the cursor was on, with the position the API wants:
+the three diff shas, the path on both sides, and the line.
+
+    <C-s>  or  :w   keep it for the review
+    <C-p>           post it to the merge request now
+    q               discard it
+
+                                                              *nemeton-drafts*
+KEEPING IS THE DEFAULT. A comment you write becomes a GitLab draft note:
+it is drawn on its line in its own colour, with a pencil in the gutter,
+and it goes nowhere until `s` on `<leader>md` (`:Nemeton publish`) sends
+every one of them at once. That is what submitting a review is -- and a
+comment posted the moment it is typed is a comment you cannot take back
+after reading the next file. It sits on that window beside the approval
+and beside the count of what is still unsent, which are the two things
+you would want to know before pressing it.
+
+`<C-p>` posts on the spot, for when that is what you mean. Swap
+`config.keys.compose.keep` and `config.keys.compose.post` to swap the
+two round; nothing else knows which is which.
+
+Draft notes are GitLab 15.10 and newer. On an older instance `<C-s>`
+fails and `<C-p>` works.
+
+A suggestion is drawn as the diff it is, wherever it is read -- under
+the code with |:Nemeton| `expand`, in the peek float, in the every-thread
+window: the lines it would replace above it in red, the lines it would
+put there below in green. What it would replace is read off the buffer
+where the file is open and off the disk where it is not. In the overall
+comments there is no line to compare against and the block is drawn on
+its own rather than with an invented left-hand side.
+
+Anchoring: GitLab only takes a comment on a line the change touches.
+Nemeton knows which lines those are, and says so before opening a
+composer you would only have to close again.
+
+==============================================================================
+8. CONFIGURATION                                       *nemeton-configuration*
+
+One table. `require("nemeton").setup({...})` overlays yours onto it, key
+by key, and lists are replaced rather than merged. Everything below
+lives in `lua/nemeton/config.lua`, which is worth reading: every value
+in it says why it is what it is.
+
+LIST                                                     *nemeton-config-list*
+>
+    list = {
+      per_page = 30,          -- how many merge requests to ask for
+      state = "opened",       -- "opened" | "merged" | "closed" | "all"
+      order = "updated_at",   -- `glab mr list --order`
+      width = 0.7,            -- of the editor
+      height = 0.6,
+      ci = true,              -- does each row say what CI made of it
+      drafts = true,          -- ...and what you have not sent on it
+      concurrency = 6,        -- how many per-row calls at once
+      stats = true,           -- does each row say how much it changes
+      preview_height = 14,    -- rows of the pane under the list
+    }
+<
+`ci` and `drafts` cost one API call each per row: GitLab's merge request
+list carries no pipeline, and a draft note is yours and is in no list
+payload at all. The calls share one queue, a few at a time, and each row
+is redrawn as its own answer lands, so the list is readable throughout
+-- but on a slow forge, or a queue of thirty, these are the switches.
+
+`drafts` is the one worth the wait. An unsent comment lives on the forge
+rather than in this editor: it is still there tomorrow, and on a machine
+you are not sitting at, and this queue is the only place you would ever
+be told about it.
+
+`stats` is one GraphQL call for the whole list, and the only GraphQL in
+the plugin. REST publishes no line totals anywhere. An instance whose
+GraphQL will not answer leaves the column empty by itself.
+
+COMMENTS                                             *nemeton-config-comments*
+>
+    comments = {
+      sign_open = "",       -- a thread still owed an answer
+      sign_resolved = "",   -- one that is settled
+      sign_draft = "",      -- one of yours, not sent yet
+      virt_text = false,     -- the first line of it at end of line
+      show_resolved = true,  -- draw resolved threads at all
+      rail = "▎",            -- the rail drawn down a thread
+      reply_indent = "  ",   -- what a reply is indented by
+      reply_mark = "↳ ",     -- and what stands in that indent
+      peek_height = 20,
+    }
+<
+The three signs are Nerd Font glyphs; without one they render as a box.
+"●", "○" and "✎" are the pair-and-a-half to fall back to. `rail` falls
+back to "│".
+
+`show_resolved` is a redraw, not a refetch: resolved threads are fetched
+either way.
+
+COMPOSER                                              *nemeton-config-compose*
+>
+    compose = { height = 10 }   -- rows of the split you write in
+<
+KEYS                                                     *nemeton-config-keys*
+
+`keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
+`keys.conversation`, `keys.jobs` and `keys.compose`, each a table of
+what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
+can be `false`:
+>
+    require("nemeton").setup({
+      keys = {
+        global = { list = "<leader>gm" },
+        session = { suggest = false },
+      },
+    })
+<
+GLAB                                                     *nemeton-config-glab*
+>
+    glab = {
+      bin = "glab",
+      timeout = 30,             -- seconds before a call is hung
+      host = nil,               -- string | fun(): string | nil
+      token = nil,              -- string | fun(): string | nil
+      prompt_for_token = true,
+    }
+<
+See |nemeton-credentials| for `host`, `token` and `prompt_for_token`.
+
+LOG                                                       *nemeton-config-log*
+>
+    log = {
+      enabled = true,
+      path = nil,               -- $XDG_STATE_HOME/nemeton/nemeton.log
+      max_bytes = 1024 * 1024,  -- past this: nemeton.log.old, and a new one
+    }
+<
+See |nemeton-log|.
+
+==============================================================================
+9. CREDENTIALS                                           *nemeton-credentials*
+
+`host` and `token` are exported to every `glab` call as `GITLAB_HOST`
+and `GITLAB_TOKEN`. Both default to `nil`, which is usually right: glab
+infers the host from the repository's git remote, and `glab auth login`
+keeps a token in the system keyring.
+
+                                                         *nemeton-config-host*
+`host` -- a string, or a function returning one. Set it only for a
+self-managed instance glab cannot infer. One sharp edge, and it is
+glab's: with `GITLAB_HOST` set, glab refuses to work in a repository
+whose remotes point elsewhere ("none of the git remotes configured for
+this repository correspond to the GITLAB_HOST environment variable"). If
+you review across two instances, leave it nil.
+
+                                                        *nemeton-config-token*
+`token` -- a string, or a function returning one. A function is the
+point: it is called once per editor session and cached, so it is where
+you shell out to a password manager rather than putting a `glpat-...` in
+a dotfile that ends up in a backup, a screen share, and eventually a
+repository.
+>
+    token = function()
+      return vim.trim(vim.fn.system("pass show gitlab/token"))
+    end
+<
+                                                       *nemeton-config-prompt*
+`prompt_for_token` (default `true`) -- when glab answers 401, or when
+there is no token anywhere, nemeton asks for one with |inputsecret()|
+(masked, and not in `:history`), keeps it in memory for this Neovim
+session only, and retries the call that failed. Several calls failing at
+once share one prompt. Set it to `false` to have calls simply fail.
+
+NOTHING PERSISTS A TOKEN. A prompted token lives in a Lua local for as
+long as the editor does: not written to your config, not to disk, not
+handed to `glab auth login`. `:Nemeton forget-token` drops it.
+
+A 403 never prompts. That is a token that works and an account that may
+not touch the project, and asking for a different token at a permission
+error trains exactly the wrong reflex.
+
+==============================================================================
+10. HIGHLIGHT GROUPS                                      *nemeton-highlights*
+
+Every colour is a `Nemeton*` group linked to one your colourscheme
+already defines, so all of them are one `:highlight` away. They are set
+with `default`, and re-linked on every |ColorScheme|.
+
+    NemetonSignOpen       a thread still owed an answer   DiagnosticInfo
+    NemetonSignResolved   one that is settled             Comment
+    NemetonDraft          one of yours, not sent yet      DiagnosticWarn
+    NemetonAuthor         who said it                     Title
+    NemetonBranch         a git ref                       Directory
+    NemetonThread         what they said                  Normal's fg
+    NemetonMeta           when, where, how many           Comment
+    NemetonResolved       the tick on a settled thread    DiagnosticOk
+    NemetonOk             passed, approved, enough        DiagnosticOk
+    NemetonBad            failed                          DiagnosticError
+    NemetonBusy           running, pending, not yet       DiagnosticWarn
+    NemetonAdded          a line the change adds          Added
+    NemetonRemoved        one it takes away               Removed
+    NemetonHint           the key hints across a window   Comment
+    NemetonKey            the key itself, inside a hint   Special
+
+                                                            *hl-NemetonInline*
+                                                     *hl-NemetonSettled*
+`NemetonInline` is the ground under an expanded conversation: your own
+background, mixed a seventh of the way towards the colour an open thread
+is drawn in, so it reads as a tint of the file rather than as a grey
+band across it.
+
+`NemetonSettled` is the ground under a conversation that is resolved:
+the same mix, towards the resolved colour instead, and half as far.
+Whether a thread is still owed an answer is the thing you want to know
+before reading a word of it, and a block has a colour before it has
+anything else -- so an argument still going on stands off the page, and
+one that is over sinks back towards it.
+>
+    :hi NemetonInline guibg=#20242c     " pick another
+    :hi link NemetonInline Normal       " take it away
+<
+The colours drawn on either ground -- `NemetonInlineAuthor`,
+`NemetonSettledAuthor` and the rest -- are derived from it when it is
+set, so nothing in the block carries a background of its own through the
+middle of it. Setting the ground is enough; the derived groups follow.
+
+Without 'termguicolors' there is nothing to mix -- sixteen colours have
+no "a seventh of the way" -- and both fall back to |hl-CursorLine|,
+where the tick and the dimmed text carry it alone.
+
+==============================================================================
+11. HEALTH                                                    *nemeton-health*
+
+`:checkhealth nemeton` -- and it asks the forge rather than assuming:
+
+  - Neovim's version against the floor;
+  - `git`, and whether you are in a repository;
+  - `glab`, its version, and whether it is authenticated;
+  - which host and which token source are in effect (never the token
+    itself, and never printed into a buffer you are about to paste into
+    an issue);
+  - the GitLab version, against the 15.10 that draft notes need;
+  - whether the GraphQL endpoint answers, which is what the size column
+    in the list needs;
+  - where the log is being written.
+
+==============================================================================
+12. THE LOG                                                      *nemeton-log*
+
+Every subprocess nemeton runs -- every `glab` call, so every API call,
+and the two `git rev-parse`s -- is written to
+>
+    ~/.local/state/nemeton/nemeton.log     ($XDG_STATE_HOME if you set it)
+<
+two lines per command, one when it starts and one when it ends:
+>
+    2026-08-30T14:27:13.747 [4] run  glab api ... env=GITLAB_TOKEN=<set>
+    2026-08-30T14:27:13.752 [4] exit 0  5ms
+<
+Both ends, because the call worth reading about afterwards is often the
+one that never came back. The number in brackets pairs them up: several
+requests are in flight at once and their lines interleave.
+
+The token is not in there. The environment is logged by name and by
+presence -- `GITLAB_TOKEN=<set>` -- because whether a token was exported
+is the question the log has to answer and which one it was is the
+question it must not. Arguments and the first line of a failure's stderr
+are scrubbed on the way in. What you write in a comment does not go in
+either: a POST is logged as `stdin=301B`.
+
+One rotation, at `log.max_bytes`: past it the file becomes
+`nemeton.log.old` and a fresh one starts, so two files bound the disk.
+
+==============================================================================
+13. LIMITATIONS                                          *nemeton-limitations*
+
+  - GitHub. `lua/nemeton/glab.lua` is the seam -- the same handful of
+    operations, a different binary -- but GitHub's review model is not
+    GitLab's, and pretending otherwise in the data model would cost
+    more than waiting.
+  - The diff. You review the branch as it stands, in ordinary
+    buffers. Seeing the change itself is another plugin's job.
+  - Threads on the old side. Fetched and indexed with `side = "old"`,
+    but there is no old side on the screen to draw them against, so
+    they are drawn on the new line number.
+  - Line drift. If somebody pushes while you are reviewing, the local
+    HEAD stops being the revision the threads were written against.
+    Nemeton says so once, on checkout, and otherwise draws the threads
+    where they claim to be.
+  - Resolving an overall thread. GitLab only makes diff notes
+    resolvable in practice, so resolving lives on the gutter.
+  - Pagination in the list. The first `list.per_page`, ordered by
+    what was touched last.
+
+==============================================================================
+14. LICENSE                                                  *nemeton-license*
+
+GPL-3.0-or-later. Copyright (C) 2026 T Gilbert.
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the file
+`LICENSE`, or <https://www.gnu.org/licenses/>.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

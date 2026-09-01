@@ -32,6 +32,13 @@ local checked = {}  -- root -> the kept name has been verified to still exist
 ---
 --- `config.base.remember` is the switch and, as a string, the file.
 --- nil means it is off.
+---
+--- `state`, not `data`: XDG keeps them apart, and this is state by every
+--- part of that distinction. It is per-machine (the paths in it are
+--- absolute), it is not worth backing up, and losing it costs one
+--- `<leader>gB` per repository -- while `data` is where a plugin puts
+--- what it would be sorry to lose. Neovim puts its own shada and undo
+--- history in `state` for the same reasons.
 local function store_file()
   local where = config.base.remember
   if where == false or where == nil then
@@ -40,7 +47,7 @@ local function store_file()
   if type(where) == "string" then
     return where
   end
-  return vim.fs.joinpath(vim.fn.stdpath("data"), "uatis", "base.json")
+  return vim.fs.joinpath(vim.fn.stdpath("state"), "uatis", "base.json")
 end
 
 --- What is on disk: { [repo root] = base name }.

@@ -48,8 +48,13 @@ return {
     prompt_commits = 1000,
 
     -- Whether a base chosen by hand outlives the editor. `true` keeps
-    -- one line per repository in `stdpath("data")/uatis/base.json`; a
+    -- one line per repository in `stdpath("state")/uatis/base.json`; a
     -- string keeps them in that file instead; `false` forgets at exit.
+    --
+    -- `state` rather than `data`: the file is per-machine, since every
+    -- key in it is an absolute path, and losing it costs one
+    -- `<leader>gB` per repository. That is what the XDG distinction is
+    -- for, and where Neovim keeps its own shada and undo history.
     --
     -- On, because choosing a base is a fact about the project and not
     -- about this hour: a repository whose default branch is `develop`,

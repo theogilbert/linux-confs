@@ -1435,6 +1435,56 @@ function M.render(bufnr, win, result, old_lines, opts)
           end
         end
       end
+      -- The blank rows a token-precise backend said nothing about.
+      --
+      -- A blank line has no atoms, so difftastic reports nothing for it,
+      -- and the rule above -- a row the backend did not mention is code
+      -- that only moved -- leaves it unpainted. Between two rows that
+      -- ARE new, that rule is wrong: an added function with a blank line
+      -- in the middle came out as two green blocks with a gap through
+      -- it, and the gap is part of what was added. Line mode has always
+      -- painted it, which is what makes the same change read as one
+      -- block there and two here.
+      --
+      -- Only between rows painted WHOLE, and only inside this hunk. A
+      -- blank row whose neighbours merely carry token marks is a blank
+      -- line that was always there, between two lines that were edited;
+      -- one at the edge of the hunk is as likely to be the old file's
+      -- blank as the new one's, and nothing here can tell which.
+      if result.precise and hunk.count_b > 2 then
+        local first = hunk.start_b - 1
+        local last = math.min(hunk.start_b - 2 + hunk.count_b, line_count - 1)
+        local function blank(row)
+          return line_text(row):match("^%s*$") ~= nil
+        end
+        local row = first + 1
+        while row < last do
+          if blank(row) and not line_marked[row]
+            and not (by_row[row] and #by_row[row] > 0) then
+            -- The whole run of them: two blank lines inside an added
+            -- block are one gap, not two questions.
+            local last_blank = row
+            while last_blank + 1 < last and blank(last_blank + 1)
+              and not line_marked[last_blank + 1] do
+              last_blank = last_blank + 1
+            end
+            if line_marked[row - 1] and line_marked[last_blank + 1] then
+              for at = row, last_blank do
+                vim.api.nvim_buf_set_extmark(bufnr, M.ns, at, 0, {
+                  line_hl_group = hl,
+                  priority = 100,
+                })
+                line_marked[at] = true
+                token_marked[at] = true
+              end
+            end
+            row = last_blank + 1
+          else
+            row = row + 1
+          end
+        end
+      end
+
       table.insert(anchors, math.min(hunk.start_b, line_count))
     end
 

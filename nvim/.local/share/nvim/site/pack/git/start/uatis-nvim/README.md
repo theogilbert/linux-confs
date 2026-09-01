@@ -55,7 +55,7 @@ the plugin's own window rather than `vim.ui.input`, because completion
 is the half of it that matters and a `vim.ui.input` replacement is free
 to drop it.
 One choice per repository, kept between sessions: a base chosen by hand
-is written to `stdpath("data")/uatis/base.json` and read back next time,
+is written to `stdpath("state")/uatis/base.json` and read back next time,
 because a project reviewed against `develop` or against the last release
 tag is that way tomorrow too. What was merely *detected* is detected
 again, and a remembered branch that has since been deleted is dropped

@@ -74,6 +74,12 @@ move to the new fork point together. Views you named a revision for with
 | `<leader>go` | side by side / in place |
 | `<leader>gm` | structural / line diff |
 | `<leader>gf` | the changed-file list, on and off |
+| `<leader>gh` | read the review one commit at a time, on / off |
+| `]C` / `[C` | within that, the next / previous commit |
+
+In the list, that toggle is a bare `C` — a scratch buffer of rows has
+nothing for it to change, and it reads as the capital of the two keys
+beside it.
 
 In the list, `za` folds the directory under the cursor away, `zc` and
 `zo` say which way, and `<CR>` on a directory row toggles it. Over a
@@ -96,6 +102,26 @@ that leaves out. It re-reads itself when you save, when something else
 writes a file you are reading, and when you come back to nvim from a
 terminal or another window, where git may have moved under it: switch a
 branch or pull the base branch and the fork point moves with it.
+
+**One commit at a time.** `<leader>gh` from a file, or `C` from the
+list, turns it on: the review becomes a
+single commit — its own files, measured against the commit before it —
+starting at the newest, which is the last thing the branch did. The list
+says which commit you are on, whose it is, when, what it was for, and
+how far through the branch you have got (`12/17`, counting from the
+oldest). `]C` and `[C` move between commits; at either end they say so
+and stay put. `<leader>gh` again turns it off, and the review is what it
+is the rest of the time: the whole branch against the working tree.
+
+The file you land on is your own buffer wherever nothing has touched it
+since that commit — the newest commit on a clean tree, and every file
+the later commits left alone — with editing, LSP and everything else
+intact. Where the file has moved on, it is shown as it was at that
+commit, read-only, and the winbar says `at 8f3c2a1`: one commit's
+changes cannot honestly be drawn on a buffer holding five commits'
+worth. Files are opened from the list while a commit is on show, since
+a file reached by hand holds the working tree's content, not that
+commit's.
 
 `q` in the list closes that window and nothing else: the review goes on,
 `]f` still steps it, and `<leader>gf` brings the window back to the same

@@ -123,20 +123,22 @@ end
 ---
 --- cb(text|nil, err) -- nil is a failed call, and `err` is git's own
 --- complaint about it.
-function M.diff_since(root, rev, cb)
-  -- Spelled out against the reader's own git config, which is allowed to
-  -- make `git diff` print something no unified-diff parser can read. This
-  -- is the only place the plugin parses git's own diff output rather than
-  -- diffing text itself, so it is the only place that breaks -- and it
-  -- breaks silently, as an empty file list beside a buffer visibly full
-  -- of changes. `diff.external`/`GIT_EXTERNAL_DIFF` (difftastic, very
-  -- plausibly, on a machine that has it) replaces the output wholesale;
-  -- `color.ui = always` wraps every line in escapes; `diff.noprefix` and
-  -- `diff.mnemonicPrefix` rename the `a/`/`b/` the header is found by.
-  local args = {
-    "diff", "--no-ext-diff", "--no-color", "--no-textconv",
-    "--src-prefix=a/", "--dst-prefix=b/", rev,
-  }
+--- Spelled out against the reader's own git config, which is allowed to
+--- make `git diff` print something no unified-diff parser can read. This
+--- is the only place the plugin parses git's own diff output rather than
+--- diffing text itself, so it is the only place that breaks -- and it
+--- breaks silently, as an empty file list beside a buffer visibly full
+--- of changes. `diff.external`/`GIT_EXTERNAL_DIFF` (difftastic, very
+--- plausibly, on a machine that has it) replaces the output wholesale;
+--- `color.ui = always` wraps every line in escapes; `diff.noprefix` and
+--- `diff.mnemonicPrefix` rename the `a/`/`b/` the header is found by.
+local DIFF_FLAGS = { "--no-ext-diff", "--no-color", "--no-textconv",
+  "--src-prefix=a/", "--dst-prefix=b/" }
+
+local function diff(root, revs, cb)
+  local args = { "diff" }
+  vim.list_extend(args, DIFF_FLAGS)
+  vim.list_extend(args, revs)
   run(root, args, function(ok, out, err)
     -- The error text is handed back rather than swallowed: the caller
     -- draws an empty list either way, and "no files changed" and "git
@@ -147,6 +149,52 @@ function M.diff_since(root, rev, cb)
       cb(nil, vim.trim(err or ""))
     end
   end)
+end
+
+function M.diff_since(root, rev, cb)
+  diff(root, { rev }, cb)
+end
+
+--- Diff BETWEEN two revisions, `git diff <a> <b>`. What one commit did,
+--- when `a` is its parent -- the working tree has no part in it, which is
+--- the whole difference from `diff_since`: a commit is finished, and what
+--- it changed cannot depend on what is unsaved now.
+function M.diff_range(root, a, b, cb)
+  diff(root, { a, b }, cb)
+end
+
+--- The commits of `from..to`, oldest first: cb({ { sha, short, date,
+--- author, subject }, ... }).
+---
+--- `--first-parent`, so a branch that merged the base back into itself
+--- is a list of the commits its author wrote rather than of everything
+--- that has ever been merged into it. Reviewing means reading what
+--- somebody did, in the order they did it, and the merges they took in
+--- along the way are not that.
+---
+--- Oldest first because that is the order the work happened in, and the
+--- order `12/17` has to count in for the number to mean anything.
+function M.commits_between(root, from, to, cb)
+  run(root, { "log", "--first-parent", "--reverse", "--date=short",
+    "--format=%H%x09%h%x09%ad%x09%an%x09%s", from .. ".." .. to },
+    function(ok, out)
+      if not ok then
+        cb({})
+        return
+      end
+      local commits = {}
+      for line in out:gmatch("[^\r\n]+") do
+        local sha, short, date, author, subject =
+          line:match("^(%S+)\t(%S+)\t([^\t]*)\t([^\t]*)\t(.*)$")
+        if sha then
+          table.insert(commits, {
+            sha = sha, short = short, date = date,
+            author = author, subject = subject,
+          })
+        end
+      end
+      cb(commits)
+    end)
 end
 
 --- Files git has never been told about: `ls-files --others

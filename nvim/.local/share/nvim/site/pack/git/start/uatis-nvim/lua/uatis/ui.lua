@@ -122,6 +122,30 @@ function M.build_list(pane, width)
     b:add(pad(l), "UatisHeader")
   end
 
+  -- The commit on show, when the review is being read one at a time.
+  -- Everything a reader needs to know where they are: which commit,
+  -- whose, when, what it was for, and how far through the branch --
+  -- `12/17` counting from the oldest, because that is the order the
+  -- work happened in. The subject wraps; the line above it does not,
+  -- since a sha broken across two rows is not a sha anyone can read.
+  if pane.commit then
+    local c = pane.commit
+    b:add(pad(("%d/%d · %s"):format(pane.commit_idx, #pane.commits, c.short)),
+      "UatisHeader")
+    local by = c.date
+    if c.author and c.author ~= "" then
+      by = by ~= "" and (by .. " · " .. c.author) or c.author
+    end
+    if by ~= "" then
+      for _, l in ipairs(M.wrap(by, inner)) do
+        b:add(pad(l), "UatisMeta")
+      end
+    end
+    for _, l in ipairs(M.wrap(c.subject or "", inner)) do
+      b:add(pad(l), "UatisMeta")
+    end
+  end
+
   local added, removed = pane.stat_added, pane.stat_removed
   local head = pad(string.format("%d file%s · ", #pane.files,
     #pane.files == 1 and "" or "s"))
@@ -365,12 +389,19 @@ local function view_winbar_text(view, width)
   -- revision and has to say which, or the reader is left working it out
   -- from which half moved.
   if view.layout == "side" then
-    add("working tree", "UatisMeta")
+    add(view.at_commit and ("at " .. view.at_commit) or "working tree", "UatisMeta")
     if view.head then
       add(view.head, "UatisMeta")
     end
   else
     add("vs " .. view.ref, "UatisMeta")
+  end
+  -- Not your file: a copy of it as it was at a commit, which is what a
+  -- review being read one commit at a time shows for every file the
+  -- later commits have touched since. Said plainly, because everything
+  -- else about this window looks exactly like the one you can type in.
+  if view.at_commit and view.layout ~= "side" then
+    add("at " .. view.at_commit, "UatisMeta")
   end
   table.insert(left, stat_item(view.added, view.removed))
   if vim.bo[view.bufnr].modified then

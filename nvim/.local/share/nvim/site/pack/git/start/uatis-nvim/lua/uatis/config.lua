@@ -119,6 +119,19 @@ return {
       -- way -- so changing `keys.view.files` alone leaves the toggle
       -- half-bound.
       files = "<leader>gf",
+      -- The same stepping keys the view binds, for the same reason `]f`
+      -- is in both: which commit the review is showing is about the
+      -- review, and which window the reader happens to be in is not
+      -- part of it.
+      commit_prev = "[C",
+      commit_next = "]C",
+      -- ...and a bare letter for the toggle, which only a list can
+      -- afford: `C` in a scratch buffer of rows has nothing to change,
+      -- while in the file beside it that keystroke is `c$` and cannot
+      -- be taken. It reads as the capital of the two keys next to it --
+      -- `C` to look at commits, `]C`/`[C` to move between them -- and
+      -- the file's own way in stays `keys.view.commit_view`.
+      commit_view = "C",
     },
     -- The diff view: a real file buffer of your own, annotated where it
     -- stands. `]c`/`[c` and `]f`/`[f` are what they already mean in a
@@ -142,6 +155,30 @@ return {
       -- say. A toggle -- the window, not the review -- so it is also
       -- bound inside the list itself, as `keys.pane.files`.
       files = "<leader>gf",
+      -- Reading the review one commit at a time. `<leader>gh` turns
+      -- that on and off -- on, the review is a single commit, its own
+      -- files measured against the commit before it; off, it is the
+      -- whole branch against the working tree, which is what a review
+      -- is the rest of the time.
+      --
+      -- `h` for history, which is what a branch read one commit at a
+      -- time is, and typed by the right hand: `<leader>g` is a
+      -- left-index roll, and a chord that asks that finger for the next
+      -- key too is one nobody presses twice. `c` for commit was the
+      -- obvious letter and is a left-index key for anyone who types it
+      -- that way; `l` for log is lazygit's in most configs.
+      --
+      -- `[C`/`]C` move WITHIN it, and say how to get in when it is off:
+      -- a mode has to be entered by something that means "enter", or
+      -- the reader who presses a navigation key once finds themselves
+      -- somewhere they did not ask to be.
+      --
+      -- Capitals of the chunk keys, because it is the same gesture one
+      -- size up: `]c` is the next change in this file, `]C` the next
+      -- commit of the branch.
+      commit_view = "<leader>gh",
+      commit_prev = "[C",
+      commit_next = "]C",
       -- ...and stepping through that list without leaving the file you
       -- are reading. The same keys the pane itself uses, because they
       -- mean the same thing in both places -- moving between changed
@@ -327,6 +364,28 @@ return {
     add_lightness = 0.05,
     delete_lightness = 0.11,
 
+    -- ...or the two removal backgrounds outright, as `0xrrggbb`, for a
+    -- reader who would rather name them than tune the derivation.
+    -- `delete_bg` is under the words that went, `delete_dim_bg` under
+    -- the rest of the line they were taken out of; `nil` derives both
+    -- from `DiffDelete` as described above. Nothing else in this table
+    -- is a colour: these are here because a scheme's `DiffDelete` is a
+    -- weaker source than its `DiffAdd` -- often a foreground alone --
+    -- and taste about how loud a removal should be varies more than the
+    -- rest of the palette does.
+    delete_bg = nil,
+    delete_dim_bg = nil,
+
+    -- The ceiling for a tint read out of a FOREGROUND, which is how a
+    -- removal is coloured by a scheme that leaves `DiffDelete` without a
+    -- background. `saturation` above is a floor because a diff
+    -- background arrives muted; a foreground arrives the other way up --
+    -- it was picked to be legible ON the background, and every pale tint
+    -- reads as fully saturated in HSL -- so the same number applied to
+    -- one makes a red that shouts. This is where a background of that
+    -- hue would have been if the scheme had written one.
+    foreground_saturation = 0.25,
+
     -- The emphasis: the part of a banded line that is the actual edit,
     -- where the backend only knows lines and the band only means "this
     -- line changed". Further along both axes, so the two read as one
@@ -346,6 +405,29 @@ return {
     -- a reworded comment louder than the changed code beside it, which
     -- is the wrong way round.
     dim_contrast = 0.45,
+
+    -- The same step back on the removed side, which is a shorter one.
+    --
+    -- Both dims mean "part of what the backend called changed, but not
+    -- the part that IS the change", and the number is different because
+    -- of where each one lands. The added dim is a band on a real line
+    -- with more of the same tint above and below it, and it has to stay
+    -- clear of the tint to say anything. The removed dim is the ground
+    -- of a virtual row -- the whole width of it, since the before-image
+    -- is padded to the window edge -- sitting between two lines of the
+    -- reader's own file. There is nothing beside it to be mistaken for,
+    -- so it can be much quieter and still be read as a colour, and at
+    -- the added dim's distance a replaced line is the loudest thing on
+    -- the screen.
+    --
+    -- Reached only where the scheme wrote no `DiffDelete` background for
+    -- the ground to be taken from directly, so this is aiming at where
+    -- that background would have been rather than at a step back from
+    -- the tint. It is measured against the GUTTER of the same row --
+    -- `UatisSign`, which is the editor's own surface in exactly the case
+    -- that gets here -- since that is the nearest thing on the line to
+    -- be a shade off.
+    delete_dim_contrast = 0.15,
 
     -- How far the winbar's key hints are mixed from the bar's own
     -- background towards the editor's foreground. They are hints, so they

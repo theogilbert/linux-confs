@@ -235,6 +235,8 @@ local function similarity(a, b)
   return 1 - (levenshtein(a, b) / longest)
 end
 
+M.similarity = similarity
+
 local function push(list, line, from, to)
   if to <= from then
     return

@@ -369,6 +369,38 @@ local function step_file(dir)
   })
 end
 
+--- ...and the same for stepping the review a commit at a time, which is
+--- a question about the list too and so needs one to exist.
+local function step_commit(dir)
+  local pane = require("uatis.pane")
+  local list = pane.get()
+  if list and (list.renders or 0) > 0 then
+    pane.step_commit(list, dir)
+    return
+  end
+  pane.list({
+    on_ready = function(p)
+      pane.step_commit(p, dir)
+    end,
+  })
+end
+
+--- ...and turning that mode on from a file, which needs a list for the
+--- same reason: which commits there are is a fact about the review.
+local function toggle_commits()
+  local pane = require("uatis.pane")
+  local list = pane.get()
+  if list and (list.renders or 0) > 0 then
+    pane.toggle_commits(list)
+    return
+  end
+  pane.list({
+    on_ready = function(p)
+      pane.toggle_commits(p)
+    end,
+  })
+end
+
 local function setup_keymaps(view)
   local k = config.keys.view
   view.saved_keys = keys.apply(view.bufnr, "n", {
@@ -388,6 +420,14 @@ local function setup_keymaps(view)
       opts = { desc = "uatis: next changed file" } },
     { lhs = k.file_prev, rhs = function() step_file(-1) end,
       opts = { desc = "uatis: previous changed file" } },
+    -- The same list, one size up: `]c` is the next change in this file,
+    -- `]C` the next change to the branch.
+    { lhs = k.commit_next, rhs = function() step_commit(1) end,
+      opts = { desc = "uatis: the review one commit forward" } },
+    { lhs = k.commit_prev, rhs = function() step_commit(-1) end,
+      opts = { desc = "uatis: the review one commit back" } },
+    { lhs = k.commit_view, rhs = function() toggle_commits() end,
+      opts = { desc = "uatis: read the review one commit at a time" } },
     -- Off by default, and skipped when it is: `<leader>gu` already ends
     -- the review from anywhere, including from in here. Bound for anyone
     -- who sets `keys.view.quit` to a key of their own.
@@ -663,6 +703,7 @@ function M.attach(bufnr, win, root, relpath, opts)
         existing.ref, existing.rev, existing.win = label, sha, win
         existing.old_path = opts.old_path
         existing.tracks_base = opts.tracks_base or false
+        existing.at_commit = opts.at_commit
         render(existing)
         if opts.on_open then
           opts.on_open(existing)
@@ -678,6 +719,11 @@ function M.attach(bufnr, win, root, relpath, opts)
         old_path = opts.old_path,
         ref = label,
         rev = sha,
+        -- The commit whose content this buffer holds, when it is not
+        -- the reader's own file but a copy of it as it was. What the
+        -- winbar says so nobody types into a rendering and wonders why
+        -- it will not take.
+        at_commit = opts.at_commit,
         -- Whether this comparison FOLLOWS the base branch or merely
         -- happens to be pointed where the base branch pointed once.
         -- Choosing another one re-points the first and leaves the second

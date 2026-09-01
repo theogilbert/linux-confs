@@ -64,6 +64,17 @@ end
 --- drawing relies on.
 local function compose(pane)
   local files, by_path = {}, {}
+  -- A commit on show is finished. What it changed cannot depend on what
+  -- is unsaved now, or on a file git has never been told about, so the
+  -- two sources that answer for the working tree are left out and the
+  -- list is exactly the commit's own diff.
+  if pane.commit then
+    for _, f in ipairs(pane.tracked or {}) do
+      table.insert(files, vim.tbl_extend("force", {}, f))
+    end
+    table.sort(files, function(a, b) return a.path < b.path end)
+    return files
+  end
   for _, f in ipairs(pane.tracked or {}) do
     -- Copied, because this runs again on every keystroke that moves a
     -- count and must not edit what git said last time it was asked.
@@ -202,7 +213,18 @@ end
 local function refresh(pane, keep_path)
   pane.gen = (pane.gen or 0) + 1
   local gen = pane.gen
-  git.diff_since(pane.root, pane.rev, function(text, err)
+  local function read(cb)
+    if pane.commit then
+      -- The commit against its parent, which is what `pane.rev` is while
+      -- one is on show. A range, not a comparison with the working tree:
+      -- see `git.diff_range`.
+      git.diff_range(pane.root, pane.rev, pane.commit.sha, cb)
+    else
+      git.diff_since(pane.root, pane.rev, cb)
+    end
+  end
+
+  read(function(text, err)
     if panes[pane.tab] ~= pane or pane.gen ~= gen then
       return
     end
@@ -239,7 +261,7 @@ local function refresh(pane, keep_path)
     -- cannot answer: the files git has never been told about. Read
     -- after the diff rather than beside it so the list is drawn once,
     -- with both halves in it, instead of jumping as the second arrives.
-    if config.pane.untracked_max_bytes <= 0 then
+    if pane.commit or config.pane.untracked_max_bytes <= 0 then
       pane.untracked = {}
       drawn()
       return
@@ -259,6 +281,183 @@ local function refresh(pane, keep_path)
       drawn()
     end)
   end)
+end
+
+-- ------------------------------------------------------------------
+-- Commit by commit
+-- ------------------------------------------------------------------
+
+--- The revision the commit at `idx` is measured against: the one before
+--- it in the branch, and for the first one the revision the whole review
+--- measures from. `--first-parent` makes that walk linear, so the list
+--- itself answers this without asking git again.
+local function parent_of(pane, idx)
+  if idx > 1 then
+    return pane.commits[idx - 1].sha
+  end
+  return pane.tree_rev
+end
+
+--- The help line under the list.
+---
+--- Reads off the mode, because two of the keys only exist in one of
+--- them: `[C`/`]C` step within a commit-by-commit review and say so
+--- when there is no review to step through, so a reader who has just
+--- pressed `C` is exactly the reader who needs to be told about them.
+--- `C` itself changes meaning rather than going away -- it is the way
+--- back out -- so it changes what it says instead.
+local function hint_for(pane)
+  local k = config.keys.pane
+  local parts = {
+    k.file_next .. "/" .. k.file_prev .. " file",
+    k.select .. " open",
+  }
+  if pane.commit then
+    table.insert(parts, k.commit_prev .. "/" .. k.commit_next .. " commit")
+    table.insert(parts, k.commit_view .. " whole branch")
+  else
+    table.insert(parts, k.commit_view .. " commits")
+  end
+  table.insert(parts, k.fold .. " fold")
+  table.insert(parts, k.quit .. " close")
+  return table.concat(parts, " · ")
+end
+
+--- Puts one commit on show, or takes the review back to the working
+--- tree when `idx` is nil.
+---
+--- Every view of this review closes first. They are pinned to the
+--- revision the list was measured against, and that revision is exactly
+--- what has just changed -- a view left open would be annotating one
+--- commit's parent while the list beside it describes another's.
+--- Whichever file the reader was on is opened again at the new
+--- revision, so a step lands somewhere rather than on an empty window.
+local function show(pane, idx, keep_path)
+  local was = pane.rev
+  if idx then
+    local commit = pane.commits[idx]
+    pane.commit, pane.commit_idx = commit, idx
+    pane.mode = "commit"
+    -- `ref` names what is being measured AGAINST, which is the commit
+    -- before this one -- the first one's is the revision the whole
+    -- review measures from, and that has a name worth keeping. The
+    -- commit itself is named by the header and, on a file shown as it
+    -- was, by the winbar's `at`.
+    pane.target = idx > 1 and pane.commits[idx - 1].short or pane.tree_ref
+    pane.src = commit.short
+    pane.ref, pane.rev = pane.target, parent_of(pane, idx)
+  else
+    pane.commit, pane.commit_idx = nil, nil
+    pane.ref, pane.rev = pane.tree_ref, pane.tree_rev
+    pane.mode = "overall"
+    pane.target, pane.src = pane.tree_ref, "working tree"
+  end
+  pane.hint = hint_for(pane)
+  view_mod.close_all(pane.root, was)
+
+  pane.on_ready = function(p)
+    if panes[p.tab] ~= p or #p.files == 0 then
+      return
+    end
+    local at = 1
+    for i, f in ipairs(p.files) do
+      if f.path == keep_path or f.old_path == keep_path then
+        at = i
+        break
+      end
+    end
+    M.goto_file(p, at)
+  end
+  refresh(pane, keep_path)
+end
+
+--- Runs `fn(pane)` once the branch's commits are known.
+---
+--- Read once per review, and re-read whenever the review is re-pointed
+--- or git moves: which commits there are is a fact about the two
+--- revisions, and those are what re-pointing changes.
+local function with_commits(pane, fn)
+  if pane.commits then
+    fn(pane)
+    return
+  end
+  if pane.reading_commits then
+    return
+  end
+  pane.reading_commits = true
+  git.commits_between(pane.root, pane.tree_rev, "HEAD", function(list)
+    pane.reading_commits = nil
+    if panes[pane.tab] ~= pane then
+      return
+    end
+    pane.commits = list
+    fn(pane)
+  end)
+end
+
+local function current_path(pane)
+  local file = pane.files[pane.file_idx]
+  return file and file.path or nil
+end
+
+--- `<leader>gh`: read the review one commit at a time, or stop.
+---
+--- Entering shows the newest commit -- the last thing the branch did,
+--- which is where reading it in order ends up and the most likely thing
+--- to want to look at first. Leaving puts the review back to what it is
+--- the rest of the time: the whole branch against the working tree.
+function M.toggle_commits(pane)
+  pane = pane or M.get()
+  if not pane then
+    return false
+  end
+  if pane.commit then
+    show(pane, nil, current_path(pane))
+    return false
+  end
+  with_commits(pane, function(p)
+    if #p.commits == 0 then
+      vim.notify("uatis: no commits between " .. tostring(p.tree_ref) .. " and HEAD",
+        vim.log.levels.INFO)
+      return
+    end
+    show(p, #p.commits, current_path(p))
+  end)
+  return true
+end
+
+--- `]C` / `[C`: the next or previous commit, WITHIN that mode.
+---
+--- They do not enter it. A navigation key that turns a mode on is a key
+--- that moves the reader somewhere they did not ask to be, so pressed
+--- outside it these say how to get in instead. Nor do they leave it at
+--- the ends: the review stays on the first or the last commit and says
+--- which, because walking off the end of a list is a thing to be told
+--- about rather than a way out.
+function M.step_commit(pane, dir)
+  pane = pane or M.get()
+  if not pane then
+    return
+  end
+  if not pane.commit then
+    -- The view's key, not the list's: this is pressed in a file as often
+    -- as in the list, and the list's own toggle is a bare letter that
+    -- means something else there.
+    vim.notify("uatis: not reading commit by commit · "
+      .. config.keys.view.commit_view .. " to start", vim.log.levels.INFO)
+    return
+  end
+  local n = #(pane.commits or {})
+  local to = pane.commit_idx + dir
+  if to < 1 then
+    vim.notify("uatis: first commit of this review", vim.log.levels.INFO)
+    return
+  end
+  if to > n then
+    vim.notify("uatis: last commit of this review", vim.log.levels.INFO)
+    return
+  end
+  show(pane, to, current_path(pane))
 end
 
 --- Re-reads the list, and the revision it is measured against, because
@@ -291,11 +490,39 @@ function M.recheck(pane)
     if not label or not sha then
       return
     end
-    if sha ~= pane.rev then
+    -- A commit may have landed while nvim was not looking, so the walk
+    -- is dropped either way and read again on the next step.
+    pane.commits = nil
+    if sha ~= pane.tree_rev then
       -- Both sides at once, from one answer: two ideas of the fork point
       -- on screen is the disagreement the pinning exists to prevent.
       view_mod.repoint(pane.root, label, sha)
       M.repoint(pane.root, label, sha)
+    elseif pane.commit then
+      -- The walk has just been dropped, and a commit on show is counted
+      -- against it -- `12/17` in the header, and `[C`/`]C` stepping
+      -- through it. So it is read again here rather than on the next
+      -- step, and the reader is put back on the SAME commit: something
+      -- landing on the branch moves their place in the count, not which
+      -- commit they are reading.
+      --
+      -- Gone from the range altogether -- a rebase, a reset, a branch
+      -- switched under the review -- and there is nothing to be on, so
+      -- the review goes back to the working tree the way leaving commit
+      -- mode does.
+      with_commits(pane, function(p)
+        if not p.commit then
+          return M.refresh(p)
+        end
+        local at
+        for i, c in ipairs(p.commits) do
+          if c.sha == p.commit.sha then
+            at = i
+            break
+          end
+        end
+        show(p, at, current_path(p))
+      end)
     else
       M.refresh(pane)
     end
@@ -322,8 +549,18 @@ end
 function M.repoint(root, label, sha)
   for _, pane in pairs(panes) do
     if pane.tracks_base and pane.root == root
-      and (pane.ref ~= label or pane.rev ~= sha) then
+      and (pane.tree_ref ~= label or pane.tree_rev ~= sha) then
       local cur = pane.files[pane.file_idx]
+      pane.tree_ref, pane.tree_rev = label, sha
+      -- Which commits there are is a fact about the two revisions, and
+      -- one of them has just moved: the walk is re-read on the next
+      -- step, and a commit on show is let go rather than left pointing
+      -- into a range it may no longer be in.
+      pane.commits = nil
+      if pane.commit then
+        show(pane, nil, cur and cur.path or nil)
+        return
+      end
       pane.ref, pane.rev, pane.target = label, sha, label
       refresh(pane, cur and cur.path or nil)
     end
@@ -474,6 +711,54 @@ local function fold_target(pane)
   return ds[#ds]
 end
 
+--- The file as it stands right now: the buffer if one is open on it,
+--- since an unsaved edit is what the file IS, and the disk otherwise.
+--- nil when there is nothing there to read.
+local function live_text(root, path)
+  local full = vim.fs.normalize(root .. "/" .. path)
+  -- Found by walking the buffer list rather than with `bufnr()`, which
+  -- matches its argument as a PATTERN: a path holding a `.` or a `~` --
+  -- most of them -- is not the name it looks like there.
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(b)
+      and vim.fs.normalize(vim.api.nvim_buf_get_name(b)) == full then
+      return table.concat(vim.api.nvim_buf_get_lines(b, 0, -1, false), "\n")
+    end
+  end
+  local ok, lines = pcall(vim.fn.readfile, full)
+  if not ok or type(lines) ~= "table" then
+    return nil
+  end
+  return table.concat(lines, "\n")
+end
+
+--- A read-only buffer holding `path` as it was at `sha`.
+---
+--- Named for the commit as well as the file, so stepping back and forth
+--- reuses one buffer per commit rather than stacking a new one per
+--- press, and so the name itself says what you are looking at.
+local function buffer_at(root, sha, short, path, text)
+  local name = "uatis://at/" .. short .. "/" .. path
+  local buf = vim.fn.bufnr(name)
+  if buf == -1 or not vim.api.nvim_buf_is_valid(buf) then
+    buf = vim.api.nvim_create_buf(false, true)
+    pcall(vim.api.nvim_buf_set_name, buf, name)
+  end
+  vim.bo[buf].buftype = "nofile"
+  -- Wiped when it leaves the window: a review stepped through twenty
+  -- commits should not leave twenty copies of a file in the buffer
+  -- list, and the blob behind this one is cached, so making it again
+  -- costs nothing.
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(text or "", "\n", { plain = true }))
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].modified = false
+  vim.bo[buf].filetype = vim.filetype.match({ filename = path }) or ""
+  return buf
+end
+
 function M.goto_file(pane, idx)
   local f = pane.files[idx]
   if not f then
@@ -500,13 +785,52 @@ function M.goto_file(pane, idx)
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
     vim.bo[buf].modifiable = false
-    pcall(vim.api.nvim_buf_set_name, buf, "uatis://deleted/" .. f.path)
+    -- Named for the commit as well, while one is on show: two commits
+    -- can each delete a file of the same name, and two buffers cannot
+    -- share one.
+    pcall(vim.api.nvim_buf_set_name, buf, "uatis://deleted/"
+      .. (pane.commit and (pane.commit.short .. "/") or "") .. f.path)
     vim.bo[buf].filetype = vim.filetype.match({ filename = f.path }) or ""
     vim.api.nvim_win_set_buf(win, buf)
     view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
       root = pane.root,
       path = f.path,
     }))
+    return
+  end
+
+  -- With one commit on show, the new side is that commit's content --
+  -- and the reader's own buffer is that content, exactly, whenever
+  -- nothing has touched the file since. That is the newest commit on a
+  -- clean tree, and on older commits every file the later commits left
+  -- alone: there the buffer stays the new side and keeps everything
+  -- that makes it a buffer -- LSP, jumps, the unsaved state of the
+  -- world. Where they differ, the file is shown as it was, read-only,
+  -- because there is no honest way to draw one commit's changes on a
+  -- buffer that holds five commits' worth.
+  if pane.commit then
+    local commit = pane.commit
+    git.blob(pane.root, commit.sha, f.path, function(text)
+      if panes[pane.tab] ~= pane or pane.commit ~= commit then
+        return
+      end
+      if not vim.api.nvim_win_is_valid(win) then
+        return
+      end
+      vim.api.nvim_set_current_win(win)
+      if text ~= nil and text == live_text(pane.root, f.path) then
+        vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+        view_mod.open(pane.ref, pinned(pane, f))
+        return
+      end
+      local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
+      vim.api.nvim_win_set_buf(win, buf)
+      view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
+        root = pane.root,
+        path = f.path,
+        at_commit = commit.short,
+      }))
+    end)
     return
   end
 
@@ -557,6 +881,14 @@ local function follow(pane, bufnr, win, force)
   -- the list says: git reads the disk, and the list is built from git. Take
   -- it in and it reports itself -- which is how it reaches the list at all.
   if not file and not force and not vim.bo[bufnr].modified then
+    return false
+  end
+  -- ...but not while one commit is on show. The review is then about
+  -- that commit's content, and a file arrived at by hand holds the
+  -- working tree's -- annotating it would draw one commit's diff on text
+  -- that is not that commit's. Files are opened from the list there, at
+  -- the revision the list is describing.
+  if pane.commit then
     return false
   end
   view_mod.attach(bufnr, win, pane.root, relpath, pinned(pane, file or {}))
@@ -633,6 +965,14 @@ local function lend_keys(pane, bufnr)
       opts = { desc = "uatis: next changed file" } },
     { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
       opts = { desc = "uatis: previous changed file" } },
+    { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
+      opts = { desc = "uatis: the review one commit forward" } },
+    { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
+      opts = { desc = "uatis: the review one commit back" } },
+    -- The toggle is NOT lent. This one is a bare `C` -- affordable in
+    -- the list, which is a scratch buffer of rows, and not in somebody
+    -- else's file, where it is `c$`. `keys.view.commit_view` is the way
+    -- in from anywhere that is a file.
   })
 end
 
@@ -740,6 +1080,12 @@ local function setup_keymaps(pane)
       opts = { desc = "uatis: next changed file" } },
     { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
       opts = { desc = "uatis: previous changed file" } },
+    { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
+      opts = { desc = "uatis: the review one commit forward" } },
+    { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
+      opts = { desc = "uatis: the review one commit back" } },
+    { lhs = k.commit_view, rhs = function() M.toggle_commits(pane) end,
+      opts = { desc = "uatis: read the review one commit at a time" } },
     { lhs = k.refresh, rhs = function() M.refresh(pane) end,
       opts = { desc = "uatis: re-read the changed-file list" } },
     { lhs = k.focus_code, rhs = function()
@@ -949,6 +1295,15 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     -- `:Uatis <ref>` was pointed somewhere by hand and stays there;
     -- one built from the base branch moves when the base branch does.
     tracks_base = tracks_base or false,
+    -- What the review itself is measured against, kept aside because
+    -- `ref`/`rev` move while a single commit is on show and have to be
+    -- put back when it is not. `commits` is that range walked out, read
+    -- the first time anyone steps into it.
+    tree_ref = ref,
+    tree_rev = rev,
+    commits = nil,
+    commit = nil,
+    commit_idx = nil,
     -- What git said, and what git said folded together with what the open
     -- buffers say. `compose` builds the second from the first.
     tracked = {},
@@ -971,13 +1326,11 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     mode = "overall",
     target = ref,
     src = "working tree",
-    hint = config.keys.pane.file_next .. "/" .. config.keys.pane.file_prev
-      .. " file · " .. config.keys.pane.select .. " open · "
-      .. config.keys.pane.fold .. " fold · "
-      .. config.keys.pane.quit .. " close",
+    hint = "",
     code_win = vim.api.nvim_get_current_win(),
   }
 
+  pane.hint = hint_for(pane)
   panes[tab] = pane
   pane.on_ready = opts.on_ready
   lend_keys(pane, vim.api.nvim_get_current_buf())

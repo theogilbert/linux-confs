@@ -123,7 +123,15 @@ function M.setup_highlights()
   ---
   --- The hue is never touched. What comes back is the scheme's colour,
   --- more of it. See `config.highlight`.
-  local function deepen(bg, saturation, lightness)
+  --- `cap` is for the other direction, and only a foreground needs it: a
+  --- scheme's diff BACKGROUND is a muted tint already, so the floor is
+  --- what makes it visible, while a foreground is chosen to stand out
+  --- against the background and reads as fully saturated in HSL --
+  --- `#ffc0b9`, a pale pink, comes back as saturation 1.0 because every
+  --- pale tint does. Put at background lightness with that kept, it
+  --- lands on a pillar-box red no scheme would have chosen. Capped, it
+  --- lands where the scheme's own diff background would have been.
+  local function deepen(bg, saturation, lightness, cap)
     if not bg or not normal then
       return bg
     end
@@ -133,7 +141,7 @@ function M.setup_highlights()
       return bg -- a grey has no colour to deepen
     end
     local dir = l >= base and 1 or -1
-    return to_rgb(h, math.max(sat, saturation),
+    return to_rgb(h, math.min(math.max(sat, saturation), cap or 1),
       math.min(math.max(base + dir * lightness, 0), 1))
   end
 
@@ -183,7 +191,8 @@ function M.setup_highlights()
   -- no strikethrough: everything in that buffer is the old side, so
   -- striking it through would say nothing while making the code harder
   -- to read -- and reading it is what that window is for.
-  tint("UatisDeleteBand", "DiffDelete", del_l)
+  -- ...whose colour is worked out below, since some schemes leave
+  -- `DiffDelete` without a background for it to come from.
 
   -- The emphasis: which part of a banded line is the actual edit, where
   -- the backend only knows lines and the band on its own says no more
@@ -231,27 +240,85 @@ function M.setup_highlights()
   -- side deliberately avoids -- so where there are real groups to put
   -- underneath, only the background and the strikethrough come from here.
   local del = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
-  -- The old side's band, stepped back the same way the new side's tint
-  -- is: a removed docstring reports every word of it removed, and the
-  -- words that actually went are a handful. Same relationship, same
-  -- distance, so the two windows read as one statement.
-  local del_band = del.bg and deepen(del.bg, config.highlight.saturation, del_l)
-  vim.api.nvim_set_hl(0, "UatisDeleteBandDim", (del_band and normal)
-    and { bg = mix(normal, del_band, config.highlight.dim_contrast) }
+
+  -- Which colour the removed side is, at all.
+  --
+  -- `DiffAdd` is a background in every scheme worth the name, because a
+  -- diff view paints added lines. `DiffDelete` often is not: Neovim's own
+  -- default and sonokai among others give it a foreground and leave the
+  -- background alone, since the deleted side of `:diffthis` is filler
+  -- rows with no text on them to sit behind. Read as "this scheme has no
+  -- red", the whole old side fell back to foregrounds -- a flat red line
+  -- inline, a dim group that could only be grey, and no tint anywhere.
+  --
+  -- The scheme does have a red; it is just written in the other field.
+  -- `deepen` keeps a hue and puts it at the editor's own lightness, which
+  -- is exactly the conversion from a foreground to the background of the
+  -- same colour, so either field answers the question.
+  local del_band = config.highlight.delete_bg
+    or (del.bg and deepen(del.bg, config.highlight.saturation, del_l))
+    or (del.fg and deepen(del.fg, config.highlight.saturation, del_l,
+      config.highlight.foreground_saturation))
+
+  -- The old side's ground: what a removed row is drawn on before
+  -- anything on it is picked out. A removed docstring reports every word
+  -- of it removed and the words that actually went are a handful, so
+  -- there has to be a quieter level for the rest of them to sit at.
+  --
+  -- It is the scheme's `DiffDelete` background, exactly as written. That
+  -- is not a step back invented here -- it is the colour the scheme
+  -- chose for a removed line, and `deepen` above is what pushes it
+  -- FURTHER for the part that is the actual removal. The pair is the
+  -- same shape as `UatisAdd` and `UatisAddText`: one hue, the tint and
+  -- then more of it, rather than the tint and a retreat from it.
+  --
+  -- And it is already on the row. `UatisSign` links `DiffDelete`, so the
+  -- `-` and the padding beside it are drawn in this very colour: a
+  -- before-image whose body is anything else is a row that changes
+  -- colour a few columns in for no reason the reader can see. Mixing one
+  -- towards the editor's background made exactly that -- a red gutter
+  -- and then a body a shade off the buffer.
+  --
+  -- Only where the scheme gave a background to use. Read out of a
+  -- foreground there is no such colour to take, so that case keeps a
+  -- mix, at `delete_dim_contrast`.
+  local del_dim = config.highlight.delete_dim_bg
+    or del.bg
+    or ((del_band and normal)
+      and mix(normal, del_band, config.highlight.delete_dim_contrast))
+
+  vim.api.nvim_set_hl(0, "UatisDeleteBand", del_band
+    and { bg = del_band }
     or { link = "DiffDelete" })
-  vim.api.nvim_set_hl(0, "UatisDeleteBg", del.bg
-    and { bg = deepen(del.bg, config.highlight.saturation, del_l),
-      strikethrough = true }
+  vim.api.nvim_set_hl(0, "UatisDeleteBandDim", del_dim
+    and { bg = del_dim }
+    or { link = "DiffDelete" })
+  vim.api.nvim_set_hl(0, "UatisDeleteBg", del_band
+    and { bg = del_band, strikethrough = true }
     or { link = "UatisDelete" })
   vim.api.nvim_set_hl(0, "UatisSign", { link = "DiffDelete" })
 
-  -- The part of a before-image that did NOT go away. Present for context,
-  -- so it is dimmed and keeps the strikethrough without the red.
+  -- The part of a before-image that did NOT go away. Present for
+  -- context, so it steps back towards the editor's background the same
+  -- way `UatisDeleteBandDim` does, and keeps the strikethrough.
+  --
+  -- A BACKGROUND, like every other statement this plugin makes over
+  -- code. It was a grey `Comment` foreground, which is the one thing the
+  -- rule at the top of this file forbids: a foreground replaces the
+  -- syntax colouring rather than tinting it, so picking two words out of
+  -- a removed line turned the rest of the line into flat grey text and
+  -- the old code stopped reading as code. There is no syntax under
+  -- virtual text to be replaced, but there is syntax to be PUT there --
+  -- `syntax.chunks` computes it and hands each chunk its own foreground
+  -- -- and a group that carries only a background composes with that,
+  -- while one carrying a foreground cannot.
+  --
+  -- The grey remains the fallback for a scheme whose `DiffDelete` has no
+  -- background to step back from.
   local comment = vim.api.nvim_get_hl(0, { name = "Comment", link = false })
-  vim.api.nvim_set_hl(0, "UatisDeleteDim", {
-    fg = comment.fg,
-    strikethrough = true,
-  })
+  vim.api.nvim_set_hl(0, "UatisDeleteDim", del_dim
+    and { bg = del_dim, strikethrough = true }
+    or { fg = comment.fg, strikethrough = true })
 
   -- The blank rows that keep a side-by-side layout lined up. Nothing is
   -- there, and the group says so: this is the same colour Neovim uses for
@@ -285,30 +352,47 @@ function M.setup_highlights()
     and { fg = mix(bar, fg, config.highlight.hint_contrast) }
     or { link = "NonText" })
 
-  --- A churn count in a winbar: the diff colour as a FOREGROUND, since a
-  --- background the width of `+12` in a one-line bar reads as a smudge.
-  --- Light enough to be read on the bar rather than deep enough to sit
-  --- under code, which is the opposite of what the tints want.
-  local function signal(name, target, fallback)
+  --- A churn count: the diff colour as a FOREGROUND, since a background
+  --- the width of `+12` reads as a smudge rather than as a number.
+  --- Light enough to be read against the surface it is on rather than
+  --- deep enough to sit under code, which is the opposite of what the
+  --- tints want.
+  ---
+  --- `on` is the background it will be read against -- the winbar's for
+  --- a winbar, the editor's for the list -- which decides whether the
+  --- colour goes light or dark. `bold` belongs to the bar, where one
+  --- count has to hold its own beside a filename; the list draws a
+  --- column of them down every row and reads better without.
+  local function signal(name, target, fallback, on, bold)
     local base = vim.api.nvim_get_hl(0, { name = target, link = false })
-    if not base.bg then
+    local src = base.bg or base.fg
+    if not src then
       vim.api.nvim_set_hl(0, name, { link = fallback })
       return
     end
-    local h, sat = to_hsl(base.bg)
-    local _, _, bl = to_hsl(bar or 0)
+    local h, sat = to_hsl(src)
+    local _, _, bl = to_hsl(on or 0)
     vim.api.nvim_set_hl(0, name, {
       fg = to_rgb(h, math.max(sat, config.highlight.signal_saturation),
         bl > 0.5 and config.highlight.signal_lightness_dark
           or config.highlight.signal_lightness),
-      bold = true,
+      bold = bold or nil,
     })
   end
 
-  signal("UatisPlus", "DiffAdd", "UatisMeta")
-  signal("UatisMinus", "DiffDelete", "UatisMeta")
-  vim.api.nvim_set_hl(0, "UatisStatAdd", { link = "DiffAdd" })
-  vim.api.nvim_set_hl(0, "UatisStatDel", { link = "DiffDelete" })
+  signal("UatisPlus", "DiffAdd", "UatisMeta", bar, true)
+  signal("UatisMinus", "DiffDelete", "UatisMeta", bar, true)
+
+  -- The same counts in the file list, which had them as the diff
+  -- BACKGROUNDS: two green cells and two red ones per row, down a column
+  -- the eye reads as a chart of blocks rather than as numbers -- and a
+  -- tint tuned to sit under a whole line of code is far too much colour
+  -- for three characters of it. They are the same statement the winbar
+  -- makes, so they are made the same way, against the editor's
+  -- background since the list is an ordinary window.
+  local list_bg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg
+  signal("UatisStatAdd", "DiffAdd", "UatisMeta", list_bg)
+  signal("UatisStatDel", "DiffDelete", "UatisMeta", list_bg)
   vim.api.nvim_set_hl(0, "UatisFileCur", { link = "CursorLineNr" })
   vim.api.nvim_set_hl(0, "UatisDir", { link = "Directory" })
   vim.api.nvim_set_hl(0, "UatisStatusA", { link = "DiffAdd" })
@@ -358,16 +442,29 @@ local function covers_all(ranges, text)
       covered[col] = true
     end
   end
-  local total = 0
   for col = 0, #text - 1 do
-    if text:sub(col + 1, col + 1):match("%S") then
-      total = total + 1
-      if not covered[col] then
-        return false
-      end
+    if text:sub(col + 1, col + 1):match("%S") and not covered[col] then
+      return false
     end
   end
-  return total > 0
+  -- A row with nothing on it to leave uncovered answers yes, not no.
+  --
+  -- That reads like a technicality and is the blank line inside a
+  -- rewritten docstring. difftastic reports a multi-line atom as one
+  -- span per row it covers, and on a row with no words the span comes
+  -- back empty -- `col 0-0`, which is a report about the row and not
+  -- silence about it. Counting characters instead, and requiring one,
+  -- called such a row unchanged: the range drawing then had zero width
+  -- to draw, the blank-row pass in `render` left it alone precisely
+  -- because the backend HAD named it, and the paragraph break came out
+  -- as the only unmarked row in the middle of the change -- on both
+  -- sides, since the old window asks the same question. There is
+  -- nothing to mark on a row with no characters, so a band is the whole
+  -- of what there is to say about it.
+  --
+  -- The empty-`ranges` case above is the real "no", and it is the one
+  -- that means it: nothing was reported here at all.
+  return true
 end
 
 M.covers_all = covers_all
@@ -720,6 +817,28 @@ local function rewritten(ranges, text)
   return not kept_word or (hit / total) >= config.diff.line.major_ratio
 end
 
+--- Whether `ranges` take anything nameable out of `text` -- an
+--- identifier, a number, a word.
+---
+--- The mirror of `kept_word` above, and it is asked for the same reason.
+--- Picking removals out of a line means dimming the rest of it, and that
+--- is worth doing only when what is picked out is something the reader
+--- can name. difftastic reports a call reflowed across three lines as
+--- having lost a bracket and two commas: honest, and true of the
+--- characters, but a four-line block dimmed to point at four punctuation
+--- marks is quieter and harder to read than the same block shown as
+--- removed, and says less. A word going is the case worth the dimming.
+local function names(ranges, text)
+  for _, r in ipairs(ranges or {}) do
+    for col = r.col_start, math.min(r.col_end, #text) - 1 do
+      if text:sub(col + 1, col + 1):match("[%w_]") then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 --- Whether a line's removals are small enough to read inside the line
 --- that replaced them.
 ---
@@ -925,6 +1044,35 @@ function M.render(bufnr, win, result, old_lines, opts)
       table.insert(del_rows, hunk.start_a + i)
     end
   end
+
+  -- Which old rows a token-precise backend said something went from.
+  -- difftastic reports the old side as well as the new one -- it is what
+  -- the side-by-side window draws its red from -- and where it reports
+  -- nothing for a row, nothing on that row went away. See
+  -- `nothing_removed` below.
+  --
+  -- An empty map is an answer and not an absence: difftastic reports its
+  -- old side in every mode, parsed or prose, so no delete anywhere means
+  -- nothing was taken out of this file anywhere. Whitespace is not an
+  -- atom to it, which is the one case that could have gone wrong here --
+  -- a removed blank line carries no span to find. It produces no hunk
+  -- for one either, so there is nothing to draw a before-image for.
+  local del_marked = {}
+  if result.precise then
+    for _, span in ipairs(result.spans or {}) do
+      if span.kind == "delete" then
+        del_marked[span.line] = del_marked[span.line] or {}
+        table.insert(del_marked[span.line], span)
+      end
+    end
+    -- In column order, because the before-image walks a row left to
+    -- right and fills the gaps between them.
+    for _, spans in pairs(del_marked) do
+      table.sort(spans, function(a, b)
+        return a.col_start < b.col_start
+      end)
+    end
+  end
   local syn = #del_rows > 0
     and syntax.spans(table.concat(old_lines, "\n"), vim.bo[bufnr].filetype, del_rows)
     or nil
@@ -933,10 +1081,17 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- character says something weaker: the red ends in a ragged edge that
   -- tracks the length of the old code rather than marking the row. Real
   -- lines get this for free -- `line_hl_group` paints to the window edge
-  -- -- and virtual ones have to be padded out by hand. Only whole-line
-  -- removals are filled: where the red marks CHARACTERS inside a line
-  -- that mostly survived, running it to the edge would claim the rest of
-  -- the line went with them.
+  -- -- and virtual ones have to be padded out by hand.
+  --
+  -- Filled in whichever colour the END of the row is already in. That
+  -- used to mean whole-line removals only, because the alternative was
+  -- running the removal colour past a line that mostly survived, which
+  -- claims the rest of it went too. A row that picks its removals out is
+  -- no longer drawn in one colour, though: what surrounds them is the
+  -- dim band, which says "this row is the old line" and not "this went",
+  -- so carrying THAT to the edge marks the row without claiming
+  -- anything. It is the same statement the old window makes, where the
+  -- band is a real line highlight and reaches the edge on its own.
   local width = window_width(win)
   local function fill(chunks, hl)
     if not width then
@@ -1502,15 +1657,137 @@ function M.render(bufnr, win, result, old_lines, opts)
     -- the edit was purely additive, where the old text is readable in the
     -- new line already. Structural mode goes further: moving code is not
     -- deleting it, so nothing that survives gets a before-image.
-    local pure_insertion = content_survives and (inline ~= nil or result.precise)
+    --
+    -- ...and where difftastic answered the same question itself, its
+    -- answer is the one that counts. `content_survives` is our own
+    -- reading of whether the old tokens are still on screen, and it can
+    -- only look at a window of rows around the hunk with the rows other
+    -- hunks claim taken out of it. An import list reflowed onto seven
+    -- lines outruns both: difftastic splits it into a 1:1 replacement of
+    -- the old line and a separate insertion below, so half of what
+    -- survived sits in rows the window excludes and the rest past its
+    -- far edge, and the old line came back as a full red copy of code
+    -- every word of which is on screen underneath it, unmarked. Side by
+    -- side got this right all along, because it draws the old window
+    -- from these very spans.
+    --
+    -- Asked of the whole hunk, like the test beside it: a hunk none of
+    -- whose old rows carries a removal removed nothing. Per row it would
+    -- be the `)` problem again -- a before-image with some of its rows
+    -- dropped is not readable as the code that was there.
+    local nothing_removed = false
+    if result.precise and hunk.count_a > 0 then
+      nothing_removed = true
+      for i = 0, hunk.count_a - 1 do
+        if del_marked[hunk.start_a + i] then
+          nothing_removed = false
+          break
+        end
+      end
+    end
+    local pure_insertion = nothing_removed
+      or (content_survives and (inline ~= nil or result.precise))
 
     -- Absent from the new side: draw it as virtual lines.
     if hunk.count_a > 0 and not pure_insertion and show_old then
       local virt, drawn = {}, 0
+
+      -- Rows the backend aligned with a new line that reads exactly the
+      -- same, in a hunk that is MOSTLY such rows.
+      --
+      -- `content_survives` is meant to catch this, and asking it of the
+      -- block is right -- "was this taken away or did it move" is a
+      -- question about the whole statement. But it answers by token
+      -- span, tightly, because it is calibrated for moves: code that
+      -- moved keeps its shape, so a match spread much wider than the old
+      -- content is a near-miss rather than a survival. Growth is not a
+      -- move. A docstring that gains a paragraph lands its old tokens
+      -- across half again their own span, the block reports as gone, and
+      -- all fourteen rows are drawn in red directly above the identical
+      -- rows they supposedly replaced -- a full before-image of the file
+      -- for four words added.
+      --
+      -- So where an alignment exists the question is asked again, per
+      -- row, where it needs no heuristic at all: a row whose partner is
+      -- byte-identical is on screen, in place, and a red copy above it
+      -- says only that it moved down one. The same statement `merged`
+      -- already makes where the sides pair up position by position.
+      --
+      -- Only when those rows outnumber the changed ones, though. A
+      -- before-image is one statement -- these lines became those -- and
+      -- dropping rows out of the middle of a real substitution leaves
+      -- something nobody can read back as the code that was there:
+      -- wrapping a call in parentheses keeps the closing `)` unchanged,
+      -- and a before-image with the `)` taken out of it opens a bracket
+      -- it never closes. Where most of the block came through, there is
+      -- no such statement to spoil: the hunk is an edit INSIDE surviving
+      -- code, and the rows that changed are the whole of what it did.
+      local intact = {}
+      if result.anchor then
+        for i = 0, hunk.count_a - 1 do
+          local old_row = hunk.start_a + i
+          local at = result.anchor[old_row]
+          if at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
+            and line_text(at - 1) == old_lines[old_row] then
+            intact[old_row] = true
+          end
+        end
+      end
+      local kept = vim.tbl_count(intact)
+      if kept * 2 <= hunk.count_a then
+        intact = {}
+      end
+
+      -- Whether that alignment is a correspondence at all, or an order.
+      --
+      -- Putting each removed row directly above the new row it answers
+      -- to is worth the layout only where it ANSWERS to it: the whole
+      -- gain is that a mark on the new row can be checked against the
+      -- line it was measured against, one row up. difftastic reports
+      -- `aligned_lines` for every hunk, though, including a docstring of
+      -- thirty-one lines rewritten as eighteen -- where there is no
+      -- row-for-row anything to report and what comes back is the two
+      -- blocks laid alongside each other in order. Spread on that, the
+      -- old docstring is drawn as thirty-one red rows interleaved
+      -- one-for-one with the new prose, each claiming to be what the
+      -- line below it replaced, and four of them were.
+      --
+      -- So the pairs are asked whether they look like pairs. Where most
+      -- of them do, the alignment is describing an edit and every row
+      -- goes above its own. Where they do not, there is nothing finer to
+      -- say than "these lines became those", and the block is that --
+      -- which is also the only form the old prose is readable in.
+      local function resembles(a, b)
+        local lo, hi = math.min(#a, #b), math.max(#a, #b)
+        if hi == 0 then
+          return true
+        end
+        -- An edit distance is at least the difference in length, so a
+        -- pair this far apart cannot reach the threshold and does not
+        -- need measuring. Which is what keeps this cheap on the hunks
+        -- where it matters: a rewrite pairs long lines against short
+        -- ones, and those are the rows that never reach `similarity`.
+        if lo / hi < config.diff.line.word_similarity or hi > 400 then
+          return false
+        end
+        return diff.similarity(a, b) >= config.diff.line.word_similarity
+      end
+      local alike = 0
+      if result.anchor then
+        for i = 0, hunk.count_a - 1 do
+          local at = result.anchor[hunk.start_a + i]
+          if at and resembles(old_lines[hunk.start_a + i] or "", line_text(at - 1)) then
+            alike = alike + 1
+          end
+        end
+      end
+      local aligned = result.anchor ~= nil and alike * 2 > hunk.count_a
+
       for i = 0, hunk.count_a - 1 do
         local text = old_lines[hunk.start_a + i]
-        -- ...except where it was already drawn inside the line below.
-        if text ~= nil and not merged[i + 1] then
+        -- ...except where it was already drawn inside the line below, or
+        -- is still sitting there unchanged.
+        if text ~= nil and not merged[i + 1] and not intact[hunk.start_a + i] then
           -- Where the removed characters are known, the rest of the old
           -- line is context: it is drawn dimmed so the eye lands on what
           -- actually went away rather than on a solid red band that says
@@ -1519,29 +1796,67 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- case dimming the punctuation that happens to have survived
           -- draws islands of context inside a line nobody kept: the old
           -- line reads as removed, so it is drawn as removed.
+          --
+          -- Which of it went, where the backend can say. `inline` knows
+          -- characters and answers first, but it exists only for a hunk
+          -- whose two sides correspond line for line, which most do not.
+          -- difftastic knows atoms and answers for the rest -- and its
+          -- answer is the one the side-by-side window is already drawing
+          -- its red from, so taking it here is what stops the two
+          -- layouts disagreeing about the same edit.
+          -- `self._conn.execute(sql, binds)` becoming `self._sql(sql,
+          -- binds, private=True)` picked `_conn` and `execute` out of
+          -- the line on the left and drew the whole of it solid red
+          -- inline, which says the statement was replaced rather than
+          -- that two names in it were.
           local dels = inline and inline.dels[i + 1]
+          if (not dels or #dels == 0) and result.precise then
+            local reported = del_marked[hunk.start_a + i]
+            dels = reported and names(reported, text) and reported or nil
+          end
           if dels and rewritten(dels, text) then
             dels = nil
           end
+          local runs = syn and syn[hunk.start_a + i]
           local chunks = { { marker .. pad, "UatisSign" } }
           if dels and #dels > 0 then
+            -- One band per column range, with the old line's own syntax
+            -- colours running through both of them: the two backgrounds
+            -- say which words went, and the foreground goes on saying
+            -- what the code was. `syntax.chunks` is asked for a slice at
+            -- a time, since the group on top changes partway along the
+            -- line and a run can straddle the boundary.
+            local function band(from, to, hl)
+              local part = {}
+              for _, r in ipairs(runs or {}) do
+                local rs, re = math.max(r[1], from), math.min(r[2], to)
+                if re > rs then
+                  table.insert(part, { rs - from, re - from, r[3] })
+                end
+              end
+              vim.list_extend(chunks,
+                syntax.chunks(text:sub(from + 1, to), part, hl))
+            end
+            -- `UatisDelete` carries a foreground of its own, which is
+            -- right only where there is no syntax to put underneath it.
+            local gone = runs and "UatisDeleteBg" or "UatisDelete"
             local at = 0
             for _, d in ipairs(dels) do
               local s = math.min(d.col_start, #text)
               local e = math.min(d.col_end, #text)
               if s > at then
-                table.insert(chunks, { text:sub(at + 1, s), "UatisDeleteDim" })
+                band(at, s, "UatisDeleteDim")
               end
               if e > s then
-                table.insert(chunks, { text:sub(s + 1, e), "UatisDelete" })
+                band(s, e, gone)
               end
               at = math.max(at, e)
             end
             if at < #text then
-              table.insert(chunks, { text:sub(at + 1), "UatisDeleteDim" })
+              band(at, #text, "UatisDeleteDim")
             end
+            fill(chunks, "UatisDeleteDim")
           else
-            local runs = syn and syn[hunk.start_a + i]
             local hl = "UatisDelete"
             if runs and text ~= "" then
               vim.list_extend(chunks, syntax.chunks(text, runs, "UatisDeleteBg"))
@@ -1559,7 +1874,7 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- was measured against is the one immediately above it.
           -- Without an alignment there is nothing finer to say than
           -- "these lines became those", and the block is that.
-          local at = result.anchor and result.anchor[hunk.start_a + i]
+          local at = aligned and result.anchor[hunk.start_a + i]
           if at then
             add_before(math.min(at - 1, math.max(line_count - 1, 0)), true, { chunks })
           else

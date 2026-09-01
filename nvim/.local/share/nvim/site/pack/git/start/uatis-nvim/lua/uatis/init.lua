@@ -16,6 +16,7 @@ local base = require("uatis.base")
 local git = require("uatis.git")
 local overlay = require("uatis.overlay")
 local pane = require("uatis.pane")
+local prompt = require("uatis.prompt")
 local view = require("uatis.view")
 
 local M = {}
@@ -137,9 +138,17 @@ function M.toggle_diff()
   end
   -- No file here to annotate: the list is the whole answer, and toggling
   -- it is what the key means from a buffer that has nothing to compare.
+  --
+  -- Toggling it OFF is ending the review, not taking its window away.
+  -- The list is what a review is made of -- close the window alone and
+  -- every file already annotated stays annotated, with nothing left on
+  -- screen to turn them off by. `q` in the list is the key for putting
+  -- the window away.
   if not view.can_open(bufnr) then
-    if pane.get() then
-      pane.close()
+    local list = pane.get()
+    if list then
+      view.close_all(list.root, list.rev)
+      pane.close(list)
       return false
     end
     pane.open()
@@ -182,30 +191,131 @@ function M.toggle_pane()
   return pane.toggle()
 end
 
---- Completion for `:Uatis`. Refs are fetched asynchronously and cached on
---- first use, so the very first <Tab> may offer nothing and the next one
---- offers everything -- better than blocking the UI on a subprocess
---- mid-keystroke.
-local ref_cache = nil
-
-local function refs()
-  if ref_cache == nil then
-    ref_cache = {}
-    git.root(vim.fn.getcwd(), function(root)
-      if root then
-        git.refs(root, function(list)
-          ref_cache = list
-        end)
-      end
-    end)
+--- What is being compared in `bufnr`, as data. nil when nothing is.
+---
+--- For a statusline, and shaped for one: numbers and strings, no
+--- highlight groups and no formatting. The winbar this plugin draws is
+--- for the window a review is in, and a reader who wants `+12 -3 · main`
+--- in lualine had no way to it that did not mean reading `view.lua` --
+--- which is a private table whose field names are free to change.
+--- These are not.
+---
+---   added, removed   lines, counting the unsaved buffer
+---   base             what the winbar calls it: a branch, or a revision
+---   rev              the sha actually compared against, the fork point
+---                    where `base` is a branch
+---   path, old_path   inside the repository; `old_path` on a rename
+---   backend          "struct" | "line"
+---   layout           "inline" | "side"
+---   tracks_base      follows the base branch, rather than pinned by
+---                    `:Uatis <ref>`
+---   degraded         difftastic was asked for and could not answer
+function M.status(bufnr)
+  bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  local v = view.get(bufnr)
+  if not v then
+    return nil
   end
-  return ref_cache
+  return {
+    added = v.added or 0,
+    removed = v.removed or 0,
+    base = v.ref,
+    rev = v.rev,
+    root = v.root,
+    path = v.relpath,
+    old_path = v.old_path,
+    backend = v.backend,
+    layout = v.layout,
+    tracks_base = v.tracks_base == true,
+    degraded = v.unavailable == true,
+  }
+end
+
+--- ...and the review this tab is in, as data. nil when none is running.
+---
+--- The list is what a review IS, so this answers about it and not about
+--- whichever buffer is on screen: it is there while every window in the
+--- tab shows something else.
+---
+---   base, rev        as above, for the whole review
+---   files            how many the branch changed
+---   added, removed   across all of them
+---   file             the one the list is standing on, if any
+---   window           true while the list has a window up
+function M.review()
+  local list = pane.get()
+  if not list then
+    return nil
+  end
+  local current = list.files and list.files[list.file_idx]
+  return {
+    base = list.ref,
+    rev = list.rev,
+    root = list.root,
+    files = #(list.files or {}),
+    added = list.stat_added or 0,
+    removed = list.stat_removed or 0,
+    file = current and current.path or nil,
+    tracks_base = list.tracks_base == true,
+    window = list.list_win ~= nil and vim.api.nvim_win_is_valid(list.list_win),
+  }
+end
+
+--- Completion for `:Uatis`, over the same candidates the base prompt
+--- offers -- every ref, and the recent commits.
+---
+--- The first press used to answer with nothing. Refs were fetched
+--- asynchronously and cached, which is right for everything else in this
+--- plugin and wrong here: a completion that arrives after the reader has
+--- stopped pressing `<Tab>` is not an answer, and the reader learns that
+--- the command does not complete. So the first call waits for git, with
+--- a short deadline, and every call after it is served from the cache
+--- and refreshes it behind the reader for the next one.
+---
+--- Commits only for a lead that looks like a sha. They are candidates
+--- here for the same reason they are in the prompt -- a base is often a
+--- commit nobody has memorised -- but the command line has no menu
+--- column to show a subject line in, and a thousand bare hashes ahead of
+--- the branch names would bury them.
+local candidates = nil
+
+local function refresh_candidates()
+  local dir = vim.fn.getcwd()
+  git.root(dir, function(root)
+    if root then
+      base.candidates(root, function(items)
+        candidates = items
+      end)
+    end
+  end)
 end
 
 function M.complete(arg_lead)
-  return vim.tbl_filter(function(s)
-    return s:find(arg_lead, 1, true) == 1
-  end, refs())
+  if candidates == nil then
+    candidates = base.candidates_sync(vim.fn.getcwd())
+  else
+    refresh_candidates()
+  end
+
+  local out = {}
+  if arg_lead == "" then
+    -- Nothing typed: the refs, which is what someone pressing `<Tab>`
+    -- straight after the command is asking to be shown.
+    for _, item in ipairs(candidates) do
+      if item.kind ~= "commit" then
+        table.insert(out, item.word)
+      end
+    end
+    return out
+  end
+
+  local hexish = arg_lead:match("^%x%x+$") ~= nil
+  for _, item in ipairs(prompt.rank(candidates, arg_lead)) do
+    if item.kind ~= "commit" or hexish then
+      table.insert(out, item.word)
+    end
+  end
+  return out
 end
 
 --- The global mappings, from `config.keys.global`.

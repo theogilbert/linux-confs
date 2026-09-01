@@ -33,6 +33,19 @@ function M.get(tab)
   return panes[tab or vim.api.nvim_get_current_tabpage()]
 end
 
+--- Every list open right now, one per tab.
+---
+--- A snapshot, because closing one unregisters it and removing entries
+--- from a table being iterated is not something Lua promises anything
+--- about.
+function M.all()
+  local out = {}
+  for _, pane in pairs(panes) do
+    table.insert(out, pane)
+  end
+  return out
+end
+
 -- ------------------------------------------------------------------
 -- Contents
 -- ------------------------------------------------------------------
@@ -57,6 +70,19 @@ local function compose(pane)
     local row = vim.tbl_extend("force", {}, f)
     table.insert(files, row)
     by_path[row.path] = row
+  end
+
+  -- Files git has never been told about. Not in `git diff` at all --
+  -- there is no revision to measure them against -- and yet as much a
+  -- part of what the branch did as any file it tracks. A path git DOES
+  -- know about cannot appear twice, since `ls-files --others` is
+  -- everything git does not know about.
+  for _, f in ipairs(pane.untracked or {}) do
+    if not by_path[f.path] then
+      local row = vim.tbl_extend("force", {}, f)
+      table.insert(files, row)
+      by_path[row.path] = row
+    end
   end
 
   for _, view in ipairs(view_mod.matching(pane.root, pane.rev)) do
@@ -93,6 +119,43 @@ local function compose(pane)
 
   table.sort(files, function(a, b) return a.path < b.path end)
   return files
+end
+
+--- A file git has never been told about, as a row of the list.
+---
+--- Every line of it is an addition -- there is no revision it existed in
+--- to compare against -- so the count is the line count, read here
+--- because no git call will give it: `git diff` has nothing to diff.
+--- Over `pane.untracked_max_bytes` it is listed with no count at all,
+--- which is also what an unreadable or binary file gets: the row is
+--- worth having, the number is not worth a megabyte of reading.
+local function untracked_row(root, path)
+  local full = root .. "/" .. path
+  local stat = vim.uv.fs_stat(full)
+  local row = {
+    path = path,
+    old_path = nil,
+    status = "A",
+    binary = false,
+    added = 0,
+    removed = 0,
+    hunks = {},
+    untracked = true,
+  }
+  if not stat or stat.type ~= "file" then
+    return nil
+  end
+  if stat.size > config.pane.untracked_max_bytes then
+    row.binary = true
+    return row
+  end
+  local ok, lines = pcall(vim.fn.readfile, full)
+  if not ok or type(lines) ~= "table" then
+    row.binary = true
+    return row
+  end
+  row.added = #lines
+  return row
 end
 
 --- Rebuilds the list from both, keeping the highlighted row on `keep_path`
@@ -139,25 +202,102 @@ end
 local function refresh(pane, keep_path)
   pane.gen = (pane.gen or 0) + 1
   local gen = pane.gen
-  git.diff_since(pane.root, pane.rev, function(text)
+  git.diff_since(pane.root, pane.rev, function(text, err)
     if panes[pane.tab] ~= pane or pane.gen ~= gen then
       return
     end
     pane.tracked = patch.parse(text or "")
-    rebuild(pane, keep_path)
-    if pane.list_buf then
-      filelist.render(pane)
+    -- An empty list is the one failure this pane cannot show: it is also
+    -- what "nothing changed" looks like. Said once per pane, because a
+    -- write re-reads the list and a broken read stays broken.
+    if not pane.complained and (text == nil or (text ~= "" and #pane.tracked == 0)) then
+      pane.complained = true
+      vim.notify("uatis: could not read `git diff " .. (pane.ref or pane.rev) .. "`: "
+        .. (err ~= nil and err ~= "" and err
+          or "git printed something that is not a unified diff"),
+        vim.log.levels.ERROR)
     end
-    follow_visible(pane)
-    -- Counted so a test can wait for a redraw rather than for a
-    -- wall-clock guess, the same way the review's panes are.
-    pane.renders = (pane.renders or 0) + 1
-    -- Anything waiting for the list to exist -- `]f` pressed before there
-    -- was one -- runs here, once, now that there is.
-    local ready = pane.on_ready
-    if ready then
-      pane.on_ready = nil
-      ready(pane)
+    local function drawn()
+      rebuild(pane, keep_path)
+      if pane.list_buf then
+        filelist.render(pane)
+      end
+      follow_visible(pane)
+      -- Counted so a test can wait for a redraw rather than for a
+      -- wall-clock guess, the same way the review's panes are.
+      pane.renders = (pane.renders or 0) + 1
+      -- Anything waiting for the list to exist -- `]f` pressed before
+      -- there was one -- runs here, once, now that there is.
+      local ready = pane.on_ready
+      if ready then
+        pane.on_ready = nil
+        ready(pane)
+      end
+    end
+
+    -- ...and the other half of what the branch did, which `git diff`
+    -- cannot answer: the files git has never been told about. Read
+    -- after the diff rather than beside it so the list is drawn once,
+    -- with both halves in it, instead of jumping as the second arrives.
+    if config.pane.untracked_max_bytes <= 0 then
+      pane.untracked = {}
+      drawn()
+      return
+    end
+    git.untracked(pane.root, function(paths)
+      if panes[pane.tab] ~= pane or pane.gen ~= gen then
+        return
+      end
+      local rows = {}
+      for _, path in ipairs(paths) do
+        local row = untracked_row(pane.root, path)
+        if row then
+          table.insert(rows, row)
+        end
+      end
+      pane.untracked = rows
+      drawn()
+    end)
+  end)
+end
+
+--- Re-reads the list, and the revision it is measured against, because
+--- git may have moved while nvim was not looking.
+---
+--- A commit needs nothing: the list is `git diff <fork point>` against
+--- the working tree, so committing moves nothing it counts. What does
+--- move is HEAD -- a branch switched, a rebase, the base branch pulled --
+--- and then the FORK POINT itself is somewhere else and a base-tracking
+--- review is measuring against a revision that no longer answers "since
+--- I branched". That is not staleness, it is a wrong answer, so the
+--- revision is re-resolved before the list is re-read.
+---
+--- A review pinned by `:Uatis <ref>` keeps its revision: someone meant
+--- that one. Only the tree it is compared against can have moved.
+function M.recheck(pane)
+  pane = pane or M.get()
+  if not pane or pane.rechecking then
+    return
+  end
+  if not pane.tracks_base then
+    return M.refresh(pane)
+  end
+  pane.rechecking = true
+  base.resolve(pane.root, function(label, sha)
+    pane.rechecking = nil
+    if panes[pane.tab] ~= pane then
+      return
+    end
+    if not label or not sha then
+      return
+    end
+    if sha ~= pane.rev then
+      -- Both sides at once, from one answer: two ideas of the fork point
+      -- on screen is the disagreement the pinning exists to prevent.
+      view_mod.repoint(pane.root, label, sha)
+      M.repoint(pane.root, label, sha)
+    else
+      M.refresh(pane)
     end
   end)
 end
@@ -653,6 +793,27 @@ local function setup_watchers(pane)
     end,
   })
 
+  -- Anything git did while nvim was not looking. Neither of the two
+  -- above catches it: `lazygit` in the next window switches a branch, a
+  -- colleague's PR is pulled onto the base branch, a rebase rewrites
+  -- what HEAD means -- and no buffer here was written or re-read, so the
+  -- list goes on describing a repository that has moved.
+  --
+  -- `FocusGained` is the window manager's answer to "you were away";
+  -- `TermLeave` and `TermClose` are the same event for a git tool run
+  -- inside nvim, which never takes focus away from it. Guarded against
+  -- overlapping in `recheck` rather than debounced, since what makes it
+  -- expensive is the subprocess and one is already in the air.
+  vim.api.nvim_create_autocmd({ "FocusGained", "TermLeave", "TermClose" }, {
+    group = pane.augroup,
+    callback = function()
+      if panes[pane.tab] ~= pane then
+        return
+      end
+      M.recheck(pane)
+    end,
+  })
+
   -- ...and reading is the other half of that. `:e` puts the file back on
   -- screen from the disk, and what a reader is usually saying with it is
   -- that something ELSE wrote the file -- a formatter, a rebase, a
@@ -896,9 +1057,10 @@ local function with_list(opts, cb)
   -- `term://~/src/foo//4242:/bin/bash`, and handing that to `git -C` asks
   -- about a directory that does not exist and answers "not inside a git
   -- repository" from inside one.
-  base.root(function(root)
+  base.root(function(root, path)
     if not root then
-      vim.notify("uatis: not inside a git repository", vim.log.levels.ERROR)
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
       return
     end
     local resolve = opts.resolve or base.resolve

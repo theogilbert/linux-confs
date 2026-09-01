@@ -21,9 +21,20 @@ local function key(...)
 end
 
 --- Runs git and hands (ok, stdout, stderr) back on the main loop.
+---
+--- `core.quotepath=false` because git escapes any byte outside ASCII in
+--- the paths it prints -- `"caf\303\251.lua"`, quotes and all -- and a
+--- path that has been through that matches no buffer name we could look
+--- it up by, so the file silently drops out of everything downstream.
 local function run(root, args, cb)
-  local cmd = { "git", "-C", root }
+  local cmd = { "git", "--no-pager", "-c", "core.quotepath=false", "-C", root }
   vim.list_extend(cmd, args)
+  -- `text = true` is load-bearing beyond the type it returns: it also
+  -- turns CRLF into LF. A repository that stores its line endings the
+  -- Windows way hands back a blob whose every line ends in `\r`, while
+  -- the buffer beside it has them stripped into `fileformat=dos` -- so
+  -- without this every line of every file would differ from itself and
+  -- the whole review would be one wholesale rewrite.
   vim.system(cmd, { text = true }, function(res)
     vim.schedule(function()
       cb(res.code == 0, res.stdout or "", res.stderr or "")
@@ -109,9 +120,53 @@ end
 ---
 --- Untracked files are absent, which is what `git diff` means; a file git
 --- has never seen has no revision to be measured against.
+---
+--- cb(text|nil, err) -- nil is a failed call, and `err` is git's own
+--- complaint about it.
 function M.diff_since(root, rev, cb)
-  run(root, { "diff", rev }, function(ok, out)
-    cb(ok and out or nil)
+  -- Spelled out against the reader's own git config, which is allowed to
+  -- make `git diff` print something no unified-diff parser can read. This
+  -- is the only place the plugin parses git's own diff output rather than
+  -- diffing text itself, so it is the only place that breaks -- and it
+  -- breaks silently, as an empty file list beside a buffer visibly full
+  -- of changes. `diff.external`/`GIT_EXTERNAL_DIFF` (difftastic, very
+  -- plausibly, on a machine that has it) replaces the output wholesale;
+  -- `color.ui = always` wraps every line in escapes; `diff.noprefix` and
+  -- `diff.mnemonicPrefix` rename the `a/`/`b/` the header is found by.
+  local args = {
+    "diff", "--no-ext-diff", "--no-color", "--no-textconv",
+    "--src-prefix=a/", "--dst-prefix=b/", rev,
+  }
+  run(root, args, function(ok, out, err)
+    -- The error text is handed back rather than swallowed: the caller
+    -- draws an empty list either way, and "no files changed" and "git
+    -- refused to answer" look identical on screen unless it can say so.
+    if ok then
+      cb(out)
+    else
+      cb(nil, vim.trim(err or ""))
+    end
+  end)
+end
+
+--- Files git has never been told about: `ls-files --others
+--- --exclude-standard`, so what `.gitignore` covers is not in it.
+--- cb({ path, ... }), repo-relative.
+---
+--- `-z`, because this is the one list whose entries are paths straight
+--- from the filesystem: a newline is a legal character in a filename and
+--- splitting on it would turn one file into two that do not exist.
+function M.untracked(root, cb)
+  run(root, { "ls-files", "--others", "--exclude-standard", "-z" }, function(ok, out)
+    if not ok then
+      cb({})
+      return
+    end
+    local paths = {}
+    for path in out:gmatch("([^%z]+)") do
+      table.insert(paths, path)
+    end
+    cb(paths)
   end)
 end
 
@@ -135,19 +190,113 @@ function M.verify_ref(root, name, cb)
   end)
 end
 
---- Branch and tag names, for command completion.
-function M.refs(root, cb)
-  run(root, { "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/tags", "refs/remotes" }, function(ok, out)
-    if not ok then
-      cb({})
-      return
-    end
-    local refs = {}
-    for line in out:gmatch("[^\r\n]+") do
-      table.insert(refs, line)
-    end
-    cb(refs)
+--- Runs git and WAITS, up to `timeout` ms. Returns stdout, or nil.
+---
+--- The one synchronous call in this module, and it exists for the
+--- command line: `:Uatis <Tab>` is a question with a deadline -- an
+--- answer that arrives after the reader has finished typing is not an
+--- answer. Everything else here is a callback for the good reason that
+--- nothing else is waiting on a keypress.
+local function sync(dir, args, timeout)
+  local cmd = { "git", "--no-pager", "-c", "core.quotepath=false", "-C", dir }
+  vim.list_extend(cmd, args)
+  local ok, res = pcall(function()
+    return vim.system(cmd, { text = true }):wait(timeout or 300)
   end)
+  if not ok or not res or res.code ~= 0 then
+    return nil
+  end
+  return res.stdout or ""
+end
+
+local REFS = { "for-each-ref",
+  "--format=%(refname)%09%(refname:short)%09%(creatordate:short)",
+  "refs/heads", "refs/tags", "refs/remotes" }
+
+--- `%x09`, not `%09`: `git log` takes the hex escape, and `%09` reaches
+--- the output as the two characters it looks like -- which is one field,
+--- and no commits at all by the time it has been split.
+---
+--- The author date rather than the committer's: it is the date the work
+--- was done, which is the one the reader is remembering, and a rebase
+--- does not move it.
+local function log_args(limit)
+  return { "log", "--all", "--date=short", "--format=%h%x09%ad%x09%s",
+    "-n", tostring(limit) }
+end
+
+local function parse_refs(out)
+  local groups = { branch = {}, tag = {}, remote = {} }
+  for line in (out or ""):gmatch("[^\r\n]+") do
+    local full, short, date = line:match("^(%S+)\t([^\t]+)\t?(.*)$")
+    if full then
+      local kind = full:match("^refs/tags/") and "tag"
+        or full:match("^refs/remotes/") and "remote"
+        or "branch"
+      table.insert(groups[kind], { name = short, kind = kind, date = date })
+    end
+  end
+  local refs = {}
+  for _, kind in ipairs({ "branch", "tag", "remote" }) do
+    vim.list_extend(refs, groups[kind])
+  end
+  return refs
+end
+
+local function parse_commits(out)
+  local commits = {}
+  for line in (out or ""):gmatch("[^\r\n]+") do
+    local sha, date, subject = line:match("^(%S+)\t([^\t]*)\t(.*)$")
+    if sha then
+      table.insert(commits, { sha = sha, date = date, subject = subject })
+    end
+  end
+  return commits
+end
+
+--- Every ref, with what each one is and when it was made:
+--- cb({ { name, kind, date }, ... }), where kind is "branch", "tag" or
+--- "remote" and date is `YYYY-MM-DD`.
+---
+--- `creatordate`, not `committerdate`: an annotated tag is an object of
+--- its own, with a tagger and no committer, so the column comes back
+--- empty for exactly the refs a date is most wanted on.
+---
+--- Ordered by kind rather than by name. git answers in refname order,
+--- which is `refs/heads`, then `refs/remotes`, then `refs/tags` -- so in
+--- a repository with a few hundred branches the tags are past the end of
+--- any list anyone looks at, and the reader concludes there are none.
+--- Local branches first, then tags, then the remote-tracking refs, which
+--- are the many and the least often typed.
+function M.refs(root, cb)
+  run(root, REFS, function(ok, out)
+    cb(ok and parse_refs(out) or {})
+  end)
+end
+
+--- ...and the same answer without waiting, for the command line. `dir`
+--- need not be the repository root: git resolves it from anywhere
+--- inside one.
+function M.refs_sync(dir, timeout)
+  return parse_refs(sync(dir, REFS, timeout))
+end
+
+--- Recent commits, newest first: cb({ { sha, date, subject }, ... }),
+--- with the date as `YYYY-MM-DD`.
+---
+--- `--all` rather than HEAD: the commit worth comparing against is as
+--- likely to be on the branch you are about to review as on the one you
+--- are standing on. Abbreviated shas, because that is what a reader
+--- copies out of a forge page or a `git log` and what git resolves back.
+function M.commits(root, limit, cb)
+  run(root, log_args(limit), function(ok, out)
+    cb(ok and parse_commits(out) or {})
+  end)
+end
+
+--- ...and the waiting version, for the command line.
+function M.commits_sync(dir, limit, timeout)
+  return parse_commits(sync(dir, log_args(limit), timeout))
 end
 
 return M

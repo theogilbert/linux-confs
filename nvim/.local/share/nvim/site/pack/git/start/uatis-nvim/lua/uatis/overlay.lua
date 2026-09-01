@@ -533,6 +533,53 @@ local function refines(fine, spans)
   return out
 end
 
+--- The spans narrowed to what was genuinely inserted inside them.
+---
+--- `fine` is the character-level comparison of the row against the row
+--- it replaced: what it calls an addition is text that is on the new
+--- side and was not on the old one. difftastic reports ATOMS, so a
+--- number whose middle digit changed comes back as the whole number
+--- added -- `50_000` -> `20_000` is one add span over `20_000`, with the
+--- removed `5` drawn in red inside it, and the row then reads as though
+--- `5` had been replaced by `20_000`. Five of those six characters were
+--- already there.
+---
+--- So a span keeps only the parts of itself the comparison calls new,
+--- and a span with none of them is dropped: green means inserted, and
+--- text that came through the change untouched is not.
+---
+--- Prose atoms are kept whole whatever the answer. A changed string or
+--- comment has its own way of saying which words are the edit -- the
+--- rest of the sentence steps back rather than disappearing -- and
+--- narrowing here would take the sentence with it. `narrow` says the
+--- same thing about a whole file: in text mode, which is what
+--- difftastic answers with when it has no parser, every atom is prose
+--- and only the dropping half of this applies.
+local function inserted_within(spans, fine, narrow)
+  local out = {}
+  for _, sp in ipairs(spans or {}) do
+    if sp.atom == "string" or sp.atom == "comment" then
+      table.insert(out, sp)
+    else
+      for _, r in ipairs(fine or {}) do
+        if r.col_start < sp.col_end and r.col_end > sp.col_start then
+          if narrow then
+            table.insert(out, {
+              col_start = math.max(r.col_start, sp.col_start),
+              col_end = math.min(r.col_end, sp.col_end),
+              atom = sp.atom,
+            })
+          else
+            table.insert(out, sp)
+            break
+          end
+        end
+      end
+    end
+  end
+  return out
+end
+
 --- The prose atoms of a change, grouped into NODES and asked -- once for
 --- each node -- whether the emphasis narrowed it.
 ---
@@ -1248,6 +1295,33 @@ function M.render(bufnr, win, result, old_lines, opts)
           if result.precise and by_row[row] and #by_row[row] > 0
             and (result.pairs ~= nil or paired_row(row)) then
             spans, ranged = by_row[row], true
+            -- ...with one thing taken out of them: a token that gained
+            -- no characters at all.
+            --
+            -- difftastic reports atoms, so a word that merely LOST a
+            -- letter comes back as the whole new word changed --
+            -- `foobar` -> `fobar` is one add span over `fobar`. Drawn as
+            -- it stands, with the removed `o` in red inside it, the row
+            -- reads as though `o` had been replaced by the five letters
+            -- around it. They are not new: they are the old word's own,
+            -- and green over them says the one thing that is not true.
+            --
+            -- So a span is kept only where the character comparison
+            -- found something inserted inside it. That comparison is the
+            -- same one the removal drawn in place came from, which is
+            -- why this is asked only of a row that has one: elsewhere
+            -- there is no second opinion to weigh difftastic's atom
+            -- against, and the atom stands.
+            --
+            -- Narrowed only where difftastic parsed the file. In text
+            -- mode every atom is prose -- a changed sentence is meant to
+            -- be tinted whole with its new words picked out of it -- so
+            -- there a span keeps its width, and only a span with nothing
+            -- inserted in it at all is dropped.
+            if inline and merged_at[row] and #merged_at[row] > 0 then
+              spans = inserted_within(spans, inline.adds[i + 1] or {},
+                not result.prose)
+            end
             -- A line every token of which the backend called changed is
             -- a line that is new, whether or not it was aligned with
             -- something. Painting it whole adds only the spaces between
@@ -1274,7 +1348,7 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- landed in steps back from them. Nothing difftastic called
             -- changed is drawn as unchanged -- only as less of the
             -- story, which is what it is.
-            prose_spans[row] = by_row[row]
+            prose_spans[row] = spans
             prose_fine[row] = emphasis and (emphasis[i + 1] or {}) or nil
           elseif not result.precise and inline then
             spans = inline.adds[i + 1] or {}
@@ -1294,6 +1368,12 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- -- banded, or from a comparison of our own -- would claim an
           -- edit the backend explicitly did not report.
           if result.precise and (not by_row[row] or #by_row[row] == 0) then
+            token_marked[row] = true
+          elseif ranged and result.precise and #spans == 0 then
+            -- Every span the backend reported turned out to be text the
+            -- row already had. Nothing to mark, and nothing for the
+            -- counts to fall back to: a band here would say the whole
+            -- line is new when not one character of it is.
             token_marked[row] = true
           elseif whole then
             -- Painted below. Whether anything on it steps back depends

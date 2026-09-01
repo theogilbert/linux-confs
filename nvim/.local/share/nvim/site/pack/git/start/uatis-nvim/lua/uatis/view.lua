@@ -264,9 +264,26 @@ function M.stop(view)
   -- Required at call time: the pane requires this module to open the files
   -- it lists, and asking for it at the top would be a cycle.
   local pane = require("uatis.pane")
-  local list = pane.get()
-  if list and list.root == root and list.rev == rev then
-    pane.close(list)
+  local here = pane.get()
+  -- Every list of this review, and not only the one in this tab: the
+  -- same review reached from two tabs -- `:tab split` on a file being
+  -- reviewed, then the list put up there as well -- left the other one
+  -- running, still annotating each file opened in that tab, with the
+  -- review that owned it gone.
+  --
+  -- The revision is not asked about for the list in THIS tab. A tab
+  -- holds one list and it is the review the reader is standing in; the
+  -- two revisions can drift apart -- a view pinned by `:Uatis <ref>`
+  -- beside a list that followed a base change, a list re-read while the
+  -- view was resolving -- and a list left behind by a key that says
+  -- "stop" goes on annotating every file opened after it. Same
+  -- repository is the whole test there. Elsewhere the revision has to
+  -- match, since another tab may be reviewing the same repository
+  -- against something else on purpose.
+  for _, list in ipairs(pane.all()) do
+    if list.root == root and (list == here or list.rev == rev) then
+      pane.close(list)
+    end
   end
   return M.close_all(root, rev)
 end
@@ -592,7 +609,13 @@ function M.open(ref, opts)
 
   git.root(file, function(root)
     if not root then
-      vim.notify("uatis: not inside a git repository", vim.log.levels.ERROR)
+      -- Named, because the answer is about a path and not about the
+      -- editor: the file being read and the directory `:cd` last left
+      -- the editor in are different questions with different answers,
+      -- and a bare "not inside a git repository" says which of the two
+      -- was asked about only to whoever wrote it.
+      vim.notify("uatis: " .. file .. " is not inside a git repository",
+        vim.log.levels.ERROR)
       return
     end
     if not vim.api.nvim_buf_is_valid(bufnr) then

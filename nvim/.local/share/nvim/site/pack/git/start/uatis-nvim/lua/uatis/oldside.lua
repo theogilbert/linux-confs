@@ -1,6 +1,6 @@
 -- The old revision, in a window of its own, beside the in-place view.
 --
---   <leader>gs
+--   <leader>go
 --
 -- Removed code is drawn as virtual lines, and virtual text is a
 -- decoration rather than buffer content: the cursor cannot enter it, `/`

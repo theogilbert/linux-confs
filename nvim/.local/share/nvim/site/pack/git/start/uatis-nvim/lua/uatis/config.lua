@@ -35,6 +35,30 @@ return {
     -- of all of them is one nobody reads; `:Uatis <ref>` takes anything
     -- else, on the command line, where there is real ref completion.
     fallbacks = { "develop", "master", "main" },
+
+    -- How many recent commits the `type a revision...` prompt completes
+    -- over, newest first across every ref. A base is usually a branch or
+    -- a tag, and when it is neither it is a commit somebody named -- the
+    -- one before a refactor landed, the one raised in review, which on a
+    -- busy repository is a long way down. Far enough back to still have
+    -- it: the list is never read end to end, it is typed at, and only a
+    -- slice of it is on screen before anything is typed. One `git log`
+    -- when the prompt opens, then matching is a table scan. 0 leaves
+    -- commits out.
+    prompt_commits = 1000,
+
+    -- Whether a base chosen by hand outlives the editor. `true` keeps
+    -- one line per repository in `stdpath("data")/uatis/base.json`; a
+    -- string keeps them in that file instead; `false` forgets at exit.
+    --
+    -- On, because choosing a base is a fact about the project and not
+    -- about this hour: a repository whose default branch is `develop`,
+    -- or whose review is always against a release tag, is that way
+    -- tomorrow too, and being asked again every morning is the plugin
+    -- forgetting something the reader has already told it. Only a
+    -- CHOICE is kept -- what was merely detected is detected again,
+    -- since that answer can change without anyone deciding anything.
+    remember = true,
   },
 
   keys = {
@@ -121,8 +145,15 @@ return {
       file_next = "]f",
       file_prev = "[f",
       -- The same comparison drawn two ways: the old side around your
-      -- buffer, or beside it in a window of its own.
-      layout = "<leader>gs",
+      -- buffer, or beside it in a window of its own -- `o` for the old
+      -- side, which is what the second window holds.
+      --
+      -- Not `gs`: that is the stage-hunk key in every git plugin people
+      -- already have, and the reason the toggle above is named after the
+      -- tool applies here too. Not `gv` either -- `<leader>g` is already
+      -- rolled with the left index finger, and a chord that asks it for
+      -- both keys in a row is one nobody presses twice.
+      layout = "<leader>go",
       -- Ending the review from inside it. Off, because the review is a
       -- toggle and `keys.global.toggle_diff` already ends it from
       -- anywhere, including from here -- a second key for one gesture is
@@ -153,6 +184,15 @@ return {
     -- screen before you ask it. Off leaves the window to `keys.view.files`
     -- and changes nothing else.
     auto_open = true,
+
+    -- Files git has never been told about are part of what a branch did
+    -- -- `git diff` cannot say so, because there is no revision to
+    -- measure them against, so they are asked for separately and counted
+    -- here. Above this many bytes a file is listed without a count
+    -- rather than read to find one: nobody reviews a 2MB blob by its
+    -- line total, and the read is on every re-read of the list. 0 leaves
+    -- untracked files out of the list altogether.
+    untracked_max_bytes = 512 * 1024,
 
     -- Whether the comparison follows you: a file the list names, opened
     -- while a review is running, is annotated on arrival however you got

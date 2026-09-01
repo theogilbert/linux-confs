@@ -297,13 +297,32 @@ end
 --- Letters shared only in the middle are a coincidence of spelling. Below
 --- the threshold both words are marked whole, which is the honest
 --- statement: this word became that one.
-local function worth_char_diff(a, b)
+---
+--- ...unless the comparison only goes one way. A word that merely LOST a
+--- character -- `and` -> `ad`, `for` -> `fr` -- shares too little at
+--- either end to pass the affix test, and marking both words whole then
+--- says something false: the new word is drawn as inserted text when
+--- every character of it is the old word's, with the character that went
+--- in red beside it, and it reads as though `and` had been replaced by
+--- `ad`. There are no fragments of two different words to be misled by
+--- here, because one of the two sides has no marks on it at all -- every
+--- mark is a character genuinely removed, or genuinely inserted, and
+--- that is exactly the edit.
+local function worth_char_diff(a, b, ops)
   local pre, suf = affixes(a, b)
-  return math.max(pre, suf) >= config.diff.line.word_affix
+  if math.max(pre, suf) >= config.diff.line.word_affix then
+    return true
+  end
+  local added, removed = 0, 0
+  for _, c in ipairs(ops) do
+    removed = removed + c[2]
+    added = added + c[4]
+  end
+  return added == 0 or removed == 0
 end
 
-local function char_pair(a_tok, b_tok, adds, dels)
-  for _, c in ipairs(seq_diff(chars_of(a_tok.text), chars_of(b_tok.text))) do
+local function char_pair(a_tok, b_tok, ops, adds, dels)
+  for _, c in ipairs(ops) do
     if c[2] > 0 then
       push(dels, a_tok.line, a_tok.col + c[1] - 1, a_tok.col + c[1] - 1 + c[2])
     end
@@ -371,8 +390,9 @@ local function align_block(A, sa, ca, B, sb, cb, adds, dels)
     if kind == "match" then
       local a_tok, b_tok = A[sa + i2 - 1], B[sb + j2 - 1]
       if a_tok.text ~= b_tok.text then
-        if worth_char_diff(a_tok.text, b_tok.text) then
-          char_pair(a_tok, b_tok, adds, dels)
+        local ops = seq_diff(chars_of(a_tok.text), chars_of(b_tok.text))
+        if worth_char_diff(a_tok.text, b_tok.text, ops) then
+          char_pair(a_tok, b_tok, ops, adds, dels)
         else
           -- Aligned, but not alike enough to take apart: one word became
           -- another, and that is what the marks should say.

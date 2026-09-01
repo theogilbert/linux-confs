@@ -44,9 +44,23 @@ completing on your refs.
 `main`. `<leader>gB` picks another through `vim.ui.select`, offering the
 one in force and whichever of those conventional names this repository
 actually has — a short list, because a picker is for the answer you
-almost always want. Anything else — another branch, a tag, `HEAD~3`, a
-hash off a forge page — is `:Uatis <ref>`, which completes on your refs.
-One choice per repository for the editing session. Picking one re-points what is already
+almost always want. Its last row, `type a revision…`, is for the rest:
+a one-line prompt whose menu comes up as you type, over every branch,
+tag and remote-tracking ref, and the last thousand commits. Each row
+carries the date it was made, and a commit its subject line after it —
+which is what a commit is matched on, since a sha is not something
+anyone remembers.
+`HEAD~3` and a hash off a forge page are simply typed. That prompt is
+the plugin's own window rather than `vim.ui.input`, because completion
+is the half of it that matters and a `vim.ui.input` replacement is free
+to drop it.
+One choice per repository, kept between sessions: a base chosen by hand
+is written to `stdpath("data")/uatis/base.json` and read back next time,
+because a project reviewed against `develop` or against the last release
+tag is that way tomorrow too. What was merely *detected* is detected
+again, and a remembered branch that has since been deleted is dropped
+rather than failing at the fork point. `base.remember = false` turns it
+off; a string puts the file somewhere else. Picking one re-points what is already
 open — every view against the base branch, and the file list beside them,
 move to the new fork point together. Views you named a revision for with
 `:Uatis <gitref>` stay where you put them.
@@ -57,7 +71,7 @@ move to the new fork point together. Views you named a revision for with
 | --- | --- |
 | `]c` / `[c` | next / previous chunk |
 | `]f` / `[f` | next / previous changed file |
-| `<leader>gs` | side by side / in place |
+| `<leader>go` | side by side / in place |
 | `<leader>gm` | structural / line diff |
 | `<leader>gf` | the changed-file list, on and off |
 
@@ -74,6 +88,14 @@ folded directory opens it, so the file you are reading always has a row.
 Every directory row carries what changed beneath it — its whole subtree,
 nested directories included — in the same `+N -M` the files use. Folded
 shut, that count is the reason you would open it again.
+
+The list counts the working tree, not the commits: a saved edit is in it
+straight away, an unsaved one as soon as the buffer says so, and a file
+git has never been told about is in it too — `.gitignore` decides what
+that leaves out. It re-reads itself when you save, when something else
+writes a file you are reading, and when you come back to nvim from a
+terminal or another window, where git may have moved under it: switch a
+branch or pull the base branch and the fork point moves with it.
 
 `q` in the list closes that window and nothing else: the review goes on,
 `]f` still steps it, and `<leader>gf` brings the window back to the same
@@ -115,6 +137,29 @@ about it. Line mode is `vim.diff` with the histogram algorithm, which
 picks better hunk boundaries than git's default Myers on a restructured
 file.
 
+## In a statusline
+
+`status()` answers about the buffer, `review()` about the whole review,
+both in plain data — numbers and strings, no highlight groups, nothing
+to parse:
+
+```lua
+local uatis = require("uatis")
+
+-- +12 -3 · main
+local function component()
+  local s = uatis.status()
+  if not s then return "" end
+  return ("+%d -%d · %s"):format(s.added, s.removed, s.base)
+end
+```
+
+`status()` also carries `path`, `old_path` on a rename, `rev` (the fork
+point it resolved to), `backend`, `layout`, `tracks_base` and `degraded`
+— the last when difftastic was asked for and could not answer.
+`review()` carries `files`, the totals across them, and the file the
+list is standing on. Both return `nil` when there is nothing to say.
+
 ## Configuration
 
 `setup()` takes the same shape as `lua/uatis/config.lua`, and you name
@@ -128,7 +173,7 @@ require("uatis").setup({
   },
   list = { width = 48 },              -- the list's width when you do open it
   diff = { default_backend = "line" },
-  keys = { view = { layout = "<leader>gv" } },
+  keys = { view = { layout = "<leader>gS" } },
 })
 ```
 

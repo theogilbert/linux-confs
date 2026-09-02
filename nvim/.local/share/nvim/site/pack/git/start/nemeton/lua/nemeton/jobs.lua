@@ -139,11 +139,12 @@ function M.open()
   vim.wo[M.win].cursorline = true
 
   local k = config.keys.jobs
-  vim.wo[M.win].winbar = ("%%#NemetonHint#%s browser · %s refresh · %s quit%%*"):format(
-    k.browser,
-    k.refresh,
-    k.quit
-  )
+  vim.wo[M.win].winbar = detail.hint({
+    { k.log, "log" },
+    { k.browser, "browser" },
+    { k.refresh, "refresh" },
+    { k.quit, "quit" },
+  })
 
   local function load()
     glab.pipeline_jobs(mr.root, pipeline.id, function(data, err)
@@ -162,6 +163,19 @@ function M.open()
   local bindings = {
     { k.quit, M.close, "close" },
     { k.refresh, load, "refetch" },
+    -- In a tab, and this window is left standing in the one it was
+    -- opened from: a log is read against the list of jobs it came out
+    -- of, and closing the tab is how you get back to it.
+    {
+      k.log,
+      function()
+        local job = job_at()
+        if job then
+          require("nemeton.trace").open(job)
+        end
+      end,
+      "what this job printed",
+    },
     {
       k.browser,
       function()

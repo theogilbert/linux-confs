@@ -46,49 +46,68 @@ local grounded = {}
 ---
 --- Not CursorLine, which this used to be: CursorLine is a grey band,
 --- and a grey band under every conversation in the file is the file
---- gone grey. This is the file's own background moved a seventh of the
---- way towards the colour the thread is already drawn in -- so it is
---- the same background, tinted, in whatever direction the
---- colourscheme's own accent points, and it is barely a colour at all
---- until there is a block of it.
+--- gone grey. This is the file's own background lifted towards the
+--- colour its text is drawn in -- lighter in a dark colourscheme,
+--- darker in a light one, and in both of them the same background
+--- standing off the page rather than a colour from somewhere else.
 ---
---- Two, because "settled" and "still owed an answer" is the one thing
---- about a thread you want to know before reading a word of it, and it
---- was being said only in the tick and in the dimness of the text --
---- both of which have to be read. A block has a colour before it has
+--- Far enough to win an argument it is in the middle of. A conversation
+--- is not the only thing painting backgrounds on these lines -- a diff
+--- plugin puts red and green ones on the code above and below -- and a
+--- ground that is a whisper away from the file's own reads as one more
+--- band of that. `config.comments.ground` is how far, for a
+--- colourscheme where this is the wrong distance.
+---
+--- Then towards the colour of the state, which is the second thing to
+--- say: "settled" and "still owed an answer" is the one thing about a
+--- thread you want to know before reading a word of it, and it was
+--- being said only in the tick and in the dimness of the text -- both
+--- of which have to be read. A block has a colour before it has
 --- anything else, so the block says it: towards the open colour for a
 --- conversation that is waiting on somebody, towards the resolved one
 --- for a conversation that is over.
 ---
---- And half as far. Two tints of the same strength differ only in hue,
---- which at this saturation is a difference you have to look for; half
---- the distance from the file's own background is a difference you
---- cannot miss, and it is the right way round -- an argument still
---- going on stands off the page, one that is over sinks back towards
---- it. Which is what "resolved" means: there, and no longer asking
---- anything of you.
+--- And half as far, both ways. Two tints of the same strength differ
+--- only in hue, which at this saturation is a difference you have to
+--- look for; half the distance from the file's own background is a
+--- difference you cannot miss, and it is the right way round -- an
+--- argument still going on stands off the page, one that is over sinks
+--- back towards it. Which is what "resolved" means: there, and no
+--- longer asking anything of you.
 ---
 --- Without true colour there is nothing to mix: 16 or 256 fixed colours
 --- have no "a seventh of the way", and CursorLine is what an editor has
 --- always used to say "this row, not the others". There, the tick and
---- the dimming carry it alone.
+--- the dimming carry it alone -- as they do when `ground` is `false`
+--- and there is to be no band at all.
 local function ground()
   grounded = {}
   local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-  local function tint(name, from, amount)
+  local lift = config.comments.ground
+  --- `share` is how much of the ground this one gets: the whole of it
+  --- for a conversation still going on, half for one that is over.
+  local function tint(name, from, share)
+    -- Linked to Normal rather than cleared: `default` is what leaves a
+    -- `:hi` of your own standing, and a cleared group cannot be set
+    -- with it. Normal's background is the file's own, which is a band
+    -- nobody can see -- which is what was asked for.
+    if lift == false then
+      vim.api.nvim_set_hl(0, name, { link = "Normal", default = true })
+      return
+    end
     local accent = vim.api.nvim_get_hl(0, { name = from, link = false })
-    if not (vim.o.termguicolors and normal.bg and (accent.fg or normal.fg)) then
+    if not (vim.o.termguicolors and normal.bg and normal.fg) then
       vim.api.nvim_set_hl(0, name, { link = "CursorLine", default = true })
       return
     end
-    vim.api.nvim_set_hl(
-      0,
-      name,
-      { bg = mix(normal.bg, accent.fg or normal.fg, amount), default = true }
-    )
+    local bg = mix(normal.bg, normal.fg, lift * share)
+    vim.api.nvim_set_hl(0, name, {
+      bg = mix(bg, accent.fg or normal.fg, 0.14 * share),
+      default = true,
+    })
   end
-  tint("NemetonInline", "NemetonSignOpen", 0.14)
-  tint("NemetonSettled", "NemetonResolved", 0.07)
+  tint("NemetonInline", "NemetonSignOpen", 1)
+  tint("NemetonSettled", "NemetonResolved", 0.5)
 end
 
 --- `group`, with the ground behind it.
@@ -228,6 +247,29 @@ function M.clear(bufnr)
   end
 end
 
+--- How much room a conversation drawn into `bufnr` actually has.
+---
+--- The narrowest window the buffer is open in, minus whatever that
+--- window spends on the gutter. Narrowest, because the same buffer can
+--- be in two windows at two widths and both are drawn from these
+--- marks: wrapping to the wider one leaves the narrow one with lines
+--- running off its edge, and virtual text has no way back from there.
+--- Wrapping to the narrower leaves the wide one with short lines, which
+--- is a comment nobody has to work to read.
+local function room(bufnr)
+  local width
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    local info = vim.fn.getwininfo(win)[1]
+    if info then
+      local w = info.width - (info.textoff or 0)
+      width = math.min(width or w, w)
+    end
+  end
+  -- Drawn before it is shown anywhere -- a buffer loaded but not yet in
+  -- a window -- and redrawn once it is.
+  return width or vim.o.columns
+end
+
 local function visible(list, show_resolved)
   if show_resolved then
     return list
@@ -326,7 +368,7 @@ function M.render(bufnr, by_line, mode, opts)
 
       local drafted = false
       for _, t in ipairs(shown) do
-        if t.draft then
+        if threads.unsent(t) then
           drafted = true
         end
       end
@@ -370,6 +412,14 @@ function M.render(bufnr, by_line, mode, opts)
           return vim.api.nvim_buf_get_lines(bufnr, first, row + below + 1, false)
         end
         local virt, settled = {}, {}
+        local width = room(bufnr)
+        -- The lines this thread was written against, when the buffer no
+        -- longer says what they said. Read off the buffer rather than
+        -- the file: what is on the screen is what the comment now reads
+        -- as being about, saved or not.
+        local function was(t)
+          return opts.was and opts.was(t, replaced(threads.span(t), 0)) or nil
+        end
         for _, t in ipairs(shown) do
           -- A blank line between two threads, and nothing but a blank
           -- line: it is the one place the rail stops and the one place
@@ -378,7 +428,8 @@ function M.render(bufnr, by_line, mode, opts)
           if #virt > 0 then
             table.insert(virt, {})
           end
-          for _, line in ipairs(threads.render(t, { replaced = replaced })) do
+          local drawn = threads.render(t, { replaced = replaced, width = width, was = was(t) })
+          for _, line in ipairs(drawn) do
             table.insert(virt, line)
             settled[#virt] = t.resolved and true or false
           end

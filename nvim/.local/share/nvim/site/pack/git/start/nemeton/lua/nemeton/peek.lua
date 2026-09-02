@@ -7,6 +7,7 @@
 
 local config = require("nemeton.config")
 local marks = require("nemeton.marks")
+local session = require("nemeton.session")
 local threads = require("nemeton.threads")
 
 local M = {}
@@ -35,13 +36,23 @@ function M.show(list)
     return vim.api.nvim_buf_get_lines(bufnr, math.max(row - above, 0), row + below + 1, false)
   end
 
+  -- The widest this float is allowed to open, which is what the thread
+  -- is wrapped to; the window itself is then sized to whatever the
+  -- wrapped text actually came to, which is usually less.
+  local most = math.max(vim.o.columns - 10, 30)
+
   local lines, hls = {}, {}
   local width = 0
   for i, t in ipairs(list) do
     if i > 1 then
       table.insert(lines, "")
     end
-    local text, painted = threads.flatten(threads.render(t, { replaced = replaced }), #lines)
+    local drawn = threads.render(t, {
+      replaced = replaced,
+      width = most,
+      was = session.was(t, replaced(threads.span(t), 0)),
+    })
+    local text, painted = threads.flatten(drawn, #lines)
     vim.list_extend(lines, text)
     vim.list_extend(hls, painted)
     for _, l in ipairs(text) do
@@ -61,7 +72,7 @@ function M.show(list)
     relative = "cursor",
     row = 1,
     col = 0,
-    width = math.min(math.max(width + 1, 30), vim.o.columns - 10),
+    width = math.min(math.max(width + 1, 30), most),
     height = math.min(#lines, config.comments.peek_height),
     style = "minimal",
     border = "rounded",

@@ -7,6 +7,7 @@
 -- cached for as long as it is being looked at, rendered into lines that
 -- somebody else puts in a window.
 
+local config = require("nemeton.config")
 local glab = require("nemeton.glab")
 local threads = require("nemeton.threads")
 
@@ -55,21 +56,22 @@ function M.ago(iso)
   return ("%dd"):format(secs / 86400)
 end
 
--- GitLab's pipeline statuses, as a glyph, the word its own UI uses, and
--- a colour. "success" is the API's word and "passed" is the one on the
--- page; the page is what the reviewer has read a thousand times.
+-- GitLab's pipeline statuses, as the state this plugin draws them as
+-- (`config.ci`), the word GitLab's own UI uses, and a colour. "success"
+-- is the API's word and "passed" is the one on the page; the page is
+-- what the reviewer has read a thousand times.
 local PIPELINE = {
-  success = { "✔", "passed", "NemetonOk" },
-  failed = { "✖", "failed", "NemetonBad" },
-  running = { "◐", "running", "NemetonBusy" },
-  pending = { "◌", "pending", "NemetonBusy" },
-  created = { "◌", "created", "NemetonBusy" },
-  waiting_for_resource = { "◌", "waiting", "NemetonBusy" },
-  preparing = { "◌", "preparing", "NemetonBusy" },
-  manual = { "▶", "manual", "NemetonBusy" },
-  scheduled = { "▶", "scheduled", "NemetonBusy" },
-  canceled = { "⊘", "canceled", "NemetonMeta" },
-  skipped = { "⊙", "skipped", "NemetonMeta" },
+  success = { "passed", "passed", "NemetonOk" },
+  failed = { "failed", "failed", "NemetonBad" },
+  running = { "running", "running", "NemetonBusy" },
+  pending = { "waiting", "pending", "NemetonBusy" },
+  created = { "waiting", "created", "NemetonBusy" },
+  waiting_for_resource = { "waiting", "waiting", "NemetonBusy" },
+  preparing = { "waiting", "preparing", "NemetonBusy" },
+  manual = { "manual", "manual", "NemetonBusy" },
+  scheduled = { "manual", "scheduled", "NemetonBusy" },
+  canceled = { "canceled", "canceled", "NemetonMeta" },
+  skipped = { "skipped", "skipped", "NemetonMeta" },
 }
 
 --- One CI status -- a pipeline's or a job's, which are the same
@@ -78,8 +80,8 @@ function M.status(status)
   if type(status) ~= "string" then
     return nil
   end
-  local known = PIPELINE[status] or { "•", status, "NemetonMeta" }
-  return { glyph = known[1], word = known[2], hl = known[3] }
+  local known = PIPELINE[status] or { "unknown", status, "NemetonMeta" }
+  return { glyph = config.ci[known[1]] or config.ci.unknown, word = known[2], hl = known[3] }
 end
 
 --- What CI says about a merge request, or nil when the payload carried
@@ -120,7 +122,9 @@ function M.approval(a)
   local required = tonumber(a.approvals_required) or 0
   local enough = required > 0 and (tonumber(a.approvals_left) or 0) == 0
     or (required == 0 and #names > 0)
-  local glyph = enough and "✔" or "◌"
+  -- The same tick CI passing is drawn with: "it is through" is one
+  -- fact in this window, whoever is saying it.
+  local glyph = enough and config.ci.passed or config.ci.waiting
   -- The verdict on its own, apart from the names it was reached by: the
   -- two are read as separate facts -- is it through, and who has been
   -- in -- and the window that draws them draws them in two colours.
@@ -128,9 +132,9 @@ function M.approval(a)
   if required > 0 then
     count = ("%s %d of %d"):format(glyph, #names, required)
   elseif #names > 0 then
-    count = "✔ approved"
+    count = glyph .. " approved"
   else
-    count = "◌ nobody has approved it"
+    count = glyph .. " nobody has approved it"
   end
   local text = count
   if #names > 0 then
@@ -271,7 +275,7 @@ function M.counts(mr)
     resolved = resolved,
     overall = #(mr.overview or {}),
     comments = comments,
-    unsent = #(mr.drafts or {}) + #(mr.draft_overview or {}),
+    unsent = #(mr.drafts or {}) + #(mr.draft_overview or {}) + #(mr.draft_replies or {}),
   }
 end
 

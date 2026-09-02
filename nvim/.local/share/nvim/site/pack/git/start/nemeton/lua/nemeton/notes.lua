@@ -109,7 +109,11 @@ end
 --- is a float over the middle of the editor, and a review comment is
 --- written by reading the thread above it rather than by looking at a
 --- window that is no longer there.
-local function write(title, send, keep)
+--- `default` is which of the two keys is the reflex, and is the
+--- composer's: "post" for a reply, because an answer kept back is
+--- invisible to the person waiting for it and invisible in the thread
+--- it answers until the whole review goes out.
+local function write(title, send, keep, default)
   local mr = session.current
   M.close()
   local function landed(said)
@@ -126,6 +130,7 @@ local function write(title, send, keep)
   end
   compose.open({
     title = title,
+    default = default,
     on_submit = function(body)
       send(mr, body, landed("posted on"))
     end,
@@ -218,7 +223,8 @@ function M.reply()
     end,
     function(m, body, cb)
       glab.create_draft(m.root, m.iid, body, nil, thread.id, cb)
-    end
+    end,
+    "post"
   )
 end
 

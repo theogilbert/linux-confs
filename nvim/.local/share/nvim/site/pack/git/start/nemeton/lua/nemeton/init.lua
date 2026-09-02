@@ -525,6 +525,7 @@ local function attach(bufnr)
       end,
       "approve, or take it back",
     },
+    { k.close, M.close, "end the review" },
     { k.next, M.next, "next comment" },
     { k.prev, M.prev, "previous comment" },
   }
@@ -698,8 +699,10 @@ function M.setup(opts)
     end,
   })
   -- The conversations are drawn to the width of the editor, so that
-  -- band is the wrong length the moment the editor is another width.
-  vim.api.nvim_create_autocmd("VimResized", {
+  -- band is the wrong length the moment the editor is another width --
+  -- and they are wrapped to the width of the window, which a split or a
+  -- drag changes without the editor changing size at all.
+  vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
     group = group,
     callback = function()
       if session.current then

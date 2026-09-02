@@ -123,6 +123,7 @@ A review, end to end:
 
 :Nemeton close          End the review: the markers and the review keys
                         go away. The branch stays checked out.
+                        `<leader>mq` is the same thing from the buffer.
 
 :Nemeton comments       Markers on or off. A redraw, not a refetch.
 
@@ -218,6 +219,8 @@ file is re-read, which a checkout makes it do.
     <leader>mD      delete one of them, after asking
     <leader>ms      (visual) suggest a change to these lines
     <leader>md      the merge request's own window
+    <leader>mq      end the review -- the markers and these keys go
+                    away, and the branch stays checked out
     ]m  [m          next / previous thread, across the whole merge
                     request -- not just this file
 
@@ -254,6 +257,7 @@ many of them are yours and still unsent.
     <CR>            check this one out and load its threads
     c               the commits of the row under the cursor
     d               what it says it is for
+    s               opened / merged / closed / all, round and round
     r               refetch
     o               open it on GitLab
     q               close
@@ -273,6 +277,15 @@ banner between them, or an "exit status 1" that says only that
 something failed. `<CR>` puts the queue back underneath it without
 asking the forge for it again. What `glab` said in full is in the log.
 |nemeton-log|
+
+`s` walks the queue through the four states GitLab has: the open ones a
+review queue is made of, then the merged, the closed, and all of them
+together. The window's title says which of the four is on the screen and
+every row says it for itself -- `merged` in the colour of a thing that
+is through, `closed` in the dim one -- because "all" is one press away
+and a mixed queue is read a row at a time. It is a question asked, not a
+setting changed: close the window and the next one opens on
+`list.state` again. |nemeton-config-list|
 
 `c` and `d` open a pane under the list for the row the cursor is on, and
 follow the cursor down the queue. `d` shows exactly what the merge
@@ -349,9 +362,28 @@ THE PIPELINE                                             *nemeton-jobs-window*
 `p` on the window above, or `:Nemeton jobs`. Every job of the head
 pipeline, its stage, its status and how long it took.
 
+    <CR>            what the job under the cursor printed
     o               open the job under the cursor on GitLab
     r               refetch
     q               close
+
+A JOB'S LOG                                               *nemeton-log-window*
+
+`<CR>` above. What that job printed, in a tab of its own -- not a float
+like everything else here: a build log is thousands of lines read by
+searching them, and it is the one thing this plugin shows that you want
+open while you go back to the code it is complaining about. The cursor
+starts at the end, where a failure is.
+
+    R               refetch -- a running job has more of it every second
+    o               open the job on GitLab
+    q               close the tab
+
+The jobs window is left standing in the tab it was opened from, so `q`
+puts you back in front of it. What the runner wrote for a terminal is
+taken out on the way in: the colour escapes, GitLab's `section_start:`
+markers, and the carriage returns a progress bar was drawn with -- of
+which only what the line ended up saying is kept.
 
 THE PEEK FLOAT                                           *nemeton-peek-window*
 
@@ -366,8 +398,9 @@ buffer-local ones.
 anchored to the line the cursor was on, with the position the API wants:
 the three diff shas, the path on both sides, and the line.
 
-    <C-s>  or  :w   keep it for the review
-    <C-p>           post it to the merge request now
+    <C-s>  or  :w   keep it for the review (send it, on a reply)
+    <C-p>           post it to the merge request now (keep it, on a
+                    reply)
     q               discard it
 
                                                               *nemeton-drafts*
@@ -384,6 +417,17 @@ you would want to know before pressing it.
 `config.keys.compose.keep` and `config.keys.compose.post` to swap the
 two round; nothing else knows which is which.
 
+                                                             *nemeton-replies*
+A REPLY IS THE OTHER WAY ROUND: `<C-s>` and `:w` send it, `<C-p>` keeps
+it for the review. A reply is half of a conversation somebody else is
+already in, and one held a publish at a time is not one. GitLab also
+files an unsent reply with your other drafts rather than under the note
+it answers, so a kept reply is invisible to the person waiting for it
+and invisible in the thread as well -- nemeton folds one back into the
+thread it belongs to wherever it draws it, marked `unsent`, so that a
+reply kept by the other key or written in GitLab's own interface is at
+least visible to you.
+
 Draft notes are GitLab 15.10 and newer. On an older instance `<C-s>`
 fails and `<C-p>` works.
 
@@ -394,6 +438,21 @@ put there below in green. What it would replace is read off the buffer
 where the file is open and off the disk where it is not. In the overall
 comments there is no line to compare against and the block is drawn on
 its own rather than with an invented left-hand side.
+
+                                                               *nemeton-drift*
+WHEN THE CODE HAS MOVED ON. Someone pushes while you are reading, or you
+edit the file you are reviewing, and a thread is left sitting on a line
+that no longer says what it said. Wherever a conversation is drawn --
+expanded under the code, in the peek float, in the every-thread window
+-- it then carries the code it was written against, above the first
+note and marked `was`, in the colour of a line taken away. A thread
+written across several lines carries all of them.
+
+That code is read out of the checkout with `git show`, not from the
+forge: the commit the note was written against is one this repository
+already has. A commit that is not here -- force-pushed away -- is asked
+about once and then left alone, and the thread is drawn as it always
+was.
 
 Anchoring: GitLab only takes a comment on a line the change touches.
 Nemeton knows which lines those are, and says so before opening a
@@ -411,7 +470,7 @@ LIST                                                     *nemeton-config-list*
 >
     list = {
       per_page = 30,          -- how many merge requests to ask for
-      state = "opened",       -- "opened" | "merged" | "closed" | "all"
+      state = "opened",       -- what a queue opens on; `s` walks the four
       order = "updated_at",   -- `glab mr list --order`
       width = 0.7,            -- of the editor
       height = 0.6,
@@ -448,6 +507,8 @@ COMMENTS                                             *nemeton-config-comments*
       rail = "▎",            -- the rail drawn down a thread
       reply_indent = "  ",   -- what a reply is indented by
       reply_mark = "↳ ",     -- and what stands in that indent
+      ground = 0.15,         -- how far the band under one stands off
+      wrap = 80,             -- the widest a comment is drawn
       peek_height = 20,
     }
 <
@@ -455,8 +516,39 @@ The three signs are Nerd Font glyphs; without one they render as a box.
 "●", "○" and "✎" are the pair-and-a-half to fall back to. `rail` falls
 back to "│".
 
+A comment is always wrapped to the window it is drawn in: a conversation
+under the code is virtual text, and virtual text takes no 'wrap' and no
+horizontal scroll, so a line past the right-hand edge cannot be read at
+all. `wrap` is the other limit -- prose set across the whole of a wide
+editor is prose the eye loses its place in on the way back to the next
+line. Set it to `false` to wrap to the window and nothing narrower.
+
 `show_resolved` is a redraw, not a refetch: resolved threads are fetched
 either way.
+
+`ground` is 0 for the file's own background and 1 for the colour its
+text is drawn in; see |hl-NemetonInline| for what is done with it, and
+`false` for no band at all.
+
+CI                                                         *nemeton-config-ci*
+>
+    ci = {
+      passed = "✓",   failed = "✗",     running = "◐",
+      waiting = "◌",  manual = "▸",     canceled = "⊘",
+      skipped = "⊙",  unknown = "•",
+    }
+<
+What a pipeline or a job's state is drawn as, in the list, in the merge
+request's own window and in |nemeton-jobs-window|. Several of GitLab's
+words share one glyph: there are four spellings of "it has not started
+yet".
+
+Text-presentation codepoints on purpose. U+2714 HEAVY CHECK MARK --
+which the tick used to be -- is in Unicode's emoji set, and a terminal
+with an emoji font draws it from there: a picture, in that font's own
+colour, instead of a tick in the green nemeton asked for. U+2713 is the
+same shape with no emoji in it, and the cross (U+2717) and the triangle
+(U+25B8) are the same story. Nerd Font icons go here just as well.
 
 COMPOSER                                              *nemeton-config-compose*
 >
@@ -465,7 +557,8 @@ COMPOSER                                              *nemeton-config-compose*
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
-`keys.conversation`, `keys.jobs` and `keys.compose`, each a table of
+`keys.conversation`, `keys.jobs`, `keys.log` and `keys.compose`, each a
+table of
 what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
 can be `false`:
 >
@@ -566,16 +659,24 @@ with `default`, and re-linked on every |ColorScheme|.
                                                             *hl-NemetonInline*
                                                      *hl-NemetonSettled*
 `NemetonInline` is the ground under an expanded conversation: your own
-background, mixed a seventh of the way towards the colour an open thread
-is drawn in, so it reads as a tint of the file rather than as a grey
-band across it.
+background lifted towards the colour your text is drawn in -- lighter in
+a dark colourscheme, darker in a light one -- and then tinted towards
+the colour an open thread is drawn in, so it reads as a shade of the
+file rather than as a grey band across it.
+
+How far it stands off the page is `config.comments.ground`, and it is
+set far enough to hold its own against whatever else paints these lines:
+a diff plugin's red and green sit on the code above and below, and a
+ground a whisper away from the file's own reads as one more band of
+that. `false` for no band, where the rail and the dimmed text carry it
+alone.
 
 `NemetonSettled` is the ground under a conversation that is resolved:
-the same mix, towards the resolved colour instead, and half as far.
-Whether a thread is still owed an answer is the thing you want to know
-before reading a word of it, and a block has a colour before it has
-anything else -- so an argument still going on stands off the page, and
-one that is over sinks back towards it.
+half as far, towards the resolved colour instead. Whether a thread is
+still owed an answer is the thing you want to know before reading a word
+of it, and a block has a colour before it has anything else -- so an
+argument still going on stands off the page, and one that is over sinks
+back towards it.
 >
     :hi NemetonInline guibg=#20242c     " pick another
     :hi link NemetonInline Normal       " take it away
@@ -586,7 +687,8 @@ set, so nothing in the block carries a background of its own through the
 middle of it. Setting the ground is enough; the derived groups follow.
 
 Without 'termguicolors' there is nothing to mix -- sixteen colours have
-no "a seventh of the way" -- and both fall back to |hl-CursorLine|,
+no "a seventh of the way" towards anything -- and both fall back to
+|hl-CursorLine|,
 where the tick and the dimmed text carry it alone.
 
 ==============================================================================

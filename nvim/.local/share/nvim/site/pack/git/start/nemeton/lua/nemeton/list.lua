@@ -25,6 +25,25 @@ M.buf = nil
 M.preview = { win = nil, buf = nil, mode = nil }
 -- Row number (1-based) -> the merge request on it.
 local rows = {}
+-- Which merge requests the queue is asking for, once it has been asked
+-- for something other than the configured state. A review queue is what
+-- is open, and that is what this opens on; "how did we end up doing it
+-- that way" is a question about one that is merged, and it is asked
+-- often enough to deserve a key and rarely enough not to deserve a
+-- setting of its own. Reset when the window is closed: the next queue
+-- is a queue again.
+local state = nil
+
+-- The states, in the order the key walks them. Open first because that
+-- is what a review is; "all" last because a queue with everything in it
+-- is a history, and the one thing it is bad at is showing what is left
+-- to do.
+local STATES = { "opened", "merged", "closed", "all" }
+
+--- What is being listed, whether or not the key has been pressed.
+local function listing()
+  return state or config.list.state or "opened"
+end
 -- What the window is saying instead of rows: that it is fetching them,
 -- that it is opening one, what went wrong when it tried. Its lines,
 -- wrapped to the width of the window, or nil while the queue itself is
@@ -54,7 +73,7 @@ local function close()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win, M.buf, rows, message = nil, nil, {}, nil
+  M.win, M.buf, rows, message, state = nil, nil, {}, nil, nil
 end
 
 --- The rows, and the highlights to paint on them.
@@ -79,8 +98,22 @@ local function row_chunks(mr)
   if mr.draft then
     table.insert(out, { "draft ", "NemetonDraft" })
   end
+  -- What state it is in, when that is not the state a review queue is
+  -- about. Said in words rather than in a colour: a row of a mixed
+  -- queue is read to decide whether it is worth opening, and "merged"
+  -- is the answer to that, while a green title is a thing to work out.
+  -- Nothing at all on an open one -- which is every row of the queue
+  -- this opens on, and a column of "opened" is a column saying nothing.
+  local mark = (mr.state == "merged" or mr.state == "closed" or mr.state == "locked") and mr.state
+    or nil
+  if mark then
+    table.insert(out, { mark .. " ", mark == "merged" and "NemetonOk" or "NemetonMeta" })
+  end
   local title = (mr.title or ""):sub(1, 58)
-  local pad = 58 - vim.fn.strdisplaywidth(title) + (mr.draft and -6 or 0)
+  local pad = 58
+    - vim.fn.strdisplaywidth(title)
+    + (mr.draft and -6 or 0)
+    + (mark and -(#mark + 1) or 0)
   table.insert(out, { title, "NemetonThread" })
   table.insert(out, { (" "):rep(math.max(pad, 1)) })
 
@@ -110,7 +143,7 @@ local function row_chunks(mr)
   -- an unsent comment is drawn in everywhere else -- last on the row,
   -- because it is the one thing here that is about you rather than
   -- about the merge request.
-  local unsent = #(mr.drafts or {}) + #(mr.draft_overview or {})
+  local unsent = #(mr.drafts or {}) + #(mr.draft_overview or {}) + #(mr.draft_replies or {})
   if unsent > 0 then
     table.insert(out, { ("  %d%s"):format(unsent, config.comments.sign_draft), "NemetonDraft" })
   end
@@ -270,6 +303,7 @@ local function fetch_rows(root)
           local parsed = threads.parse_drafts(type(data) == "table" and data or {})
           answered(function(row)
             row.drafts, row.draft_overview = parsed.inline, parsed.overview
+            row.draft_replies = parsed.replies
           end)
         end)
       end)
@@ -414,6 +448,31 @@ end
 
 --- What the keys do, which is not the same list while a message is over
 --- the queue: most of them have nothing to act on until it is gone.
+--- The state the key would move to, which is what the hint is named
+--- after.
+local function next_state()
+  local now = listing()
+  for i, s in ipairs(STATES) do
+    if s == now then
+      return STATES[i % #STATES + 1]
+    end
+  end
+  return STATES[1]
+end
+
+--- The window's own title says which queue this is. The rows say it
+--- one at a time; a window of nothing but merged merge requests has to
+--- say it once, at the top, or an empty-looking review queue is a
+--- filter nobody remembers turning on.
+local function set_title()
+  if M.win and vim.api.nvim_win_is_valid(M.win) then
+    vim.api.nvim_win_set_config(M.win, {
+      title = (" merge requests · %s "):format(listing()),
+      title_pos = "center",
+    })
+  end
+end
+
 local function set_hint()
   if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
     return
@@ -429,6 +488,9 @@ local function set_hint()
       { k.select, "open" },
       { k.commits, "commits" },
       { k.description, "description" },
+      -- Named after what pressing it would show rather than after what
+      -- is on the screen: every other hint on this bar is a verb.
+      { k.state, next_state() },
       { k.refresh, "refresh" },
       { k.browser, "browser" },
       { k.quit, "quit" },
@@ -597,7 +659,7 @@ local function open_window()
     col = g.col,
     style = "minimal",
     border = "rounded",
-    title = " merge requests ",
+    title = (" merge requests · %s "):format(listing()),
     title_pos = "center",
   })
   vim.wo[M.win].cursorline = true
@@ -613,6 +675,13 @@ local function open_window()
   vim.keymap.set("n", keys.refresh, function()
     M.open()
   end, { buffer = M.buf, desc = "nemeton: refetch" })
+  if keys.state and keys.state ~= "" then
+    vim.keymap.set("n", keys.state, function()
+      state = next_state()
+      set_title()
+      M.open()
+    end, { buffer = M.buf, desc = "nemeton: open, merged, closed, or all of them" })
+  end
   vim.keymap.set("n", keys.select, function()
     -- Reading a failure is the one thing this window does that ends
     -- with going back to what was on the screen before it.
@@ -710,10 +779,11 @@ function M.open()
   if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
     open_window()
   end
-  set_message("fetching merge requests…")
+  set_title()
+  set_message(("fetching %s merge requests…"):format(listing()))
   local mine = M.buf
 
-  glab.mr_list(root, function(mrs, err)
+  glab.mr_list(root, listing(), function(mrs, err)
     -- Closed, or refetched, while the forge was thinking.
     if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
       return
@@ -723,7 +793,7 @@ function M.open()
       return
     end
     if #mrs == 0 then
-      set_message("no open merge requests")
+      set_message(("no %s merge requests"):format(listing()))
       return
     end
     set_rows(mrs)

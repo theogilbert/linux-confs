@@ -42,13 +42,18 @@ it, and a marker that does not follow its line points at the wrong code.
 Every colour is a `Nemeton*` highlight group linked to one your
 colourscheme already defines, so all of them are one `:hi` away. The
 ground under an expanded conversation is `NemetonInline`: your own
-background, mixed a seventh of the way towards the colour an open
-thread is drawn in, so it is a tint of the file rather than a grey band
-across it. A settled conversation gets `NemetonSettled` instead — the
-same mix, towards the resolved colour and half as far, so an argument
-still going on stands off the page and one that is over sinks back
-towards it. `:hi NemetonInline guibg=…` picks another, and `:hi link
-NemetonInline Normal` takes it away. The colours drawn *on* either are
+background lifted towards the colour your text is drawn in — lighter in
+a dark colourscheme, darker in a light one — and then tinted towards the
+colour an open thread is drawn in, so it is a shade of the file rather
+than a grey band across it. Far enough to hold its own against whatever
+else paints these lines: a diff plugin's red and green sit on the code
+above and below, and a ground a whisper away from the file's own reads
+as one more band of that. `comments.ground` (0.15, or `false` for no
+band at all) is how far. A settled conversation gets `NemetonSettled`
+instead — half as far, towards the resolved colour, so an argument still
+going on stands off the page and one that is over sinks back towards it.
+`:hi NemetonInline guibg=…` picks another, and `:hi link NemetonInline
+Normal` takes it away. The colours drawn *on* either are
 derived from it — `NemetonInlineAuthor`, `NemetonSettledAuthor` and the
 rest — so nothing in the block carries a background of its own through
 the middle of it.
@@ -116,10 +121,13 @@ exist only on files in the repository while a review is on:
 | `<leader>mD` | delete one, after asking |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
 | `<leader>md` | the merge request itself, in a float |
+| `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
 
 In the list: `<CR>` opens one, `c` shows its commits under the list and
-`d` what it says it is for, `r` refetches, `o` opens it in a browser,
+`d` what it says it is for, `s` walks the queue through opened → merged
+→ closed → all (the title says which, and every row that is not open
+says so beside its title), `r` refetches, `o` opens it in a browser,
 `q` closes. The window opens on the keypress rather than when the forge
 answers, and `<CR>` leaves it up, saying which merge request it is
 opening, until the review is loaded. A checkout that fails says so in
@@ -159,8 +167,18 @@ In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `R` refetches, `q` closes.
 
-In the pipeline's jobs: `o` opens the job under the cursor on GitLab,
-`r` refetches, `q` closes.
+In the pipeline's jobs: `<CR>` opens what the job under the cursor
+printed, `o` opens the job on GitLab, `r` refetches, `q` closes.
+
+A job's log opens in a **tab** rather than a float — a build log is
+thousands of lines read by searching them, and it is the one thing here
+you want open while you go back to the code it is complaining about. The
+cursor starts at the end, where a failure is; `R` refetches (a running
+job has more of it every second), `o` opens the job on GitLab, `q`
+closes the tab and puts you back in front of the jobs it came from. What
+the runner wrote for a terminal — colour escapes, GitLab's
+`section_start:` markers, the carriage returns a progress bar was drawn
+with — is taken out on the way in.
 
 A suggestion is drawn as the diff it is wherever you read it — expanded
 under the code, in the peek float, in the every-thread window — the
@@ -168,11 +186,40 @@ lines it would replace in red above the lines it would put there in
 green, read off the buffer where the file is open and off the disk where
 it is not.
 
+When the line a thread sits on no longer says what it said — someone
+pushed while you were reading, or you edited the file you are reviewing
+— the thread carries the code it *was* written against, above the first
+note and marked `was`. A comment is half of a pair and the code is the
+half that moves; without this the note reads as a remark about whatever
+happens to be under it now. The old lines are read out of the checkout
+with `git show`, not from the forge — the commit the note was written
+against is one the repository already has — and a commit that is not
+there any more is asked about once and then left alone.
+
+A comment is wrapped to the window it is drawn in, and to
+`comments.wrap` — 80 columns by default — wherever the window is wider
+than that. It has to be wrapped somewhere: a conversation under the code
+is virtual text, and virtual text takes no `wrap` and no horizontal
+scroll, so a line that runs past the right-hand edge is a line that
+cannot be read at all. The second limit is for the other end of it —
+prose set across the whole of a wide editor is prose the eye loses its
+place in. `comments.wrap = false` wraps to the window and nothing
+narrower.
+
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
 `q` discards it. Keeping is the default because a review is written as
 a whole: a comment posted the moment it is typed cannot be taken back
-after reading the next file. A kept comment is drawn on its line in its
+after reading the next file.
+
+A **reply** is the other way round — `<C-s>` sends it, `<C-p>` keeps it
+— because a reply is half of a conversation somebody else is already
+in. GitLab files an unsent reply with your other drafts rather than
+under the note it answers, so a kept reply is invisible to the person
+waiting for it and invisible in the thread until the whole review goes
+out. (Nemeton puts one back in the thread it belongs to wherever it
+draws it, so a reply kept by the other key — or in GitLab's own web
+interface — is at least visible to you.) A kept comment is drawn on its line in its
 own colour with a pencil in the gutter, and `s` on `<leader>md` sends
 every one of them at once — which is what submitting a review is, and
 which is why it sits beside the approval and the count of what is still
@@ -180,6 +227,13 @@ unsent.
 
 All of it is in `lua/nemeton/config.lua`, one table, and every key can be
 set to `false` to bind the function yourself.
+
+CI states are drawn with the glyphs in `config.ci` — `✓` passed, `✗`
+failed, `◐` running, and so on. They are text-presentation codepoints on
+purpose: `U+2714 HEAVY CHECK MARK`, which the tick used to be, is in
+Unicode's emoji set, and a terminal with an emoji font draws it from
+there — a picture in that font's own colour rather than a tick in the
+green nemeton asked for. Nerd Font icons go in that table just as well.
 
 ## Configuration
 
@@ -295,6 +349,7 @@ lua/nemeton/
   conversation.lua  every thread at once, to read rather than to walk
   qf.lua         every thread, into the quickfix list
   jobs.lua       what CI did, job by job
+  trace.lua      what one job printed, in a tab
   compose.lua    the buffer you write a comment in
   edit.lua       rewriting and deleting a comment already posted
   log.lua        every subprocess, into ~/.local/state, with the token

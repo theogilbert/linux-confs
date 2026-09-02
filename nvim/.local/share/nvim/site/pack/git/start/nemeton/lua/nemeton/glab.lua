@@ -433,19 +433,21 @@ function M.sync(args)
   return res
 end
 
---- Open merge requests on the project this repository points at.
+--- Merge requests on the project this repository points at, in `state`
+--- -- "opened", "merged", "closed" or "all". Nil for the configured
+--- one, which is what a queue opens on.
 ---
 --- `--output json` is the API's own objects, so the fields here are the
 --- fields the GitLab docs describe -- iid, source_branch, diff_refs and
 --- the rest -- and not a shape glab invented for its table view.
-function M.mr_list(root, cb)
+function M.mr_list(root, state, cb)
   local args = { "mr", "list", "--output", "json", "--per-page", tostring(config.list.per_page) }
   if config.list.order then
     vim.list_extend(args, { "--order", config.list.order })
   end
   -- `mr list` has no --state: the states are three separate flags, and
   -- "opened" is what you get by passing none of them.
-  local state = config.list.state
+  state = state or config.list.state
   if state == "merged" then
     table.insert(args, "--merged")
   elseif state == "closed" then
@@ -596,6 +598,30 @@ function M.pipeline_jobs(root, pipeline_id, cb)
     { "api", ("projects/:fullpath/pipelines/%s/jobs?per_page=100"):format(pipeline_id) },
     { cwd = root },
     cb
+  )
+end
+
+--- What one job printed while it ran.
+---
+--- Not `json`: `/trace` answers with the log itself, as text, and the
+--- decoder would refuse the first line of it. So this is the one call
+--- here whose body is handed back as it arrived -- ANSI escapes,
+--- section markers and all. `jobs.log_lines` is what makes it readable.
+---
+--- Whole rather than paginated, because a trace is not a list: GitLab
+--- sends the last of a running job's output and all of a finished one's,
+--- and there is no page after it.
+function M.job_trace(root, job_id, cb)
+  run(
+    { "api", ("projects/:fullpath/jobs/%s/trace"):format(job_id) },
+    { cwd = root },
+    function(ok, out, err)
+      if not ok then
+        cb(nil, M.reason(err ~= "" and err or out))
+        return
+      end
+      cb(out or "", nil)
+    end
   )
 end
 

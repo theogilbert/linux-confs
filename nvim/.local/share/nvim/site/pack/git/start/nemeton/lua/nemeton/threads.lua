@@ -28,15 +28,28 @@ local function anchor(position)
   end
   -- A multi-line comment reports its span in `line_range`; the line it
   -- is drawn against is the last one, which is where the reviewer's
-  -- cursor was when they wrote it.
-  local range_end = position.line_range and position.line_range["end"]
+  -- cursor was when they wrote it. The first is kept as well -- not to
+  -- draw the marker anywhere else, but because "the code this comment
+  -- is about" is the whole of the span and not just the row it ends on.
+  local range = position.line_range or {}
+  local range_end = range["end"]
   local new_line = (range_end and range_end.new_line) or position.new_line
   local old_line = (range_end and range_end.old_line) or position.old_line
   if new_line then
-    return { path = position.new_path or position.old_path, line = new_line, side = "new" }
+    return {
+      path = position.new_path or position.old_path,
+      line = new_line,
+      first = (range.start and range.start.new_line) or new_line,
+      side = "new",
+    }
   end
   if old_line then
-    return { path = position.old_path or position.new_path, line = old_line, side = "old" }
+    return {
+      path = position.old_path or position.new_path,
+      line = old_line,
+      first = (range.start and range.start.old_line) or old_line,
+      side = "old",
+    }
   end
   -- A file-level comment: a position, but no line on either side.
   return nil
@@ -84,11 +97,15 @@ local function thread_of(discussion)
     resolved = resolvable and resolved or false,
     path = place and place.path,
     line = place and place.line,
+    first_line = place and place.first,
     side = place and place.side,
     -- The shas the thread was written against. Kept because a reply is
     -- fine without them but a *comparison* -- "is this thread still
-    -- pointing at the code it was written about" -- needs them.
+    -- pointing at the code it was written about" -- needs them. The
+    -- base as well as the head: a thread on a deleted line is against
+    -- the old side of the diff, and the old side is the base.
     head_sha = first and first.position and first.position.head_sha,
+    base_sha = first and first.position and first.position.base_sha,
   }
 end
 
@@ -114,9 +131,19 @@ end
 --- is the only person it can be -- GitLab shows a draft note to nobody
 --- else, which is the whole reason the feature is safe to use in the
 --- middle of somebody else's review.
+---
+--- ...except an unsent *reply*, which does have a discussion. GitLab
+--- files it with your other drafts rather than under the note it
+--- answers, and carries the discussion it belongs to: `replies` is
+--- those, kept apart so that `attach_drafts` can put them back where
+--- they were written. Left here they would be comments on the merge
+--- request as a whole -- an answer to a question about line 42, filed
+--- under "on the merge request", where nobody reading the thread would
+--- ever find it.
 function M.parse_drafts(drafts)
-  local inline, overview = {}, {}
+  local inline, overview, replies = {}, {}, {}
   for _, d in ipairs(drafts or {}) do
+    local into = d.discussion_id or d.in_reply_to_discussion_id
     local place = anchor(d.position)
     local t = {
       id = d.id,
@@ -127,11 +154,56 @@ function M.parse_drafts(drafts)
       individual_note = false,
       path = place and place.path,
       line = place and place.line,
+      first_line = place and place.first,
       side = place and place.side,
+      head_sha = d.position and d.position.head_sha,
+      base_sha = d.position and d.position.base_sha,
     }
-    table.insert(t.line and inline or overview, t)
+    if into then
+      table.insert(replies, { id = d.id, discussion_id = into, body = d.note or "" })
+    else
+      table.insert(t.line and inline or overview, t)
+    end
   end
-  return { inline = inline, overview = overview }
+  return { inline = inline, overview = overview, replies = replies }
+end
+
+--- Puts the unsent replies back into the threads they answer, as the
+--- last note of each -- which is where they will be once the review
+--- goes out, and where the person reading the argument looks for them.
+---
+--- In place, and safe to run again: the threads are rebuilt from the
+--- API on every refresh, so nothing here accumulates.
+function M.attach_drafts(list, replies)
+  if not (list and replies and #replies > 0) then
+    return
+  end
+  local by_id = {}
+  for _, t in ipairs(list) do
+    by_id[t.id] = t
+  end
+  for _, d in ipairs(replies) do
+    local t = by_id[d.discussion_id]
+    if t then
+      table.insert(t.notes, { id = d.id, author = "you", body = d.body, draft = true })
+    end
+  end
+end
+
+--- Whether anything in a thread is yours and not sent yet -- the thread
+--- itself, or a reply folded into it. What the gutter marks with a
+--- pencil: an unsent comment is a state of you rather than of the
+--- conversation, and it is owed an action wherever in the thread it is.
+function M.unsent(thread)
+  if thread.draft then
+    return true
+  end
+  for _, note in ipairs(thread.notes or {}) do
+    if note.draft then
+      return true
+    end
+  end
+  return false
 end
 
 --- by_file[path][line] = { thread, ... }, in the order they were opened.
@@ -151,6 +223,15 @@ function M.index(inline)
     table.insert(at, t)
   end
   return by_file
+end
+
+--- How many lines above its own a thread reaches: 0 for a comment on
+--- one line, and the rest of the span for a comment written across
+--- several. The three windows that draw a thread all have to ask a file
+--- for "the lines this is about", and this is the one number they need
+--- to do it.
+function M.span(thread)
+  return math.max((thread.line or 0) - (thread.first_line or thread.line or 0), 0)
 end
 
 --- The body of a suggestion comment: GitLab's fenced block, with the
@@ -320,6 +401,75 @@ function M.age(iso, now)
   return os.date(fmt, at)
 end
 
+--- The longest prefix of `s` that fits in `width` columns, whole
+--- characters only.
+local function fit(s, width)
+  local out, w = "", 0
+  for i = 0, vim.fn.strchars(s) - 1 do
+    local ch = vim.fn.strcharpart(s, i, 1)
+    local cw = vim.fn.strdisplaywidth(ch)
+    if w + cw > width then
+      -- A first character wider than the room it is given goes in
+      -- anyway; otherwise nothing ever fits and the cut never ends.
+      if out == "" then
+        out = ch
+      end
+      break
+    end
+    out, w = out .. ch, w + cw
+  end
+  return out
+end
+
+--- `text`, cut into lines no wider than `width` columns.
+---
+--- Because a comment that runs off the right-hand edge cannot be read
+--- at all where it is mostly drawn: a virtual line takes no `wrap` and
+--- no horizontal scroll -- `zl` moves the file underneath and leaves
+--- the virtual text where it was -- so whatever is past the edge of the
+--- window is simply gone. A comment is prose somebody else wrote at
+--- whatever width they had, and this is the only place it can be
+--- broken.
+---
+--- Broken at spaces, and inside a word only when the word is wider than
+--- a whole line on its own -- a URL in a narrow split. Cutting one is
+--- ugly; the alternative is a line that stops in the middle and does
+--- not say so.
+---
+--- The line's own leading whitespace survives on the first piece, so an
+--- indented bullet keeps the shape it was written in; the pieces after
+--- it start at the rail, which is where a continuation is least likely
+--- to read as a new point.
+local function wrap(text, width)
+  if not width or width < 1 or vim.fn.strdisplaywidth(text) <= width then
+    return { text }
+  end
+  local out = {}
+  local line, empty = text:match("^%s*"), true
+  for space, word in text:gmatch("(%s*)(%S+)") do
+    local candidate = empty and (line .. word) or (line .. space .. word)
+    if vim.fn.strdisplaywidth(candidate) <= width then
+      line, empty = candidate, false
+    else
+      if not empty then
+        table.insert(out, line)
+      end
+      -- A word with no line wide enough to hold it, cut into ones that
+      -- are.
+      while vim.fn.strdisplaywidth(word) > width do
+        local head = fit(word, width)
+        table.insert(out, head)
+        word = word:sub(#head + 1)
+      end
+      line, empty = word, false
+    end
+  end
+  if not empty then
+    table.insert(out, line)
+  end
+  return #out > 0 and out or { text }
+end
+
 --- A thread as coloured lines, for the peek float, the overall-notes
 --- window and the expanded in-buffer view. One shape for all three, so
 --- the three never drift apart.
@@ -344,9 +494,27 @@ end
 --- suggestion is drawn as the diff it is; missing -- the overall-notes
 --- window, where there is no file to read -- it is drawn as the block
 --- of new lines alone.
+---
+--- `opts.was` -- the lines the thread was written against, when they
+--- are not the lines it now sits on. Drawn above the first note; see
+--- `session.was`, which is what decides that they differ.
+---
+--- `opts.width` -- how many columns the caller has to draw into, rail
+--- included. Given, the notes are wrapped to fit; missing, they are
+--- returned as they were written, which is what the one-line-per-thread
+--- index wants.
 function M.render(thread, opts)
   opts = opts or {}
   local out = {}
+  -- The width a line of this thread may reach. The window is one half
+  -- of it; `config.comments.wrap` is the other -- prose set across a
+  -- 200-column editor is prose nobody's eye can get back from the end
+  -- of a line to the start of the next -- and the narrower of the two
+  -- wins.
+  local limit = opts.width
+  if limit and config.comments.wrap then
+    limit = math.min(limit, config.comments.wrap)
+  end
   -- The rail is the one part of a thread that is a colour before it is
   -- anything else -- it runs the height of the block and carries no
   -- words -- so it is where the state goes: unsent, settled, or still
@@ -370,6 +538,35 @@ function M.render(thread, opts)
   -- rail, every answer to it is set in.
   local indent = config.comments.reply_indent or ""
   local mark = config.comments.reply_mark or ""
+
+  -- One line of text, wrapped and put down behind `lead`. `sign` is the
+  -- "+ " or "- " a suggestion's lines carry, and the "was " on a line
+  -- of code that has changed since: it belongs to the first piece only,
+  -- and the pieces after it are indented past where it would be, so a
+  -- wrapped line stays inside the column its marker put it in rather
+  -- than reading as another line with no marker at all.
+  local function body(lead, text, hl, sign)
+    sign = sign or ""
+    local pad = (" "):rep(vim.fn.strdisplaywidth(sign))
+    local room = limit and (limit - vim.fn.strdisplaywidth(lead) - #pad)
+    for j, piece in ipairs(wrap(text, room)) do
+      table.insert(out, { { lead, rail[2] }, { (j > 1 and pad or sign) .. piece, hl } })
+    end
+  end
+
+  -- What the thread is *about*, when that is no longer what is on the
+  -- line it is drawn against. A comment is half of a pair and the code
+  -- is the half that moves: somebody pushes, or you edit the file while
+  -- you are reading it, and the note is still on line 42 while line 42
+  -- has come to say something else. Drawn above the first word anybody
+  -- said, because it is what they were looking at when they said it.
+  --
+  -- In the colour a line taken away is drawn in, which is what this is:
+  -- code that was there when the comment was written and is not there
+  -- now.
+  for i, line in ipairs(opts.was or {}) do
+    body(rail[1], line, "NemetonRemoved", i == 1 and "was  " or "     ")
+  end
 
   -- One entry per thread rather than the whole argument: an index of
   -- what has been said is read to decide what to open, and the answers
@@ -404,7 +601,7 @@ function M.render(thread, opts)
         "NemetonPath",
       })
     end
-    if i == 1 and thread.draft then
+    if note.draft or (i == 1 and thread.draft) then
       table.insert(head, { " · unsent", "NemetonDraft" })
     end
     if i == 1 and thread.resolved then
@@ -433,22 +630,22 @@ function M.render(thread, opts)
       local fence = l:match("^%s*```(.*)$")
       if fence and suggesting then
         suggesting = false
-        table.insert(out, { { lead, rail[2] }, { l, "NemetonMeta" } })
+        body(lead, l, "NemetonMeta")
       elseif fence and fence:match("^suggestion") then
         suggesting = true
-        table.insert(out, { { lead, rail[2] }, { l, "NemetonMeta" } })
+        body(lead, l, "NemetonMeta")
         -- What it would replace, above what it would put there: a
         -- suggestion is a diff, and half a diff is a block of code with
         -- nothing to compare it to.
         local above = tonumber(fence:match("%-(%d+)")) or 0
         local below = tonumber(fence:match("%+(%d+)")) or 0
         for _, gone in ipairs(opts.replaced and opts.replaced(above, below) or {}) do
-          table.insert(out, { { lead, rail[2] }, { "- " .. gone, "NemetonRemoved" } })
+          body(lead, gone, "NemetonRemoved", "- ")
         end
       elseif suggesting then
-        table.insert(out, { { lead, rail[2] }, { "+ " .. l, "NemetonAdded" } })
+        body(lead, l, "NemetonAdded", "+ ")
       else
-        table.insert(out, { { lead, rail[2] }, { l, body_hl } })
+        body(lead, l, body_hl)
       end
     end
   end

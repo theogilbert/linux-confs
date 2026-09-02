@@ -17,7 +17,8 @@ local function rewrite(thread, note)
   compose.open({
     title = ("!%d  edit %s"):format(
       mr.iid,
-      thread.draft and "the comment you have not sent" or (note.author .. "'s comment")
+      (note.draft or thread.draft) and "the comment you have not sent"
+        or (note.author .. "'s comment")
     ),
     body = note.body,
     on_submit = function(body)
@@ -25,8 +26,9 @@ local function rewrite(thread, note)
         session.notify("unchanged")
         return
       end
-      -- An unsent comment lives at its own endpoint until it is sent.
-      local rewritten = thread.draft and glab.update_draft or glab.update_note
+      -- An unsent comment lives at its own endpoint until it is sent --
+      -- a whole thread of one, or a reply folded into somebody else's.
+      local rewritten = (note.draft or thread.draft) and glab.update_draft or glab.update_note
       rewritten(mr.root, mr.iid, note.id, body, function(data, err)
         if not data then
           session.notify("could not edit: " .. tostring(err), vim.log.levels.ERROR)
@@ -61,14 +63,15 @@ local function remove(thread, note)
   local first = vim.split(note.body, "\n", { plain = true })[1] or ""
   M.confirm(
     ("Delete %s: %s"):format(
-      thread.draft and "the comment you have not sent" or (note.author .. "'s comment"),
+      (note.draft or thread.draft) and "the comment you have not sent"
+        or (note.author .. "'s comment"),
       first:sub(1, 60)
     ),
     function(yes)
       if not yes then
         return
       end
-      local drop = thread.draft and glab.delete_draft or glab.delete_note
+      local drop = (note.draft or thread.draft) and glab.delete_draft or glab.delete_note
       drop(mr.root, mr.iid, note.id, function(ok, err)
         if not ok then
           session.notify("could not delete: " .. tostring(err), vim.log.levels.ERROR)
@@ -107,8 +110,16 @@ local function pick(thread, prompt, fn)
   end)
 end
 
---- A reply into `thread`: kept for the review by default, posted on
---- the spot by the composer's other key.
+--- A reply into `thread`: posted on the spot, or kept for the review by
+--- the composer's other key.
+---
+--- Posted by default, unlike a new thread. A reply is half of a
+--- conversation somebody else is already in: kept, it is invisible to
+--- them and invisible in the thread it answers -- GitLab files an
+--- unsent reply with your other drafts rather than under the note it
+--- was written against -- until the review is published. A remark of
+--- your own can wait for the whole review; an answer to a question
+--- cannot.
 function M.reply(thread)
   local mr = session.current
   if not mr or not thread then
@@ -122,6 +133,7 @@ function M.reply(thread)
   local to = thread.notes[1].author
   compose.open({
     title = ("!%d  reply to %s"):format(mr.iid, to),
+    default = "post",
     on_draft = function(body)
       glab.create_draft(mr.root, mr.iid, body, nil, thread.id, function(data, err)
         if not data then

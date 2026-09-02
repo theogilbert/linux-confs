@@ -8,7 +8,9 @@ return {
   -- that are open and not yet merged; everything else is history.
   list = {
     per_page = 30,
-    -- "opened" | "merged" | "closed" | "all"
+    -- "opened" | "merged" | "closed" | "all". What a queue *opens* on:
+    -- `s` in the window walks the four, for the merged one you are
+    -- reading to find out how something came to be done that way.
     state = "opened",
     -- Passed to `glab mr list --order`. Recently touched first is the
     -- order a review queue is actually worked in.
@@ -118,8 +120,59 @@ return {
     -- or the author of a reply stops lining up with what they said.
     reply_mark = "↳ ",
 
+    -- How far the ground under an expanded conversation stands off the
+    -- page: 0 is the file's own background, 1 is the colour its text is
+    -- drawn in. Lighter in a dark colourscheme, darker in a light one,
+    -- and either way the same background rather than a colour from
+    -- somewhere else.
+    --
+    -- Enough of it to win an argument it is in the middle of: a
+    -- conversation is not the only thing painting backgrounds on these
+    -- lines -- a diff plugin puts red and green ones on the code above
+    -- and below -- and a ground a whisper away from the file's own
+    -- reads as one more band of that. A settled conversation gets half
+    -- as much, so that an argument still going on stands off the page
+    -- and one that is over sinks back towards it. `false` for no band
+    -- at all, where the rail and the dimming carry it alone.
+    ground = 0.15,
+
+    -- The widest a line of a comment is drawn, in columns.
+    --
+    -- Wrapping happens whatever this is set to -- a conversation is
+    -- drawn as virtual lines, and virtual lines cannot be scrolled
+    -- sideways, so a line past the edge of the window is a line that
+    -- cannot be read at all. This is the *other* limit: prose set
+    -- across the whole of a wide editor is prose the eye loses its
+    -- place in on the way back to the next line. `false` to wrap to
+    -- the window and nothing narrower.
+    wrap = 80,
+
     -- Height cap on the peek float, in lines.
     peek_height = 20,
+  },
+
+  -- What a pipeline or a job's state is drawn as. One glyph per state,
+  -- and the several GitLab words that mean the same thing share one:
+  -- there are four spellings of "it has not started yet".
+  --
+  -- Text-presentation codepoints, on purpose. U+2714 HEAVY CHECK MARK
+  -- -- which the tick used to be -- is in Unicode's emoji set, and a
+  -- terminal with an emoji font will draw it from there: a picture, in
+  -- that font's own colour, in place of a tick in the green this plugin
+  -- asked for. U+2713 is the same shape with no emoji in it. Same for
+  -- the cross (U+2717, not U+2716) and the triangle (U+25B8, not
+  -- U+25B6). Nerd Font icons go here just as well.
+  ci = {
+    passed = "✓",
+    failed = "✗",
+    running = "◐",
+    waiting = "◌",
+    manual = "▸",
+    canceled = "⊘",
+    skipped = "⊙",
+    -- A status this plugin has never heard of: drawn, with GitLab's own
+    -- word beside it, rather than left out.
+    unknown = "•",
   },
 
   compose = {
@@ -151,6 +204,11 @@ return {
       delete = "<leader>mD", -- delete a comment in the thread under the cursor
       suggest = "<leader>ms", -- visual mode: suggest a change to these lines
       description = "<leader>md", -- the merge request itself, in a float
+      -- Out here rather than one letter further in, unlike the rest of
+      -- the verbs below: ending a review is not something you go to a
+      -- window to do, and a mode you cannot leave from where you are
+      -- standing is a mode you leave by restarting the editor.
+      close = "<leader>mq", -- put the review away: markers, keys and all
       next = "]m",
       prev = "[m",
 
@@ -171,6 +229,12 @@ return {
     -- The MR list window.
     list = {
       select = "<CR>",
+      -- Open, merged, closed, all -- in that order, round and round.
+      -- A review queue is what is open, which is what the window opens
+      -- on; "how did we end up doing it this way" is a question about
+      -- one that is merged, and it is asked often enough to want a key
+      -- and rarely enough not to want a setting.
+      state = "s",
       refresh = "r",
       browser = "o",
       quit = "q",
@@ -224,9 +288,19 @@ return {
 
     -- The pipeline's jobs.
     jobs = {
+      log = "<CR>", -- what the job under the cursor printed, in a tab
       browser = "o", -- the job under the cursor, on GitLab
       refresh = "r",
       quit = "q",
+    },
+    -- One job's log. A tab of its own rather than a float: a build log
+    -- is thousands of lines that are read by searching, and a window
+    -- over the middle of the editor is the wrong shape for that -- so
+    -- what is bound here is only what a float would have needed.
+    log = {
+      refresh = "R", -- a running job has more of it every second
+      browser = "o",
+      quit = "q", -- closes the tab
     },
 
     -- The composer.

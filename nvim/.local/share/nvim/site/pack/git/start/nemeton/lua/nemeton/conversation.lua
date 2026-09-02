@@ -102,8 +102,27 @@ local function render()
     table.insert(chunks, { { text, "NemetonAuthor" } })
   end
 
+  -- This window is a real buffer with `wrap` on, so nothing here is
+  -- lost at the right-hand edge -- but a wrapped line comes back at
+  -- column zero, outside the rail, and a rail that only reaches half of
+  -- its own thread has stopped being an edge. Wrapping it here keeps
+  -- every line inside it.
+  local width = vim.api.nvim_win_is_valid(M.win or -1) and vim.api.nvim_win_get_width(M.win)
+    or math.min(math.floor(vim.o.columns * 0.7), 100)
+
   local function thread(t)
-    for _, line in ipairs(threads.render(t, { replaced = replaced_in(t) })) do
+    local replaced = replaced_in(t)
+    local drawn = threads.render(t, {
+      replaced = replaced,
+      width = width,
+      -- Read out of the buffer where the file is open and off the disk
+      -- where it is not, which is what `replaced` already does: this
+      -- window is read with no file windows open at all, and "the code
+      -- has changed since" is exactly the thing you cannot see for
+      -- yourself from in here.
+      was = replaced and session.was(t, replaced(threads.span(t), 0)) or nil,
+    })
+    for _, line in ipairs(drawn) do
       table.insert(chunks, line)
       map[#chunks] = t
     end

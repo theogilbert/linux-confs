@@ -86,6 +86,10 @@ function M.redraw(bufnr)
   end
   marks.render(bufnr, by_line, M.current.mode, {
     show_resolved = require("nemeton.config").comments.show_resolved,
+    -- Passed in rather than reached for: this module is built on that
+    -- one, and a drawing module that calls back into the session it is
+    -- drawing for is a circle.
+    was = M.was,
   })
 end
 
@@ -114,6 +118,11 @@ function M.refresh(cb)
     if pending > 0 or M.current ~= mr then
       return
     end
+    -- The unsent replies go back into the threads they answer before
+    -- anything is drawn from them; the threads themselves are rebuilt
+    -- from the forge on every refresh, so this cannot double up.
+    threads.attach_drafts(mr.inline, mr.draft_replies)
+    threads.attach_drafts(mr.overview, mr.draft_replies)
     local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
     mr.by_file = threads.index(all)
     M.redraw_all()
@@ -141,17 +150,101 @@ function M.refresh(cb)
     local parsed = threads.parse_drafts(type(data) == "table" and data or {})
     mr.drafts = parsed.inline
     mr.draft_overview = parsed.overview
+    mr.draft_replies = parsed.replies
     done()
   end)
 end
 
---- Every unsent comment, wherever it sits.
+-- "<sha>:<path>" -> the file's lines as of that commit, or false for
+-- one this checkout cannot show. Keyed by content, so it survives a
+-- refresh; emptied when the session closes, because a review of another
+-- merge request is another set of files.
+local blobs = {}
+
+--- A file as it was at `sha`, or nil while that is not known yet.
+---
+--- `git show` in the checkout rather than a call to the forge: the
+--- commit is one this repository already has -- it is the head the
+--- merge request was at when the note was written, and the branch is
+--- checked out -- and this is asked once per thread on the screen,
+--- which is not a question to answer over the network.
+---
+--- Asynchronous, like everything else that spawns anything, so the
+--- first draw goes out without it and the answer brings a redraw of its
+--- own. Remembered either way: a blob this checkout does not have --
+--- the commit was force-pushed away -- is asked about once rather than
+--- on every redraw for the rest of the session.
+local function blob(root, sha, path)
+  local key = sha .. ":" .. path
+  local have = blobs[key]
+  if have ~= nil then
+    return have or nil
+  end
+  blobs[key] = false
+  local cmd = { "git", "show", key }
+  local done = log.exec(cmd, { cwd = root })
+  vim.system(cmd, { text = true, cwd = root }, function(res)
+    done(res.code, res.stderr)
+    if res.code ~= 0 then
+      return
+    end
+    blobs[key] = vim.split(res.stdout or "", "\n", { plain = true })
+    vim.schedule(function()
+      if M.current then
+        M.redraw_all()
+      end
+    end)
+  end)
+  return nil
+end
+
+--- The code a thread was written against, when it is not the code the
+--- thread is drawn on any more.
+---
+--- A comment is half of a pair, and the code is the half that moves:
+--- someone pushes while you are reading, or you edit the file you are
+--- reviewing, and the note stays on line 42 while line 42 comes to say
+--- something else. The comment then reads as a remark about whatever
+--- happens to be under it, which is worse than no comment at all.
+---
+--- `now` is what is there at this moment, read by whichever window is
+--- drawing -- the buffer under the marker, the file on disk. Nil when
+--- the two agree, which is nearly always, and nil when there is nothing
+--- to compare: an overall comment, a thread with no position, a blob
+--- that has not arrived or never will.
+function M.was(thread, now)
+  local mr = M.current
+  if not (mr and now and thread and thread.line and thread.path) then
+    return nil
+  end
+  -- A thread on a deleted line is against the old side of the diff, and
+  -- the old side is the base of it.
+  local sha = thread.side == "old" and (thread.base_sha or thread.head_sha) or thread.head_sha
+  if not sha then
+    return nil
+  end
+  local lines = blob(mr.root, sha, thread.path)
+  if not lines then
+    return nil
+  end
+  local was = vim.list_slice(lines, thread.first_line or thread.line, thread.line)
+  if #was == 0 or table.concat(was, "\n") == table.concat(now, "\n") then
+    return nil
+  end
+  return was
+end
+
+--- Every unsent comment, wherever it sits -- on a line, on the merge
+--- request, or inside somebody's thread as an answer you have not sent.
+--- Counted rather than read: this is what `publish` sends and what the
+--- windows say is still owed.
 function M.drafts()
   local mr = M.current
   if not mr then
     return {}
   end
-  return vim.list_extend(vim.list_slice(mr.drafts or {}), mr.draft_overview or {})
+  local all = vim.list_extend(vim.list_slice(mr.drafts or {}), mr.draft_overview or {})
+  return vim.list_extend(all, mr.draft_replies or {})
 end
 
 --- Who has approved it, and how many more it needs.
@@ -273,6 +366,7 @@ function M.open(iid, opts)
       -- published.
       drafts = {},
       draft_overview = {},
+      draft_replies = {},
       mode = "signs",
     }
     M.refresh_approvals()
@@ -399,6 +493,7 @@ function M.close()
     return
   end
   M.current = nil
+  blobs = {}
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     marks.clear(bufnr)
   end

@@ -14,11 +14,16 @@ local M = {}
 --- opts.body     -- text to start from, for editing something already said
 --- opts.on_draft(text)  -- the same, for a comment kept rather than sent
 --- opts.on_submit(text) -- called with the body; the window is already gone
+--- opts.default  -- "keep" or "post": which of the two the first key and
+---                  `:w` do. "keep" where both are given and it is not
+---                  said, because a review is written as a whole.
 ---
---- Where both are given, keeping it is what the window does by default
---- and posting is the second key; where only `on_submit` is -- a reply
---- into somebody's thread, an edit of something already posted -- the
---- default key posts.
+--- Two exits from one window, and which of them is the reflex is the
+--- caller's to say. A new thread is kept: it is a remark in a review
+--- nobody has read yet, and it can still be taken back after the next
+--- file. A reply is posted: it is half of a conversation somebody else
+--- is already in, and a conversation held one publish at a time is not
+--- one. The other exit is always there on the second key.
 function M.open(opts)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = "wipe"
@@ -30,11 +35,17 @@ function M.open(opts)
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
   local k = config.keys.compose
+  -- What the first key does, and what is left for the second. Posting
+  -- when the caller asked for it, and when keeping is not on offer at
+  -- all -- an edit of something already posted has nowhere to be kept.
+  local posts = opts.default == "post" or not opts.on_draft
+  local first = (posts and opts.on_submit) or opts.on_draft
+  local second = (posts and opts.on_draft) or (opts.on_draft and opts.on_submit) or nil
   vim.wo[win].winbar = ("%%#NemetonAuthor#%s%%*  %%#NemetonHint#%s %s%s · %s cancel%%*"):format(
     opts.title or "comment",
     k.keep,
-    opts.on_draft and "keep" or "submit",
-    opts.on_draft and (" · " .. k.post .. " post now") or "",
+    posts and "send" or "keep",
+    second and (" · " .. k.post .. " " .. (posts and "keep for the review" or "post now")) or "",
     k.cancel
   )
   vim.wo[win].number = false
@@ -65,23 +76,20 @@ function M.open(opts)
       send(text)
     end
   end
-  -- The default: kept where keeping is possible, posted where it is
-  -- not. This is what <C-s> and `:w` both do.
-  local submit = finish(opts.on_draft or opts.on_submit)
+  -- This is what <C-s> and `:w` both do.
+  local submit = finish(first)
 
   vim.keymap.set({ "n", "i" }, k.keep, submit, {
     buffer = buf,
-    desc = opts.on_draft and "nemeton: keep this comment for the review"
-      or "nemeton: post this comment",
+    desc = posts and "nemeton: post this comment" or "nemeton: keep this comment for the review",
   })
   vim.keymap.set("n", k.cancel, close, { buffer = buf, desc = "nemeton: discard this comment" })
-  if opts.on_draft and k.post ~= "" then
-    vim.keymap.set(
-      { "n", "i" },
-      k.post,
-      finish(opts.on_submit),
-      { buffer = buf, desc = "nemeton: post this comment now" }
-    )
+  if second and k.post ~= "" then
+    vim.keymap.set({ "n", "i" }, k.post, finish(second), {
+      buffer = buf,
+      desc = posts and "nemeton: keep this comment for the review instead"
+        or "nemeton: post this comment now",
+    })
   end
   -- `:w` too -- writing is what the muscle memory does in a buffer that
   -- looks like this one, and `acwrite` means we get told about it.

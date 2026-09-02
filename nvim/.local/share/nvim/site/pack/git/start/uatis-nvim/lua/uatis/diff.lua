@@ -237,15 +237,21 @@ end
 
 M.similarity = similarity
 
-local function push(list, line, from, to)
+--- `partial` marks a range that is PART of a token rather than a whole
+--- one -- the letters that differ inside a word. Callers that draw a
+--- range where the code is, rather than beside it, ask about it: a mark
+--- that narrow says what it means only while there is one of it on the
+--- line.
+local function push(list, line, from, to, partial)
   if to <= from then
     return
   end
   local last = list[#list]
   if last and last.line == line and last.col_end == from then
     last.col_end = to -- merge touching ranges so the mark reads as one
+    last.partial = last.partial or partial or nil
   else
-    table.insert(list, { line = line, col_start = from, col_end = to })
+    table.insert(list, { line = line, col_start = from, col_end = to, partial = partial or nil })
   end
 end
 
@@ -326,10 +332,10 @@ end
 local function char_pair(a_tok, b_tok, ops, adds, dels)
   for _, c in ipairs(ops) do
     if c[2] > 0 then
-      push(dels, a_tok.line, a_tok.col + c[1] - 1, a_tok.col + c[1] - 1 + c[2])
+      push(dels, a_tok.line, a_tok.col + c[1] - 1, a_tok.col + c[1] - 1 + c[2], true)
     end
     if c[4] > 0 then
-      push(adds, b_tok.line, b_tok.col + c[3] - 1, b_tok.col + c[3] - 1 + c[4])
+      push(adds, b_tok.line, b_tok.col + c[3] - 1, b_tok.col + c[3] - 1 + c[4], true)
     end
   end
 end
@@ -415,6 +421,7 @@ end
 ---
 --- Returns { adds, dels }: byte ranges (0-based, end exclusive) of what
 --- was inserted into `new_line` and what was removed from `old_line`.
+--- A range that came from taking a token apart carries `partial`.
 ---
 --- Two granularities, chosen per replaced token. A token replaced by a
 --- similar one is diffed character by character, so adding an `s` marks

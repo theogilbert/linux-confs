@@ -839,6 +839,17 @@ local function names(ranges, text)
   return false
 end
 
+--- How many of `ranges` were cut out of a token rather than being one.
+local function sub_token(ranges)
+  local n = 0
+  for _, r in ipairs(ranges or {}) do
+    if r.partial then
+      n = n + 1
+    end
+  end
+  return n
+end
+
 --- Whether a line's removals are small enough to read inside the line
 --- that replaced them.
 ---
@@ -853,7 +864,32 @@ end
 --- real code off to the right, or once enough of the line went for the
 --- row to be more removal than line. Past either, the old line is worth a
 --- row of its own.
-local function readable_inline(dels, text)
+---
+--- ...and once a line that has a mark drawn BELOW the token has more
+--- than one edit on it at all. A mark that narrow -- the digit, not the
+--- number -- reads only while the reader has one thing to read: it says
+--- "this much of this word", and that sentence is checkable against the
+--- word it is sitting in and nothing else. `f(50_000, 60_000)` becoming
+--- `f(20_000, 30_000)` puts two of them on one row, four one-character
+--- marks scattered through a line which otherwise looks untouched, to be
+--- paired up left to right before any of them means anything.
+---
+--- Mixing the two granularities is worse still, not better:
+--- `f(50_000, 60_000)` -> `f(2_012, 30_000)` draws a whole number in red
+--- beside its replacement AND a lone digit in red beside its own, so the
+--- same colour in the same line means "this word went" in one place and
+--- "this character went" in another. Which is why the count is of every
+--- mark on the row once any of them is sub-token, and not of the
+--- sub-token ones alone.
+---
+--- A line whose marks are all whole tokens has neither problem: a red
+--- word beside the green word that replaced it says the same thing
+--- however many times it happens, and reads in place.
+local function readable_inline(dels, text, adds)
+  if (sub_token(dels) > 0 or sub_token(adds) > 0)
+    and (#dels > 1 or #(adds or {}) > 1) then
+    return false
+  end
   local bytes = 0
   for _, d in ipairs(dels) do
     bytes = bytes + (d.col_end - d.col_start)
@@ -1006,6 +1042,63 @@ local function delete_anchor(hunk, line_count)
   return math.min(hunk.start_b - 1, math.max(line_count - 1, 0)), false
 end
 
+--- The old rows one new row absorbed, when a deletion happened INSIDE it.
+---
+--- Lines pulled back onto one -- a signature taken off its continuation
+--- rows -- reach here as a pure deletion. difftastic pairs the new line
+--- with the first of the old ones, calls the rest of them unchanged
+--- content with no row of its own, and reports as removed only the rows
+--- that did not survive; the hunk that comes out of that has nothing on
+--- the new side, so it is anchored the way every rowless deletion is,
+--- AFTER the last new row there was. Read inline that says the
+--- parameters were taken out from between the signature and its body,
+--- and says nothing at all about the signature -- which is the one line
+--- that changed.
+---
+--- The pairing knows better. New row R answers to old row `pairs[R]`,
+--- the next new row answers to a later one, and every old row between
+--- the two has no row of its own: R is what they were folded into. A
+--- deletion inside that span came out of the line R is, so it belongs
+--- above R.
+---
+--- The whole span goes with it, not just the removed rows. A before-image
+--- is one statement -- these lines became that one -- and three parameter
+--- rows without the `def place(` that opened them are not the code that
+--- was there. The rows that survived are drawn as what they are: stepped
+--- back, the same way the surviving half of a line is.
+---
+--- Nothing here fires on an ordinary deletion. There the row before the
+--- gap is its own row on both sides, byte for byte, so the span starts at
+--- the first removed line and ends at the last, and a span that is just
+--- the hunk again has nothing to say.
+local function collapsed_span(result, hunk, old_lines, line_text)
+  if hunk.count_b > 0 or hunk.count_a == 0 or not result.pairs then
+    return nil
+  end
+  local first = result.pairs[hunk.start_b]
+  -- Where the construct ends: the old row the NEXT new row answers to.
+  -- Only the next one. A new row with no partner of its own is code that
+  -- was added here, and nothing in the alignment then says how far the
+  -- old construct ran -- which is a question this had better not guess
+  -- at, since every row of the answer is drawn.
+  local after = result.pairs[hunk.start_b + 1]
+  if not first or not after then
+    return nil
+  end
+  -- The row difftastic aligned with `start_b` belongs to the construct
+  -- only where it is not simply still there: an ordinary deletion sits
+  -- under a row that is its own row on both sides, byte for byte.
+  if line_text(hunk.start_b - 1) == old_lines[first] then
+    first = first + 1
+  end
+  local last = math.min(after - 1, #old_lines)
+  local from, to = hunk.start_a, hunk.start_a + hunk.count_a - 1
+  if first > from or last < to or (first == from and last == to) then
+    return nil
+  end
+  return first, last
+end
+
 --- Renders `result` (from diff.compute) onto `bufnr`, which must already
 --- hold the new-side text. `old_lines` is the old side, split into lines.
 ---
@@ -1038,10 +1131,25 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- offered up front, because which of them end up drawn is decided
   -- further down and a second parse would cost more than the few extra
   -- rows do.
+  -- Hunks whose removal happened inside a line the old rows were folded
+  -- into. Worked out once, up here, because the rows a hunk draws decide
+  -- which of the old side needs parsing for its colours.
+  local collapsed = {}
+  for idx, hunk in ipairs(result.hunks or {}) do
+    local first, last = collapsed_span(result, hunk, old_lines, function(row)
+      return vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
+    end)
+    if first then
+      collapsed[idx] = { first = first, last = last }
+    end
+  end
+
   local del_rows = {}
-  for _, hunk in ipairs(result.hunks or {}) do
-    for i = 0, hunk.count_a - 1 do
-      table.insert(del_rows, hunk.start_a + i)
+  for idx, hunk in ipairs(result.hunks or {}) do
+    local span = collapsed[idx]
+    for row = span and span.first or hunk.start_a,
+      span and span.last or (hunk.start_a + hunk.count_a - 1) do
+      table.insert(del_rows, row)
     end
   end
 
@@ -1190,6 +1298,31 @@ function M.render(bufnr, win, result, old_lines, opts)
   for idx, hunk in ipairs(result.hunks or {}) do
     for i = 0, hunk.count_b - 1 do
       claimed_by[hunk.start_b - 1 + i] = idx
+    end
+  end
+
+  -- The text of every new row this render is making a claim about that
+  -- the backend paired with nothing at all. Where a removed line reads
+  -- exactly like one of them, it is that line: it is on screen, drawn as
+  -- new, and it did not go anywhere. See `intact` below.
+  --
+  -- Both halves are the point. A row the render CLAIMS is a row it is
+  -- already saying something about, so saying the opposite about the
+  -- same text is a contradiction the reader is left to settle;
+  -- unchanged code elsewhere in the file is not an answer to "was this
+  -- taken away", since every file has an `end` and a `)` on rows it
+  -- never touched. And a row difftastic paired with nothing is a row it
+  -- could not place: finding the old line's exact text sitting on one is
+  -- as strong as the pairing it did not make.
+  local moved_to = {}
+  if result.pairs then
+    for row in pairs(claimed_by) do
+      if not result.pairs[row + 1] then
+        local text = line_text(row)
+        if text:match("%S") then
+          moved_to[text] = true
+        end
+      end
     end
   end
 
@@ -1364,7 +1497,7 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- something: alignment inside a block is a guess, and a row is
           -- the only place the old text would have been shown.
           merged[i] = {}
-        elseif readable_inline(dels, old_text) then
+        elseif readable_inline(dels, old_text, inline.adds[i] or {}) then
           merged[i] = inline_places(old_text, dels, new_text, inline.adds[i] or {})
         end
         merged_at[hunk.start_b + i - 2] = merged[i]
@@ -1404,7 +1537,7 @@ function M.render(bufnr, win, result, old_lines, opts)
           local new_text = line_text(row)
           local r = old_text ~= new_text and diff.block_diff({ old_text }, { new_text }) or nil
           local dels = r and r.dels or {}
-          if #dels > 0 and readable_inline(dels, old_text) then
+          if #dels > 0 and readable_inline(dels, old_text, r.adds) then
             local places = inline_places(old_text, dels, new_text, r.adds)
             if places then
               merged[old_row - hunk.start_a + 1] = places
@@ -1462,18 +1595,28 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- and green over them says the one thing that is not true.
             --
             -- So a span is kept only where the character comparison
-            -- found something inserted inside it. That comparison is the
-            -- same one the removal drawn in place came from, which is
-            -- why this is asked only of a row that has one: elsewhere
-            -- there is no second opinion to weigh difftastic's atom
-            -- against, and the atom stands.
+            -- found something inserted inside it. Asked of a row that
+            -- comparison found a removal on -- elsewhere there is no
+            -- second opinion to weigh difftastic's atom against, and the
+            -- atom stands.
+            --
+            -- Asked of the removal, not of where it ended up. Whether the
+            -- old text is drawn inside this line or on a row above it is
+            -- a decision about layout, and it must not change what the
+            -- new side SAYS: `f(50_000, 60_000)` -> `f(20_000, 30_000)`
+            -- takes its old line back to a row of its own, and reading
+            -- the merge as the licence to narrow left that row marking
+            -- the `5` and the `6` while the line under it marked the
+            -- whole of `20_000` and `30_000` -- the two halves of one
+            -- comparison disagreeing about which characters are the edit.
             --
             -- Narrowed only where difftastic parsed the file. In text
             -- mode every atom is prose -- a changed sentence is meant to
             -- be tinted whole with its new words picked out of it -- so
             -- there a span keeps its width, and only a span with nothing
             -- inserted in it at all is dropped.
-            if inline and merged_at[row] and #merged_at[row] > 0 then
+            local lost = inline and inline.dels[i + 1]
+            if lost and #lost > 0 then
               spans = inserted_within(spans, inline.adds[i + 1] or {},
                 not result.prose)
             end
@@ -1722,13 +1865,25 @@ function M.render(bufnr, win, result, old_lines, opts)
       -- it never closes. Where most of the block came through, there is
       -- no such statement to spoil: the hunk is an edit INSIDE surviving
       -- code, and the rows that changed are the whole of what it did.
+      --
+      -- ...and where the alignment is WRONG, the line is still on screen
+      -- -- just not where the pairing said it would be. A docstring that
+      -- gains two lines in the middle is one changed atom to difftastic,
+      -- so it lays the old sentences alongside the new ones in order and
+      -- the last of them comes out against text it has nothing to do
+      -- with. That row was drawn in red above the line it was paired
+      -- with while the very same sentence was drawn in green four rows
+      -- below, removed and added back at once, and both of those cannot
+      -- be true. `moved_to` is the second reading: the row is on a new
+      -- line the render already claims, so it is on screen either way.
       local intact = {}
       if result.anchor then
         for i = 0, hunk.count_a - 1 do
           local old_row = hunk.start_a + i
           local at = result.anchor[old_row]
-          if at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
-            and line_text(at - 1) == old_lines[old_row] then
+          if (at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
+            and line_text(at - 1) == old_lines[old_row])
+            or moved_to[old_lines[old_row] or ""] then
             intact[old_row] = true
           end
         end
@@ -1783,11 +1938,24 @@ function M.render(bufnr, win, result, old_lines, opts)
       end
       local aligned = result.anchor ~= nil and alike * 2 > hunk.count_a
 
-      for i = 0, hunk.count_a - 1 do
-        local text = old_lines[hunk.start_a + i]
+      -- The rows to draw. Normally the hunk's own; where the removal
+      -- happened inside a line the old rows were folded into, the whole
+      -- of what was folded, so the before-image is the construct that
+      -- was there rather than the middle of it.
+      local span = collapsed[hidx]
+      local from = span and span.first or hunk.start_a
+      local upto = span and span.last or (hunk.start_a + hunk.count_a - 1)
+      for old_row = from, upto do
+        local i = old_row - hunk.start_a
+        local text = old_lines[old_row]
+        -- A row of the span the removals never touched came through the
+        -- edit: it is on screen, inside the line below. Drawn as what it
+        -- is -- stepped back, the same way the surviving half of a line
+        -- is -- rather than in the colour for code that went.
+        local survived = span ~= nil and not del_marked[old_row]
         -- ...except where it was already drawn inside the line below, or
         -- is still sitting there unchanged.
-        if text ~= nil and not merged[i + 1] and not intact[hunk.start_a + i] then
+        if text ~= nil and not merged[i + 1] and not intact[old_row] then
           -- Where the removed characters are known, the rest of the old
           -- line is context: it is drawn dimmed so the eye lands on what
           -- actually went away rather than on a solid red band that says
@@ -1811,15 +1979,15 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- that two names in it were.
           local dels = inline and inline.dels[i + 1]
           if (not dels or #dels == 0) and result.precise then
-            local reported = del_marked[hunk.start_a + i]
+            local reported = del_marked[old_row]
             dels = reported and names(reported, text) and reported or nil
           end
           if dels and rewritten(dels, text) then
             dels = nil
           end
-          local runs = syn and syn[hunk.start_a + i]
+          local runs = syn and syn[old_row]
           local chunks = { { marker .. pad, "UatisSign" } }
-          if dels and #dels > 0 then
+          if (dels and #dels > 0) or survived then
             -- One band per column range, with the old line's own syntax
             -- colours running through both of them: the two backgrounds
             -- say which words went, and the foreground goes on saying
@@ -1841,7 +2009,7 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- right only where there is no syntax to put underneath it.
             local gone = runs and "UatisDeleteBg" or "UatisDelete"
             local at = 0
-            for _, d in ipairs(dels) do
+            for _, d in ipairs(dels or {}) do
               local s = math.min(d.col_start, #text)
               local e = math.min(d.col_end, #text)
               if s > at then
@@ -1874,7 +2042,11 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- was measured against is the one immediately above it.
           -- Without an alignment there is nothing finer to say than
           -- "these lines became those", and the block is that.
-          local at = aligned and result.anchor[hunk.start_a + i]
+          -- A span is one statement about one line, so it goes as a
+          -- block above that line -- not spread by an alignment which,
+          -- for rows with no row of their own, says only where they came
+          -- in the old file.
+          local at = not span and aligned and result.anchor[old_row]
           if at then
             add_before(math.min(at - 1, math.max(line_count - 1, 0)), true, { chunks })
           else
@@ -1884,6 +2056,9 @@ function M.render(bufnr, win, result, old_lines, opts)
         end
       end
       local row, above = delete_anchor(hunk, line_count)
+      if span then
+        row, above = math.max(hunk.start_b - 1, 0), true
+      end
       if #virt > 0 then
         add_before(row, above, virt)
       end

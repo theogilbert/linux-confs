@@ -974,6 +974,48 @@ follow_visible = function(pane)
   end
 end
 
+--- Puts the list's cursor on the row for whatever `bufnr` holds.
+---
+--- The cursor IS how the list says where you are -- the row it sits on is
+--- the one drawn as current -- so it is put back on every arrival, not
+--- only on the arrivals that change which file that is. A list left on
+--- the row of the file you came back FROM, or scrolled somewhere else by
+--- hand on the way past, is a list pointing at the wrong file, and it
+--- points at it for as long as you stay.
+---
+--- A buffer the list has no row for -- a scratch, a terminal, a file the
+--- branch never touched -- moves nothing. The mark stays on the file you
+--- were reading, which is still the file the review is about.
+---
+--- The view's own path first, since a commit read at `uatis://at/...` is
+--- a file of the review with a name no path can be recovered from.
+function M.point_at(pane, bufnr)
+  local view = view_mod.get(bufnr)
+  local relpath = view and view.relpath
+    or view_mod.relpath(pane.root, vim.api.nvim_buf_get_name(bufnr))
+  if not relpath then
+    return
+  end
+  for i, f in ipairs(pane.files or {}) do
+    if f.path == relpath or f.old_path == relpath then
+      if pane.file_idx ~= i then
+        pane.file_idx = i
+        -- Folded out of sight is not "no row": the file you have just
+        -- arrived at is worth opening the directories that hide it.
+        -- Only on the arrival that changes which file is current,
+        -- though, or a fold would not survive a window switch.
+        M.reveal(pane, i)
+        if pane.list_buf then
+          filelist.render(pane) -- which ends by syncing the cursor
+          return
+        end
+      end
+      filelist.sync_cursor(pane)
+      return
+    end
+  end
+end
+
 --- `<leader>gu` in a file this review does not list yet. Answered by the
 --- review that is already running rather than by resolving a second
 --- revision of our own: two comparisons on one screen, one of them a
@@ -1288,33 +1330,21 @@ local function setup_watchers(pane)
         or ev.buf == pane.list_buf then
         return
       end
-      local view = view_mod.get(ev.buf)
-      if not view then
+      if not view_mod.get(ev.buf) then
         -- A file this review lists is annotated on arrival, however you
         -- arrived. It binds `]f`/`[f` itself, so it is not lent them too:
         -- two owners of one mapping, and whichever gave it back second
         -- would put the other's back.
-        if follow(pane, ev.buf, vim.api.nvim_get_current_win()) then
-          return
-        end
-        -- No comparison on this buffer, so nothing to highlight in the
-        -- list -- but the list is still open, and stepping it is about
-        -- the list.
-        lend_keys(pane, ev.buf)
-        return
-      end
-      for i, f in ipairs(pane.files or {}) do
-        if f.path == view.relpath or f.old_path == view.relpath then
-          if pane.file_idx ~= i then
-            pane.file_idx = i
-            M.reveal(pane, i)
-            if pane.list_buf then
-              filelist.render(pane)
-            end
-          end
-          return
+        if not follow(pane, ev.buf, vim.api.nvim_get_current_win()) then
+          -- No comparison on this buffer -- but the list is still open,
+          -- and stepping it is about the list.
+          lend_keys(pane, ev.buf)
         end
       end
+      -- Either way the list says where you are, and a file it lists is
+      -- one it lists whether or not it has just been annotated: the row
+      -- is moved to for the buffer, not for the attaching.
+      M.point_at(pane, ev.buf)
     end,
   })
 

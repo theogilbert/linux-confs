@@ -7,8 +7,64 @@
 -- render it as.
 
 local config = require("nemeton.config")
+local win = require("nemeton.win")
 
 local M = {}
+
+-- How many composers this editor has opened, which is where their
+-- names come from.
+--
+-- A name apiece rather than one name, because two can be open at once:
+-- rewriting what you said last week and then writing something new on
+-- the line under it is one movement, and Neovim refuses a second
+-- buffer called what the first is called -- with an E95 out of its own
+-- guts, in the middle of a keypress that had nothing wrong with it.
+local opened = 0
+
+--- Completion for `@name`, on this buffer alone.
+---
+--- `omnifunc` rather than a completion engine: this plugin has no
+--- dependencies and is not about to grow one over a menu. `<C-x><C-o>`
+--- is where a Vim user looks for a list of what fits here, and anybody
+--- with an engine can point it at `nemeton.mentions.candidates` --
+--- which is why that is a function and not a closure in this file.
+---
+--- The menu comes up on its own only where `completeopt` can be held
+--- for one buffer, which is Neovim 0.11. Older, setting it globally
+--- would change how completion behaves in every other buffer of the
+--- editor for the length of a comment, and a menu that picks the first
+--- name for you is worse than no menu at all.
+local function mentions_on(buf, window)
+  if not config.compose.mentions then
+    return
+  end
+  local session = require("nemeton.session")
+  local mentions = require("nemeton.mentions")
+  mentions.prefetch(session.root())
+  vim.bo[buf].omnifunc = "v:lua.require'nemeton.mentions'.omnifunc"
+  local held = config.compose.mention_menu
+    and pcall(function()
+      vim.bo[buf].completeopt = "menu,menuone,noselect"
+    end)
+  if not held then
+    return
+  end
+  vim.api.nvim_create_autocmd("TextChangedI", {
+    buffer = buf,
+    desc = "nemeton: the names behind an @",
+    callback = function()
+      if vim.fn.pumvisible() == 1 or vim.api.nvim_get_current_win() ~= window then
+        return
+      end
+      -- Asked of the same function the menu is filled from, so there is
+      -- one answer to "is this an @ that means somebody": a mention
+      -- that would not complete does not put a menu up either.
+      if mentions.omnifunc(1, nil) >= 0 then
+        vim.api.nvim_feedkeys(vim.keycode("<C-x><C-o>"), "n", false)
+      end
+    end,
+  })
+end
 
 --- opts.title    -- shown in the winbar, says what this comment attaches to
 --- opts.body     -- text to start from, for editing something already said
@@ -29,11 +85,13 @@ function M.open(opts)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].buftype = "acwrite"
-  vim.api.nvim_buf_set_name(buf, "nemeton://compose")
+  opened = opened + 1
+  vim.api.nvim_buf_set_name(buf, ("nemeton://compose/%d"):format(opened))
 
+  local back = win.came_from()
   vim.cmd(("botright %dsplit"):format(config.compose.height))
-  local win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win, buf)
+  local window = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(window, buf)
   local k = config.keys.compose
   -- What the first key does, and what is left for the second. Posting
   -- when the caller asked for it, and when keeping is not on offer at
@@ -41,22 +99,26 @@ function M.open(opts)
   local posts = opts.default == "post" or not opts.on_draft
   local first = (posts and opts.on_submit) or opts.on_draft
   local second = (posts and opts.on_draft) or (opts.on_draft and opts.on_submit) or nil
-  vim.wo[win].winbar = ("%%#NemetonAuthor#%s%%*  %%#NemetonHint#%s %s%s · %s cancel%%*"):format(
+  vim.wo[window].winbar = ("%%#NemetonAuthor#%s%%*  %%#NemetonHint#%s %s%s · %s cancel%%*"):format(
     opts.title or "comment",
     k.keep,
     posts and "send" or "keep",
     second and (" · " .. k.post .. " " .. (posts and "keep for the review" or "post now")) or "",
     k.cancel
   )
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = "no"
-  vim.wo[win].spell = true
+  mentions_on(buf, window)
+  vim.wo[window].number = false
+  vim.wo[window].relativenumber = false
+  vim.wo[window].signcolumn = "no"
+  vim.wo[window].spell = true
 
   local function close()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
+    if vim.api.nvim_win_is_valid(window) then
+      vim.api.nvim_win_close(window, true)
     end
+    -- Every way out of this window ends in the same place: the line the
+    -- comment is about, which is where you were reading.
+    back()
   end
 
   --- `send` is what to do with the text: posted now, or kept unsent.
@@ -105,7 +167,7 @@ function M.open(opts)
   if opts.body and opts.body ~= "" then
     local lines = vim.split(opts.body, "\n", { plain = true })
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_win_set_cursor(win, { #lines, #lines[#lines] })
+    vim.api.nvim_win_set_cursor(window, { #lines, #lines[#lines] })
   else
     vim.cmd("startinsert")
   end

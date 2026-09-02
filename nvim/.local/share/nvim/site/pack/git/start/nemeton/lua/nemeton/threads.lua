@@ -8,6 +8,7 @@
 -- that can be tested without a forge.
 
 local config = require("nemeton.config")
+local sha1 = require("nemeton.sha1")
 
 local M = {}
 
@@ -140,6 +141,12 @@ end
 --- request as a whole -- an answer to a question about line 42, filed
 --- under "on the merge request", where nobody reading the thread would
 --- ever find it.
+---
+--- The note carries GitLab's `position` verbatim as well as the anchor
+--- read out of it, because rewriting a draft has to send it back:
+--- GitLab replaces a draft note's position with whatever the update
+--- says, and a rewrite that says nothing unpins the comment from its
+--- line and leaves it on the merge request as a whole.
 function M.parse_drafts(drafts)
   local inline, overview, replies = {}, {}, {}
   for _, d in ipairs(drafts or {}) do
@@ -148,7 +155,7 @@ function M.parse_drafts(drafts)
     local t = {
       id = d.id,
       draft = true,
-      notes = { { id = d.id, author = "you", body = d.note or "" } },
+      notes = { { id = d.id, author = "you", body = d.note or "", position = d.position } },
       resolvable = false,
       resolved = false,
       individual_note = false,
@@ -237,13 +244,14 @@ end
 --- The body of a suggestion comment: GitLab's fenced block, with the
 --- lines it would replace already in it.
 ---
---- `suggestion:-0+N` means "this line and the N below it", so a comment
---- anchored at the first line of the selection covers the whole of it.
---- The lines start out as they are rather than empty: a suggestion is
---- an edit of what is there, and retyping four lines to change one word
---- is how a reviewer decides not to suggest anything.
+--- `suggestion:-N+0` means "this line and the N above it", counted from
+--- the line the comment is anchored to -- which for a comment on a span
+--- is the last of it, the same line GitLab anchors the thread to. The
+--- lines start out as they are rather than empty: a suggestion is an
+--- edit of what is there, and retyping four lines to change one word is
+--- how a reviewer decides not to suggest anything.
 function M.suggestion_body(lines)
-  local out = { ("```suggestion:-0+%d"):format(math.max(#lines - 1, 0)) }
+  local out = { ("```suggestion:-%d+0"):format(math.max(#lines - 1, 0)) }
   vim.list_extend(out, lines)
   table.insert(out, "```")
   return table.concat(out, "\n")
@@ -257,6 +265,12 @@ end
 --- the diff does not cover it at all. The three are the three cases a
 --- position has to spell differently, which is the whole reason this
 --- exists -- see `M.position`.
+---
+--- `map[new_path].old_pos[n]` is where the old side of the diff had got
+--- to at that line -- the same number for an unchanged line, and the
+--- line an added one was inserted before. It is not part of a position
+--- and is only ever half of a `line_code`, which GitLab builds out of
+--- both sides even where one of them does not exist.
 function M.line_map(changes)
   local list = changes and changes.changes or changes
   if type(list) ~= "table" then
@@ -266,7 +280,7 @@ function M.line_map(changes)
   for _, change in ipairs(list) do
     local path = change.new_path or change.old_path
     if path then
-      local lines = {}
+      local lines, old_pos = {}, {}
       -- `in_hunk` rather than "have we seen a line number yet": a file
       -- added by the merge request has a hunk header of `@@ -0,0 +1,N`,
       -- its old side starts at zero, and reading that zero as "no hunk
@@ -292,12 +306,12 @@ function M.line_map(changes)
         elseif line:sub(1, 3) == "+++" or line:sub(1, 3) == "---" or line:sub(1, 1) == "\\" then -- luacheck: ignore
           -- a header, or "\ No newline at end of file"
         elseif in_hunk and line:sub(1, 1) == "+" then
-          lines[new] = true
+          lines[new], old_pos[new] = true, old
           new = new + 1
         elseif in_hunk and line:sub(1, 1) == "-" then
           old = old + 1
         elseif in_hunk and (line == "" or line:sub(1, 1) == " ") then
-          lines[new] = old
+          lines[new], old_pos[new] = old, old
           old, new = old + 1, new + 1
         end
       end
@@ -307,7 +321,7 @@ function M.line_map(changes)
       -- entirely, so that a comment on it is attempted rather than
       -- refused on the strength of a diff nobody has seen.
       if next(lines) then
-        map[path] = { old_path = change.old_path or path, lines = lines }
+        map[path] = { old_path = change.old_path or path, lines = lines, old_pos = old_pos }
       end
     end
   end
@@ -334,7 +348,14 @@ end
 ---
 --- `old_path` goes alongside `new_path` either way -- GitLab wants both,
 --- and refuses the note outright if either is missing.
-function M.position(diff_refs, path, line, map)
+---
+--- `first` makes it a comment on a span rather than on a line: GitLab
+--- anchors a multi-line thread to the *last* line of it and describes
+--- the rest in `line_range`, so `line` is where the comment sits and
+--- `first` is where the selection started. Both ends have to be lines
+--- of the diff -- a range half outside it is refused here rather than
+--- half drawn on the page.
+function M.position(diff_refs, path, line, map, first)
   local file = map and map[path]
   local pos = {
     base_sha = diff_refs.base_sha,
@@ -345,17 +366,46 @@ function M.position(diff_refs, path, line, map)
     old_path = (file and file.old_path) or path,
     new_line = line,
   }
-  if not file then
-    return pos
+  if file then
+    local was = file.lines[line]
+    if was == nil then
+      return nil
+    end
+    if was ~= true then
+      pos.old_line = was
+    end
+    if first and first < line and file.lines[first] == nil then
+      return nil
+    end
   end
-  local was = file.lines[line]
-  if was == nil then
-    return nil
-  end
-  if was ~= true then
-    pos.old_line = was
+  if first and first < line then
+    pos.line_range =
+      { start = M.line_end(path, first, file), ["end"] = M.line_end(path, line, file) }
   end
   return pos
+end
+
+--- One end of a `line_range`: a line named the way GitLab names the two
+--- ends of a multi-line comment.
+---
+--- `type` is always "new" because the selection was made in a buffer of
+--- the branch, and `old_line` is there only for a line that exists on
+--- both sides, exactly as in the position itself.
+---
+--- The `line_code` is GitLab's own: the sha1 of the path and the line's
+--- number on each side. It is left out when the diff could not be
+--- fetched, which is the one case where its old half cannot be known --
+--- GitLab stores a range without one, and the alternative is inventing
+--- an identifier for a line and hoping nothing looks it up.
+function M.line_end(path, line, file)
+  local was = file and file.lines[line]
+  local old = file and file.old_pos and file.old_pos[line]
+  return {
+    line_code = old and ("%s_%d_%d"):format(sha1.hex(path), old, line) or nil,
+    type = "new",
+    new_line = line,
+    old_line = (was ~= nil and was ~= true) and was or nil,
+  }
 end
 
 --- "2d", "4h", "12 Mar" -- how long ago a note was written.

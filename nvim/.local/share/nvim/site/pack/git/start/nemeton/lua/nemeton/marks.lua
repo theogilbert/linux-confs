@@ -471,9 +471,9 @@ function M.render(bufnr, by_line, mode, opts)
           if #virt > 0 then
             table.insert(virt, {})
           end
-          local drawn = threads.render(t, { replaced = replaced, width = width, was = was(t) })
-          for _, line in ipairs(drawn) do
-            table.insert(virt, line)
+          local body = threads.render(t, { replaced = replaced, width = width, was = was(t) })
+          for _, said in ipairs(body) do
+            table.insert(virt, said)
             settled[#virt] = t.resolved and true or false
           end
         end

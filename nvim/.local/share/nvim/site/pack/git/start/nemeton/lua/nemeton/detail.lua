@@ -145,6 +145,9 @@ function M.approval(a)
   return {
     text = text,
     count = count,
+    -- The verdict as one character, for the row of a list, where the
+    -- names do not fit and the count barely does.
+    glyph = glyph,
     names = names,
     required = required,
     enough = enough,
@@ -593,6 +596,7 @@ function M.float(lines, title, opts)
 
   local width = math.min(math.floor(vim.o.columns * 0.7), 100)
   local height = math.max(3, math.min(#lines + 1, math.floor(vim.o.lines * 0.6)))
+  local back = require("nemeton.win").came_from()
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     width = width,
@@ -614,6 +618,7 @@ function M.float(lines, title, opts)
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
+    back()
   end
   for _, key in ipairs({ opts.quit or "q", "<Esc>" }) do
     vim.keymap.set("n", key, shut, { buffer = buf, nowait = true, desc = "nemeton: close" })

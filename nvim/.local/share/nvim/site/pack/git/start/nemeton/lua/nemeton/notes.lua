@@ -24,6 +24,7 @@ local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
+local win = require("nemeton.win")
 
 local M = {}
 
@@ -189,7 +190,7 @@ function M.edit()
   -- when it does, which is what `write` does for the other two keys.
   vim.api.nvim_create_autocmd("BufWipeout", {
     once = true,
-    pattern = "nemeton://compose",
+    pattern = "nemeton://compose/*",
     callback = function()
       vim.schedule(function()
         if session.current == mr then
@@ -239,6 +240,7 @@ function M.open()
   local height = math.max(4, math.floor(vim.o.lines * 0.5))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
+  local back = win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,
@@ -270,7 +272,16 @@ function M.open()
   })
 
   local bindings = {
-    { k.quit, M.close, "close" },
+    -- `q` puts the cursor back where it was; the keys below that
+    -- close this window are on their way somewhere and must not.
+    {
+      k.quit,
+      function()
+        M.close()
+        back()
+      end,
+      "close",
+    },
     -- The window closes only once the thread turns out to have
     -- somewhere to go: half of what is listed here is on no line, and
     -- pressing this on one of those is a fair thing to do.
@@ -302,7 +313,11 @@ function M.open()
       function()
         local thread = thread_at()
         if thread then
-          require("nemeton.edit").delete(thread)
+          -- Redrawn when the forge has been asked again: this window
+          -- stays up over the comment that has just gone, and a list
+          -- you have to refetch by hand to believe is a list you stop
+          -- believing.
+          require("nemeton.edit").delete(thread, render)
         end
       end,
       "delete a comment in the thread here",

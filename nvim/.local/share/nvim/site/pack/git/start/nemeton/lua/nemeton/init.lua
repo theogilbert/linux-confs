@@ -138,14 +138,27 @@ local function pick_thread(fn)
   end)
 end
 
---- A new thread against the line under the cursor.
+--- Where a comment is going, as a reviewer would say it: "app.lua:12",
+--- or "app.lua:12-15" when it is about more than one line.
+local function span(path, first, last)
+  if last > first then
+    return ("%s:%d-%d"):format(path, first, last)
+  end
+  return ("%s:%d"):format(path, first)
+end
+
+--- A new thread against the line under the cursor, or against the lines
+--- of a visual selection.
 ---
 --- The line is taken from the cursor, not from a diff hunk: you comment
 --- on the code you are reading, and whether that line happens to be part
 --- of the change is GitLab's business, not the editor's. (GitLab refuses
 --- a position on a line outside the diff, and says so; that message is
 --- passed through rather than pre-empted.)
-M.comment = with_session(function()
+---
+--- A selection is anchored to its *last* line, which is where GitLab
+--- puts a multi-line thread and where the reviewer's cursor already is.
+M.comment = with_session(function(first, last)
   local bufnr = vim.api.nvim_get_current_buf()
   local path = session.relpath(bufnr)
   if not path then
@@ -161,30 +174,32 @@ M.comment = with_session(function()
     return
   end
 
-  local line = vim.api.nvim_win_get_cursor(0)[1]
+  first = first or vim.api.nvim_win_get_cursor(0)[1]
+  last = math.max(last or first, first)
+  local where = span(path, first, last)
   -- Worked out before the composer opens rather than after it is
   -- written: a line GitLab will not take a comment on is a paragraph
   -- you should not have been invited to type.
-  local position = threads.position(mr.diff_refs, path, line, mr.lines)
+  local position = threads.position(mr.diff_refs, path, last, mr.lines, first)
   if not position then
-    local why = "%s:%d is not in this merge request's diff"
-      .. " — GitLab anchors a comment to a line the change touches"
-    session.notify(why:format(path, line), vim.log.levels.WARN)
+    local why = "%s is not in this merge request's diff"
+      .. " — GitLab anchors a comment to lines the change touches"
+    session.notify(why:format(where), vim.log.levels.WARN)
     return
   end
   require("nemeton.compose").open({
-    title = ("!%d  %s:%d"):format(mr.iid, path, line),
+    title = ("!%d  %s"):format(mr.iid, where),
     on_submit = function(body)
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
           session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
           return
         end
-        session.notify(("posted on %s:%d"):format(path, line))
+        session.notify("posted on " .. where)
         session.refresh()
       end)
     end,
-    on_draft = M.keep(("kept for %s:%d"):format(path, line), position),
+    on_draft = M.keep("kept for " .. where, position),
   })
 end)
 
@@ -203,6 +218,60 @@ function M.keep(said, position, discussion_id)
       session.refresh()
     end)
   end
+end
+
+--- Opens a merge request for the branch you are on.
+---
+--- The composer, with the first line for the title and the rest for the
+--- description -- which is `git commit`'s shape, and the one every
+--- reviewer already has in their hands. Empty rather than filled in
+--- from the commits: a merge request is written to be read by somebody
+--- else, and a title nobody chose is the first thing a reviewer has to
+--- forgive.
+---
+--- A title that begins `Draft:` makes a draft merge request. That is
+--- GitLab's own rule rather than ours, and it is not worth a key of its
+--- own for something you can type.
+---
+--- No session needed and none started: this is what you do *before*
+--- there is a review, and what comes back is a row in the list.
+function M.create()
+  local root = session.root()
+  if not root then
+    session.notify("not inside a git repository", vim.log.levels.ERROR)
+    return
+  end
+  local branch = session.branch()
+  if not branch then
+    session.notify("not on a branch — a merge request comes from one", vim.log.levels.WARN)
+    return
+  end
+  require("nemeton.compose").open({
+    title = ("new merge request from %s  ·  first line is the title"):format(branch),
+    on_submit = function(text)
+      local lines = vim.split(text, "\n", { plain = true })
+      local title = vim.trim(table.remove(lines, 1))
+      if title == "" then
+        session.notify("a merge request needs a title", vim.log.levels.WARN)
+        return
+      end
+      session.notify("opening a merge request for " .. branch .. "…")
+      glab.mr_create(root, title, vim.trim(table.concat(lines, "\n")), function(url, err)
+        if not url then
+          session.notify("could not open it: " .. tostring(err), vim.log.levels.ERROR)
+          return
+        end
+        session.notify(url)
+        -- The queue is what it is a row of now, so the queue is redrawn
+        -- if it is up. Not opened if it is not: creating one from a
+        -- file you are working on is not asking to review it.
+        local list = require("nemeton.list")
+        if list.win and vim.api.nvim_win_is_valid(list.win) then
+          list.open()
+        end
+      end)
+    end,
+  })
 end
 
 --- Sends every comment you have written and not sent -- which is what
@@ -254,32 +323,29 @@ M.suggest = with_session(function(first, last)
 
   first = first or vim.api.nvim_win_get_cursor(0)[1]
   last = math.max(last or first, first)
-  -- Anchored at the first line of the selection, which is what the
-  -- `-0+N` in the fence is measured from.
-  local position = threads.position(mr.diff_refs, path, first, mr.lines)
+  local where = span(path, first, last)
+  -- Anchored at the last line of the selection: that is the line the
+  -- `-N+0` in the fence is measured back from, and the line GitLab
+  -- anchors a thread on a span to.
+  local position = threads.position(mr.diff_refs, path, last, mr.lines, first)
   if not position then
-    local why = "%s:%d is not in this merge request's diff"
-      .. " — GitLab anchors a suggestion to a line the change touches"
-    session.notify(why:format(path, first), vim.log.levels.WARN)
+    local why = "%s is not in this merge request's diff"
+      .. " — GitLab anchors a suggestion to lines the change touches"
+    session.notify(why:format(where), vim.log.levels.WARN)
     return
   end
   local lines = vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false)
   require("nemeton.compose").open({
-    title = ("!%d  suggest %s:%d%s"):format(
-      mr.iid,
-      path,
-      first,
-      last > first and ("-%d"):format(last) or ""
-    ),
+    title = ("!%d  suggest %s"):format(mr.iid, where),
     body = threads.suggestion_body(lines),
-    on_draft = M.keep(("kept for %s:%d"):format(path, first), position),
+    on_draft = M.keep("kept for " .. where, position),
     on_submit = function(body)
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
           session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
           return
         end
-        session.notify(("suggested on %s:%d"):format(path, first))
+        session.notify("suggested on " .. where)
         session.refresh()
       end)
     end,
@@ -465,6 +531,20 @@ end
 -- you turn off.
 local attached = {}
 
+--- Wraps a verb that takes a span of lines for use from an `x` mapping.
+---
+--- The selection is still live inside the callback: `v` is where it
+--- started and `.` is where the cursor is, in either order. Left with
+--- `<Esc>` first, because what opens next is a window and leaving
+--- visual mode from inside it is not something the reviewer can do.
+local function over_selection(fn)
+  return function()
+    local a, b = vim.fn.line("v"), vim.fn.line(".")
+    vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
+    fn(math.min(a, b), math.max(a, b))
+  end
+end
+
 --- Binds the review keys on a file of the repository, and binds them
 --- again every time something else has had a turn at that buffer.
 ---
@@ -490,22 +570,11 @@ local function attach(bufnr)
     { k.expand, M.expand, "conversations inline" },
     { k.peek, M.peek, "peek at the thread here" },
     { k.comment, M.comment, "comment on this line" },
+    { k.comment, over_selection(M.comment), "comment on these lines", "x" },
     { k.reply, M.reply, "reply to the thread here" },
     { k.edit, M.edit, "edit a comment in the thread here" },
     { k.delete, M.delete, "delete a comment in the thread here" },
-    {
-      k.suggest,
-      function()
-        -- The selection is still live inside an `x` mapping's callback;
-        -- `v` is where it started and `.` is where the cursor is, in
-        -- either order.
-        local a, b = vim.fn.line("v"), vim.fn.line(".")
-        vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
-        M.suggest(math.min(a, b), math.max(a, b))
-      end,
-      "suggest a change to these lines",
-      "x",
-    },
+    { k.suggest, over_selection(M.suggest), "suggest a change to these lines", "x" },
     { k.resolve, M.resolve, "resolve the thread here" },
     { k.description, M.description, "what this merge request is for" },
     { k.notes, M.notes, "every comment on the merge request" },
@@ -557,7 +626,33 @@ local function detach(bufnr)
   marks.clear(bufnr)
 end
 
+--- The one review key that is not about the line under the cursor, and
+--- so the one that is bound everywhere.
+---
+--- `description` opens the merge request's own window -- approvals, CI,
+--- what is unsent, the keys that act on the whole review -- and the
+--- places you reach for it from are exactly the places the buffer-local
+--- keys are not: the quickfix list of threads, the comments window, the
+--- terminal you ran the tests in, a file that is not in this repository
+--- at all. Bound while a review is open and taken away with it, so that
+--- nothing of this plugin is on a key when no review is on.
+local function global_key(bind)
+  local key = config.keys.session.description
+  if not key or key == "" then
+    return
+  end
+  if bind then
+    vim.keymap.set("n", key, M.description, {
+      silent = true,
+      desc = "nemeton: the merge request",
+    })
+  else
+    pcall(vim.keymap.del, "n", key)
+  end
+end
+
 function M.attach_all()
+  global_key(true)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(bufnr) then
       attach(bufnr)
@@ -566,6 +661,7 @@ function M.attach_all()
 end
 
 function M.detach_all()
+  global_key(false)
   for bufnr in pairs(vim.deepcopy(attached)) do
     detach(bufnr)
   end
@@ -578,7 +674,10 @@ local SUBCOMMANDS = {
   comments = M.toggle,
   expand = M.expand,
   peek = M.peek,
-  comment = M.comment,
+  create = M.create,
+  comment = function()
+    M.comment()
+  end,
   reply = M.reply,
   resolve = M.resolve,
   note = M.note,

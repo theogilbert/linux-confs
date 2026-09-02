@@ -17,10 +17,10 @@ same ground as this file, with tags.
 ## What it does
 
 - lists the open merge requests on the project this repository points at,
-  in a float you can read as a table — number, CI, title, size, author,
-  staleness, comment count, and how many comments on it are yours and
-  still unsent — with the commits of the one under the cursor, or what
-  it says it is for, in a pane under it;
+  in a float you can read as a table — number, CI, approvals, title,
+  size, author, staleness, comment count, and how many comments on it
+  are yours and still unsent — with the commits of the one under the
+  cursor, or what it says it is for, in a pane under it;
 - opens one: checks its source branch out with `glab mr checkout`, then
   fetches every discussion on it;
 - marks the lines that carry a thread in the gutter, in every file you
@@ -68,7 +68,7 @@ nvim
 ```
 
 Install it however you install plugins. Calling `setup()` is optional:
-`:Nemeton` and `<leader>mm` are registered when Neovim starts and load
+`:Nemeton` and `<leader>ml` are registered when Neovim starts and load
 nothing until one of them is used, and the first one used wires up the
 rest.
 
@@ -85,6 +85,7 @@ rest.
 | `:Nemeton expand` | the conversations themselves, under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
 | `:Nemeton peek` | the thread under the cursor, in a float |
+| `:Nemeton create` | open a merge request for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
 | `:Nemeton reply` | a reply into the thread under the cursor |
 | `:Nemeton edit` | rewrite a comment in the thread under the cursor |
@@ -107,33 +108,43 @@ rest.
 
 ## Keys
 
-`<leader>mm` opens the list, from anywhere. The rest are buffer-local and
+`<leader>ml` opens the list, from anywhere. The rest are buffer-local and
 exist only on files in the repository while a review is on:
 
 | | |
 |---|---|
 | `<leader>mx` | expand the conversations inline |
 | `<leader>mp` | peek at the thread here |
-| `<leader>ma` | comment on this line |
+| `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>mr` | reply |
 | `<leader>mR` | resolve / reopen |
 | `<leader>me` | edit a comment in the thread here |
 | `<leader>mD` | delete one, after asking |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
-| `<leader>md` | the merge request itself, in a float |
+| `<leader>md` | the merge request itself, in a float — bound globally too, so it works from the quickfix list, a window of this plugin, or a buffer that is not a file at all |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
 
 In the list: `<CR>` opens one, `c` shows its commits under the list and
 `d` what it says it is for, `s` walks the queue through opened → merged
 → closed → all (the title says which, and every row that is not open
-says so beside its title), `r` refetches, `o` opens it in a browser,
-`q` closes. The window opens on the keypress rather than when the forge
+says so beside its title), `]` puts another page of them under the ones
+on the screen, `+` opens one of your own for the branch you are on,
+`r` refetches, `o` opens it in a browser, `q` closes. The window opens on the keypress rather than when the forge
 answers, and `<CR>` leaves it up, saying which merge request it is
 opening, until the review is loaded. A checkout that fails says so in
 the window, folded to fit and whole — what git said was in the way and
 what to do about it, not the nine lines `glab` wrapped around it — and
 `<CR>` puts the queue back.
+
+A row's CI, its approvals and how much it changes are three questions
+GitLab's list payload does not answer, asked one row at a time and drawn
+where the row stands as the answers land — and asked only about the
+merge requests that are still open. On one that is merged or closed
+those three are history, the columns stay empty, and the queue is drawn
+without asking the forge anything. The approvals are the tick and the
+count, `✓2/2` or `◌0/1`; who has approved it is a name, and names are
+`<leader>md`.
 
 In the comments window: `<CR>` goes to the code the comment under the
 cursor is about, `r` replies to it, `a` writes a comment on the merge
@@ -214,7 +225,10 @@ narrower.
 
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
-`q` discards it. Keeping is the default because a review is written as
+`q` discards it, and `@` completes the people on the project — the menu
+comes up as you type it, `<C-x><C-o>` asks for it where it does not, and
+what goes in is `@username`, sigil and all, because that is what GitLab
+turns into a notification. Keeping is the default because a review is written as
 a whole: a comment posted the moment it is typed cannot be taken back
 after reading the next file.
 
@@ -373,6 +387,9 @@ lua/nemeton/
   edit.lua       rewriting and deleting a comment already posted
   log.lua        every subprocess, into ~/.local/state, with the token
                  scrubbed out on the way
+  mentions.lua   the people you can put an @ in front of
+  win.lua        where the cursor was before a window of this took it
+  sha1.lua       the digest GitLab names a line of a diff with
   health.lua     :checkhealth nemeton
   init.lua       commands, keymaps, the buffer attach/detach bookkeeping
 ```

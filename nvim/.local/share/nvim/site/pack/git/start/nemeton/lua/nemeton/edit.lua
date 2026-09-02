@@ -12,7 +12,11 @@ local session = require("nemeton.session")
 
 local M = {}
 
-local function rewrite(thread, note)
+--- `after` is what the window this was pressed in does with itself
+--- once the forge has been asked again: the comments window stays open
+--- over the list it just changed, and a list that still has the note
+--- in it is a window that has to be refetched by hand to be believed.
+local function rewrite(thread, note, after)
   local mr = session.current
   compose.open({
     title = ("!%d  edit %s"):format(
@@ -26,17 +30,24 @@ local function rewrite(thread, note)
         session.notify("unchanged")
         return
       end
-      -- An unsent comment lives at its own endpoint until it is sent --
-      -- a whole thread of one, or a reply folded into somebody else's.
-      local rewritten = (note.draft or thread.draft) and glab.update_draft or glab.update_note
-      rewritten(mr.root, mr.iid, note.id, body, function(data, err)
+      local function done(data, err)
         if not data then
           session.notify("could not edit: " .. tostring(err), vim.log.levels.ERROR)
           return
         end
         session.notify("edited")
-        session.refresh()
-      end)
+        session.refresh(after)
+      end
+      -- An unsent comment lives at its own endpoint until it is sent --
+      -- a whole thread of one, or a reply folded into somebody else's --
+      -- and the line it was written against goes back with the new
+      -- text, because GitLab keeps only the position the update
+      -- carries. A posted note keeps its own.
+      if note.draft or thread.draft then
+        glab.update_draft(mr.root, mr.iid, note.id, body, note.position, done)
+      else
+        glab.update_note(mr.root, mr.iid, note.id, body, done)
+      end
     end,
   })
 end
@@ -58,7 +69,7 @@ function M.confirm(question, done)
   end)
 end
 
-local function remove(thread, note)
+local function remove(thread, note, after)
   local mr = session.current
   local first = vim.split(note.body, "\n", { plain = true })[1] or ""
   M.confirm(
@@ -78,7 +89,7 @@ local function remove(thread, note)
           return
         end
         session.notify("deleted")
-        session.refresh()
+        session.refresh(after)
       end)
     end
   )
@@ -86,7 +97,7 @@ end
 
 --- Picks one note out of a thread and hands it to `fn`, asking which
 --- when there is more than one to ask about.
-local function pick(thread, prompt, fn)
+local function pick(thread, prompt, fn, after)
   if not session.current or not thread then
     session.notify("no thread here", vim.log.levels.WARN)
     return
@@ -96,7 +107,7 @@ local function pick(thread, prompt, fn)
     return
   end
   if #notes == 1 then
-    return fn(thread, notes[1])
+    return fn(thread, notes[1], after)
   end
   vim.ui.select(notes, {
     prompt = prompt,
@@ -105,7 +116,7 @@ local function pick(thread, prompt, fn)
     end,
   }, function(choice)
     if choice then
-      fn(thread, choice)
+      fn(thread, choice, after)
     end
   end)
 end
@@ -159,16 +170,16 @@ end
 
 --- Deletes one note of `thread`, after asking. A thread whose only note
 --- goes is gone with it -- that is GitLab's rule, not ours.
-function M.delete(thread)
-  pick(thread, "delete which comment", remove)
+function M.delete(thread, after)
+  pick(thread, "delete which comment", remove, after)
 end
 
 --- Edits one note of `thread`, asking which when the thread has more
 --- than one. Not filtered to your own: this plugin does not know who
 --- you are without another call, and GitLab already refuses the ones
 --- that are not yours -- with a message that says so.
-function M.thread(thread)
-  pick(thread, "edit which comment", rewrite)
+function M.thread(thread, after)
+  pick(thread, "edit which comment", rewrite, after)
 end
 
 return M

@@ -21,12 +21,21 @@ return {
 
     -- Whether the rows say what CI made of each merge request.
     --
-    -- On, and it costs one API call per row: GitLab's merge request
-    -- list carries no pipeline, so the only way to fill that column is
-    -- to ask per merge request. The calls go out together and each row
-    -- is redrawn as its answer lands, so the list is usable throughout
-    -- -- but on a slow forge, or a queue of thirty, this is the switch.
+    -- On, and it costs one API call per open row: GitLab's merge
+    -- request list carries no pipeline, so the only way to fill that
+    -- column is to ask per merge request. The calls go out together
+    -- and each row is redrawn as its answer lands, so the list is
+    -- usable throughout -- but on a slow forge, or a queue of thirty,
+    -- this is the switch.
     ci = true,
+
+    -- Whether the rows say how far each merge request has got through
+    -- its approvals.
+    --
+    -- On, and it costs one API call per open row: GitLab's list
+    -- carries no approvals either. The glyph and the count only -- who
+    -- has been in is `<leader>md`, or the pane under the list.
+    approvals = true,
 
     -- Whether the rows say how many comments you have written on each
     -- merge request and not sent.
@@ -49,7 +58,7 @@ return {
 
     -- Whether the rows say how much each merge request changes.
     --
-    -- One call for the whole list, through GraphQL -- the only GraphQL
+    -- One call for the open rows, through GraphQL -- the only GraphQL
     -- in this plugin, and worth the exception: REST publishes no line
     -- totals anywhere, so the REST way to put "+120 −34" on thirty rows
     -- is to fetch thirty entire diffs. Off is one line, and a GitLab
@@ -180,13 +189,27 @@ return {
     -- review comment is a paragraph, and a window the size of the file
     -- invites an essay.
     height = 10,
+
+    -- Completion for the `@` in front of a name, from the people on
+    -- this project. On `<C-x><C-o>` in the composer, and the list is
+    -- fetched when the window opens so that the keystroke does not wait
+    -- for a forge.
+    mentions = true,
+
+    -- ...and the menu on its own, as the `@` is typed.
+    --
+    -- Needs a Neovim that can hold `completeopt` for one buffer (0.11
+    -- and newer): a menu that chooses for you is worse than no menu,
+    -- and this plugin will not set a global option to get one. On an
+    -- older Neovim the key above still completes.
+    mention_menu = true,
   },
 
   keys = {
     -- Global, for the one thing you do before there is a session to
     -- have buffer-local keys in.
     global = {
-      list = "<leader>mm",
+      list = "<leader>ml",
     },
     -- Buffer-local, bound on every file buffer inside the repository
     -- once an MR is open, and taken away again when it is closed.
@@ -235,6 +258,16 @@ return {
       -- one that is merged, and it is asked often enough to want a key
       -- and rarely enough not to want a setting.
       state = "s",
+      -- One more page of them, under the ones on the screen. A queue
+      -- of what is open is a page long; a queue of what is merged is a
+      -- history, and what is being looked for in a history is usually
+      -- further down than thirty rows.
+      more = "]",
+      -- A merge request of your own, for the branch you are on. `+`
+      -- rather than a letter: nothing in this window is a motion, and
+      -- the one key here that writes rather than reads should not look
+      -- like the ones that read.
+      create = "+",
       refresh = "r",
       browser = "o",
       quit = "q",

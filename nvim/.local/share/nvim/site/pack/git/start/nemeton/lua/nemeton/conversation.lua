@@ -18,6 +18,7 @@ local edit = require("nemeton.edit")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
+local win = require("nemeton.win")
 
 local M = {}
 
@@ -197,6 +198,7 @@ function M.open()
   local height = math.max(4, math.floor(vim.o.lines * 0.6))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
+  local back = win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,
@@ -218,7 +220,16 @@ function M.open()
   vim.wo[M.win].winbar = hint:format(k.code, k.reply, k.edit, k.delete, k.refresh, k.quit)
 
   local bindings = {
-    { k.quit, M.close, "close" },
+    -- `q` puts the cursor back where it was; the keys below that
+    -- close this window are on their way somewhere and must not.
+    {
+      k.quit,
+      function()
+        M.close()
+        back()
+      end,
+      "close",
+    },
     -- Not `instead`: the window closes only once the thread turns out
     -- to have somewhere to go, and a thread on the merge request
     -- itself does not.

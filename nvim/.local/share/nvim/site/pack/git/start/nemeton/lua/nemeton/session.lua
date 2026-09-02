@@ -45,6 +45,35 @@ end
 
 M.notify = notify
 
+--- The branch HEAD is on, or nil on a detached one.
+---
+--- Read out of `.git` rather than asked of git: it goes in the title of
+--- a window for a merge request that does not exist yet, and a
+--- subprocess for a string sitting in a file is a subprocess too many.
+--- A worktree keeps its `.git` as a file pointing at the real one,
+--- which is the one case worth following.
+function M.branch()
+  local root = M.root()
+  if not root then
+    return nil
+  end
+  local dot = root .. "/.git"
+  local stat = vim.uv.fs_stat(dot)
+  if stat and stat.type == "file" then
+    local ok, lines = pcall(vim.fn.readfile, dot)
+    local where = ok and (lines[1] or ""):match("^gitdir: (.+)$")
+    if not where then
+      return nil
+    end
+    dot = where:sub(1, 1) == "/" and where or (root .. "/" .. where)
+  end
+  local ok, head = pcall(vim.fn.readfile, dot .. "/HEAD")
+  if not ok then
+    return nil
+  end
+  return (head[1] or ""):match("^ref: refs/heads/(.+)$")
+end
+
 --- A buffer's path as GitLab names it: relative to the repository root,
 --- forward slashes, no leading `./`. Returns nil for anything that is
 --- not a file in this repository -- terminals, help, the MR list itself.

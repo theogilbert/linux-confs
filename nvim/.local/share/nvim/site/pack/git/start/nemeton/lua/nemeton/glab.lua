@@ -130,6 +130,11 @@ local function spawn(args, opts, cb)
   local cmd = { config.glab.bin }
   vim.list_extend(cmd, args)
   local e = env()
+  -- A call that spawns git of its own can ask for more than the token,
+  -- and says so with an env of its own.
+  if opts.env then
+    e = vim.tbl_extend("force", e or {}, opts.env)
+  end
   -- Logged before the call rather than after it, so a call that hangs is
   -- in the file too. `done` closes the entry with the exit code.
   local done = log.exec(cmd, { cwd = opts.cwd, env = e, stdin = opts.stdin })
@@ -440,8 +445,15 @@ end
 --- `--output json` is the API's own objects, so the fields here are the
 --- fields the GitLab docs describe -- iid, source_branch, diff_refs and
 --- the rest -- and not a shape glab invented for its table view.
-function M.mr_list(root, state, cb)
+---
+--- `page` is 1 unless the window is asking for the next one: a queue of
+--- what is merged is a history and the answer to "when did we stop
+--- doing it that way" is usually older than thirty merge requests.
+function M.mr_list(root, state, cb, page)
   local args = { "mr", "list", "--output", "json", "--per-page", tostring(config.list.per_page) }
+  if page and page > 1 then
+    vim.list_extend(args, { "--page", tostring(page) })
+  end
   if config.list.order then
     vim.list_extend(args, { "--order", config.list.order })
   end
@@ -456,6 +468,58 @@ function M.mr_list(root, state, cb)
     table.insert(args, "--all")
   end
   json(args, { cwd = root }, cb)
+end
+
+--- Everybody who can be mentioned on this project.
+---
+--- The members of the project and of the groups above it, which is
+--- exactly who GitLab turns an `@` into a notification for. A page of a
+--- hundred: a project with more members than that has a directory
+--- rather than a team, and the ones you mention in a review are the
+--- ones already on it.
+function M.project_users(root, cb)
+  json({ "api", "projects/:fullpath/users?per_page=100" }, { cwd = root }, cb)
+end
+
+--- Opens a merge request for the branch the repository is on.
+---
+--- `glab mr create` rather than the API, which is the exception to what
+--- every other call here does: the branch this should come from, the
+--- branch it should go to, which remote either belongs to and whether
+--- the source has been pushed at all are four things glab works out and
+--- this plugin would have to ask for one call at a time. `--push` is
+--- the fourth of them and `--yes` is what keeps the other three from
+--- being asked at a prompt: every field it would otherwise ask about is
+--- given, and a subprocess with no terminal is not a place to be asked
+--- anything.
+---
+--- Answers with the new merge request's URL, which is what `mr create`
+--- prints and the only thing it prints that is of any use.
+function M.mr_create(root, title, body, cb)
+  run({
+    "mr",
+    "create",
+    "--title",
+    title,
+    "--description",
+    body or "",
+    "--push",
+    "--yes",
+  }, {
+    cwd = root,
+    -- This one spawns a git that talks to the remote, and a git that
+    -- asks for a password at a terminal here is a git asking nobody:
+    -- there is no terminal, and the call would sit there until the
+    -- timeout ended it. Credential helpers still work; only the prompt
+    -- that could not be answered is refused.
+    env = { GIT_TERMINAL_PROMPT = "0" },
+  }, function(ok, out, err)
+    if not ok then
+      cb(nil, M.reason(err ~= "" and err or out))
+      return
+    end
+    cb((out .. "\n" .. err):match("https?://%S+/merge_requests/%d+") or vim.trim(out), nil)
+  end)
 end
 
 --- One merge request, in full -- which is how the diff refs are got.
@@ -747,12 +811,18 @@ function M.create_draft(root, iid, body, position, discussion_id, cb)
 end
 
 --- Rewrites one that has not been sent.
-function M.update_draft(root, iid, draft_id, body, cb)
+---
+--- The position goes back with the text. GitLab writes the update's
+--- position over the one the draft has, and an absent one is a null: a
+--- body-only PUT leaves the comment anchored to nothing, which is a
+--- comment on the merge request as a whole. An unsent reply has no
+--- position to send -- it hangs off the discussion it answers.
+function M.update_draft(root, iid, draft_id, body, position, cb)
   send(
     "PUT",
     root,
     ("projects/:fullpath/merge_requests/%d/draft_notes/%s"):format(iid, draft_id),
-    { note = body },
+    { note = body, position = position },
     cb
   )
 end

@@ -96,7 +96,7 @@ Every key of |nemeton-configuration| can go in there, in the same shape.
 
 A review, end to end:
 
-  1. `<leader>mm` -- the list. `c` shows the commits of the row under
+  1. `<leader>ml` -- the list. `c` shows the commits of the row under
      the cursor, `d` what it says it is for.
   2. `<CR>` -- check that one out and fetch its threads. The window
      stays up, saying what it is doing, until the review is loaded.
@@ -104,7 +104,8 @@ A review, end to end:
      walk them, `<leader>mp` reads one, `<leader>mx` opens all of them
      inline.
   4. `<leader>ma` on a line -- write a comment. `:w` keeps it for the
-     review. `<leader>ms` in visual mode suggests a change instead.
+     review. Over a visual selection it comments on all of it;
+     `<leader>ms` there suggests a change instead.
   5. `<leader>md` -- the merge request itself: CI, approvals, size,
      how much conversation. `a` approves it from there.
   6. `<leader>md` then `s` -- send everything you kept, as one review.
@@ -157,6 +158,14 @@ A review, end to end:
                         `suggestion` fence; what you leave in it is what
                         the author can apply with one click.
 
+:Nemeton create         Open a merge request for the branch you are on.
+                        The composer opens empty: the first line is the
+                        title, the rest is the description, and a title
+                        that begins `Draft:` makes a draft merge
+                        request -- GitLab's rule, not this plugin's.
+                        The branch is pushed on the way, and nothing is
+                        confirmed at a prompt.
+
 :Nemeton note           A comment on the merge request rather than on a
                         line of it.
 
@@ -199,7 +208,12 @@ Every key here is `config.keys.*` and every one of them can be set to
 
 GLOBAL                                               *nemeton-mappings-global*
 
-    <leader>mm      the merge request list
+    <leader>ml      the merge request list
+    <leader>md      the merge request's own window, while a review is
+                    open -- the one review key that is not about the
+                    line under the cursor, and so the one you can press
+                    from the quickfix list, the comments window, a
+                    terminal, or a file of another repository
 
 BUFFER-LOCAL                                        *nemeton-mappings-session*
 
@@ -212,13 +226,14 @@ file is re-read, which a checkout makes it do.
 
     <leader>mx      expand the conversations inline
     <leader>mp      peek at the thread on this line
-    <leader>ma      comment on this line
+    <leader>ma      comment on this line, or (visual) on these lines
     <leader>mr      reply to the thread on this line
     <leader>mR      resolve it, or reopen it
     <leader>me      edit one of its comments
     <leader>mD      delete one of them, after asking
     <leader>ms      (visual) suggest a change to these lines
-    <leader>md      the merge request's own window
+    <leader>md      the merge request's own window -- also bound
+                    globally, see above
     <leader>mq      end the review -- the markers and these keys go
                     away, and the branch stays checked out
     ]m  [m          next / previous thread, across the whole merge
@@ -245,29 +260,58 @@ else has to change.
 6. WINDOWS                                                   *nemeton-windows*
 
 Every window here is a float with its keys written across the top of it.
-None of them takes over `hjkl`, `/` or anything else you read with.
+None of them takes over `hjkl`, `/` or anything else you read with. The
+key that closes one puts the cursor back in the window it was pressed
+in, rather than wherever Neovim would have left it -- which on a split
+screen is the top left window and not where you were reading. The keys
+that close a window on the way somewhere -- to the code a thread is
+about, to the composer -- go there instead.
 
 THE LIST                                                 *nemeton-list-window*
 
-One row per merge request: number, CI, title, how much it changes, who
-wrote it, how stale it is, how many comments -- and, at the end of the
-row in the colour an unsent comment is drawn in everywhere else, how
-many of them are yours and still unsent.
+One row per merge request: number, CI, how far its approvals have got,
+title, how much it changes, who wrote it, how stale it is, how many
+comments -- and, at the end of the row in the colour an unsent comment
+is drawn in everywhere else, how many of them are yours and still
+unsent.
+
+The approvals are the tick and the count -- `✓2/2`, `◌0/1` -- in the
+two colours the merge request's own window says them in, and nothing at
+all where nobody is required and nobody has been in: that is a merge
+request nothing is waiting on rather than one short of an approval, and
+a dim zero would say the opposite. Who has approved it is a name, and
+names are `<leader>md` or the pane under the list.
+
+CI, the approvals and the size are asked for only where they are still
+a question -- an open merge request. On one that is merged or closed
+they are history, the three columns are empty, and the queue is drawn
+without asking the forge anything.
 
     <CR>            check this one out and load its threads
     c               the commits of the row under the cursor
     d               what it says it is for
     s               opened / merged / closed / all, round and round
+    ]               another page of them, under the ones on the screen
+    +               open one of your own, for the branch you are on
     r               refetch
     o               open it on GitLab
     q               close
 
 The window is up before the answer is: it opens on the keypress saying
-that it is fetching, fills in when the queue lands, and each row's CI
-and size arrive afterwards and are drawn where the row stands. `<CR>`
+that it is fetching, fills in when the queue lands, and each row's CI,
+approvals and size arrive afterwards and are drawn where the row
+stands. `<CR>`
 does not close it either -- it says which merge request it is opening
 and stays up until the review is loaded, so a slow checkout looks like a
 slow checkout rather than like nothing at all.
+
+One page at a time, and `]` for the next one under it -- the queue is
+appended to rather than replaced, and the cursor goes to the first row
+that is new. A queue of what is open is a page long; a queue of what is
+merged is a history, and what is being looked for in a history is
+usually further down than thirty rows. The key stops being offered when
+a page comes back short, which is the only way to know there is no
+next one: GitLab counts them in a header `glab` does not pass on.
 
 A checkout that fails -- the working tree has changes in it, the branch
 is checked out in another worktree -- says so in the window, folded to
@@ -398,10 +442,29 @@ buffer-local ones.
 anchored to the line the cursor was on, with the position the API wants:
 the three diff shas, the path on both sides, and the line.
 
+Pressed over a visual selection it comments on the whole of it. GitLab
+anchors such a thread to the *last* line of the span and carries the
+rest as a line range, which is how it draws "Comment on lines 57 to 59"
+and how nemeton knows to underline all three when the thread comes back.
+`<leader>ms` there suggests a change to those lines instead. Every line
+of the selection has to be a line the merge request touches: a range
+that reaches outside the diff is refused before the split opens, the
+same way a single line outside it is.
+
     <C-s>  or  :w   keep it for the review (send it, on a reply)
     <C-p>           post it to the merge request now (keep it, on a
                     reply)
+    <C-x><C-o>      the people you can put an `@` in front of
     q               discard it
+
+MENTIONS                                                    *nemeton-mentions*
+
+`@` and the first letters of a name: the menu comes up on its own, and
+`<C-x><C-o>` asks for it where it does not. What goes in is `@username`,
+sigil and all, because that is what GitLab turns into a notification --
+and the names are the members of this project and of the groups above
+it, which is who GitLab will accept. See |nemeton-config-compose| for
+the two switches and for what to point a completion engine at.
 
                                                               *nemeton-drafts*
 KEEPING IS THE DEFAULT. A comment you write becomes a GitLab draft note:
@@ -482,25 +545,32 @@ LIST                                                     *nemeton-config-list*
       width = 0.7,            -- of the editor
       height = 0.6,
       ci = true,              -- does each row say what CI made of it
+      approvals = true,       -- ...and how far its approvals have got
       drafts = true,          -- ...and what you have not sent on it
       concurrency = 6,        -- how many per-row calls at once
       stats = true,           -- does each row say how much it changes
       preview_height = 14,    -- rows of the pane under the list
     }
 <
-`ci` and `drafts` cost one API call each per row: GitLab's merge request
-list carries no pipeline, and a draft note is yours and is in no list
-payload at all. The calls share one queue, a few at a time, and each row
-is redrawn as its own answer lands, so the list is readable throughout
--- but on a slow forge, or a queue of thirty, these are the switches.
+`ci`, `approvals` and `drafts` cost one API call each per row: GitLab's
+merge request list carries no pipeline, no approvals, and a draft note
+is yours and is in no list payload at all. The calls share one queue, a
+few at a time, and each row is redrawn as its own answer lands, so the
+list is readable throughout -- but on a slow forge, or a queue of
+thirty, these are the switches.
+
+`ci`, `approvals` and `stats` ask about the open rows only. What CI did
+to a merge request that is merged, and who approved it before it was,
+are questions for its own window on the rare occasion they are asked at
+all -- and a queue of them should read as fast as it can be drawn.
 
 `drafts` is the one worth the wait. An unsent comment lives on the forge
 rather than in this editor: it is still there tomorrow, and on a machine
 you are not sitting at, and this queue is the only place you would ever
 be told about it.
 
-`stats` is one GraphQL call for the whole list, and the only GraphQL in
-the plugin. REST publishes no line totals anywhere. An instance whose
+`stats` is one GraphQL call for all the open rows, and the only GraphQL
+in the plugin. REST publishes no line totals anywhere. An instance whose
 GraphQL will not answer leaves the column empty by itself.
 
 COMMENTS                                             *nemeton-config-comments*
@@ -559,8 +629,27 @@ same shape with no emoji in it, and the cross (U+2717) and the triangle
 
 COMPOSER                                              *nemeton-config-compose*
 >
-    compose = { height = 10 }   -- rows of the split you write in
+    compose = {
+      height = 10,            -- rows of the split you write in
+      mentions = true,        -- complete `@name` from the project
+      mention_menu = true,    -- ...and put the menu up as you type
+    }
 <
+`mentions` puts the people on this project -- the members of it and of
+the groups above it, which is who GitLab notifies -- on `<C-x><C-o>` in
+the composer. They are fetched when the window opens, once per
+repository per editor session, because completion is synchronous and a
+round trip inside a keystroke is a freeze. A forge that will not answer
+leaves the key completing nothing and says nothing about it.
+
+`mention_menu` puts the menu up as the `@` is typed. It needs a Neovim
+that can hold `completeopt` for one buffer (0.11 and newer): a menu that
+picks the first name for you is worse than no menu, and this plugin will
+not set a global option to avoid that. On an older Neovim the key still
+completes. Using a completion engine instead? Point it at
+`require("nemeton.mentions").candidates(root, prefix)`, which is what
+the omnifunc reads.
+
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,

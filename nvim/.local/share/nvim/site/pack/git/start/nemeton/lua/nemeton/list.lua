@@ -16,6 +16,7 @@ local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
+local win = require("nemeton.win")
 
 local M = {}
 
@@ -33,6 +34,13 @@ local rows = {}
 -- setting of its own. Reset when the window is closed: the next queue
 -- is a queue again.
 local state = nil
+
+-- Which page of the queue has been asked for, and whether the forge has
+-- run out of them. A queue is one page until `]`; the merged and closed
+-- ones are a history, and what you are looking for in a history is
+-- usually further down it than thirty rows.
+local page = 1
+local exhausted = false
 
 -- The states, in the order the key walks them. Open first because that
 -- is what a review is; "all" last because a queue with everything in it
@@ -74,6 +82,21 @@ local function close()
     vim.api.nvim_win_close(M.win, true)
   end
   M.win, M.buf, rows, message, state = nil, nil, {}, nil, nil
+  page, exhausted = 1, false
+end
+
+--- Whether a row is a merge request anything is still waiting on.
+---
+--- Three of the columns below -- CI, approvals, the size of the change
+--- -- are the state of something in flight, and every one of them
+--- costs a call to fill. On a merged or closed merge request they are
+--- history: nobody is going to approve it now, and what its pipeline
+--- did is a question for the merge request's own window on the rare
+--- occasion it is asked at all. So a queue of them is fetched as it is
+--- read -- quickly, and without asking the forge anything a row does
+--- not say.
+local function live(mr)
+  return (mr.state or "opened") == "opened"
 end
 
 --- The rows, and the highlights to paint on them.
@@ -81,20 +104,39 @@ end
 --- CI gets a column of its own, one glyph wide, immediately after the
 --- number: whether the branch builds is the first thing a reviewer
 --- wants off a queue, and it is a fact with a colour -- which is the
---- whole reason this returns highlights rather than only text.
+--- whole reason this returns highlights rather than only text. The
+--- approvals come next, in the least room they fit into: the same tick
+--- and the same two colours the merge request's own window says them
+--- in, and a count rather than the names.
 --- One row, as coloured chunks.
 ---
 --- Chunks because half of what a row says is said in colour: whether
---- CI is green, how much of the change is additions, whose it is. The
---- flattening into text and highlights is `threads.flatten`, the same
---- one the conversations go through.
+--- CI is green, whether the approvals are in, how much of the change
+--- is additions, whose it is. The flattening into text and highlights
+--- is `threads.flatten`, the same one the conversations go through.
 local function row_chunks(mr)
-  local ci = detail.ci(mr)
-  local stats = mr.diff_stats
+  local ci = live(mr) and detail.ci(mr) or nil
+  local approval = live(mr) and detail.approval(mr.approvals) or nil
+  local stats = live(mr) and mr.diff_stats or nil
   local out = {
     { ("!%-5d "):format(mr.iid), "NemetonMeta" },
     { ci and (ci.glyph .. "  ") or "   ", ci and ci.hl or nil },
   }
+  -- Nothing at all where nobody is required and nobody has been in:
+  -- that is a merge request nothing is waiting on rather than one that
+  -- is short of an approval, and a dim zero says the opposite.
+  local approved
+  if approval and approval.required > 0 then
+    approved = ("%s%d/%d"):format(approval.glyph, #approval.names, approval.required)
+  elseif approval and approval.enough then
+    approved = approval.glyph
+  end
+  if approved then
+    table.insert(out, { approved, approval.hl })
+    table.insert(out, { (" "):rep(math.max(6 - vim.fn.strdisplaywidth(approved), 1)) })
+  else
+    table.insert(out, { (" "):rep(6) })
+  end
   if mr.draft then
     table.insert(out, { "draft ", "NemetonDraft" })
   end
@@ -121,7 +163,8 @@ local function row_chunks(mr)
   -- foreground, not as the filled blocks DiffAdd and DiffDelete paint:
   -- these are two numbers in a table, and a row of coloured tiles is
   -- read as highlighting rather than as a count. Empty until the one
-  -- call that counts them for the whole list comes back.
+  -- call that counts them for the open rows comes back, and empty for
+  -- good on the rows that call does not ask about.
   if stats then
     local added, removed = ("+%d"):format(stats.added), ("−%d"):format(stats.removed)
     table.insert(out, { (" "):rep(math.max(11 - #added - #removed - 1, 1)) })
@@ -150,13 +193,22 @@ local function row_chunks(mr)
   return out
 end
 
-local function format(mrs)
+--- Every row of the queue, drawn from `rows`.
+---
+--- All of them rather than the new ones: a page arriving is a page
+--- appended, the highlights of a row are painted by clearing the
+--- namespace and putting them back, and the cheapest correct thing to
+--- do with thirty more rows is to draw the whole list again.
+local function draw_rows()
   local chunks = {}
-  for i, mr in ipairs(mrs) do
-    rows[i] = mr
+  for i, mr in ipairs(rows) do
     chunks[i] = row_chunks(mr)
   end
-  return threads.flatten(chunks, 0)
+  local lines, hls = threads.flatten(chunks, 0)
+  vim.bo[M.buf].modifiable = true
+  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
+  vim.bo[M.buf].modifiable = false
+  marks.paint(M.buf, hls)
 end
 
 --- Redraws one row in place, for when its pipeline arrives after the
@@ -181,20 +233,26 @@ end
 -- iid -> { at = updated_at, stats = ... }, for the life of the editor.
 local stats_cache = {}
 
---- How much each row changes, in one call for the whole list.
+--- How much each open row changes, in one call for all of them.
 ---
 --- One call, so there is no pool and no ordering to think about: it is
 --- either known for every row a moment after the window is up, or not
 --- known at all -- on a GitLab whose GraphQL will not answer, the
 --- column simply stays empty.
-local function fetch_stats(root)
+---
+--- `from` is how many rows have already been asked about: a page
+--- arriving asks about the page, not about the whole queue again.
+local function fetch_stats(root, from)
   if not config.list.stats then
     return
   end
   local wanted, at_row = {}, {}
-  for i, mr in ipairs(rows) do
+  for i = (from or 0) + 1, #rows do
+    local mr = rows[i]
     local hit = stats_cache[mr.iid]
-    if hit and hit.at == mr.updated_at then
+    if not live(mr) then -- luacheck: ignore
+      -- nothing to ask: a merged merge request is not going to change
+    elseif hit and hit.at == mr.updated_at then
       mr.diff_stats = hit.stats
       redraw_row(i)
     else
@@ -232,13 +290,16 @@ end
 --- The questions a row of GitLab's list cannot answer, asked one row at
 --- a time.
 ---
---- Two of them. What CI made of the branch, because the merge request
---- list carries no pipeline; and how many comments you wrote on it and
---- have not sent, because a draft note is yours and is in nobody's
---- list payload either. The second is the one worth the wait: an
---- unsent comment lives on the forge rather than in this editor, so it
---- is still there tomorrow, on a machine you are not sitting at, and
---- the queue is the only place you would ever be told.
+--- Three of them. What CI made of the branch and how far the approvals
+--- have got, neither of which a list payload carries -- both asked
+--- only of the rows that are still open, because on a merged one they
+--- are history and this is a queue of what is left to do; and how many
+--- comments you wrote on it and have not sent, because a draft note is
+--- yours and is in nobody's list payload either. The last is the one
+--- worth the wait: an unsent comment lives on the forge rather than in
+--- this editor, so it is still there tomorrow, on a machine you are
+--- not sitting at, and the queue is the only place you would ever be
+--- told.
 ---
 --- One queue for both, a few at a time, in row order, each row redrawn
 --- as its own answer lands: the list is readable the moment it opens
@@ -249,7 +310,7 @@ end
 --- time and take the machine down with them while they run. In row
 --- order because the top of the list is what is being read while the
 --- rest fills in.
-local function fetch_rows(root)
+local function fetch_rows(root, from)
   local queue = {}
 
   --- Runs `ask` for row `i` if the row is still the one it was asked
@@ -268,8 +329,9 @@ local function fetch_rows(root)
     end)
   end
 
-  for i, mr in ipairs(rows) do
-    if config.list.ci then
+  for i = (from or 0) + 1, #rows do
+    local mr = rows[i]
+    if config.list.ci and live(mr) then
       local hit = pipeline_cache[mr.iid]
       if hit and hit.at == mr.updated_at then
         mr.head_pipeline = hit.pipeline
@@ -291,12 +353,27 @@ local function fetch_rows(root)
         end)
       end
     end
-    -- Not cached, unlike the pipeline: what you have written and not
-    -- sent changes because *you* changed it, and it changes without
-    -- the merge request being touched at all, so there is nothing to
-    -- key a cache on. Quietly, too -- draft notes are GitLab 15.10 and
-    -- the endpoint 404s on anything older, where the right answer is
-    -- "you have none" rather than an error on every row.
+    -- Not cached, unlike the pipeline: an approval arrives without the
+    -- merge request itself being touched, so `updated_at` -- the only
+    -- thing there is to key a cache on -- has not moved either.
+    -- Quietly: approvals are a paid feature and the endpoint 404s
+    -- where they are not enabled, which is an empty column rather than
+    -- an error on every row.
+    if config.list.approvals and live(mr) then
+      for_row(i, function(iid, answered)
+        glab.approvals(root, iid, function(data)
+          answered(function(row)
+            row.approvals = type(data) == "table" and data or nil
+          end)
+        end)
+      end)
+    end
+    -- Not cached either, and for a nearer reason: what you have
+    -- written and not sent changes because *you* changed it, and it
+    -- changes without the merge request being touched at all. Quietly,
+    -- too -- draft notes are GitLab 15.10 and the endpoint 404s on
+    -- anything older, where the right answer is "you have none" rather
+    -- than an error on every row.
     if config.list.drafts then
       for_row(i, function(iid, answered)
         glab.draft_notes(root, iid, function(data)
@@ -491,10 +568,16 @@ local function set_hint()
       -- Named after what pressing it would show rather than after what
       -- is on the screen: every other hint on this bar is a verb.
       { k.state, next_state() },
+      { k.create, "new" },
       { k.refresh, "refresh" },
       { k.browser, "browser" },
       { k.quit, "quit" },
     }
+    -- Only while there might be another page: a key offered for
+    -- something that has already run out is a key you press twice.
+    if not exhausted then
+      table.insert(keys, #keys, { k.more, "more" })
+    end
   end
   vim.wo[M.win].winbar = detail.hint(keys)
 end
@@ -535,15 +618,29 @@ local function set_rows(mrs)
   if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
     return
   end
-  message, rows = nil, {}
-  local lines, hls = format(mrs)
-  vim.bo[M.buf].modifiable = true
-  vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
-  vim.bo[M.buf].modifiable = false
-  marks.paint(M.buf, hls)
+  message, rows = nil, mrs
+  draw_rows()
   vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
   set_hint()
   relayout()
+end
+
+--- The next page, under the one you are reading.
+---
+--- The cursor goes to the first of the new rows rather than staying
+--- where it was: you pressed the key because what you were looking for
+--- was not on the screen, and the top of what has just arrived is where
+--- to carry on reading.
+local function add_rows(mrs)
+  if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
+    return
+  end
+  local from = #rows
+  vim.list_extend(rows, mrs)
+  draw_rows()
+  set_hint()
+  relayout()
+  pcall(vim.api.nvim_win_set_cursor, M.win, { from + 1, 0 })
 end
 
 local function draw_preview(lines, hls)
@@ -645,7 +742,12 @@ function M.toggle_preview(mode)
   return mode
 end
 
+-- Where the cursor was when the list was opened, so that closing it
+-- puts the cursor back rather than in the top left window.
+local back = function() end
+
 local function open_window()
+  back = win.came_from()
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].modifiable = false
   vim.bo[M.buf].bufhidden = "wipe"
@@ -671,10 +773,24 @@ local function open_window()
 
   local keys = config.keys.list
 
-  vim.keymap.set("n", keys.quit, close, { buffer = M.buf, desc = "nemeton: close the list" })
+  vim.keymap.set("n", keys.quit, function()
+    close()
+    back()
+  end, { buffer = M.buf, desc = "nemeton: close the list" })
   vim.keymap.set("n", keys.refresh, function()
     M.open()
   end, { buffer = M.buf, desc = "nemeton: refetch" })
+  if keys.create and keys.create ~= "" then
+    vim.keymap.set("n", keys.create, function()
+      require("nemeton").create()
+    end, { buffer = M.buf, desc = "nemeton: open a merge request for this branch" })
+  end
+  if keys.more and keys.more ~= "" then
+    vim.keymap.set("n", keys.more, M.more, {
+      buffer = M.buf,
+      desc = "nemeton: another page of them",
+    })
+  end
   if keys.state and keys.state ~= "" then
     vim.keymap.set("n", keys.state, function()
       state = next_state()
@@ -752,6 +868,51 @@ local function open_window()
   })
 end
 
+--- The next page of the queue, under the one on the screen.
+---
+--- Appended rather than replacing it: what this key is for is a queue
+--- longer than a page -- the merged and closed ones, where the answer
+--- to "when did we stop doing it that way" is a year down the list --
+--- and paging through one screenful at a time, losing the last, is how
+--- you read the same thirty rows four times.
+function M.more()
+  local root = session.root()
+  if not root or not (M.win and vim.api.nvim_win_is_valid(M.win)) then
+    return
+  end
+  if exhausted then
+    session.notify(("that is every %s merge request"):format(listing()))
+    return
+  end
+  if message then
+    return
+  end
+  local mine, asked = M.buf, page + 1
+  glab.mr_list(root, listing(), function(mrs, err)
+    if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
+      return
+    end
+    if not mrs then
+      session.notify("could not list merge requests: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+    page = asked
+    -- A short page is the last page. A full one might be: GitLab says
+    -- how many there are in a header `glab` does not pass on, so the
+    -- only way to find out is to ask for the next one.
+    exhausted = #mrs < (config.list.per_page or 30)
+    if #mrs == 0 then
+      session.notify(("that is every %s merge request"):format(listing()))
+      set_hint()
+      return
+    end
+    local from = #rows
+    add_rows(mrs)
+    fetch_rows(root, from)
+    fetch_stats(root, from)
+  end, asked)
+end
+
 function M.open()
   local root = session.root()
   if not root then
@@ -781,6 +942,7 @@ function M.open()
   end
   set_title()
   set_message(("fetching %s merge requests…"):format(listing()))
+  page, exhausted = 1, false
   local mine = M.buf
 
   glab.mr_list(root, listing(), function(mrs, err)

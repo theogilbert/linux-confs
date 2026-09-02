@@ -9,6 +9,7 @@ local detail = require("nemeton.detail")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local win = require("nemeton.win")
 
 local M = {}
 
@@ -125,6 +126,7 @@ function M.open()
   local height = math.max(4, math.floor(vim.o.lines * 0.5))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
+  local back = win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,
@@ -161,7 +163,16 @@ function M.open()
   end
 
   local bindings = {
-    { k.quit, M.close, "close" },
+    -- `q` puts the cursor back where it was; the keys below that
+    -- close this window are on their way somewhere and must not.
+    {
+      k.quit,
+      function()
+        M.close()
+        back()
+      end,
+      "close",
+    },
     { k.refresh, load, "refetch" },
     -- In a tab, and this window is left standing in the one it was
     -- opened from: a log is read against the list of jobs it came out

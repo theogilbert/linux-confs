@@ -130,8 +130,14 @@ function M.build_list(pane, width)
   -- since a sha broken across two rows is not a sha anyone can read.
   if pane.commit then
     local c = pane.commit
-    b:add(pad(("%d/%d · %s"):format(pane.commit_idx, #pane.commits, c.short)),
-      "UatisHeader")
+    -- `12/17` counts a commit against the walk it is one of, and a
+    -- review that IS one commit has no walk to be counted against --
+    -- nor any need to name the sha again, since the line above it is
+    -- `<sha>^ ← <sha>` and says which commit this is twice already.
+    if not pane.standalone then
+      b:add(pad(("%d/%d · %s"):format(pane.commit_idx, #pane.commits, c.short)),
+        "UatisHeader")
+    end
     local by = c.date
     if c.author and c.author ~= "" then
       by = by ~= "" and (by .. " · " .. c.author) or c.author

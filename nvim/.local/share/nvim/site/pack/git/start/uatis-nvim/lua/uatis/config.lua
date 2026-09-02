@@ -84,6 +84,17 @@ return {
       -- global key anyway; it opens, where the view's key toggles. The
       -- toggle is `require("uatis").toggle_pane()`.
       open_pane = false,
+      -- One commit, in a tab of its own -- `:UatisShow`, which with no
+      -- argument asks which commit through the same prompt the base
+      -- branch is typed into.
+      --
+      -- The capital of the key that reads YOUR branch a commit at a
+      -- time, because it is the same gesture one size up: `<leader>gh`
+      -- steps the commits you wrote since you forked, `<leader>gH` is
+      -- any commit in the repository, on its own. Global rather than in
+      -- the view, since somebody else's commit is something you look up
+      -- from wherever you happen to be standing.
+      show_commit = "<leader>gH",
     },
     -- The side pane: files changed since the fork point, beside the file
     -- you are reading. The same keys the view lends out -- ]f/[f -- so
@@ -244,6 +255,17 @@ return {
     -- buffer. Off, each file is annotated only when you ask for it with
     -- `<leader>gu`, and the review is whatever you have turned on by hand.
     follow = true,
+  },
+
+  -- One commit on its own: `:UatisShow [<rev>]`.
+  show = {
+    -- Whether that opens a tab of its own. On, because a review is a
+    -- mode over a tab -- one list per tabpage -- so showing a commit
+    -- where the reader is standing would take the review they already
+    -- had, and looking up what somebody else did is usually a detour
+    -- from work you mean to come back to. Off shows it in place, and
+    -- then it does end whatever review that tab was holding.
+    tab = true,
   },
 
   diff = {

@@ -96,7 +96,7 @@ local function compose(pane)
     end
   end
 
-  for _, view in ipairs(view_mod.matching(pane.root, pane.rev)) do
+  for _, view in ipairs(view_mod.matching(pane.root, pane.rev, pane.standalone)) do
     -- Only where the buffer differs from the disk, or names a file git has
     -- no answer about at all. Once it is saved git's numbers are both true
     -- and the fresher of the two: a write re-reads the list immediately,
@@ -312,7 +312,13 @@ local function hint_for(pane)
     k.file_next .. "/" .. k.file_prev .. " file",
     k.select .. " open",
   }
-  if pane.commit then
+  if pane.standalone then
+    -- Nothing about commits at all. This review IS one -- `:UatisShow`
+    -- asked for that commit and nothing else -- so neither the toggle
+    -- nor the step keys have anywhere to go, and a hint naming keys
+    -- that answer with "there is only this one" is a hint that costs
+    -- the reader a keypress to disbelieve.
+  elseif pane.commit then
     table.insert(parts, k.commit_prev .. "/" .. k.commit_next .. " commit")
     table.insert(parts, k.commit_view .. " whole branch")
   else
@@ -353,7 +359,7 @@ local function show(pane, idx, keep_path)
     pane.target, pane.src = pane.tree_ref, "working tree"
   end
   pane.hint = hint_for(pane)
-  view_mod.close_all(pane.root, was)
+  view_mod.close_all(pane.root, was, pane.standalone)
 
   pane.on_ready = function(p)
     if panes[p.tab] ~= p or #p.files == 0 then
@@ -411,6 +417,15 @@ function M.toggle_commits(pane)
   if not pane then
     return false
   end
+  -- Nowhere to go from a review that is one commit. Off, this key means
+  -- "the whole branch against the working tree", and here that would be
+  -- the commit's PARENT against the working tree -- a comparison nobody
+  -- asked for, arrived at by a key that says it is turning something
+  -- off. `:Uatis` is how you ask for a review of your own branch.
+  if pane.standalone then
+    vim.notify("uatis: this review is one commit", vim.log.levels.INFO)
+    return true
+  end
   if pane.commit then
     show(pane, nil, current_path(pane))
     return false
@@ -437,6 +452,10 @@ end
 function M.step_commit(pane, dir)
   pane = pane or M.get()
   if not pane then
+    return
+  end
+  if pane.standalone then
+    vim.notify("uatis: this review is one commit", vim.log.levels.INFO)
     return
   end
   if not pane.commit then
@@ -476,6 +495,13 @@ end
 function M.recheck(pane)
   pane = pane or M.get()
   if not pane or pane.rechecking then
+    return
+  end
+  -- A finished commit is finished: what it changed is a fact about two
+  -- revisions, and neither the working tree nor the fork point is one of
+  -- them. So none of what moved while nvim was not looking can have
+  -- moved this.
+  if pane.standalone then
     return
   end
   if not pane.tracks_base then
@@ -607,6 +633,10 @@ local function pinned(pane, file)
     resolve = function(_, cb)
       cb(pane.ref, pane.rev)
     end,
+    -- ...and which kind of review it is part of, so a commit read on
+    -- its own and a branch read against the same revision do not count
+    -- or close each other's buffers. See `view.matching`.
+    standalone = pane.standalone,
     -- A file opened out of a base-tracked list is base-tracked too:
     -- choosing another base branch moves the list, and a view left
     -- measuring against the old fork point beside a list measuring
@@ -759,6 +789,28 @@ local function buffer_at(root, sha, short, path, text)
   return buf
 end
 
+--- Does `fn` in the pane's code window.
+---
+--- Focus follows the reader only where they already are. In the pane's
+--- own tab, opening a file means going to it -- that is the whole of
+--- what `<CR>` in the list is for. From another tab it does not: a file
+--- is two git subprocesses away, and by the time one lands the reader
+--- may have gone elsewhere. Dragging them back into a tab they had left
+--- makes a review something they cannot put down -- and `:UatisShow`
+--- opens in a tab of its own, so this is a keypress away rather than a
+--- race nobody hits.
+local function in_code_win(pane, win, fn)
+  if vim.api.nvim_get_current_tabpage() == pane.tab then
+    vim.api.nvim_set_current_win(win)
+    return fn()
+  end
+  -- `win_call` rather than nothing at all: the file still opens, and the
+  -- window it opens into is still the pane's -- `view_mod.open` reads
+  -- the CURRENT buffer and window, which is what this makes true for as
+  -- long as it takes.
+  return vim.api.nvim_win_call(win, fn)
+end
+
 function M.goto_file(pane, idx)
   local f = pane.files[idx]
   if not f then
@@ -771,7 +823,6 @@ function M.goto_file(pane, idx)
   end
 
   local win = target_win(pane)
-  vim.api.nvim_set_current_win(win)
 
   -- A file the branch DELETED has nothing in your tree to open, and it is
   -- the one file where "what was there" is the whole question. So the
@@ -791,11 +842,13 @@ function M.goto_file(pane, idx)
     pcall(vim.api.nvim_buf_set_name, buf, "uatis://deleted/"
       .. (pane.commit and (pane.commit.short .. "/") or "") .. f.path)
     vim.bo[buf].filetype = vim.filetype.match({ filename = f.path }) or ""
-    vim.api.nvim_win_set_buf(win, buf)
-    view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
-      root = pane.root,
-      path = f.path,
-    }))
+    in_code_win(pane, win, function()
+      vim.api.nvim_win_set_buf(win, buf)
+      view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
+        root = pane.root,
+        path = f.path,
+      }))
+    end)
     return
   end
 
@@ -817,25 +870,35 @@ function M.goto_file(pane, idx)
       if not vim.api.nvim_win_is_valid(win) then
         return
       end
-      vim.api.nvim_set_current_win(win)
-      if text ~= nil and text == live_text(pane.root, f.path) then
-        vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
-        view_mod.open(pane.ref, pinned(pane, f))
-        return
-      end
-      local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
-      vim.api.nvim_win_set_buf(win, buf)
-      view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
-        root = pane.root,
-        path = f.path,
-        at_commit = commit.short,
-      }))
+      -- ...but never in a review that is only this commit. There the
+      -- reader's buffer is not what is being read: `:UatisShow` is asked
+      -- about somebody's finished work, as often as not on a branch this
+      -- checkout is nowhere near, and handing back the writable file
+      -- because today's copy happens to match would put a review of the
+      -- past on a buffer that belongs to the present -- one whose view
+      -- the review of your own branch, in the tab you came from, owns.
+      in_code_win(pane, win, function()
+        if not pane.standalone and text ~= nil and text == live_text(pane.root, f.path) then
+          vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+          view_mod.open(pane.ref, pinned(pane, f))
+          return
+        end
+        local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
+        vim.api.nvim_win_set_buf(win, buf)
+        view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
+          root = pane.root,
+          path = f.path,
+          at_commit = commit.short,
+        }))
+      end)
     end)
     return
   end
 
-  vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
-  view_mod.open(pane.ref, pinned(pane, f))
+  in_code_win(pane, win, function()
+    vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+    view_mod.open(pane.ref, pinned(pane, f))
+  end)
 end
 
 --- Annotates `bufnr` as part of this review, if the review lists it.
@@ -1019,8 +1082,17 @@ function M.close(pane)
     pcall(vim.api.nvim_del_augroup_by_id, pane.augroup)
     pane.augroup = nil
   end
-  -- Only the pane's own window goes. Unlike the review, which owns its
-  -- whole tab, everything else in this one is the user's own layout.
+  -- A review that opened its own tab takes it away again: `:UatisShow`
+  -- put that tab up for this commit and nothing else was ever in it, so
+  -- leaving an empty one behind is asking the reader to tidy up after a
+  -- key that said "close". Never the last tab -- nvim will not have it,
+  -- and neither would anyone.
+  if pane.owns_tab and vim.api.nvim_tabpage_is_valid(pane.tab)
+    and #vim.api.nvim_list_tabpages() > 1 then
+    pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(pane.tab))
+  end
+  -- Otherwise only the pane's own window goes: everything else in a tab
+  -- the reader was already working in is their own layout.
   if pane.list_win and vim.api.nvim_win_is_valid(pane.list_win) then
     pcall(vim.api.nvim_win_close, pane.list_win, true)
   end
@@ -1123,81 +1195,87 @@ local function setup_watchers(pane)
     end,
   })
 
-  -- Saving changes the working tree, and the working tree is what the list
-  -- is counting. Re-reading on write is what keeps a `+12 -3` from being a
-  -- claim about a file as it was ten minutes ago.
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    group = pane.augroup,
-    callback = function(ev)
-      if panes[pane.tab] ~= pane then
-        return
-      end
-      local name = vim.api.nvim_buf_get_name(ev.buf)
-      if name ~= "" and vim.startswith(vim.fs.normalize(name), vim.fs.normalize(pane.root)) then
-        M.refresh(pane)
-      end
-    end,
-  })
+  -- The three watchers below are about the working tree, and a review of
+  -- one commit is not: `git diff <parent> <commit>` says the same thing
+  -- after a write, a pull and a rebase as it did before them. Only the
+  -- window, the cursor and the tab are worth watching there.
+  if not pane.standalone then
+    -- Saving changes the working tree, and the working tree is what the list
+    -- is counting. Re-reading on write is what keeps a `+12 -3` from being a
+    -- claim about a file as it was ten minutes ago.
+    vim.api.nvim_create_autocmd("BufWritePost", {
+      group = pane.augroup,
+      callback = function(ev)
+        if panes[pane.tab] ~= pane then
+          return
+        end
+        local name = vim.api.nvim_buf_get_name(ev.buf)
+        if name ~= "" and vim.startswith(vim.fs.normalize(name), vim.fs.normalize(pane.root)) then
+          M.refresh(pane)
+        end
+      end,
+    })
 
-  -- Anything git did while nvim was not looking. Neither of the two
-  -- above catches it: `lazygit` in the next window switches a branch, a
-  -- colleague's PR is pulled onto the base branch, a rebase rewrites
-  -- what HEAD means -- and no buffer here was written or re-read, so the
-  -- list goes on describing a repository that has moved.
-  --
-  -- `FocusGained` is the window manager's answer to "you were away";
-  -- `TermLeave` and `TermClose` are the same event for a git tool run
-  -- inside nvim, which never takes focus away from it. Guarded against
-  -- overlapping in `recheck` rather than debounced, since what makes it
-  -- expensive is the subprocess and one is already in the air.
-  vim.api.nvim_create_autocmd({ "FocusGained", "TermLeave", "TermClose" }, {
-    group = pane.augroup,
-    callback = function()
-      if panes[pane.tab] ~= pane then
-        return
-      end
-      M.recheck(pane)
-    end,
-  })
+    -- Anything git did while nvim was not looking. Neither of the two
+    -- above catches it: `lazygit` in the next window switches a branch, a
+    -- colleague's PR is pulled onto the base branch, a rebase rewrites
+    -- what HEAD means -- and no buffer here was written or re-read, so the
+    -- list goes on describing a repository that has moved.
+    --
+    -- `FocusGained` is the window manager's answer to "you were away";
+    -- `TermLeave` and `TermClose` are the same event for a git tool run
+    -- inside nvim, which never takes focus away from it. Guarded against
+    -- overlapping in `recheck` rather than debounced, since what makes it
+    -- expensive is the subprocess and one is already in the air.
+    vim.api.nvim_create_autocmd({ "FocusGained", "TermLeave", "TermClose" }, {
+      group = pane.augroup,
+      callback = function()
+        if panes[pane.tab] ~= pane then
+          return
+        end
+        M.recheck(pane)
+      end,
+    })
 
-  -- ...and reading is the other half of that. `:e` puts the file back on
-  -- screen from the disk, and what a reader is usually saying with it is
-  -- that something ELSE wrote the file -- a formatter, a rebase, a
-  -- checkout, a colleague's branch pulled in. The list is `git diff`
-  -- against that disk, so it is stale for exactly as long as nobody
-  -- asks git again.
-  --
-  -- Only for a buffer the review already knew about, which is what tells
-  -- a re-read from a first open: every file opened while a list is up
-  -- fires this too, and a `git diff` per jump-to-definition is a cost
-  -- nobody asked for. A file the list has a row for, or one carrying a
-  -- view, is one that was already on screen.
-  vim.api.nvim_create_autocmd("BufReadPost", {
-    group = pane.augroup,
-    callback = function(ev)
-      if panes[pane.tab] ~= pane then
-        return
-      end
-      local name = vim.api.nvim_buf_get_name(ev.buf)
-      if name == ""
-        or not vim.startswith(vim.fs.normalize(name), vim.fs.normalize(pane.root)) then
-        return
-      end
-      local known = view_mod.get(ev.buf) ~= nil
-      if not known then
-        local rel = view_mod.relpath(pane.root, name)
-        for _, f in ipairs(pane.files or {}) do
-          if f.path == rel or f.old_path == rel then
-            known = true
-            break
+    -- ...and reading is the other half of that. `:e` puts the file back on
+    -- screen from the disk, and what a reader is usually saying with it is
+    -- that something ELSE wrote the file -- a formatter, a rebase, a
+    -- checkout, a colleague's branch pulled in. The list is `git diff`
+    -- against that disk, so it is stale for exactly as long as nobody
+    -- asks git again.
+    --
+    -- Only for a buffer the review already knew about, which is what tells
+    -- a re-read from a first open: every file opened while a list is up
+    -- fires this too, and a `git diff` per jump-to-definition is a cost
+    -- nobody asked for. A file the list has a row for, or one carrying a
+    -- view, is one that was already on screen.
+    vim.api.nvim_create_autocmd("BufReadPost", {
+      group = pane.augroup,
+      callback = function(ev)
+        if panes[pane.tab] ~= pane then
+          return
+        end
+        local name = vim.api.nvim_buf_get_name(ev.buf)
+        if name == ""
+          or not vim.startswith(vim.fs.normalize(name), vim.fs.normalize(pane.root)) then
+          return
+        end
+        local known = view_mod.get(ev.buf) ~= nil
+        if not known then
+          local rel = view_mod.relpath(pane.root, name)
+          for _, f in ipairs(pane.files or {}) do
+            if f.path == rel or f.old_path == rel then
+              known = true
+              break
+            end
           end
         end
-      end
-      if known then
-        M.refresh(pane)
-      end
-    end,
-  })
+        if known then
+          M.refresh(pane)
+        end
+      end,
+    })
+  end
 
   -- Following the buffer that gets focus, so the highlighted row is
   -- whatever is actually on screen -- including files reached by `:e`, a
@@ -1328,7 +1406,25 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     src = "working tree",
     hint = "",
     code_win = vim.api.nvim_get_current_win(),
+    -- Whether the tab goes when the review does. True only for the one
+    -- this module opened for itself -- `:UatisShow` in a tab of its own
+    -- -- since everything in any other tab is the user's own layout.
+    owns_tab = opts.owns_tab or false,
   }
+
+  -- A review whose whole subject is ONE commit, which is `show(pane, 1)`
+  -- with a walk of length one: `ref`/`rev` are already the parent, and
+  -- that is exactly what `show` sets them to at the first commit of a
+  -- walk. Seeded here rather than by calling `show` afterwards so the
+  -- list is read once, against the commit, instead of once against the
+  -- working tree and again a subprocess later.
+  if opts.commit then
+    pane.standalone = true
+    pane.commits = { opts.commit }
+    pane.commit, pane.commit_idx = opts.commit, 1
+    pane.mode = "commit"
+    pane.src = opts.commit.short
+  end
 
   pane.hint = hint_for(pane)
   panes[tab] = pane
@@ -1482,6 +1578,83 @@ function M.open(opts)
     end
   end)
   return shown
+end
+
+--- A review whose whole subject is one commit, in a tab of its own.
+---
+--- The same shape as reading a branch a commit at a time -- one commit
+--- against its parent, its own files, each of them shown as it was --
+--- and reached without a branch review to be inside. `<leader>gh` walks
+--- the commits YOU wrote since you forked; this answers the other
+--- question, the one about somebody else's commit, on a branch this
+--- checkout is nowhere near.
+---
+--- In a new tab because a review is a mode over a tab: `panes` is keyed
+--- by tabpage, so opening this where the reader was standing would take
+--- the review they already had. The tab is opened BEFORE the pane is
+--- built, since `build` reads the tabpage and the window it is called
+--- in. `config.show.tab = false` for anyone who would rather it happened
+--- in place, which then replaces whatever review that tab held -- one
+--- list per tab is the rule everything else here rests on.
+---
+--- Its list always goes up, `pane.auto_open` or not: in a tab of its own
+--- there is otherwise nothing on screen at all, and the list is the
+--- thing that was asked for.
+function M.show_commit(rev, opts)
+  opts = opts or {}
+  base.root(function(root, path)
+    if not root then
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    git.commit(root, rev, function(commit, parent, err)
+      if not commit or not parent then
+        -- git's first line only. The rest of what it says about an
+        -- unknown revision is three lines about `--` and paths, which
+        -- is advice for a command the reader did not type.
+        local why = err and err:match("^[^\r\n]*") or ""
+        vim.notify("uatis: no commit at " .. rev .. (why ~= "" and (": " .. why) or ""),
+          vim.log.levels.ERROR)
+        return
+      end
+      local own_tab = opts.tab
+      if own_tab == nil then
+        own_tab = config.show.tab
+      end
+      if own_tab then
+        vim.cmd("tabnew")
+      end
+      local tab = vim.api.nvim_get_current_tabpage()
+      if panes[tab] then
+        M.close(panes[tab])
+      end
+      -- Named `<short>^` rather than by the parent's own abbreviation:
+      -- it is the header's left-hand side, and "the commit before this
+      -- one" is what the reader is thinking, where a second unrelated
+      -- sha beside the first is one more thing to hold. A commit with no
+      -- parent has no such name, and the empty tree it is measured
+      -- against is not one either -- so it says what it is.
+      local against = commit.orphan and "nothing" or (commit.short .. "^")
+      local pane = build(tab, root, against, parent, nil, {
+        commit = commit,
+        owns_tab = own_tab,
+        on_ready = function(p)
+          if panes[p.tab] ~= p then
+            return
+          end
+          if #p.files > 0 then
+            M.goto_file(p, 1)
+          end
+          if opts.on_ready then
+            opts.on_ready(p)
+          end
+        end,
+      }, false)
+      M.open({ focus = false })
+      return pane
+    end)
+  end)
 end
 
 --- ...and the same key taking it away again -- but only from inside it.

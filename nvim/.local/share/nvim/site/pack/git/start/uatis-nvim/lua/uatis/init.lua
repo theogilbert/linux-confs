@@ -1,10 +1,12 @@
--- What a user touches: one command, four functions, two mappings.
+-- What a user touches: two commands, six functions, three mappings.
 --
 --   :Uatis [<gitref>]         annotate this buffer against a revision
+--   :UatisShow [<rev>]        what one commit did, in a tab of its own
 --   require("uatis").setup([opts])
 --   require("uatis").toggle_diff()
 --   require("uatis").set_base_branch([name])
 --   require("uatis").toggle_pane() / open_pane() / close_pane()
+--   require("uatis").show_commit([rev])
 --
 -- The command and the functions are not two ways to do one thing. A
 -- command is what you type when you know the ref you want and you are
@@ -147,7 +149,7 @@ function M.toggle_diff()
   if not view.can_open(bufnr) then
     local list = pane.get()
     if list then
-      view.close_all(list.root, list.rev)
+      view.close_all(list.root, list.rev, list.standalone)
       pane.close(list)
       return false
     end
@@ -189,6 +191,44 @@ end
 --- `pane.toggle`.
 function M.toggle_pane()
   return pane.toggle()
+end
+
+--- What one commit did, in a tab of its own.
+---
+--- The other question about history. `<leader>gh` reads the commits YOU
+--- wrote since you forked, in order, inside the review of your own
+--- branch; this one is about a commit that has nothing to do with what
+--- you are working on -- the one a colleague pointed at, the one a
+--- bisect landed on, the one that broke the build -- and it is as likely
+--- to be on a branch this checkout is nowhere near.
+---
+--- The comparison is the commit against its parent, its own files, each
+--- shown as it was at that commit. The reader's buffer is not part of
+--- it: a finished commit is finished, and drawing its diff on a file
+--- five commits younger would be describing neither.
+---
+--- Without a rev it asks, through `prompt.lua` over every ref and the
+--- recent commits -- the same candidates `<leader>gB` types into, which
+--- carry their subject line, because nobody has a sha memorised and a
+--- commit is found by what it did.
+function M.show_commit(rev)
+  if rev and rev ~= "" then
+    return pane.show_commit(rev)
+  end
+  base.root(function(root, path)
+    if not root then
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    base.candidates(root, function(items)
+      prompt.open({ prompt = "uatis: show commit", items = items }, function(text)
+        if text and text ~= "" then
+          pane.show_commit(text)
+        end
+      end)
+    end)
+  end)
 end
 
 --- What is being compared in `bufnr`, as data. nil when nothing is.
@@ -290,7 +330,7 @@ local function refresh_candidates()
   end)
 end
 
-function M.complete(arg_lead)
+local function completions(arg_lead, want_commits)
   if candidates == nil then
     candidates = base.candidates_sync(vim.fn.getcwd())
   else
@@ -300,7 +340,10 @@ function M.complete(arg_lead)
   local out = {}
   if arg_lead == "" then
     -- Nothing typed: the refs, which is what someone pressing `<Tab>`
-    -- straight after the command is asking to be shown.
+    -- straight after the command is asking to be shown. Commits are not
+    -- a list -- there are a thousand of them and no menu column to say
+    -- which is which -- so even the command that is about commits waits
+    -- for something to narrow them by.
     for _, item in ipairs(candidates) do
       if item.kind ~= "commit" then
         table.insert(out, item.word)
@@ -309,13 +352,32 @@ function M.complete(arg_lead)
     return out
   end
 
-  local hexish = arg_lead:match("^%x%x+$") ~= nil
   for _, item in ipairs(prompt.rank(candidates, arg_lead)) do
-    if item.kind ~= "commit" or hexish then
+    if item.kind ~= "commit" or want_commits(arg_lead) then
       table.insert(out, item.word)
     end
   end
   return out
+end
+
+function M.complete(arg_lead)
+  return completions(arg_lead, function(lead)
+    return lead:match("^%x%x+$") ~= nil
+  end)
+end
+
+--- ...and for `:UatisShow`, where a commit is the whole point.
+---
+--- Every commit ranks, not only the hex-shaped leads: `:Uatis` takes a
+--- revision and is usually given a branch, so bare hashes ahead of the
+--- branch names would bury them; here the branch names are the unusual
+--- answer. Ranking matches a commit's subject line too (see
+--- `prompt.rank`), so `:UatisShow rena<Tab>` finds the commit that
+--- renamed something -- which is how anyone actually remembers one.
+function M.complete_show(arg_lead)
+  return completions(arg_lead, function()
+    return true
+  end)
 end
 
 --- The global mappings, from `config.keys.global`.
@@ -344,6 +406,8 @@ local function setup_keymaps()
     { lhs = k.base_branch, rhs = M.set_base_branch, desc = "uatis: set the base branch" },
     { lhs = k.toggle_diff, rhs = M.toggle_diff, desc = "uatis: toggle the diff view" },
     { lhs = k.open_pane, rhs = M.open_pane, desc = "uatis: open the changed-file pane" },
+    { lhs = k.show_commit, rhs = function() M.show_commit() end,
+      desc = "uatis: show one commit, in a tab of its own" },
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then

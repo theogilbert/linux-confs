@@ -214,15 +214,26 @@ function M.close(bufnr)
   end
 end
 
---- Every open view measuring `root` at `rev`.
+--- Every open view measuring `root` at `rev`, of the same kind of review
+--- as `standalone` says.
 ---
 --- Asked by the list, which measures the same comparison and has to say
 --- what these buffers say rather than only what git does, and asked by
 --- `close_all` below, which ends them.
-function M.matching(root, rev)
+---
+--- The kind is part of the question because one root and one revision
+--- can be two readings at once: a review of one commit is measured
+--- against that commit's parent, and for the first commit of a branch
+--- that parent IS the fork point the branch review measures from. The
+--- two describe different comparisons -- commit against parent, working
+--- tree against fork point -- and neither has any business counting or
+--- closing the other's buffers.
+function M.matching(root, rev, standalone)
   local out = {}
   for bufnr, view in pairs(views) do
-    if view.root == root and view.rev == rev and vim.api.nvim_buf_is_valid(bufnr) then
+    if view.root == root and view.rev == rev
+      and (view.standalone == true) == (standalone == true)
+      and vim.api.nvim_buf_is_valid(bufnr) then
       table.insert(out, view)
     end
   end
@@ -243,10 +254,10 @@ end
 --- repository -- is left where it was put. One pinned to the SAME
 --- revision is not distinguishable from part of the review, and is not
 --- worth distinguishing.
-function M.close_all(root, rev)
+function M.close_all(root, rev, standalone)
   -- Collected first: closing unregisters, and removing entries from a
   -- table being iterated is not something Lua promises anything about.
-  local doomed = M.matching(root, rev)
+  local doomed = M.matching(root, rev, standalone)
   for _, view in ipairs(doomed) do
     M.close(view.bufnr)
   end
@@ -261,6 +272,9 @@ end
 --- reader just asked for.
 function M.stop(view)
   local root, rev = view.root, view.rev
+  -- Which kind of review this view is part of -- see `matching`. Ending
+  -- one is never ending the other, in either direction.
+  local alone = view.standalone == true
   -- Required at call time: the pane requires this module to open the files
   -- it lists, and asking for it at the top would be a cycle.
   local pane = require("uatis.pane")
@@ -280,12 +294,20 @@ function M.stop(view)
   -- repository is the whole test there. Elsewhere the revision has to
   -- match, since another tab may be reviewing the same repository
   -- against something else on purpose.
+  --
+  -- ...and the same revision is not the same review when one of the two
+  -- is a review of ONE commit: that one is measured against the
+  -- commit's parent, which for the first commit of a branch is the
+  -- fork point the branch review measures from. Ending either would
+  -- otherwise take the other's list -- and a `:UatisShow` list takes
+  -- its tab with it.
   for _, list in ipairs(pane.all()) do
-    if list.root == root and (list == here or list.rev == rev) then
+    if list.root == root
+      and (list == here or (list.rev == rev and (list.standalone == true) == alone)) then
       pane.close(list)
     end
   end
-  return M.close_all(root, rev)
+  return M.close_all(root, rev, alone)
 end
 
 --- Inline (the old side drawn around your buffer) or side by side (the
@@ -686,6 +708,15 @@ function M.attach(bufnr, win, root, relpath, opts)
       if not vim.api.nvim_buf_is_valid(bufnr) then
         return
       end
+      -- ...and the window it was going to be drawn in. Resolving a
+      -- revision is a git subprocess, and a window can be gone by the
+      -- time one answers: a tab closed, a split shut, `:tabonly` in the
+      -- one next to it. Everything below reads `vim.wo[win]`, which on a
+      -- window that is no longer there is not a stale answer but an
+      -- error thrown out of a callback nobody is standing in.
+      if not vim.api.nvim_win_is_valid(win) then
+        return
+      end
 
       -- Re-running over a buffer that already has a view re-points it
       -- rather than stacking a second one: the mappings, the winbar and
@@ -704,6 +735,7 @@ function M.attach(bufnr, win, root, relpath, opts)
         existing.old_path = opts.old_path
         existing.tracks_base = opts.tracks_base or false
         existing.at_commit = opts.at_commit
+        existing.standalone = opts.standalone == true
         render(existing)
         if opts.on_open then
           opts.on_open(existing)
@@ -724,6 +756,11 @@ function M.attach(bufnr, win, root, relpath, opts)
         -- winbar says so nobody types into a rendering and wonders why
         -- it will not take.
         at_commit = opts.at_commit,
+        -- Which kind of review this buffer belongs to: a review of one
+        -- commit, or a review of a branch. One root and one revision
+        -- can be both at once -- see `matching` -- and neither counts
+        -- or closes the other's buffers.
+        standalone = opts.standalone == true,
         -- Whether this comparison FOLLOWS the base branch or merely
         -- happens to be pointed where the base branch pointed once.
         -- Choosing another one re-points the first and leaves the second

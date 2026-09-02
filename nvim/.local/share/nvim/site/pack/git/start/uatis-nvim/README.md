@@ -40,6 +40,15 @@ when you ask.
 `:Uatis` does the same. `:Uatis <gitref>` compares against something else,
 completing on your refs.
 
+**One commit on its own** is `<leader>gH`, or `:UatisShow [<rev>]`, which
+opens it in a tab of its own. That is the other question about history:
+not what you have changed since you forked, but what somebody's commit
+did — the one a colleague pointed at, the one a bisect landed on — as
+likely as not on a branch this checkout is nowhere near. With no
+argument it asks which, through a prompt that completes every ref and
+the recent commits by their subject line. See
+[One commit on its own](#one-commit-on-its-own).
+
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
 `main`. `<leader>gB` picks another through `vim.ui.select`, offering the
 one in force and whichever of those conventional names this repository
@@ -76,6 +85,9 @@ move to the new fork point together. Views you named a revision for with
 | `<leader>gf` | the changed-file list, on and off |
 | `<leader>gh` | read the review one commit at a time, on / off |
 | `]C` / `[C` | within that, the next / previous commit |
+
+`<leader>gH` (global, like `<leader>gu`) reads any one commit in a tab of
+its own — see [One commit on its own](#one-commit-on-its-own).
 
 In the list, that toggle is a bare `C` — a scratch buffer of rows has
 nothing for it to change, and it reads as the capital of the two keys
@@ -122,6 +134,29 @@ changes cannot honestly be drawn on a buffer holding five commits'
 worth. Files are opened from the list while a commit is on show, since
 a file reached by hand holds the working tree's content, not that
 commit's.
+
+### One commit on its own
+
+`<leader>gH`, or `:UatisShow <rev>`, reads a single commit anywhere in
+the repository, in a tab of its own — because a review is a mode over a
+tab, and opening it where you are standing would end the one you already
+had. The list is that commit's files, measured against its parent, and
+the header says `8f3c2a1^ ← 8f3c2a1`. A commit with no parent at all is
+measured against the empty tree, which is every line of it arriving.
+
+Each file is shown as it was at that commit, read-only: a finished
+commit is not your buffer, whatever today's copy of the file happens to
+say. Nothing about the working tree moves it — a write, a pull, a rebase
+all leave `git diff <parent> <commit>` saying exactly what it said — so
+this review is the one thing here that never re-reads itself.
+
+`<leader>gu` ends it and takes the tab with it. A review of your own
+branch running in another tab is left alone, even when the two are
+measured against the very same revision, which is what they are when the
+commit is the first one on your branch. `C` and `]C`/`[C` have nowhere
+to go here and say so; walking a branch a commit at a time is
+`<leader>gh`, inside a review of it. `show = { tab = false }` opens it in
+place instead, which does end whatever review that tab was holding.
 
 `q` in the list closes that window and nothing else: the review goes on,
 `]f` still steps it, and `<leader>gf` brings the window back to the same
@@ -198,6 +233,7 @@ require("uatis").setup({
     follow = false,                   -- ...and annotate a file only when asked
   },
   list = { width = 48 },              -- the list's width when you do open it
+  show = { tab = false },             -- :UatisShow in place, not in a new tab
   diff = { default_backend = "line" },
   keys = { view = { layout = "<leader>gS" } },
 })

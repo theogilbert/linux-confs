@@ -197,6 +197,60 @@ function M.commits_between(root, from, to, cb)
     end)
 end
 
+--- One commit, and the revision its diff is measured against:
+--- cb({ sha, short, date, author, subject }, parent) -- or cb(nil, nil,
+--- err) for a rev git will not resolve.
+---
+--- The FIRST parent, which is the same choice `--first-parent` makes
+--- above: what a merge commit did is what it brought in, and that is its
+--- diff against the branch it landed on rather than against the branch
+--- it merged.
+---
+--- A commit with no parent at all -- the first in the repository -- is
+--- measured against the empty tree, and git is asked to name that rather
+--- than the constant being written in here: the one everybody quotes is
+--- the sha1 empty tree, and a repository built with sha256 objects has a
+--- different one.
+---
+--- `^{commit}` so a tag resolves to what it points at, and so a string
+--- that is merely hex-shaped is refused here rather than three calls
+--- later.
+function M.commit(root, rev, cb)
+  run(root, { "log", "-1", "--no-walk", "--date=short",
+    "--format=%H%x09%h%x09%ad%x09%an%x09%P%x09%s", rev .. "^{commit}" },
+    function(ok, out, err)
+      if not ok then
+        cb(nil, nil, vim.trim(err or ""))
+        return
+      end
+      local sha, short, date, author, parents, subject =
+        out:match("^(%S+)\t(%S+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\r\n]*)")
+      if not sha then
+        cb(nil, nil, "git said nothing about " .. rev)
+        return
+      end
+      local commit = {
+        sha = sha, short = short, date = date, author = author, subject = subject,
+      }
+      local first = parents:match("^(%S+)")
+      if first then
+        cb(commit, first)
+        return
+      end
+      -- Said on the commit itself as well as answered here, because
+      -- what a caller does about it is not only which revision to diff
+      -- against: there is no `<sha>^` to name in a header either.
+      commit.orphan = true
+      run(root, { "hash-object", "-t", "tree", "/dev/null" }, function(made, tree, why)
+        if not made or vim.trim(tree) == "" then
+          cb(nil, nil, "the empty tree has no name here: " .. vim.trim(why or ""))
+          return
+        end
+        cb(commit, vim.trim(tree))
+      end)
+    end)
+end
+
 --- Files git has never been told about: `ls-files --others
 --- --exclude-standard`, so what `.gitignore` covers is not in it.
 --- cb({ path, ... }), repo-relative.

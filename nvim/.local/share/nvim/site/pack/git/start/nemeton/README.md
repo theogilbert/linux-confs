@@ -189,7 +189,13 @@ it is not.
 When the line a thread sits on no longer says what it said — someone
 pushed while you were reading, or you edited the file you are reviewing
 — the thread carries the code it *was* written against, above the first
-note and marked `was`. A comment is half of a pair and the code is the
+note and on a band of its own (`NemetonWas`: your background moved
+towards the colour a line taken away is drawn in), running the width of
+the editor from the rail out — the rail is on the band too and keeps
+only its colour, which is what says which conversation the quotation is
+inside.
+Nothing is written in front of it — it is a quotation of the file, and
+the background says so without a word to read on every line. A comment is half of a pair and the code is the
 half that moves; without this the note reads as a remark about whatever
 happens to be under it now. The old lines are read out of the checkout
 with `git show`, not from the forge — the commit the note was written
@@ -281,6 +287,19 @@ error trains exactly the wrong reflex.
 
 `:checkhealth nemeton` says which host and which token source are in
 effect, without printing the token.
+
+- **`track`** (default `true`) — `glab mr checkout` points the branch it
+  leaves you on at `refs/merge-requests/<iid>/head` so that `git pull`
+  follows the merge request. Nothing on this side has a remote-tracking
+  branch then, so git answers "no upstream" to every question about
+  being ahead or behind — and so does everything else reading the
+  repository: a statusline, or lazygit, which draws such a branch with a
+  purple `?` where the counts go. For a merge request from this project
+  the two are the same commits under two names, so nemeton puts the
+  ordinary upstream back after the checkout (`git fetch <remote>
+  <branch>`, then `git branch --set-upstream-to`). Never for one from a
+  fork, whose source branch is not on this remote at all. `false` leaves
+  what glab wrote alone.
 
 ## The log
 

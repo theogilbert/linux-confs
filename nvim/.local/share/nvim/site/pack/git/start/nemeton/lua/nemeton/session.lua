@@ -382,6 +382,7 @@ function M.open(iid, opts)
     end)
     if opts.checkout ~= false then
       M.check_head(root, mr)
+      M.track(root, mr)
     end
   end
 
@@ -456,6 +457,64 @@ function M.goto_thread(thread, before)
   local last = vim.api.nvim_buf_line_count(0)
   vim.api.nvim_win_set_cursor(0, { math.min(thread.line, last), 0 })
   return true
+end
+
+--- Points the branch a checkout left you on at the branch it came
+--- from, rather than at the merge request ref glab tracked it against.
+---
+--- `glab mr checkout` sets `branch.<name>.merge` to
+--- `refs/merge-requests/<iid>/head` so that `git pull` follows the
+--- merge request. The cost is that there is no remote-tracking ref
+--- behind that: git answers "no upstream" to every question about being
+--- ahead or behind, and so does everything that reads git -- a
+--- statusline, lazygit, which draws such a branch with a question mark
+--- where the counts go.
+---
+--- Only for a merge request from this project, where the two are the
+--- same commits under two names. The source branch of one from a fork
+--- is not on this remote at all, and a branch of the same name that
+--- happens to be is a different branch entirely.
+---
+--- Best effort and quiet: the remote is read back from what glab just
+--- wrote rather than guessed at, and every step of it is allowed to
+--- fail -- the review works either way, and this is a convenience for
+--- the other tools looking at the same repository.
+function M.track(root, mr)
+  local branch = mr.source_branch
+  if not (require("nemeton.config").glab.track and branch) then
+    return
+  end
+  if
+    mr.source_project_id
+    and mr.target_project_id
+    and mr.source_project_id ~= mr.target_project_id
+  then
+    return
+  end
+  local function git(args, cb)
+    local cmd = vim.list_extend({ "git" }, args)
+    local done = log.exec(cmd, { cwd = root })
+    vim.system(cmd, { text = true, cwd = root }, function(res)
+      done(res.code, res.stderr)
+      cb(res)
+    end)
+  end
+  -- Whichever remote glab used -- read back rather than assumed to be
+  -- "origin", and its absence is how "this is not a branch glab checked
+  -- out" is told from one that is.
+  git({ "config", "--get", ("branch.%s.remote"):format(branch) }, function(res)
+    local remote = vim.trim(res.stdout or "")
+    if res.code ~= 0 or remote == "" then
+      return
+    end
+    -- The fetch is not the checkout's: glab fetched the merge request
+    -- ref, which updates no remote-tracking branch, and it is the
+    -- remote-tracking branch that "two ahead, one behind" is counted
+    -- against.
+    git({ "fetch", remote, branch }, function()
+      git({ "branch", ("--set-upstream-to=%s/%s"):format(remote, branch), branch }, function() end)
+    end)
+  end)
 end
 
 --- Warns when the local HEAD is not the revision the threads were

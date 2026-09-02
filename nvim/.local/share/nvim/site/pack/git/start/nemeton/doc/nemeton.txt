@@ -445,8 +445,15 @@ edit the file you are reviewing, and a thread is left sitting on a line
 that no longer says what it said. Wherever a conversation is drawn --
 expanded under the code, in the peek float, in the every-thread window
 -- it then carries the code it was written against, above the first
-note and marked `was`, in the colour of a line taken away. A thread
-written across several lines carries all of them.
+note, on a band of its own |hl-NemetonWas|. Nothing is written in front
+of it: it is a quotation of the file, the background says so, and a
+label saying it again is a word to read before every line. A thread
+written across several lines carries all of them, and the band runs the
+width of the editor under every one, from the rail out -- the rail is
+on the band as well, keeping only its colour, which is what says which
+conversation the quotation is inside. In the two windows that are real
+buffers the band is as wide as the widest line of it: there is no
+editor-wide ground there to match.
 
 That code is read out of the checkout with `git show`, not from the
 forge: the commit the note was written against is one this repository
@@ -574,12 +581,39 @@ GLAB                                                     *nemeton-config-glab*
     glab = {
       bin = "glab",
       timeout = 30,             -- seconds before a call is hung
+      track = true,             -- fix the upstream after a checkout
       host = nil,               -- string | fun(): string | nil
       token = nil,              -- string | fun(): string | nil
       prompt_for_token = true,
     }
 <
 See |nemeton-credentials| for `host`, `token` and `prompt_for_token`.
+
+                                                             *nemeton-tracking*
+`track` is about what `glab mr checkout` leaves behind. It points the
+branch at the merge request:
+>
+    branch.<name>.remote = origin
+    branch.<name>.merge  = refs/merge-requests/<iid>/head
+<
+so that `git pull` follows the merge request. Nothing on this side has a
+remote-tracking branch then -- `refs/merge-requests/*` is not in any
+remote's fetch refspec -- so git answers "no upstream" to every question
+about being ahead or behind, and so does everything else reading the
+repository: a statusline, or lazygit, which draws a branch configured
+with a remote it cannot count against as a purple `?`.
+
+For a merge request from this project the two are the same commits under
+two names, so nemeton puts the ordinary upstream back after the
+checkout: one `git fetch <remote> <branch>`, one `git branch
+--set-upstream-to`. Both are quiet, both are allowed to fail, and both
+are in the log. |nemeton-log|
+
+Never for a merge request from a fork -- its source branch is not on
+this remote, and a branch of the same name that happens to be is a
+different branch entirely -- and never for a checkout under a branch
+name of your own, which is not a branch this configured. `track =
+false` leaves what glab wrote alone.
 
 LOG                                                       *nemeton-config-log*
 >
@@ -655,6 +689,16 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonRemoved        one it takes away               Removed
     NemetonHint           the key hints across a window   Comment
     NemetonKey            the key itself, inside a hint   Special
+
+                                                               *hl-NemetonWas*
+`NemetonWas` is the band the code a thread was written against is drawn
+on when that is not what the line says any more |nemeton-drift|. Not a
+link: it is your own background moved towards the colour a line taken
+away is drawn in, which is what that code is, with the text left the
+colour text is -- the background is carrying the verdict, and red words
+on a red band are a line you have to work at to read. Without
+'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
+as it used to be.
 
                                                             *hl-NemetonInline*
                                                      *hl-NemetonSettled*

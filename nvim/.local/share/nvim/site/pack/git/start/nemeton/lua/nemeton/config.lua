@@ -345,6 +345,28 @@ return {
   -- user with it somewhere odd has one line to change.
   glab = {
     bin = "glab",
+
+    -- Whether to point the branch a checkout leaves you on at the
+    -- branch it came from.
+    --
+    -- `glab mr checkout` tracks it against
+    -- `refs/merge-requests/<iid>/head` instead, so that `git pull`
+    -- follows the merge request. Nothing on this side has a remote
+    -- branch: git can no longer say whether you are ahead or behind,
+    -- and neither can anything that reads git -- a statusline, lazygit,
+    -- which draws a branch with no upstream it can count against as a
+    -- question mark.
+    --
+    -- For a merge request from this project the two are the same
+    -- commits under two names, so this sets the ordinary upstream
+    -- afterwards: one `git fetch`, one `git branch --set-upstream-to`.
+    -- Never for one from a fork -- its source branch is not on this
+    -- remote, and a branch of the same name that happens to be is a
+    -- different branch entirely -- and never for a checkout under a
+    -- name of your own, which is not a branch this configured.
+    --
+    -- `false` to leave what glab wrote alone.
+    track = true,
     -- Seconds before a call is considered hung. The forge is on the far
     -- side of a network and an editor that never answers is worse than
     -- one that says it gave up.

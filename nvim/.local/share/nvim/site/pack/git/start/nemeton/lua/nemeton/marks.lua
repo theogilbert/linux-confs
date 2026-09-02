@@ -108,9 +108,38 @@ local function ground()
   end
   tint("NemetonInline", "NemetonSignOpen", 1)
   tint("NemetonSettled", "NemetonResolved", 0.5)
+
+  -- ...and the band the code a thread was written against is drawn on,
+  -- which is not one of the two: it is a quotation of the file inside a
+  -- conversation, and what says so is that it does not look like the
+  -- conversation around it. Further from the page than either ground
+  -- and towards the colour of a line taken away, because that is what it
+  -- is -- code that was there when the comment was written and is not
+  -- there now.
+  --
+  -- Its text stays the colour text is: the background is carrying the
+  -- verdict now, and red words on a red band are a line you have to work
+  -- at to read. Nothing to mix without true colour, so there it is the
+  -- red text it used to be.
+  if vim.o.termguicolors and normal.bg and normal.fg then
+    local gone = vim.api.nvim_get_hl(0, { name = "NemetonRemoved", link = false })
+    vim.api.nvim_set_hl(0, "NemetonWas", {
+      fg = normal.fg,
+      bg = mix(normal.bg, gone.fg or normal.fg, 0.28),
+      default = true,
+    })
+  else
+    vim.api.nvim_set_hl(0, "NemetonWas", { link = "NemetonRemoved", default = true })
+  end
 end
 
---- `group`, with the ground behind it.
+-- The groups that are a ground rather than a colour of text. There is
+-- one: the code a thread was written against is a band inside the block
+-- rather than text on it. A line carrying one is drawn on it instead of
+-- on the conversation's -- see `shade`.
+local OWN_GROUND = { NemetonWas = true }
+
+--- `group`, with `base` behind it.
 ---
 --- The alternative -- the ground under the text and the group over it,
 --- as two highlights on one chunk -- loses whenever the group carries a
@@ -123,9 +152,10 @@ end
 --- So the colour is taken and the background is not. A group that says
 --- its piece in a background alone -- DiffAdd again, which often has no
 --- foreground at all -- says it in that colour as text instead.
-local function on_ground(group, settled)
-  local base = settled and "NemetonSettled" or "NemetonInline"
-  if not group then
+local function on_ground(group, base)
+  -- Nothing to put on it, or it is the ground itself: the band under
+  -- quoted code arrives as the group it is drawn on.
+  if not group or group == base then
     return base
   end
   local key = base .. "/" .. group
@@ -328,12 +358,25 @@ local function shade(virt, settled)
     if #line == 0 then
       out[i] = {}
     else
-      local done = settled and settled[i] or false
+      -- Which ground this line is drawn on: the conversation's, or one
+      -- of its own where it brought one. The whole line, edge to edge
+      -- and the rail included -- a band with two cells of another
+      -- colour at the start of it is not a band, and one that stops
+      -- where the code stops is a strip with a ragged end in the middle
+      -- of the block. The rail keeps its *colour* either way, which is
+      -- what says the quotation is inside a conversation and which
+      -- conversation it is.
+      local base = (settled and settled[i]) and "NemetonSettled" or "NemetonInline"
+      for _, chunk in ipairs(line) do
+        if OWN_GROUND[chunk[2]] then
+          base = chunk[2]
+        end
+      end
       local shaded = {}
       for _, chunk in ipairs(line) do
-        table.insert(shaded, { chunk[1], on_ground(chunk[2], done) })
+        table.insert(shaded, { chunk[1], on_ground(chunk[2], base) })
       end
-      table.insert(shaded, { (" "):rep(math.max(width - widths[i], 1)), on_ground(nil, done) })
+      table.insert(shaded, { (" "):rep(math.max(width - widths[i], 1)), base })
       out[i] = shaded
     end
   end

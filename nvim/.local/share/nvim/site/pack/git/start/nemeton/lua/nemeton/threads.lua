@@ -561,11 +561,33 @@ function M.render(thread, opts)
   -- has come to say something else. Drawn above the first word anybody
   -- said, because it is what they were looking at when they said it.
   --
-  -- In the colour a line taken away is drawn in, which is what this is:
-  -- code that was there when the comment was written and is not there
-  -- now.
-  for i, line in ipairs(opts.was or {}) do
-    body(rail[1], line, "NemetonRemoved", i == 1 and "was  " or "     ")
+  -- On a band of its own, and with nothing written in front of it: this
+  -- is a quotation of the file, and a label saying so is a word to read
+  -- before every line of it. A background says it before anything is
+  -- read, and leaves the code starting where code starts.
+  --
+  -- Every line padded to the width of the longest, so the band is a
+  -- block rather than a ragged edge -- the same trick the ground under
+  -- the whole conversation plays, at the width of what is on it rather
+  -- than of the editor.
+  if opts.was and #opts.was > 0 then
+    -- One space inside the band on each side: text against the edge of
+    -- a colour reads as text that has been cut off.
+    local room = limit and (limit - vim.fn.strdisplaywidth(rail[1]) - 2)
+    local pieces, widest = {}, 0
+    for _, line in ipairs(opts.was) do
+      for _, piece in ipairs(wrap(line, room)) do
+        table.insert(pieces, piece)
+        widest = math.max(widest, vim.fn.strdisplaywidth(piece))
+      end
+    end
+    for _, piece in ipairs(pieces) do
+      local pad = widest - vim.fn.strdisplaywidth(piece) + 1
+      table.insert(out, {
+        { rail[1], rail[2] },
+        { " " .. piece .. (" "):rep(pad), "NemetonWas" },
+      })
+    end
   end
 
   -- One entry per thread rather than the whole argument: an index of

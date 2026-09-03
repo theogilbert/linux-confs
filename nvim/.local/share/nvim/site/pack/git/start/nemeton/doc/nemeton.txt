@@ -155,16 +155,17 @@ A review, end to end:
 :Nemeton suggest        Suggest a change to the line under the cursor,
                         or to the lines of the last visual selection.
                         The composer opens with the current text in a
-                        `suggestion` fence; what you leave in it is what
-                        the author can apply with one click.
+                        `suggestion` fence, in the colours of the
+                        language it is written in |nemeton-syntax|;
+                        what you leave in it is what the author can
+                        apply with one click.
 
-:Nemeton create         Open a merge request for the branch you are on.
-                        The composer opens empty: the first line is the
-                        title, the rest is the description, and a title
-                        that begins `Draft:` makes a draft merge
-                        request -- GitLab's rule, not this plugin's.
-                        The branch is pushed on the way, and nothing is
-                        confirmed at a prompt.
+:Nemeton create         A window for a merge request of your own, for
+                        the branch you are on: the title, whether it is
+                        a draft, the description, the branch it goes to
+                        and the labels -- with what CI made of the
+                        branch and how much it changes underneath.
+                        |nemeton-create-window|
 
 :Nemeton note           A comment on the merge request rather than on a
                         line of it.
@@ -206,23 +207,33 @@ A review, end to end:
 Every key here is `config.keys.*` and every one of them can be set to
 `false` to unbind it. See |nemeton-config-keys|.
 
-GLOBAL                                               *nemeton-mappings-global*
+ALWAYS                                               *nemeton-mappings-global*
 
     <leader>ml      the merge request list
-    <leader>md      the merge request's own window, while a review is
-                    open -- the one review key that is not about the
-                    line under the cursor, and so the one you can press
-                    from the quickfix list, the comments window, a
-                    terminal, or a file of another repository
 
-BUFFER-LOCAL                                        *nemeton-mappings-session*
+THE REVIEW                                          *nemeton-mappings-session*
 
-Bound on every file buffer inside the repository while a review is open,
-and taken away again by `:Nemeton close`. Bound again whenever something
-else has had a turn at the buffer: a filetype plugin maps into the
-buffer it is loaded for -- Neovim's own ftplugin/python.vim takes `]m`
-and `[m` for its method motions -- and it is loaded again every time the
-file is re-read, which a checkout makes it do.
+Bound while a merge request is open and taken away again by `:Nemeton
+close`. An editor with no review on is an editor where `]m` means what
+it has always meant.
+
+Everywhere, and not only on the files of the repository. `]m` means "the
+next thing owed an answer", and the thing it walks to is in whichever
+file it is in: the question is asked as often from the quickfix list the
+threads were read in, from the terminal the tests ran in, from the
+commit message being written, or from a file of another project, as it
+is from the code itself. The verbs that *are* about the line under the
+cursor are out there too, and say what they always say when there is no
+line to be about -- this buffer is not a file of the repository, or
+there is no thread here.
+
+Bound twice over, in fact: globally, and again on every file of the
+repository whenever something else has had a turn at the buffer. A
+global mapping is the weakest kind there is, and a filetype plugin maps
+into the buffer it is loaded for -- Neovim's own ftplugin/python.vim
+takes `]m` and `[m` for its method motions. Only a buffer-local mapping
+wins that, and the file is loaded again every time it is re-read, which
+a checkout makes it do.
 
     <leader>mx      expand the conversations inline
     <leader>mp      peek at the thread on this line
@@ -232,14 +243,14 @@ file is re-read, which a checkout makes it do.
     <leader>me      edit one of its comments
     <leader>mD      delete one of them, after asking
     <leader>ms      (visual) suggest a change to these lines
-    <leader>md      the merge request's own window -- also bound
-                    globally, see above
+    <leader>md      the merge request's own window -- the one review key
+                    that is not about the line under the cursor
     <leader>mq      end the review -- the markers and these keys go
                     away, and the branch stays checked out
     ]m  [m          next / previous thread, across the whole merge
                     request -- not just this file
 
-What is bound out here is what acts on the line under the cursor. A
+What is bound by default is what acts on the line under the cursor. A
 dozen keys under one prefix is a menu nobody has learnt, so the rest are
 `false` in `config.keys.session` and live where the question they answer
 is asked -- one letter further in, on `<leader>md`
@@ -253,8 +264,8 @@ review:
     threads = false     |:Nemeton| `threads`
     toggle = false      |:Nemeton| `comments`
 
-Give any of them a string to have it out in the buffer as well; nothing
-else has to change.
+Give any of them a string to have it on a key as well; nothing else has
+to change.
 
 ==============================================================================
 6. WINDOWS                                                   *nemeton-windows*
@@ -429,11 +440,56 @@ taken out on the way in: the colour escapes, GitLab's `section_start:`
 markers, and the carriage returns a progress bar was drawn with -- of
 which only what the line ended up saying is kept.
 
+A MERGE REQUEST OF YOUR OWN                            *nemeton-create-window*
+
+`+` in the list, or `:Nemeton create`. Everything `glab mr create`
+would ask at a prompt, on one screen and in any order:
+
+    title           what it is called
+    draft           whether anybody is being asked to review it yet
+    target          the branch it goes into
+    labels          the ones the project has
+    description     what it is for
+
+The cursor sits on a field and `<CR>` changes it: the title in a
+prompt, the description in the composer (|nemeton-writing|), the target
+branch and the labels picked from what the project has. However the
+composer is left -- its own keys, or `:q` like any other split -- the
+cursor comes back here. A title that
+begins `Draft:` sets the switch instead of staying in the title --
+GitLab reads the prefix off the title itself, so the two make the same
+merge request, and only one of them leaves the title as the thing that
+was typed.
+
+Under the fields are the three facts nobody types: what CI last made of
+the branch -- it has no pipeline of its own yet, and the branch has run
+one against the same commits -- and how many files and lines it
+changes. The count is git's, `<target>...HEAD` against
+`origin/<target>` where that is here and `<target>` where it is not,
+because the merge request whose diff GitLab would answer with does not
+exist yet.
+
+    <CR>            change the field under the cursor
+    <C-s>           open the merge request
+    r               ask CI and git again
+    X               throw away what has been typed
+    q               close it
+
+`q` keeps everything. The window is per branch and lasts as long as the
+editor session: press `+` again and the title, the description and the
+rest are where you left them. A merge request is written between two
+interruptions like anything else. What has gone out is forgotten -- the
+next `+` on that branch is a new merge request.
+
+The branch is pushed on the way out (`--push`) and nothing is confirmed
+at a prompt (`--yes`): a subprocess with no terminal is not a place to
+be asked anything.
+
 THE PEEK FLOAT                                           *nemeton-peek-window*
 
 `<leader>mp`. The thread on this line, over the code, gone on the next
-cursor movement. For reading; the keys that answer it are the
-buffer-local ones.
+cursor movement. For reading; the keys that answer it are the review's
+own, |nemeton-mappings-session|.
 
 ==============================================================================
 7. WRITING A COMMENT                                         *nemeton-writing*
@@ -501,6 +557,41 @@ put there below in green. What it would replace is read off the buffer
 where the file is open and off the disk where it is not. In the overall
 comments there is no line to compare against and the block is drawn on
 its own rather than with an invented left-hand side.
+
+                                                              *nemeton-syntax*
+The code in it is drawn in the colours of the language the file is in --
+on both halves of the diff, and in the composer while it is being
+written. A suggestion is the one part of a comment that is not prose,
+and in one colour end to end it is the only code on the screen the
+editor has not helped you read.
+
+Which half a line is then has to be said some other way, because a
+keyword is the colour a keyword is on both of them: each half is drawn
+on a band of its own, |hl-NemetonSuggestNew| and |hl-NemetonSuggestOld|,
+edge to edge like the ground under the conversation, with the `+` and
+the `-` in the colour the half used to be.
+
+Not where the line the thread sits on is inside a docstring, a long
+string or a block comment. What a suggestion replaces there is prose,
+and what this paints is a handful of lines lifted out of a file and
+parsed on their own, with nothing around them to say what they are: the
+sentences of a docstring parsed as code come back as a keyword here and
+a function call there, which is worse than plain -- it is confidently
+wrong about what is being read. So the file itself is asked, where the
+lines came from and where their context still is, and both halves are
+left the colour of the half of the diff they are.
+
+The parser is the one you already have for that language; a file whose
+language has none is drawn plainly, and so is everything if
+`comments.syntax` is `false`. The block is parsed whole rather than a
+line at a time -- a string that opens on one line and closes on the next
+is not two lines of anything -- and the `+` and the `-` keep the green
+and the red, so which half of the diff a line is stays said.
+
+In the composer this is painted over the top of markdown's own
+highlighting: `suggestion` is GitLab's word rather than a language, so
+markdown draws the fence as a block of raw text and has nothing to say
+about what is in it.
 
                                                                *nemeton-drift*
 WHEN THE CODE HAS MOVED ON. Someone pushes while you are reading, or you
@@ -581,6 +672,7 @@ COMMENTS                                             *nemeton-config-comments*
       sign_draft = "",      -- one of yours, not sent yet
       virt_text = false,     -- the first line of it at end of line
       show_resolved = true,  -- draw resolved threads at all
+      syntax = true,         -- a suggestion in its language's colours
       rail = "▎",            -- the rail drawn down a thread
       reply_indent = "  ",   -- what a reply is indented by
       reply_mark = "↳ ",     -- and what stands in that indent
@@ -602,6 +694,9 @@ line. Set it to `false` to wrap to the window and nothing narrower.
 
 `show_resolved` is a redraw, not a refetch: resolved threads are fetched
 either way.
+
+`syntax` costs a treesitter parse of the suggested lines, once per block
+and cached. See |nemeton-syntax|.
 
 `ground` is 0 for the file's own background and 1 for the colour its
 text is drawn in; see |hl-NemetonInline| for what is done with it, and
@@ -653,8 +748,8 @@ the omnifunc reads.
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
-`keys.conversation`, `keys.jobs`, `keys.log` and `keys.compose`, each a
-table of
+`keys.conversation`, `keys.jobs`, `keys.log`, `keys.create` and
+`keys.compose`, each a table of
 what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
 can be `false`:
 >
@@ -697,6 +792,13 @@ two names, so nemeton puts the ordinary upstream back after the
 checkout: one `git fetch <remote> <branch>`, one `git branch
 --set-upstream-to`. Both are quiet, both are allowed to fail, and both
 are in the log. |nemeton-log|
+
+What glab writes as `branch.<name>.remote` is as often the remote's URL
+as its name, and neither git command above takes a URL. So it is turned
+back into a name first -- the remote whose URL it is, compared with a
+`.git`, a trailing slash and any `user@` taken off both sides. A value
+belonging to no remote of this repository is left alone rather than
+guessed at.
 
 Never for a merge request from a fork -- its source branch is not on
 this remote, and a branch of the same name that happens to be is a
@@ -788,6 +890,48 @@ colour text is -- the background is carrying the verdict, and red words
 on a red band are a line you have to work at to read. Without
 'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
 as it used to be.
+
+                                                            *hl-NemetonHead*
+                                                    *hl-NemetonHeadSettled*
+`NemetonHead` is the band the head of a note is drawn on -- who said it
+and when -- and `NemetonHeadSettled` is the same for a thread that is
+over. Each is the ground its block is on |hl-NemetonInline|, taken
+further into the colour that ground is already tinted towards and then
+put back at the lightness it started from, plus a hair.
+
+Told apart by colour and not by being lighter, which is the point:
+lighter is nearer the colour of the text, and what is written on this
+band is the quietest group in the plugin -- the date, in the comment
+colour. A heading is a different colour, not a brighter one.
+
+A note is two things read two ways: a line of bookkeeping that is
+skimmed, and a thing somebody said that is read. They were told apart by
+colour alone -- a name in the title colour, a date in the comment
+colour, and then the words -- and in a thread with four answers in it
+that is four places the eye has to find by reading. In the comments
+window |nemeton-notes-window| the band does a second job: it says where
+one entry ends and the next begins, which the blank line between them
+says quietly.
+
+                                                     *hl-NemetonSuggestNew*
+                                                     *hl-NemetonSuggestOld*
+`NemetonSuggestNew` and `NemetonSuggestOld` are the two bands a
+suggestion is drawn on: the lines it would put there, and the lines it
+would take away. Your own background moved towards the colour each half
+used to be drawn in -- less far than |hl-NemetonWas|, which is beside
+them in the same block and is a quotation rather than half of a diff --
+and each keeps that colour as its foreground, for what is on the band
+and is not code: the `+`, the `-`, and every line of a language nothing
+here can parse.
+
+A band and not only coloured text, because the text is no longer free to
+carry it: the code inside a suggestion is drawn in the colours of its
+own language |nemeton-syntax|, and a keyword is the colour a keyword is
+on both halves of the diff. A background is the one part of a line that
+syntax highlighting does not use. Without 'termguicolors' there is
+nothing to mix, both fall back to |hl-NemetonAdded| and
+|hl-NemetonRemoved| as text, and the line stays on the conversation's
+own ground.
 
                                                             *hl-NemetonInline*
                                                      *hl-NemetonSettled*

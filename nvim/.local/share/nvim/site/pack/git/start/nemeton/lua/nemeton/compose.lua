@@ -73,6 +73,13 @@ end
 --- opts.default  -- "keep" or "post": which of the two the first key and
 ---                  `:w` do. "keep" where both are given and it is not
 ---                  said, because a review is written as a whole.
+--- opts.lang     -- the treesitter language of the code in a
+---                  `suggestion` fence, for the one comment that has
+---                  code in it. See `nemeton.syntax`.
+--- opts.empty    -- whether an empty buffer is an answer. It is not for
+---                  a comment, which is why the default is no; it is
+---                  for a merge request's description, which has to be
+---                  able to go away again once it is written.
 ---
 --- Two exits from one window, and which of them is the reflex is the
 --- caller's to say. A new thread is kept: it is a remark in a review
@@ -121,13 +128,32 @@ function M.open(opts)
     back()
   end
 
+  -- ...including the ways out that are not this plugin's. `:q`,
+  -- `<C-w>c`, `:close` -- a split is a split and people close one the
+  -- way they close any other, and none of those goes through `close`
+  -- above. Neovim then hands the cursor to the first window of the
+  -- layout, which is the top left one and not where the composer was
+  -- opened from: writing a merge request's description and being put
+  -- back in a file three windows away is a window that lets go of you.
+  --
+  -- Scheduled, because this runs while the window is still being taken
+  -- down and a cursor moved in the middle of that does not stay moved.
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(window),
+    once = true,
+    desc = "nemeton: back to where the composer was opened from",
+    callback = function()
+      vim.schedule(back)
+    end,
+  })
+
   --- `send` is what to do with the text: posted now, or kept unsent.
   --- Two exits from one window rather than two windows, because the
   --- choice is made at the end of writing it and not before.
   local function finish(send)
     return function()
       local text = vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
-      if text == "" then
+      if text == "" and not opts.empty then
         vim.notify("nemeton: nothing to post", vim.log.levels.WARN)
         return
       end
@@ -170,6 +196,11 @@ function M.open(opts)
     vim.api.nvim_win_set_cursor(window, { #lines, #lines[#lines] })
   else
     vim.cmd("startinsert")
+  end
+  -- After the text is in, not before: the first paint is of what is
+  -- there, and what is there arrives on the line above.
+  if opts.lang then
+    require("nemeton.syntax").attach(buf, opts.lang)
   end
   return buf
 end

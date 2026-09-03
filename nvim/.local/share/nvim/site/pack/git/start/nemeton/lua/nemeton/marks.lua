@@ -38,6 +38,35 @@ local function mix(a, b, amount)
   return out
 end
 
+--- How light a colour is, on the scale everything that has to be read
+--- against it cares about.
+local function lum(c)
+  return 0.2126 * (math.floor(c / 65536) % 256)
+    + 0.7152 * (math.floor(c / 256) % 256)
+    + 0.0722 * (c % 256)
+end
+
+--- `c`, put back at the lightness `want` -- its channels scaled, so the
+--- colour is the colour it was and only its brightness moves.
+---
+--- What this is for: a band told apart from the band it sits inside by
+--- being a different colour rather than a lighter one. Lighter is the
+--- one direction that costs whatever is written on it, because lighter
+--- means nearer the colour of the text -- and the quietest group in
+--- this plugin is drawn on one of these.
+local function at_lum(c, want)
+  local now = lum(c)
+  if now <= 0 then
+    return c
+  end
+  local out, scale = 0, want / now
+  for _, shift in ipairs({ 65536, 256, 1 }) do
+    local x = math.floor(c / shift) % 256
+    out = out + math.min(math.floor(x * scale + 0.5), 255) * shift
+  end
+  return out
+end
+
 -- Every group that has been given the ground's background, so that the
 -- work is done once per colour rather than once per line drawn.
 local grounded = {}
@@ -108,6 +137,40 @@ local function ground()
   end
   tint("NemetonInline", "NemetonSignOpen", 1)
   tint("NemetonSettled", "NemetonResolved", 0.5)
+  -- ...and the band the head of each note sits on. A note is two things
+  -- read two ways -- who said it and when, which is skimmed, and what
+  -- they said, which is read -- and in a thread with four answers in it
+  -- that is four places the eye has to find.
+  --
+  -- Told from the ground it sits inside by colour and by a hair of
+  -- lightness, and not by lightness alone -- which is what it was, and
+  -- what made the head of a note harder to read than the note. Lifting
+  -- a band moves it towards the colour of the text on it, and the head
+  -- carries the quietest group in the plugin: the date, in the comment
+  -- colour. A heading is a different colour, not a brighter one.
+  local function heading(name, base, from)
+    if lift == false or not (vim.o.termguicolors and normal.bg and normal.fg) then
+      vim.api.nvim_set_hl(0, name, { link = base, default = true })
+      return
+    end
+    local under = vim.api.nvim_get_hl(0, { name = base, link = false })
+    local accent = vim.api.nvim_get_hl(0, { name = from, link = false })
+    if not under.bg then
+      vim.api.nvim_set_hl(0, name, { link = base, default = true })
+      return
+    end
+    -- Further into the colour the ground is already tinted towards --
+    -- more of the same thing rather than a second thing -- and then put
+    -- back where it was on the scale that decides what can be read on
+    -- it, plus the hair.
+    local bg = mix(under.bg, accent.fg or normal.fg, 0.4)
+    vim.api.nvim_set_hl(0, name, {
+      bg = at_lum(bg, lum(under.bg) * 1.1),
+      default = true,
+    })
+  end
+  heading("NemetonHead", "NemetonInline", "NemetonSignOpen")
+  heading("NemetonHeadSettled", "NemetonSettled", "NemetonResolved")
 
   -- ...and the band the code a thread was written against is drawn on,
   -- which is not one of the two: it is a quotation of the file inside a
@@ -131,13 +194,68 @@ local function ground()
   else
     vim.api.nvim_set_hl(0, "NemetonWas", { link = "NemetonRemoved", default = true })
   end
+
+  -- ...and the two bands a suggestion is drawn on: the lines it would
+  -- put there, and the lines it would take away.
+  --
+  -- A band and not only coloured text, because the text is no longer
+  -- free to carry it. The code inside a suggestion is drawn in the
+  -- colours of its own language now |nemeton-syntax|, and a keyword is
+  -- the colour a keyword is on both halves of the diff -- so green
+  -- words and red words, which is what said which half a line was, say
+  -- nothing any more. A background is the one part of a line that
+  -- syntax highlighting does not use.
+  --
+  -- Lighter than NemetonWas, which is next to them in the same block
+  -- and is a quotation rather than half of a diff.
+  local function band(name, from)
+    if not (vim.o.termguicolors and normal.bg and normal.fg) then
+      vim.api.nvim_set_hl(0, name, { link = from, default = true })
+      return
+    end
+    local accent = vim.api.nvim_get_hl(0, { name = from, link = false })
+    vim.api.nvim_set_hl(0, name, {
+      -- The foreground the half used to be drawn in, kept for what is
+      -- on the band and is not code: the `+`, the `-`, and every line
+      -- of a language nothing here can parse.
+      fg = accent.fg or normal.fg,
+      bg = mix(normal.bg, accent.fg or normal.fg, 0.18),
+      default = true,
+    })
+  end
+  band("NemetonSuggestNew", "NemetonAdded")
+  band("NemetonSuggestOld", "NemetonRemoved")
 end
 
--- The groups that are a ground rather than a colour of text. There is
--- one: the code a thread was written against is a band inside the block
--- rather than text on it. A line carrying one is drawn on it instead of
--- on the conversation's -- see `shade`.
-local OWN_GROUND = { NemetonWas = true }
+-- The groups that are a ground rather than a colour of text: the code a
+-- thread was written against, and the two halves of a suggestion. Each
+-- is a band inside the block rather than text on it, and a line
+-- carrying one is drawn on it instead of on the conversation's -- see
+-- `shade`.
+local OWN_GROUND = {
+  NemetonWas = true,
+  NemetonSuggestNew = true,
+  NemetonSuggestOld = true,
+  NemetonHead = true,
+  NemetonHeadSettled = true,
+}
+
+--- ...and whether one of them is a ground *here*.
+---
+--- All three are a background mixed out of the file's own, and there is
+--- no mixing anything in sixteen colours: without true colour they fall
+--- back to the colour of text they used to be, which is not a band and
+--- must not be taken for one. Taken for one, it would be a stretch of
+--- the block with no background at all -- a hole in the ground, in the
+--- middle of the conversation, which is the one thing the ground is
+--- there to avoid.
+local function is_ground(name)
+  if not OWN_GROUND[name] then
+    return false
+  end
+  local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+  return (hl.bg or hl.ctermbg) ~= nil
+end
 
 --- `group`, with `base` behind it.
 ---
@@ -368,13 +486,24 @@ local function shade(virt, settled)
       -- conversation it is.
       local base = (settled and settled[i]) and "NemetonSettled" or "NemetonInline"
       for _, chunk in ipairs(line) do
-        if OWN_GROUND[chunk[2]] then
-          base = chunk[2]
+        -- A chunk names a band either by being drawn in one -- the
+        -- quoted code -- or by asking for one behind a colour of its
+        -- own, which is what a syntax-coloured suggestion does: the
+        -- language decides the words and the band decides the half.
+        local named = type(chunk[2]) == "table" and chunk[2][1] or chunk[2]
+        if is_ground(named) then
+          base = named
         end
       end
       local shaded = {}
       for _, chunk in ipairs(line) do
-        table.insert(shaded, { chunk[1], on_ground(chunk[2], base) })
+        local group = chunk[2]
+        if type(group) == "table" then
+          -- The colour on the band it asked for, which by now is the
+          -- whole line's -- so it is the same call either way.
+          group = group[2]
+        end
+        table.insert(shaded, { chunk[1], on_ground(group, base) })
       end
       table.insert(shaded, { (" "):rep(math.max(width - widths[i], 1)), base })
       out[i] = shaded
@@ -456,6 +585,21 @@ function M.render(bufnr, by_line, mode, opts)
         end
         local virt, settled = {}, {}
         local width = room(bufnr)
+        -- The colours of the language this file is in, for the code
+        -- inside a suggestion. The buffer's own filetype rather than
+        -- the thread's path: it is the same file, and the editor has
+        -- already made up its mind about it -- modeline and all.
+        local syntax = require("nemeton.syntax")
+        local lang = syntax.of_buf(bufnr)
+        local paint = syntax.painter(lang)
+        -- ...unless the line this thread sits on is inside a docstring
+        -- or a comment, where what a suggestion replaces is prose. Cut
+        -- out and parsed on its own it would come back as a keyword
+        -- here and a function call there, which is a worse answer than
+        -- leaving it the colour of the half of the diff it is.
+        if paint and syntax.prose(bufnr, row, lang) then
+          paint = nil
+        end
         -- The lines this thread was written against, when the buffer no
         -- longer says what they said. Read off the buffer rather than
         -- the file: what is on the screen is what the comment now reads
@@ -471,7 +615,12 @@ function M.render(bufnr, by_line, mode, opts)
           if #virt > 0 then
             table.insert(virt, {})
           end
-          local body = threads.render(t, { replaced = replaced, width = width, was = was(t) })
+          local body = threads.render(t, {
+            replaced = replaced,
+            width = width,
+            was = was(t),
+            paint = paint,
+          })
           for _, said in ipairs(body) do
             table.insert(virt, said)
             settled[#virt] = t.resolved and true or false

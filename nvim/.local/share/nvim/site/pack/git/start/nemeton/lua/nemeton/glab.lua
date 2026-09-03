@@ -481,7 +481,53 @@ function M.project_users(root, cb)
   json({ "api", "projects/:fullpath/users?per_page=100" }, { cwd = root }, cb)
 end
 
+--- The branches on the project, for the one a merge request goes to.
+---
+--- The forge's list rather than `git branch -r`: what a merge request
+--- can be aimed at is what is on the forge, and a remote-tracking ref
+--- here is a copy of that from whenever it was last fetched. The
+--- `default` flag each one carries is the other half of the answer --
+--- which of them a merge request goes to unless you say otherwise --
+--- and it saves asking the project endpoint the same question.
+---
+--- One page of a hundred: past that a project has a branch list nobody
+--- picks from, and the target of a merge request is one of the few at
+--- the top of it.
+function M.branches(root, cb)
+  json({ "api", "projects/:fullpath/repository/branches?per_page=100" }, { cwd = root }, cb)
+end
+
+--- Every label the project has, for the ones a new merge request goes
+--- out wearing.
+---
+--- The project's own, which is what GitLab will accept: a label typed
+--- into `--label` that no project has is created by the create call
+--- itself, silently, and a review queue full of one-off labels spelled
+--- four ways is how that ends.
+function M.labels(root, cb)
+  json({ "api", "projects/:fullpath/labels?per_page=100" }, { cwd = root }, cb)
+end
+
+--- What CI last made of a branch.
+---
+--- For a merge request that does not exist yet, and so has no pipeline
+--- of its own: the branch has run one already, against the same
+--- commits, and "the build is red" is the answer that decides whether
+--- this should go out at all. The newest, which is the one about the
+--- commit you are looking at.
+function M.branch_pipelines(root, ref, cb)
+  json({
+    "api",
+    ("projects/:fullpath/pipelines?ref=%s&per_page=1"):format(vim.uri_encode(ref, "rfc2396")),
+  }, { cwd = root }, cb)
+end
+
 --- Opens a merge request for the branch the repository is on.
+---
+--- `mr` is what the window collected: `title`, `body`, `target`,
+--- `labels` and `draft`. Only the title is required -- everything else
+--- left out is a question glab answers for itself, which for the target
+--- branch is the project's default and for the rest is "none".
 ---
 --- `glab mr create` rather than the API, which is the exception to what
 --- every other call here does: the branch this should come from, the
@@ -495,17 +541,33 @@ end
 ---
 --- Answers with the new merge request's URL, which is what `mr create`
 --- prints and the only thing it prints that is of any use.
-function M.mr_create(root, title, body, cb)
-  run({
+function M.mr_create(root, mr, cb)
+  local args = {
     "mr",
     "create",
     "--title",
-    title,
+    mr.title,
     "--description",
-    body or "",
+    mr.body or "",
     "--push",
     "--yes",
-  }, {
+  }
+  if mr.target and mr.target ~= "" then
+    vim.list_extend(args, { "--target-branch", mr.target })
+  end
+  if mr.labels and #mr.labels > 0 then
+    -- One flag, comma-separated: glab takes the flag repeated as well,
+    -- and a single argument is one thing to read in the log.
+    vim.list_extend(args, { "--label", table.concat(mr.labels, ",") })
+  end
+  if mr.draft then
+    -- The flag rather than a `Draft:` in front of the title. The two
+    -- make the same merge request -- GitLab reads the prefix off the
+    -- title itself -- but only one of them leaves the title as the
+    -- thing that was typed.
+    table.insert(args, "--draft")
+  end
+  run(args, {
     cwd = root,
     -- This one spawns a git that talks to the remote, and a git that
     -- asks for a password at a terminal here is a git asking nobody:

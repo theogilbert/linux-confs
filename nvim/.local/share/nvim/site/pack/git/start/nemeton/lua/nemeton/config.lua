@@ -106,6 +106,21 @@ return {
     -- either way -- toggling this is a redraw, not a refetch.
     show_resolved = true,
 
+    -- Whether the code in a suggestion is drawn in the colours of the
+    -- language it is written in -- under the code, in the peek float,
+    -- in the every-thread window, and in the composer while it is being
+    -- written.
+    --
+    -- On, and it costs a treesitter parse of the suggested lines, once
+    -- per block and cached. Off, a suggestion is what it was: green for
+    -- the lines it would add and red for the ones it would replace,
+    -- which says what the block is and nothing about what it says. The
+    -- `+` and the `-` keep those two colours either way.
+    --
+    -- Nothing to install: it uses the parser you already have for the
+    -- language, and a file whose language has none is drawn plainly.
+    syntax = true,
+
     -- The left rail drawn down a thread, in place of a box around it.
     -- A box has to close, a closing rule has to know how wide the
     -- window is, and the same thread is drawn into the buffer, the peek
@@ -211,12 +226,20 @@ return {
     global = {
       list = "<leader>ml",
     },
-    -- Buffer-local, bound on every file buffer inside the repository
-    -- once an MR is open, and taken away again when it is closed.
-    -- What is bound out here is what acts on the line under the cursor.
-    -- Everything else a review needs is a window, and the window it is
-    -- in is `description` -- which is why that is the only one of these
-    -- that opens one.
+    -- The review keys, bound while a merge request is open and taken
+    -- away again when it is closed.
+    --
+    -- Everywhere, not only on the files of the repository: `]m` means
+    -- "the next thing owed an answer", and that is a question asked as
+    -- often from the quickfix list, the terminal the tests ran in or a
+    -- file of another project as from the code itself. The ones that
+    -- are about the line under the cursor are out there too, and say so
+    -- when there is no line to be about.
+    --
+    -- What is bound by default is what acts on the line under the
+    -- cursor. Everything else a review needs is a window, and the
+    -- window it is in is `description` -- which is why that is the only
+    -- one of these that opens one.
     session = {
       expand = "<leader>mx", -- the conversations themselves, under the lines
       peek = "<leader>mp", -- the thread under the cursor, in a float
@@ -227,7 +250,7 @@ return {
       delete = "<leader>mD", -- delete a comment in the thread under the cursor
       suggest = "<leader>ms", -- visual mode: suggest a change to these lines
       description = "<leader>md", -- the merge request itself, in a float
-      -- Out here rather than one letter further in, unlike the rest of
+      -- On a key rather than one letter further in, unlike the rest of
       -- the verbs below: ending a review is not something you go to a
       -- window to do, and a mode you cannot leave from where you are
       -- standing is a mode you leave by restarting the editor.
@@ -240,8 +263,8 @@ return {
       -- nobody has learnt. Each of these is either a key on the merge
       -- request's own window -- `<leader>md`, and then one letter --
       -- or a `:Nemeton` verb typed once in a review, which is about as
-      -- often as any of them is wanted. Give one a string to have it
-      -- out here as well; nothing else has to change.
+      -- often as any of them is wanted. Give one a string to have it on
+      -- a key as well; nothing else has to change.
       notes = false, -- `c` on <leader>md -- every comment, one line each
       approve = false, -- `a` there -- approve it, or take it back
       jobs = false, -- `p` there -- what CI did, job by job
@@ -334,6 +357,23 @@ return {
       refresh = "R", -- a running job has more of it every second
       browser = "o",
       quit = "q", -- closes the tab
+    },
+
+    -- The window a merge request of your own is written in. Nothing
+    -- here is a motion either: it is a form, `<CR>` changes the field
+    -- the cursor is on, and the rest are the two ways out of it.
+    create = {
+      field = "<CR>", -- change the field under the cursor
+      -- The same key the composer sends on, for the same reason: this
+      -- is the end of writing something, and there is one key in this
+      -- plugin for that.
+      submit = "<C-s>", -- open the merge request
+      refresh = "r", -- ask CI and git again
+      -- Capital, and alone among these: `q` keeps everything and this
+      -- is the key that does not, so it should not be next to anything
+      -- pressed by accident.
+      discard = "X", -- throw away what has been typed
+      quit = "q", -- close it; what is typed is here again next time
     },
 
     -- The composer.

@@ -85,7 +85,7 @@ rest.
 | `:Nemeton expand` | the conversations themselves, under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
 | `:Nemeton peek` | the thread under the cursor, in a float |
-| `:Nemeton create` | open a merge request for the branch you are on |
+| `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
 | `:Nemeton reply` | a reply into the thread under the cursor |
 | `:Nemeton edit` | rewrite a comment in the thread under the cursor |
@@ -108,8 +108,13 @@ rest.
 
 ## Keys
 
-`<leader>ml` opens the list, from anywhere. The rest are buffer-local and
-exist only on files in the repository while a review is on:
+`<leader>ml` opens the list, from anywhere. The rest are bound while a
+review is on and taken away when it ends — everywhere, not only on the
+files of the repository: `]m` means "the next thing owed an answer", and
+that is asked as often from the quickfix list, the terminal the tests ran
+in or a file of another project as it is from the code itself. The ones
+that are about the line under the cursor are out there too, and say so
+when there is no line to be about.
 
 | | |
 |---|---|
@@ -121,7 +126,7 @@ exist only on files in the repository while a review is on:
 | `<leader>me` | edit a comment in the thread here |
 | `<leader>mD` | delete one, after asking |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
-| `<leader>md` | the merge request itself, in a float — bound globally too, so it works from the quickfix list, a window of this plugin, or a buffer that is not a file at all |
+| `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
 
@@ -129,7 +134,7 @@ In the list: `<CR>` opens one, `c` shows its commits under the list and
 `d` what it says it is for, `s` walks the queue through opened → merged
 → closed → all (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
-on the screen, `+` opens one of your own for the branch you are on,
+on the screen, `+` writes one of your own for the branch you are on,
 `r` refetches, `o` opens it in a browser, `q` closes. The window opens on the keypress rather than when the forge
 answers, and `<CR>` leaves it up, saying which merge request it is
 opening, until the review is loaded. A checkout that fails says so in
@@ -174,6 +179,21 @@ prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
 on `]m`, in the quickfix list.
 
+`+` in the list, or `:Nemeton create`, is a window for a merge request
+that does not exist yet: the title, whether it is a draft, the
+description, the branch it goes to and the labels, each a field the
+cursor sits on and `<CR>` changes — a title in a prompt, the description
+in the composer, the branch and the labels picked from what the project
+has. Under them are the three facts nobody types: what CI last made of
+the branch, and how many files and lines it changes, counted by git
+against the branch it would go into because the merge request whose diff
+GitLab would answer with does not exist yet. `<C-s>` opens it — the
+branch is pushed on the way and nothing is asked at a prompt — `r` asks
+CI and git again, `X` throws away what has been typed, and `q` closes
+the window with everything still in it: come back to it on the next `+`,
+in the same editor session, and nothing is lost. A title beginning
+`Draft:` sets the switch and leaves the title alone.
+
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `R` refetches, `q` closes.
@@ -195,7 +215,32 @@ A suggestion is drawn as the diff it is wherever you read it — expanded
 under the code, in the peek float, in the every-thread window — the
 lines it would replace in red above the lines it would put there in
 green, read off the buffer where the file is open and off the disk where
-it is not.
+it is not. The code itself is drawn in the colours of the language the
+file is in, on both halves of the diff and in the composer while it is
+being written: a suggestion is the one part of a comment that is not
+prose, and in one colour end to end it is the only code on the screen
+your editor has not helped you read. Not where the thread sits inside a
+docstring, a long string or a block comment: what a suggestion replaces
+there is prose, and prose lifted out of the file and parsed on its own
+comes back as a keyword here and a function call there — confidently
+wrong about what you are reading, which is worse than plain. It uses the
+treesitter parser you already have for that language, a file whose
+language has none is drawn plainly, and `comments.syntax = false` turns
+it off. Which half of the
+diff a line is then has to be said some other way — a keyword is the
+colour a keyword is on both of them — so each half is drawn on a band of
+its own, edge to edge, with the `+` and the `-` in the colour that half
+used to be.
+
+The head of every note — who said it and when — is drawn on a band told
+apart from the ground the conversation is on by colour rather than by
+being lighter: lighter is nearer the colour of the text, and the date on
+that line is drawn in the quietest colour there is. A note
+is two things read two ways: a line of bookkeeping you skim and a thing
+somebody said that you read, and in a thread with four answers in it
+that is four places the eye would otherwise have to find by reading. In
+the comments window the same band says where one entry ends and the next
+begins.
 
 When the line a thread sits on no longer says what it said — someone
 pushed while you were reading, or you edited the file you are reviewing

@@ -41,6 +41,15 @@ function M.show(list)
   -- wrapped text actually came to, which is usually less.
   local most = math.max(vim.o.columns - 10, 30)
 
+  -- The code in a suggestion, in the colours of the file it is on --
+  -- which is the file this float is over. Not where the line is inside
+  -- a docstring or a comment: what a suggestion replaces there is
+  -- prose, and prose parsed as code is confidently wrong about what is
+  -- being read.
+  local syntax = require("nemeton.syntax")
+  local lang = syntax.of_buf(bufnr)
+  local paint = not syntax.prose(bufnr, row, lang) and syntax.painter(lang) or nil
+
   local lines, hls = {}, {}
   local width = 0
   for i, t in ipairs(list) do
@@ -51,6 +60,7 @@ function M.show(list)
       replaced = replaced,
       width = most,
       was = session.was(t, replaced(threads.span(t), 0)),
+      paint = paint,
     })
     local text, painted = threads.flatten(drawn, #lines)
     vim.list_extend(lines, text)

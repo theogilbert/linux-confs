@@ -488,6 +488,53 @@ function M.goto_thread(thread, before)
   return true
 end
 
+--- Two URLs for the same repository, near enough.
+---
+--- `remote.origin.url` and what glab wrote are the same remote spelled
+--- two ways: one carries a `.git`, or a trailing slash, or the username
+--- glab authenticated as in front of the host -- and none of the three
+--- is a different repository. Compared after those come off, and left
+--- alone otherwise: an scp-style `git@host:path` has no scheme, and
+--- taking `git@` off that one would be taking off part of the address.
+local function same_remote(a, b)
+  local function bare(u)
+    u = u:gsub("%.git$", ""):gsub("/+$", "")
+    return (u:gsub("^(%a[%w+.%-]*://)[^/@]*@", "%1"))
+  end
+  return bare(a) == bare(b)
+end
+
+--- What glab wrote in `branch.<name>.remote`, as a name git will take.
+---
+--- It writes the remote's URL there about as often as its name, and the
+--- difference matters twice over: `git fetch <url>` updates no
+--- remote-tracking branch, and `--set-upstream-to=<url>/<branch>` is
+--- refused outright -- "the requested upstream branch does not exist",
+--- which is the whole of this function's reason to exist. So a value
+--- that is not already a remote is looked for among the URLs the
+--- remotes have.
+---
+--- `nil` when it belongs to no remote here, which is a branch to leave
+--- alone rather than one to guess at.
+local function named(git, wrote, cb)
+  git({ "config", "--get", ("remote.%s.url"):format(wrote) }, function(res)
+    if res.code == 0 and vim.trim(res.stdout or "") ~= "" then
+      cb(wrote)
+      return
+    end
+    git({ "config", "--get-regexp", "^remote\\..*\\.url$" }, function(all)
+      for line in (all.stdout or ""):gmatch("[^\n]+") do
+        local name, url = line:match("^remote%.(.+)%.url%s+(%S+)")
+        if name and same_remote(url, wrote) then
+          cb(name)
+          return
+        end
+      end
+      cb(nil)
+    end)
+  end)
+end
+
 --- Points the branch a checkout left you on at the branch it came
 --- from, rather than at the merge request ref glab tracked it against.
 ---
@@ -532,16 +579,25 @@ function M.track(root, mr)
   -- "origin", and its absence is how "this is not a branch glab checked
   -- out" is told from one that is.
   git({ "config", "--get", ("branch.%s.remote"):format(branch) }, function(res)
-    local remote = vim.trim(res.stdout or "")
-    if res.code ~= 0 or remote == "" then
+    local wrote = vim.trim(res.stdout or "")
+    if res.code ~= 0 or wrote == "" then
       return
     end
-    -- The fetch is not the checkout's: glab fetched the merge request
-    -- ref, which updates no remote-tracking branch, and it is the
-    -- remote-tracking branch that "two ahead, one behind" is counted
-    -- against.
-    git({ "fetch", remote, branch }, function()
-      git({ "branch", ("--set-upstream-to=%s/%s"):format(remote, branch), branch }, function() end)
+    named(git, wrote, function(remote)
+      if not remote then
+        return
+      end
+      -- The fetch is not the checkout's: glab fetched the merge request
+      -- ref, which updates no remote-tracking branch, and it is the
+      -- remote-tracking branch that "two ahead, one behind" is counted
+      -- against. By name, not by URL: a fetch from a URL writes
+      -- FETCH_HEAD and nothing else.
+      git({ "fetch", remote, branch }, function()
+        git(
+          { "branch", ("--set-upstream-to=%s/%s"):format(remote, branch), branch },
+          function() end
+        )
+      end)
     end)
   end)
 end

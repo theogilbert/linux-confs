@@ -222,56 +222,16 @@ end
 
 --- Opens a merge request for the branch you are on.
 ---
---- The composer, with the first line for the title and the rest for the
---- description -- which is `git commit`'s shape, and the one every
---- reviewer already has in their hands. Empty rather than filled in
---- from the commits: a merge request is written to be read by somebody
---- else, and a title nobody chose is the first thing a reviewer has to
---- forgive.
----
---- A title that begins `Draft:` makes a draft merge request. That is
---- GitLab's own rule rather than ours, and it is not worth a key of its
---- own for something you can type.
+--- A window rather than a prompt, and a window rather than the
+--- composer it used to be: everything `glab mr create` would ask -- the
+--- title, whether it is a draft, the description, the branch it goes
+--- to, the labels -- on one screen, in any order, and still there after
+--- you close it. See `nemeton.create`.
 ---
 --- No session needed and none started: this is what you do *before*
 --- there is a review, and what comes back is a row in the list.
 function M.create()
-  local root = session.root()
-  if not root then
-    session.notify("not inside a git repository", vim.log.levels.ERROR)
-    return
-  end
-  local branch = session.branch()
-  if not branch then
-    session.notify("not on a branch — a merge request comes from one", vim.log.levels.WARN)
-    return
-  end
-  require("nemeton.compose").open({
-    title = ("new merge request from %s  ·  first line is the title"):format(branch),
-    on_submit = function(text)
-      local lines = vim.split(text, "\n", { plain = true })
-      local title = vim.trim(table.remove(lines, 1))
-      if title == "" then
-        session.notify("a merge request needs a title", vim.log.levels.WARN)
-        return
-      end
-      session.notify("opening a merge request for " .. branch .. "…")
-      glab.mr_create(root, title, vim.trim(table.concat(lines, "\n")), function(url, err)
-        if not url then
-          session.notify("could not open it: " .. tostring(err), vim.log.levels.ERROR)
-          return
-        end
-        session.notify(url)
-        -- The queue is what it is a row of now, so the queue is redrawn
-        -- if it is up. Not opened if it is not: creating one from a
-        -- file you are working on is not asking to review it.
-        local list = require("nemeton.list")
-        if list.win and vim.api.nvim_win_is_valid(list.win) then
-          list.open()
-        end
-      end)
-    end,
-  })
+  require("nemeton.create").open()
 end
 
 --- Sends every comment you have written and not sent -- which is what
@@ -338,6 +298,11 @@ M.suggest = with_session(function(first, last)
   require("nemeton.compose").open({
     title = ("!%d  suggest %s"):format(mr.iid, where),
     body = threads.suggestion_body(lines),
+    -- The code inside the fence, in the colours of the file it came
+    -- out of: markdown has one colour for a fenced block whose
+    -- language it does not know, and `suggestion` is GitLab's word
+    -- rather than a language, so it never knows this one.
+    lang = require("nemeton.syntax").of_buf(bufnr),
     on_draft = M.keep("kept for " .. where, position),
     on_submit = function(body)
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
@@ -522,14 +487,34 @@ function M.status()
   )
 end
 
--- The buffer-local keymaps, and the bookkeeping to take them away again.
+-- The review keymaps, and the bookkeeping to take them away again.
 --
--- Buffer-local rather than global because of what they mean: `]m` is
--- "next comment" only in a file that has comments in it, and stealing it
--- everywhere else -- in a terminal, in help, in the file you opened to
--- check something unrelated -- is how a review plugin becomes something
--- you turn off.
+-- Bound twice over while a review is on: globally, and again on every
+-- file of the repository.
+--
+-- Globally, because of where a review is actually conducted from. `]m`
+-- means "the next thing owed an answer" and the thing it walks to is in
+-- whichever file it is in -- so the key has to work from the quickfix
+-- list you were reading the threads in, from the terminal you ran the
+-- tests in, from the commit message you were writing, from a file of
+-- another repository entirely. A key that only works once you are
+-- already standing on the code is a key for a place you have to get to
+-- some other way first. The verbs that *are* about the line under the
+-- cursor are bound out there too, and say what they always said when
+-- there is no line to be about: this buffer is not a file of the
+-- repository, or there is no thread here.
+--
+-- And again per buffer, because a global mapping is the weakest kind
+-- there is: a filetype plugin maps into the buffer it is loaded for,
+-- and Neovim's own ftplugin/python.vim takes `]m` and `[m` for its
+-- method motions. Only a buffer-local mapping wins that, which is why
+-- the per-file half of this is not redundant.
+--
+-- Nothing of this is bound when no review is on.
 local attached = {}
+-- The same list, bound with no buffer -- so `detach_all` takes away
+-- exactly what `attach_all` put there, whatever the config says by then.
+local globally = nil
 
 --- Wraps a verb that takes a span of lines for use from an `x` mapping.
 ---
@@ -545,27 +530,10 @@ local function over_selection(fn)
   end
 end
 
---- Binds the review keys on a file of the repository, and binds them
---- again every time something else has had a turn at that buffer.
----
---- Again, rather than once: a filetype plugin maps into the buffer it
---- is loaded for, and Neovim's own ftplugin/python.vim takes `]m` and
---- `[m` for its method motions. It runs on every FileType -- which
---- means on every re-read, and a checkout is a re-read of every file it
---- changed, which is most of the ones you had open. Attaching once left
---- the ftplugin with the last word: `]m` walked functions again, and
---- the marker in the gutter it was supposed to walk to sat there being
---- ignored. Rebinding is eighteen `keymap.set` calls, which is cheaper
---- than being wrong.
-local function attach(bufnr)
-  if not session.current then
-    return
-  end
-  if not session.relpath(bufnr) then
-    return
-  end
+--- Every review key, and the verb behind it. One list, bound twice.
+local function bindings()
   local k = config.keys.session
-  local bindings = {
+  return {
     { k.toggle, M.toggle, "comments on/off" },
     { k.expand, M.expand, "conversations inline" },
     { k.peek, M.peek, "peek at the thread here" },
@@ -598,61 +566,91 @@ local function attach(bufnr)
     { k.next, M.next, "next comment" },
     { k.prev, M.prev, "previous comment" },
   }
-  for _, b in ipairs(bindings) do
+end
+
+--- Binds `list`, buffer-locally when `bufnr` is given and globally when
+--- it is not.
+local function bind(list, bufnr)
+  for _, b in ipairs(list) do
     if b[1] and b[1] ~= "" then
-      vim.keymap.set(
-        b[4] or "n",
-        b[1],
-        b[2],
-        { buffer = bufnr, silent = true, desc = "nemeton: " .. b[3] }
-      )
+      vim.keymap.set(b[4] or "n", b[1], b[2], {
+        buffer = bufnr,
+        silent = true,
+        desc = "nemeton: " .. b[3],
+      })
     end
   end
-  attached[bufnr] = bindings
+end
+
+local function unbind(list, bufnr)
+  for _, b in ipairs(list or {}) do
+    if b[1] and b[1] ~= "" then
+      pcall(vim.keymap.del, b[4] or "n", b[1], bufnr and { buffer = bufnr } or nil)
+    end
+  end
+end
+
+--- Binds the review keys on a file of the repository, and binds them
+--- again every time something else has had a turn at that buffer.
+---
+--- Again, rather than once: a filetype plugin maps into the buffer it
+--- is loaded for, and Neovim's own ftplugin/python.vim takes `]m` and
+--- `[m` for its method motions. It runs on every FileType -- which
+--- means on every re-read, and a checkout is a re-read of every file it
+--- changed, which is most of the ones you had open. Attaching once left
+--- the ftplugin with the last word: `]m` walked functions again, and
+--- the marker in the gutter it was supposed to walk to sat there being
+--- ignored. Rebinding is eighteen `keymap.set` calls, which is cheaper
+--- than being wrong.
+---
+--- The global half of these needs none of that -- nothing shadows a
+--- mapping by binding it globally a second time -- so it is bound once,
+--- when the review opens.
+local function attach(bufnr)
+  if not session.current then
+    return
+  end
+  if not session.relpath(bufnr) then
+    return
+  end
+  local list = bindings()
+  bind(list, bufnr)
+  attached[bufnr] = list
   session.redraw(bufnr)
 end
 
 local function detach(bufnr)
-  local bindings = attached[bufnr]
-  if not bindings then
+  if not attached[bufnr] then
     return
   end
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      pcall(vim.keymap.del, b[4] or "n", b[1], { buffer = bufnr })
-    end
-  end
+  unbind(attached[bufnr], bufnr)
   attached[bufnr] = nil
   marks.clear(bufnr)
 end
 
---- The one review key that is not about the line under the cursor, and
---- so the one that is bound everywhere.
+--- The review keys everywhere, for as long as a review is on.
 ---
---- `description` opens the merge request's own window -- approvals, CI,
---- what is unsent, the keys that act on the whole review -- and the
---- places you reach for it from are exactly the places the buffer-local
---- keys are not: the quickfix list of threads, the comments window, the
---- terminal you ran the tests in, a file that is not in this repository
---- at all. Bound while a review is open and taken away with it, so that
---- nothing of this plugin is on a key when no review is on.
-local function global_key(bind)
-  local key = config.keys.session.description
-  if not key or key == "" then
-    return
+--- Bound when it opens and taken away when it closes, so that nothing
+--- of this plugin is on a key when there is no review: an editor with
+--- no merge request open should be an editor with `]m` meaning what it
+--- has always meant.
+--- Taken away before they are put back, rather than only when they are
+--- being taken away for good: `setup{}` called in the middle of a
+--- review is a new set of keys, and the old ones have to stop being
+--- bound to anything.
+local function global_keys(want)
+  if globally then
+    unbind(globally, nil)
+    globally = nil
   end
-  if bind then
-    vim.keymap.set("n", key, M.description, {
-      silent = true,
-      desc = "nemeton: the merge request",
-    })
-  else
-    pcall(vim.keymap.del, "n", key)
+  if want then
+    globally = bindings()
+    bind(globally, nil)
   end
 end
 
 function M.attach_all()
-  global_key(true)
+  global_keys(true)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(bufnr) then
       attach(bufnr)
@@ -661,7 +659,7 @@ function M.attach_all()
 end
 
 function M.detach_all()
-  global_key(false)
+  global_keys(false)
   for bufnr in pairs(vim.deepcopy(attached)) do
     detach(bufnr)
   end

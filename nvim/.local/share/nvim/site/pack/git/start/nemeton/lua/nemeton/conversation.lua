@@ -17,6 +17,7 @@ local config = require("nemeton.config")
 local edit = require("nemeton.edit")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local syntax = require("nemeton.syntax")
 local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 
@@ -96,6 +97,23 @@ local function render()
     end
   end
 
+  --- The painter for a thread's suggestion, or nil where the code it is
+  --- about is not code: a suggestion inside a docstring or a comment
+  --- replaces prose, and prose cut out and parsed on its own comes back
+  --- as a keyword here and a function call there.
+  local function code_in(t)
+    local lang = syntax.of_path(t.path)
+    local paint = syntax.painter(lang)
+    if not (paint and t.line) then
+      return paint
+    end
+    local all = file_lines(t.path)
+    if all and syntax.prose(all, t.line - 1, lang) then
+      return nil
+    end
+    return paint
+  end
+
   local function heading(text)
     if #chunks > 0 then
       table.insert(chunks, {})
@@ -116,6 +134,13 @@ local function render()
     local drawn = threads.render(t, {
       replaced = replaced,
       width = width,
+      -- By the name of the file the thread is on, which in here is all
+      -- there is to go on: this window is read with no file windows
+      -- open, and a buffer whose filetype could be asked for may not
+      -- exist. Nor is there one to ask whether the line is inside a
+      -- docstring, so the file's own lines answer that -- the ones
+      -- `replaced` is reading anyway.
+      paint = code_in(t),
       -- Read out of the buffer where the file is open and off the disk
       -- where it is not, which is what `replaced` already does: this
       -- window is read with no file windows open at all, and "the code

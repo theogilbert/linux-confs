@@ -520,6 +520,22 @@ local function wrap(text, width)
   return #out > 0 and out or { text }
 end
 
+--- The chunks of `runs` covering bytes [from, to) of the line they were
+--- made for, cut to fit -- which is what a wrapped line needs, since
+--- the colours were worked out against the line whole.
+local function slice(runs, from, to)
+  local out, at = {}, 1
+  for _, run in ipairs(runs) do
+    local first, last = at, at + #run[1]
+    at = last
+    local a, b = math.max(first, from), math.min(last, to)
+    if b > a then
+      table.insert(out, { run[1]:sub(a - first + 1, b - first), run[2] })
+    end
+  end
+  return out
+end
+
 --- A thread as coloured lines, for the peek float, the overall-notes
 --- window and the expanded in-buffer view. One shape for all three, so
 --- the three never drift apart.
@@ -544,6 +560,12 @@ end
 --- suggestion is drawn as the diff it is; missing -- the overall-notes
 --- window, where there is no file to read -- it is drawn as the block
 --- of new lines alone.
+---
+--- `opts.paint(lines)` -- the suggested code, coloured: chunks per
+--- line, concatenating back to the line they came from. Given, a
+--- suggestion is drawn in the colours of the language it is written in
+--- rather than in one colour end to end; missing, it is drawn as it
+--- always was. `nemeton.syntax` is what builds one.
 ---
 --- `opts.was` -- the lines the thread was written against, when they
 --- are not the lines it now sits on. Drawn above the first note; see
@@ -595,13 +617,70 @@ function M.render(thread, opts)
   -- and the pieces after it are indented past where it would be, so a
   -- wrapped line stays inside the column its marker put it in rather
   -- than reading as another line with no marker at all.
-  local function body(lead, text, hl, sign)
+  --- `band` is the ground the line is drawn on, for the two halves of a
+  --- suggestion: the language decides the colour of the words and the
+  --- band decides which half of the diff they are. Without one -- every
+  --- other line of a thread -- `hl` is the whole of the answer.
+  local function body(lead, text, hl, sign, runs, band)
     sign = sign or ""
     local pad = (" "):rep(vim.fn.strdisplaywidth(sign))
     local room = limit and (limit - vim.fn.strdisplaywidth(lead) - #pad)
+    -- Where in `text` the piece being drawn started. A wrapped line is
+    -- pieces of the line it came from with the spaces between them
+    -- gone, and the colours were worked out against the whole of it.
+    local cursor = 1
     for j, piece in ipairs(wrap(text, room)) do
-      table.insert(out, { { lead, rail[2] }, { (j > 1 and pad or sign) .. piece, hl } })
+      local marker = j > 1 and pad or sign
+      if not runs then
+        table.insert(out, { { lead, rail[2] }, { marker .. piece, band or hl } })
+      else
+        local at = text:find(piece, cursor, true) or cursor
+        cursor = at + #piece
+        local line = { { lead, rail[2] } }
+        if marker ~= "" then
+          -- The `+` and the `-` are on the band and nothing else: they
+          -- are not code, and the band's own foreground is the colour
+          -- the whole half used to be drawn in.
+          table.insert(line, { marker, band or hl })
+        end
+        for _, run in ipairs(slice(runs, at, at + #piece)) do
+          local colour = run[2] or hl
+          table.insert(line, { run[1], band and { band, colour } or colour })
+        end
+        table.insert(out, line)
+      end
     end
+  end
+
+  --- The code of every suggestion in a note, coloured: the index of a
+  --- line in the note to the chunks it is drawn as. Nothing at all
+  --- without `opts.paint`, and nothing for the prose either way.
+  local function coloured(said)
+    if not opts.paint then
+      return {}
+    end
+    local out, block, first = {}, nil, nil
+    local function flush()
+      for j, runs in ipairs(opts.paint(block) or {}) do
+        out[first + j - 1] = runs
+      end
+      block, first = nil, nil
+    end
+    for i, l in ipairs(said) do
+      local fence = l:match("^%s*```(.*)$")
+      if block and fence then
+        flush()
+      elseif block then
+        table.insert(block, l)
+      elseif fence and fence:match("^suggestion") then
+        block, first = {}, i + 1
+      end
+    end
+    if block then
+      -- A fence GitLab never saw closed, which it applies anyway.
+      flush()
+    end
+    return out
   end
 
   -- What the thread is *about*, when that is no longer what is on the
@@ -660,26 +739,48 @@ function M.render(thread, opts)
       -- buffers.
       table.insert(out, { { config.comments.rail, rail[2] } })
     end
-    local head =
-      { { i > 1 and (rail[1] .. mark) or lead, rail[2] }, { note.author, "NemetonAuthor" } }
+    -- Who said it and when, on a band of its own inside the block.
+    --
+    -- A note is two things read two ways -- a line of bookkeeping that
+    -- is skimmed, and a thing somebody said that is read -- and they
+    -- were told apart by colour alone: a name in the title colour, a
+    -- date in the comment colour, and then the words. In a thread with
+    -- four answers in it that is four places the eye has to find by
+    -- reading. A band finds them without being read, which is the whole
+    -- of what a heading is for.
+    --
+    -- In the one-line index too, where each entry is a heading and then
+    -- the comment under it: the same two things read the same two ways,
+    -- and there the band does a second job -- it says where one entry
+    -- ends and the next begins, which a blank line alone says quietly.
+    local band = thread.resolved and "NemetonHeadSettled" or "NemetonHead"
+    --- `group`, on the heading's band.
+    local function on_band(group)
+      return { band, group }
+    end
+    local head = {
+      { i > 1 and (rail[1] .. mark) or lead, on_band(rail[2]) },
+      { note.author, on_band("NemetonAuthor") },
+    }
     local age = M.age(note.created_at)
     if age then
-      table.insert(head, { " · " .. age, "NemetonMeta" })
+      table.insert(head, { " · " .. age, on_band("NemetonMeta") })
     end
     if i == 1 and opts.summary and thread.path then
-      table.insert(head, { " · ", "NemetonMeta" })
+      table.insert(head, { " · ", on_band("NemetonMeta") })
       table.insert(head, {
         thread.line and ("%s:%d"):format(thread.path, thread.line) or thread.path,
-        "NemetonPath",
+        on_band("NemetonPath"),
       })
     end
     if note.draft or (i == 1 and thread.draft) then
-      table.insert(head, { " · unsent", "NemetonDraft" })
+      table.insert(head, { " · unsent", on_band("NemetonDraft") })
     end
     if i == 1 and thread.resolved then
       table.insert(
         head,
-        opts.summary and { " · ✓ resolved", "NemetonResolved" } or { "  ✓", "NemetonResolved" }
+        opts.summary and { " · ✓ resolved", on_band("NemetonResolved") }
+          or { "  ✓", on_band("NemetonResolved") }
       )
     end
     if i == 1 and opts.summary and #thread.notes > 1 then
@@ -688,7 +789,7 @@ function M.render(thread, opts)
       -- have read by reading this line.
       table.insert(head, {
         ("  +%d"):format(#thread.notes - 1),
-        thread.resolved and "NemetonMeta" or "NemetonSignOpen",
+        on_band(thread.resolved and "NemetonMeta" or "NemetonSignOpen"),
       })
     end
     table.insert(out, head)
@@ -697,8 +798,14 @@ function M.render(thread, opts)
     -- prose: it is the code that would replace what you are looking at.
     -- Drawn as an addition, in the colour the editor already uses for
     -- one, so it reads as a diff rather than as more sentences.
+    local said = vim.split(note.body, "\n", { plain = true })
+    -- The colours of the code in it, worked out a block at a time and
+    -- before a line of it is drawn: a line of code on its own is not a
+    -- program, and a string that opens on one line and closes on the
+    -- next parses as neither of them.
+    local colours = coloured(said)
     local suggesting = false
-    for _, l in ipairs(vim.split(note.body, "\n", { plain = true })) do
+    for i, l in ipairs(said) do
       local fence = l:match("^%s*```(.*)$")
       if fence and suggesting then
         suggesting = false
@@ -711,11 +818,13 @@ function M.render(thread, opts)
         -- nothing to compare it to.
         local above = tonumber(fence:match("%-(%d+)")) or 0
         local below = tonumber(fence:match("%+(%d+)")) or 0
-        for _, gone in ipairs(opts.replaced and opts.replaced(above, below) or {}) do
-          body(lead, gone, "NemetonRemoved", "- ")
+        local gone_lines = opts.replaced and opts.replaced(above, below) or {}
+        local gone_colours = opts.paint and opts.paint(gone_lines) or {}
+        for j, gone in ipairs(gone_lines) do
+          body(lead, gone, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld")
         end
       elseif suggesting then
-        body(lead, l, "NemetonAdded", "+ ")
+        body(lead, l, "NemetonAdded", "+ ", colours[i], "NemetonSuggestNew")
       else
         body(lead, l, body_hl)
       end
@@ -734,12 +843,22 @@ function M.flatten(rendered, first_row)
     local text = ""
     for _, chunk in ipairs(chunks) do
       if chunk[2] then
-        table.insert(hls, {
-          row = (first_row or 0) + i - 1,
-          col = #text,
-          end_col = #text + #chunk[1],
-          hl = chunk[2],
-        })
+        -- A chunk asking for a band behind a colour comes out as two
+        -- highlights over the same bytes, the band first: extmarks are
+        -- composed rather than replaced, so what is drawn is the band's
+        -- background with the colour's foreground on it. In the windows
+        -- that draw a conversation as virtual lines the same pair is
+        -- resolved differently -- see `marks.shade` -- because virtual
+        -- text has one ground for the whole block and a chunk cannot
+        -- punch a hole in it.
+        for _, group in ipairs(type(chunk[2]) == "table" and chunk[2] or { chunk[2] }) do
+          table.insert(hls, {
+            row = (first_row or 0) + i - 1,
+            col = #text,
+            end_col = #text + #chunk[1],
+            hl = group,
+          })
+        end
       end
       text = text .. chunk[1]
     end

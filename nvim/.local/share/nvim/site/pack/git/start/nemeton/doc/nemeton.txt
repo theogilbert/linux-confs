@@ -672,11 +672,16 @@ COMMENTS                                             *nemeton-config-comments*
       sign_draft = "",      -- one of yours, not sent yet
       virt_text = false,     -- the first line of it at end of line
       show_resolved = true,  -- draw resolved threads at all
+      short_commits = true,  -- a link to a commit as its short sha
       syntax = true,         -- a suggestion in its language's colours
       rail = "▎",            -- the rail drawn down a thread
       reply_indent = "  ",   -- what a reply is indented by
       reply_mark = "↳ ",     -- and what stands in that indent
       ground = 0.15,         -- how far the band under one stands off
+      accent = false,        -- which colour it leans towards, if any
+      reply_ground = 1.7,    -- how far further off an answer stands
+      head_band = false,     -- a band under the head of a note as well
+      heading = 0.1,         -- how far a note's head leans into that
       wrap = 80,             -- the widest a comment is drawn
       peek_height = 20,
     }
@@ -695,12 +700,58 @@ line. Set it to `false` to wrap to the window and nothing narrower.
 `show_resolved` is a redraw, not a refetch: resolved threads are fetched
 either way.
 
+`short_commits` draws a link to a commit as the eight digits GitLab
+itself prints: a permalink is a hundred characters whose only content is
+the forty at the end of it, and a comment carrying two of them is mostly
+URL. Both shapes the forge writes -- `/-/commit/<sha>` and a commit of
+this merge request, `merge_requests/N/diffs?commit_id=<sha>` -- and a
+markdown link keeps the words its author wrote in front of the sha. Only
+how a comment is drawn: |:Nemeton edit| sends back the text its author
+wrote, links and all.
+
 `syntax` costs a treesitter parse of the suggested lines, once per block
 and cached. See |nemeton-syntax|.
 
 `ground` is 0 for the file's own background and 1 for the colour its
 text is drawn in; see |hl-NemetonInline| for what is done with it, and
 `false` for no band at all.
+
+`accent` is which colour the grounds lean towards. `false`, the default,
+is a neutral panel: the page's own background raised off itself and
+nothing else, so a comment is told from the code by standing above it
+rather than by being a colour of its own. The name of a highlight group
+borrows that group's foreground instead -- `"Comment"` for the quietest
+colour any colourscheme defines, `"DiagnosticWarn"` for a warm one that
+reads as paper in a margin. `true` leans each ground towards the colour
+of the thread it is under, an open thread's or a resolved one's, which
+says the most and costs the most: those are diagnostic colours, and a
+scheme whose `DiagnosticInfo` is a saturated cyan turns every comment in
+the window blue.
+
+Whatever it is set to, a settled conversation still sinks back towards
+the page: the lift is halved for it, and the rail and the tick say what
+state a thread is in outright.
+
+`reply_ground` is how far the ground under an *answer* stands off, as a
+multiple of `ground`. Above 1 and a reply is a step further off the page
+than the note it answers; 1 leaves it flush, where the indent and the
+arrow are the whole of what says so -- and both of those are two
+characters at the head of a line, which is where the eye is not when it
+has just finished the line above. See |hl-NemetonReply|.
+
+`head_band` puts the head of each note on a band as well. Off, because
+backgrounds are the one signal in these windows that cannot be stacked:
+a thread with an answer and a suggestion in it already carries the
+block's ground, the answer's, the code the thread was written against
+and both halves of the diff, and a heading on top of those is a sixth
+background in a dozen lines. Of all of them the head is the one whose
+foreground already says what it is -- a name in the title colour, a date
+in the comment colour, and prose under both.
+
+`heading` is how far the band under the head of a note leans into that
+same colour, on the same scale. With no accent there is nothing to lean
+into and a heading is a step up in lightness instead. See
+|hl-NemetonHead|.
 
 CI                                                         *nemeton-config-ci*
 >
@@ -891,13 +942,33 @@ on a red band are a line you have to work at to read. Without
 'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
 as it used to be.
 
+                                                           *hl-NemetonReply*
+                                                    *hl-NemetonReplySettled*
+`NemetonReply` is the ground under an answer, and `NemetonReplySettled`
+the same inside a thread that is over: the ground its thread is on,
+standing `config.comments.reply_ground` times as far off the page. A
+conversation is then a block with steps in it, and which note you are
+reading is a thing you see rather than a thing you count indents to
+work out.
+
                                                             *hl-NemetonHead*
                                                     *hl-NemetonHeadSettled*
 `NemetonHead` is the band the head of a note is drawn on -- who said it
 and when -- and `NemetonHeadSettled` is the same for a thread that is
-over. Each is the ground its block is on |hl-NemetonInline|, taken
-further into the colour that ground is already tinted towards and then
-put back at the lightness it started from, plus a hair.
+over; `NemetonHeadReply` and `NemetonHeadReplySettled` are the pair for
+the head of an answer, which sits on the answer's ground. None of the
+four is drawn unless `config.comments.head_band` asks for it. Each is the ground its block is on |hl-NemetonInline|, taken
+`config.comments.heading` of the way further into whatever colour that
+ground leans towards and then put back at the lightness it started from,
+plus a hair.
+
+Not far, where it leans anywhere at all: the colour on offer is an open
+thread's, which is a diagnostic blue in most colourschemes, and a head
+that has gone most of the way there is a blue bar across every note
+rather than a shade of the conversation it belongs to. On the default
+neutral panel -- `comments.accent = false` -- it leans nowhere, and the
+hair of lightness is the whole of what tells the head from the block
+under it.
 
 Told apart by colour and not by being lighter, which is the point:
 lighter is nearer the colour of the text, and what is written on this
@@ -935,21 +1006,44 @@ own ground.
 
                                                             *hl-NemetonInline*
                                                      *hl-NemetonSettled*
-`NemetonInline` is the ground under an expanded conversation: your own
+`NemetonInline` is the ground a conversation is drawn on: your own
 background lifted towards the colour your text is drawn in -- lighter in
-a dark colourscheme, darker in a light one -- and then tinted towards
-the colour an open thread is drawn in, so it reads as a shade of the
-file rather than as a grey band across it.
+a dark colourscheme, darker in a light one. A panel raised off the page,
+and by default no more than that; `config.comments.accent` tints it
+towards a colour as well.
 
-How far it stands off the page is `config.comments.ground`, and it is
-set far enough to hold its own against whatever else paints these lines:
-a diff plugin's red and green sit on the code above and below, and a
-ground a whisper away from the file's own reads as one more band of
-that. `false` for no band, where the rail and the dimmed text carry it
-alone.
+Under the code where the conversations are expanded, and inside the
+three windows that draw one -- |:Nemeton notes|, |:Nemeton conversation|
+and the peek float. There a block on a ground of its own is what makes a
+comment look like one: without it four notes in a row are words on the
+same background as everything else in the window, and where one ends and
+the next begins has to be read to be found. The ground runs to the
+right-hand edge of the window, and the line between two of them does
+not, so each is a box with edges.
+
+Those three windows take the editor's own background rather than
+`NormalFloat`, because this band and every band inside it -- the head of
+a note, quoted code, the two halves of a suggestion -- are mixed out of
+`Normal`. Drawn on a float's background instead, how far the block
+stands off the page would be whatever the colourscheme happened to make
+the difference between the two rather than `comments.ground`.
+
+How far it stands off the page is `config.comments.ground`, and the
+whole of it: the tint decides which way the band leans and is then put
+back at the lightness the lift asked for. Anything else and the tint is
+a second lift nobody agreed to -- the colour of an open thread is a
+bright one, and a seventh of it mixed into a dark background was half as
+much again. Everything in the comment colour is read against this band.
+
+It is set far enough to hold its own against whatever else paints these
+lines: a diff plugin's red and green sit on the code above and below,
+and a ground a whisper away from the file's own reads as one more band
+of that. `false` for no band, where the rail and the dimmed text carry
+it alone.
 
 `NemetonSettled` is the ground under a conversation that is resolved:
-half as far, towards the resolved colour instead. Whether a thread is
+half as far off the page, and towards the resolved colour instead where
+there is an accent to lean towards at all. Whether a thread is
 still owed an answer is the thing you want to know before reading a word
 of it, and a block has a colour before it has anything else -- so an
 argument still going on stands off the page, and one that is over sinks

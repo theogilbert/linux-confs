@@ -55,7 +55,11 @@ local function render()
     return
   end
   local inline, overall = everything(session.current)
-  local chunks, map = {}, {}
+  -- `ground` is which lines are a conversation and which are this
+  -- window's own furniture -- a file name, a line number, the blank
+  -- between two threads. The furniture stays on the window's
+  -- background, so that what is on a ground is what somebody said.
+  local chunks, map, ground = {}, {}, {}
 
   -- What a suggestion would replace, read out of the file it is about.
   --
@@ -151,6 +155,7 @@ local function render()
     for _, line in ipairs(drawn) do
       table.insert(chunks, line)
       map[#chunks] = t
+      ground[#chunks] = t.resolved and "settled" or "open"
     end
   end
 
@@ -175,7 +180,7 @@ local function render()
     chunks = { { { "nothing has been said on this merge request yet.", "NemetonMeta" } } }
   end
 
-  local lines, hls = threads.flatten(chunks, 0)
+  local lines, hls = marks.shade_lines(chunks, 0, ground)
   rows = map
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
@@ -235,6 +240,15 @@ function M.open()
     title = (" !%d · every thread "):format(session.current.iid),
     title_pos = "center",
   })
+  -- The ground a conversation is drawn on is mixed out of `Normal`, and
+  -- so is every band inside it -- the head of a note, the code it was
+  -- written against, the two halves of a suggestion. Drawn on
+  -- `NormalFloat` instead, all five are lifted off a background that is
+  -- not the one they were measured against, and how far the box stands
+  -- off the page becomes whatever the colourscheme happened to make the
+  -- difference between the two. So these windows are the editor's own
+  -- background, and `comments.ground` means what it says in here.
+  vim.wo[M.win].winhighlight = "NormalFloat:Normal"
   vim.wo[M.win].wrap = true
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true

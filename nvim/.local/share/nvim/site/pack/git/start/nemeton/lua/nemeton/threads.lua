@@ -451,6 +451,75 @@ function M.age(iso, now)
   return os.date(fmt, at)
 end
 
+--- The sha a URL names, short, or nil for a URL that names no commit.
+---
+--- Both shapes the forge writes. `/-/commit/<sha>` is a commit of the
+--- project; `merge_requests/N/diffs?commit_id=<sha>` is one of them as
+--- this merge request shows it, which is what "copy link" gives you on
+--- a row of the commit list you were reading. Eight digits because that
+--- is the number GitLab itself prints -- the same string is on the row
+--- the link came from.
+---
+--- Seven at least, or this is not a sha: a link to `/commit/main` names
+--- a branch, and one to `/commit/HEAD` names wherever it has got to.
+local function commit_sha(url)
+  local sha = url:match("/commit/(%x+)") or url:match("[?&]commit_id=(%x+)")
+  if sha and #sha >= 7 then
+    return sha:sub(1, 8)
+  end
+  return nil
+end
+
+--- Whether a link's text is the commit's own name rather than words
+--- about it -- which is how GitLab writes one itself, and the one case
+--- where keeping the text as well would print the sha twice.
+local function names(text, sha)
+  return text:match("^%x+$") ~= nil and sha:lower():find(text:lower(), 1, true) == 1
+end
+
+--- A note as it is drawn, with every link to a commit replaced by the
+--- commit's short sha.
+---
+--- A permalink to a commit is a hundred characters whose only content
+--- is the forty at the end of it. Left whole it wraps a two-line
+--- comment across five and pushes what was said around it off the page;
+--- as `a1b2c3d4` it says the same thing in what git would have called
+--- it anyway, and the reviewer who wants the page has the sha to go to
+--- it with.
+---
+--- Display only, and deliberately not done where a note is parsed:
+--- rewriting one sends its body back to the forge, and a comment that
+--- came home from a round trip through this window with its links taken
+--- out of it is a comment the plugin has quietly damaged.
+function M.short_commits(text)
+  if type(text) ~= "string" or not config.comments.short_commits then
+    return text
+  end
+  -- Markdown links first: the target inside one is a URL too, and taken
+  -- in the other order the sha replaces it and leaves `[the fix](a1b2)`
+  -- pointing at nothing. The text of the link is what the author chose
+  -- to call the commit and is kept.
+  text = text:gsub("%[([^%]\n]*)%]%((%S-)%)", function(label, url)
+    local sha = commit_sha(url)
+    if not sha then
+      return nil
+    end
+    return (label == "" or names(label, sha)) and sha or ("%s (%s)"):format(label, sha)
+  end)
+  return (
+    text:gsub("https?://%S+", function(url)
+      -- What ends a sentence is not part of what it links to. Taken with
+      -- the URL it would be swallowed by the sha that replaces it.
+      local tail = url:match("[%.,;:!%?%)%]]+$") or ""
+      local sha = commit_sha(url:sub(1, #url - #tail))
+      if not sha then
+        return nil
+      end
+      return sha .. tail
+    end)
+  )
+end
+
 --- The longest prefix of `s` that fits in `width` columns, whole
 --- characters only.
 local function fit(s, width)
@@ -659,28 +728,28 @@ function M.render(thread, opts)
     if not opts.paint then
       return {}
     end
-    local out, block, first = {}, nil, nil
+    local per_line, block, first = {}, nil, nil
     local function flush()
       for j, runs in ipairs(opts.paint(block) or {}) do
-        out[first + j - 1] = runs
+        per_line[first + j - 1] = runs
       end
       block, first = nil, nil
     end
-    for i, l in ipairs(said) do
+    for at, l in ipairs(said) do
       local fence = l:match("^%s*```(.*)$")
       if block and fence then
         flush()
       elseif block then
         table.insert(block, l)
       elseif fence and fence:match("^suggestion") then
-        block, first = {}, i + 1
+        block, first = {}, at + 1
       end
     end
     if block then
       -- A fence GitLab never saw closed, which it applies anyway.
       flush()
     end
-    return out
+    return per_line
   end
 
   -- What the thread is *about*, when that is no longer what is on the
@@ -727,6 +796,12 @@ function M.render(thread, opts)
   local notes = opts.summary and { thread.notes[1] } or thread.notes
 
   for i, note in ipairs(notes) do
+    -- Where this note starts, so that every line of it can be marked as
+    -- an answer once it is drawn. An indent and an arrow were the whole
+    -- of what said so, and both are two characters at the start of a
+    -- line -- the one place the eye is not when it is reading the line
+    -- above. A ground says it before the line is read at all.
+    local opened = #out + 1
     -- Every line of a reply, its heading included, carries the rail and
     -- then the indent -- so the rail stays a straight edge and the
     -- nesting happens inside it. The line the reply opens with spends
@@ -753,10 +828,32 @@ function M.render(thread, opts)
     -- the comment under it: the same two things read the same two ways,
     -- and there the band does a second job -- it says where one entry
     -- ends and the next begins, which a blank line alone says quietly.
-    local band = thread.resolved and "NemetonHeadSettled" or "NemetonHead"
-    --- `group`, on the heading's band.
+    -- A reply's head is on a band of its own, because a reply's body is
+    -- on a ground of its own: the head of one drawn on the thread's
+    -- band would be darker than the words under it, which is a heading
+    -- upside down.
+    -- ...and a band under the head as well, where it is asked for. Off
+    -- by default, and for the reason a band is worth having at all: a
+    -- thread with an answer and a suggestion in it already carries the
+    -- block's ground, the answer's ground, the code it was written
+    -- against and both halves of the diff, and a heading on top of
+    -- those is a sixth background in a dozen lines. Of all of them the
+    -- head is the one whose foreground already says what it is -- a
+    -- name in the title colour, a date in the comment colour, and prose
+    -- under both.
+    --
+    -- A reply's head takes the answer's band, because a reply's body
+    -- sits on the answer's ground: the head of one drawn on the
+    -- thread's band would be darker than the words under it, which is a
+    -- heading upside down.
+    local band = config.comments.head_band
+      and (
+        i > 1 and (thread.resolved and "NemetonHeadReplySettled" or "NemetonHeadReply")
+        or (thread.resolved and "NemetonHeadSettled" or "NemetonHead")
+      )
+    --- `group`, on the heading's band where there is one.
     local function on_band(group)
-      return { band, group }
+      return band and { band, group } or group
     end
     local head = {
       { i > 1 and (rail[1] .. mark) or lead, on_band(rail[2]) },
@@ -798,14 +895,14 @@ function M.render(thread, opts)
     -- prose: it is the code that would replace what you are looking at.
     -- Drawn as an addition, in the colour the editor already uses for
     -- one, so it reads as a diff rather than as more sentences.
-    local said = vim.split(note.body, "\n", { plain = true })
+    local said = vim.split(M.short_commits(note.body), "\n", { plain = true })
     -- The colours of the code in it, worked out a block at a time and
     -- before a line of it is drawn: a line of code on its own is not a
     -- program, and a string that opens on one line and closes on the
     -- next parses as neither of them.
     local colours = coloured(said)
     local suggesting = false
-    for i, l in ipairs(said) do
+    for at, l in ipairs(said) do
       local fence = l:match("^%s*```(.*)$")
       if fence and suggesting then
         suggesting = false
@@ -824,9 +921,17 @@ function M.render(thread, opts)
           body(lead, gone, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld")
         end
       elseif suggesting then
-        body(lead, l, "NemetonAdded", "+ ", colours[i], "NemetonSuggestNew")
+        body(lead, l, "NemetonAdded", "+ ", colours[at], "NemetonSuggestNew")
       else
         body(lead, l, body_hl)
+      end
+    end
+    if i > 1 then
+      -- On the line rather than in it: a field beside the chunks is
+      -- invisible to everything that walks them with `ipairs`, and what
+      -- draws a conversation walks them a great deal.
+      for j = opened, #out do
+        out[j].reply = true
       end
     end
   end

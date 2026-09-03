@@ -9,6 +9,7 @@
 local compose = require("nemeton.compose")
 local glab = require("nemeton.glab")
 local session = require("nemeton.session")
+local threads = require("nemeton.threads")
 
 local M = {}
 
@@ -71,7 +72,7 @@ end
 
 local function remove(thread, note, after)
   local mr = session.current
-  local first = vim.split(note.body, "\n", { plain = true })[1] or ""
+  local first = vim.split(threads.short_commits(note.body), "\n", { plain = true })[1] or ""
   M.confirm(
     ("Delete %s: %s"):format(
       (note.draft or thread.draft) and "the comment you have not sent"
@@ -112,7 +113,10 @@ local function pick(thread, prompt, fn, after)
   vim.ui.select(notes, {
     prompt = prompt,
     format_item = function(note)
-      return ("%s: %s"):format(note.author, vim.split(note.body, "\n", { plain = true })[1])
+      return ("%s: %s"):format(
+        note.author,
+        vim.split(threads.short_commits(note.body), "\n", { plain = true })[1]
+      )
     end,
   }, function(choice)
     if choice then

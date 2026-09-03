@@ -106,6 +106,18 @@ return {
     -- either way -- toggling this is a redraw, not a refetch.
     show_resolved = true,
 
+    -- Whether a link to a commit is drawn as the commit's short sha.
+    --
+    -- A permalink is a hundred characters whose only content is the
+    -- forty at the end of it, and a comment with two of them in it is
+    -- mostly URL. On, `a1b2c3d4` stands where the link was -- what git
+    -- would have called the commit anyway, and enough to go to the page
+    -- with. Off, a comment is drawn exactly as it was written.
+    --
+    -- Only how it is drawn: rewriting a comment sends back the text its
+    -- author wrote, links and all.
+    short_commits = true,
+
     -- Whether the code in a suggestion is drawn in the colours of the
     -- language it is written in -- under the code, in the peek float,
     -- in the every-thread window, and in the composer while it is being
@@ -158,7 +170,74 @@ return {
     -- as much, so that an argument still going on stands off the page
     -- and one that is over sinks back towards it. `false` for no band
     -- at all, where the rail and the dimming carry it alone.
+    --
+    -- The whole of how far off the page it goes: the band is then
+    -- leant towards the colour of an open thread, and put back at the
+    -- lightness this number asked for. What is written on it -- the
+    -- date, the file, every count in the plugin, all in the comment
+    -- colour -- is read against it, and a band lifted by something
+    -- other than this is a band nobody agreed to.
     ground = 0.15,
+
+    -- Whether the head of each note gets a band of its own as well.
+    --
+    -- Off, because backgrounds are the one signal in this window that
+    -- cannot be stacked: a thread with an answer and a suggestion in it
+    -- already carries the block's ground, the answer's ground, the code
+    -- it was written against and both halves of the diff, and a heading
+    -- on top of those is a sixth background in a dozen lines. Of all of
+    -- them the head is the one whose foreground already says what it is
+    -- -- a name in the title colour, a date in the comment colour, and
+    -- prose under both.
+    head_band = false,
+
+    -- How far the ground under an *answer* stands off the page, as a
+    -- multiple of `ground` above.
+    --
+    -- Above 1 and a reply is a step further off than the note it
+    -- answers; 1 leaves it flush, which is where the indent and the
+    -- arrow are the whole of what says so -- and both of them are two
+    -- characters at the head of a line, which is where the eye is not
+    -- when it has just finished the line above.
+    reply_ground = 1.7,
+
+    -- Which colour the ground under a conversation leans towards.
+    --
+    -- `false` is a neutral panel: the page's own background raised off
+    -- itself and nothing else, so a comment is told from the code by
+    -- standing above it rather than by being a colour. What state a
+    -- thread is in the rail and the tick say outright, and a settled
+    -- block still sinks back towards the page -- it gets half the lift
+    -- whatever this is set to.
+    --
+    -- The name of a highlight group borrows that group's foreground for
+    -- every ground instead: `"Comment"` for the quietest colour any
+    -- colourscheme defines, `"DiagnosticWarn"` for a warm one that
+    -- reads as paper in a margin.
+    --
+    -- `true` leans each ground towards the colour of the thread it is
+    -- under -- an open thread's under an open one, a resolved one's
+    -- under a resolved one. Which is the most it can say and the most
+    -- it can cost: those are diagnostic colours, and a colourscheme
+    -- whose `DiagnosticInfo` is a saturated cyan makes every comment in
+    -- the window blue.
+    accent = false,
+
+    -- ...and how far the band under the head of each note leans into
+    -- that colour, on the same 0-to-1 scale. Nothing to lean into with
+    -- no accent, where a heading is a step up in lightness instead.
+    --
+    -- A heading is told from the block it sits inside by being a
+    -- different colour rather than a brighter one -- brighter is the one
+    -- direction that costs whatever is written on it, and the head
+    -- carries the quietest group in the plugin. But the colour it leans
+    -- into is an open thread's, which is a diagnostic blue in most
+    -- colourschemes, and far enough into that and the head of every note
+    -- is a blue bar rather than a shade of the conversation under it.
+    -- Enough to find without reading, and not enough to be a second
+    -- colour in the window. 0 for a heading told apart by lightness
+    -- alone.
+    heading = 0.1,
 
     -- The widest a line of a comment is drawn, in columns.
     --

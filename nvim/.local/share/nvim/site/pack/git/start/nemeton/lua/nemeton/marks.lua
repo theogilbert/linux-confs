@@ -113,6 +113,31 @@ local function ground()
   grounded = {}
   local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   local lift = config.comments.ground
+
+  --- The colour a ground leans towards, or nil for one that leans
+  --- nowhere.
+  ---
+  --- `from` is the group the band would borrow from if it borrowed by
+  --- state -- an open thread's colour under an open thread, a resolved
+  --- one's under a resolved one. `config.comments.accent` overrules it:
+  --- a name, and every ground borrows from that one group instead;
+  --- `false`, and none of them borrows at all and the block is the
+  --- page's own colour raised off it. Which is a different way of
+  --- saying what a comment is: not a thing with a state that has a
+  --- colour, but a panel with words on it, told from the code by
+  --- standing above it. What state it is in the rail and the tick say
+  --- outright, and the settled ground still sinks back towards the page
+  --- -- the lift is halved for it either way.
+  local function accent_of(from)
+    local pick = config.comments.accent
+    if pick == false then
+      return nil
+    end
+    local hl =
+      vim.api.nvim_get_hl(0, { name = type(pick) == "string" and pick or from, link = false })
+    return hl.fg
+  end
+
   --- `share` is how much of the ground this one gets: the whole of it
   --- for a conversation still going on, half for one that is over.
   local function tint(name, from, share)
@@ -124,19 +149,40 @@ local function ground()
       vim.api.nvim_set_hl(0, name, { link = "Normal", default = true })
       return
     end
-    local accent = vim.api.nvim_get_hl(0, { name = from, link = false })
+    local accent = accent_of(from)
     if not (vim.o.termguicolors and normal.bg and normal.fg) then
       vim.api.nvim_set_hl(0, name, { link = "CursorLine", default = true })
       return
     end
+    -- The lift decides how far off the page the band is; the tint
+    -- decides which way it leans, and is then put back where the lift
+    -- put it. Without that last part the tint was a second lift nobody
+    -- asked for: `NemetonSignOpen` is a bright colour, and mixing a
+    -- seventh of it into the ground was adding half as much again to a
+    -- number `config.comments.ground` is supposed to be the whole of.
+    -- The band came out light enough that the comment colour on it --
+    -- the date, the file, every count in the plugin -- was most of the
+    -- way to the colour behind it.
     local bg = mix(normal.bg, normal.fg, lift * share)
     vim.api.nvim_set_hl(0, name, {
-      bg = mix(bg, accent.fg or normal.fg, 0.14 * share),
+      bg = accent and at_lum(mix(bg, accent, 0.14 * share), lum(bg)) or bg,
       default = true,
     })
   end
   tint("NemetonInline", "NemetonSignOpen", 1)
   tint("NemetonSettled", "NemetonResolved", 0.5)
+  -- ...and the ground an answer is drawn on, which is the same ground
+  -- standing further off the page.
+  --
+  -- An indent and an arrow said a reply was a reply, and both of them
+  -- are two characters at the head of a line -- which is where the eye
+  -- is not, when it has just finished reading the line above. A thread
+  -- with four answers in it read as one block of prose by five people.
+  -- A step in the ground says it without being read, and says it on
+  -- every line of the answer rather than on the first.
+  local answer = config.comments.reply_ground or 1
+  tint("NemetonReply", "NemetonSignOpen", answer)
+  tint("NemetonReplySettled", "NemetonResolved", answer * 0.5)
   -- ...and the band the head of each note sits on. A note is two things
   -- read two ways -- who said it and when, which is skimmed, and what
   -- they said, which is read -- and in a thread with four answers in it
@@ -154,7 +200,7 @@ local function ground()
       return
     end
     local under = vim.api.nvim_get_hl(0, { name = base, link = false })
-    local accent = vim.api.nvim_get_hl(0, { name = from, link = false })
+    local accent = accent_of(from)
     if not under.bg then
       vim.api.nvim_set_hl(0, name, { link = base, default = true })
       return
@@ -163,7 +209,11 @@ local function ground()
     -- more of the same thing rather than a second thing -- and then put
     -- back where it was on the scale that decides what can be read on
     -- it, plus the hair.
-    local bg = mix(under.bg, accent.fg or normal.fg, 0.4)
+    -- Without an accent there is nothing to lean into and the head is
+    -- the ground raised again: on a neutral panel a heading is a step
+    -- up rather than a step sideways, which is the whole of what a
+    -- panel with no colour in it has to tell one band from another.
+    local bg = mix(under.bg, accent or normal.fg, accent and (config.comments.heading or 0) or 0)
     vim.api.nvim_set_hl(0, name, {
       bg = at_lum(bg, lum(under.bg) * 1.1),
       default = true,
@@ -171,6 +221,8 @@ local function ground()
   end
   heading("NemetonHead", "NemetonInline", "NemetonSignOpen")
   heading("NemetonHeadSettled", "NemetonSettled", "NemetonResolved")
+  heading("NemetonHeadReply", "NemetonReply", "NemetonSignOpen")
+  heading("NemetonHeadReplySettled", "NemetonReplySettled", "NemetonResolved")
 
   -- ...and the band the code a thread was written against is drawn on,
   -- which is not one of the two: it is a quotation of the file inside a
@@ -238,7 +290,19 @@ local OWN_GROUND = {
   NemetonSuggestOld = true,
   NemetonHead = true,
   NemetonHeadSettled = true,
+  NemetonHeadReply = true,
+  NemetonHeadReplySettled = true,
 }
+
+--- Which of the four grounds a line belongs on: whether the thread is
+--- over, and whether the line is an answer inside it rather than the
+--- note the answers are to.
+local function ground_for(state, reply)
+  if state == "settled" then
+    return reply and "NemetonReplySettled" or "NemetonSettled"
+  end
+  return reply and "NemetonReply" or "NemetonInline"
+end
 
 --- ...and whether one of them is a ground *here*.
 ---
@@ -381,12 +445,94 @@ end
 --- buffer takes highlights as extmarks rather than as chunks.
 function M.paint(bufnr, hls)
   vim.api.nvim_buf_clear_namespace(bufnr, M.ui_ns, 0, -1)
+  local last = vim.api.nvim_buf_line_count(bufnr)
   for _, h in ipairs(hls) do
+    -- `eol` is a ground rather than a colour of words: it runs to the
+    -- right-hand edge of the window instead of stopping where the text
+    -- does. `hl_eol` only carries past the end of a line for a
+    -- highlight that reaches the end of it, so the span is given the
+    -- next row rather than a column -- clamped, because the last line
+    -- of a buffer has no next row to be given.
     vim.api.nvim_buf_set_extmark(bufnr, M.ui_ns, h.row, h.col, {
-      end_col = h.end_col,
+      end_row = h.eol and math.min(h.row + 1, last) or nil,
+      end_col = h.eol and 0 or h.end_col,
       hl_group = h.hl,
+      hl_eol = h.eol or nil,
     })
   end
+end
+
+--- A conversation as lines and highlight spans for a real buffer: what
+--- `threads.flatten` returns, drawn on the ground `shade` puts the
+--- expanded view on.
+---
+--- The ground is what makes a comment look like one. Without it a
+--- thread is words on the window's own background -- the same
+--- background as the blank line between two threads and as everything
+--- else in the float -- and four notes in a row read as one wall of
+--- prose that has to be parsed to be divided. On a ground, each is a
+--- block with edges, and the head of each note is a band across the top
+--- of it.
+---
+--- Edge to edge, and by `hl_eol` rather than by padding the text: these
+--- windows are real buffers, and a line padded to the width of the
+--- window is a line of trailing whitespace in one.
+---
+--- `settled` says which lines are part of a conversation at all, and
+--- which of the two grounds each is on: "open", "settled", or nil for a
+--- line that is the window's own -- a heading, a file name, the blank
+--- between two threads. One string for the whole of a block, or a table
+--- of one per line for a window that draws its own furniture among
+--- them.
+function M.shade_lines(rendered, first_row, settled)
+  local lines, hls = {}, {}
+  for i, chunks in ipairs(rendered) do
+    -- Spelled out rather than as `and`/`or`: a table whose entry for
+    -- this line is nil falls through to the table itself, which is
+    -- truthy, and every heading and blank in the window comes out on a
+    -- ground it is not part of.
+    local want = settled
+    if type(settled) == "table" then
+      want = settled[i]
+    end
+    local base = want and ground_for(want, chunks.reply) or nil
+    -- A line that brought a ground of its own -- quoted code, half of a
+    -- suggestion, the head of a note -- is drawn on that instead, the
+    -- whole line and the rail included. The same choice `shade` makes,
+    -- so the block is the same block in all four windows that draw one.
+    for _, chunk in ipairs(chunks) do
+      local named = type(chunk[2]) == "table" and chunk[2][1] or chunk[2]
+      if base and is_ground(named) then
+        base = named
+      end
+    end
+    local text = ""
+    for _, chunk in ipairs(chunks) do
+      text = text .. chunk[1]
+    end
+    local row = (first_row or 0) + i - 1
+    -- The ground first and across the whole line: extmarks compose, and
+    -- what goes over this is the colour of the words on it.
+    if base then
+      table.insert(hls, { row = row, col = 0, end_col = #text, hl = base, eol = true })
+    end
+    local at = 0
+    for _, chunk in ipairs(chunks) do
+      local group = chunk[2]
+      if type(group) == "table" then
+        -- The colour it asked for, on the band it asked for -- which by
+        -- now is the whole line's, so it is the same call either way.
+        group = group[2]
+      end
+      local hl = base and on_ground(group, base) or group
+      if hl then
+        table.insert(hls, { row = row, col = at, end_col = at + #chunk[1], hl = hl })
+      end
+      at = at + #chunk[1]
+    end
+    table.insert(lines, text)
+  end
+  return lines, hls
 end
 
 function M.clear(bufnr)
@@ -484,7 +630,7 @@ local function shade(virt, settled)
       -- of the block. The rail keeps its *colour* either way, which is
       -- what says the quotation is inside a conversation and which
       -- conversation it is.
-      local base = (settled and settled[i]) and "NemetonSettled" or "NemetonInline"
+      local base = ground_for((settled and settled[i]) and "settled" or "open", line.reply)
       for _, chunk in ipairs(line) do
         -- A chunk names a band either by being drawn in one -- the
         -- quoted code -- or by asking for one behind a colour of its
@@ -562,7 +708,8 @@ function M.render(bufnr, by_line, mode, opts)
       -- one to lose.
       if config.comments.virt_text and mode ~= "expanded" then
         local first = shown[1].notes[1]
-        local summary = vim.split(first.body, "\n", { plain = true })[1] or ""
+        local summary = vim.split(threads.short_commits(first.body), "\n", { plain = true })[1]
+          or ""
         local count = #shown > 1 and (" (+%d)"):format(#shown - 1) or ""
         mark.virt_text = {
           { "  " .. first.author .. count .. ": ", "NemetonAuthor" },

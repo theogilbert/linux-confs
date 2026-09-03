@@ -41,17 +41,37 @@ it, and a marker that does not follow its line points at the wrong code.
 
 Every colour is a `Nemeton*` highlight group linked to one your
 colourscheme already defines, so all of them are one `:hi` away. The
-ground under an expanded conversation is `NemetonInline`: your own
+ground a conversation is drawn on is `NemetonInline`: your own
 background lifted towards the colour your text is drawn in — lighter in
-a dark colourscheme, darker in a light one — and then tinted towards the
-colour an open thread is drawn in, so it is a shade of the file rather
-than a grey band across it. Far enough to hold its own against whatever
+a dark colourscheme, darker in a light one. A panel raised off the page
+and, by default, no more than that: `comments.accent` is `false`, so a
+comment is told from the code by standing above it rather than by being
+a colour. Name a highlight group there (`"Comment"`, `"DiagnosticWarn"`)
+to tint it towards one, or `true` to lean each ground towards the colour
+of the thread it is under — which is the most it can say and the most it
+can cost, since a scheme with a saturated `DiagnosticInfo` turns every
+comment in the window blue. Far enough to hold its own against whatever
 else paints these lines: a diff plugin's red and green sit on the code
 above and below, and a ground a whisper away from the file's own reads
 as one more band of that. `comments.ground` (0.15, or `false` for no
 band at all) is how far. A settled conversation gets `NemetonSettled`
 instead — half as far, towards the resolved colour, so an argument still
 going on stands off the page and one that is over sinks back towards it.
+Both grounds are used under the code where the conversations are
+expanded *and* inside the three windows that draw one — `:Nemeton
+notes`, `:Nemeton conversation` and the peek float — where a block on a
+ground of its own, running to the right-hand edge with a bare line
+between it and the next, is what makes each comment read as its own box.
+Those windows take the editor's own background rather than
+`NormalFloat`, since this band and every band inside it are mixed out of
+`Normal`. An answer inside a thread sits on `NemetonReply`, the same
+ground standing `comments.reply_ground` (1.7) times as far off the page:
+an indent and an arrow are two characters at the head of a line, which
+is where the eye is not when it has just finished the line above, and a
+step in the ground says it without being read. `comments.head_band` puts
+the head of each note on a band as well — off, because backgrounds are
+the one signal here that cannot be stacked, and a thread with an answer
+and a suggestion in it already carries four of them.
 `:hi NemetonInline guibg=…` picks another, and `:hi link NemetonInline
 Normal` takes it away. The colours drawn *on* either are
 derived from it — `NemetonInlineAuthor`, `NemetonSettledAuthor` and the
@@ -267,6 +287,17 @@ cannot be read at all. The second limit is for the other end of it —
 prose set across the whole of a wide editor is prose the eye loses its
 place in. `comments.wrap = false` wraps to the window and nothing
 narrower.
+
+A link to a commit is drawn as the eight digits GitLab itself prints —
+`a1b2c3d4` where a permalink was, since a permalink is a hundred
+characters whose only content is the forty at the end of it, and a
+comment carrying two of them is mostly URL. Both shapes the forge
+writes: a commit of the project, and a commit of this merge request
+(`…/merge_requests/7/diffs?commit_id=…`). A markdown link keeps the
+words its author chose in front of the sha. This is how a comment is
+*drawn* and nothing else — `:Nemeton edit` sends back the text its
+author wrote, links and all. `comments.short_commits = false` leaves
+them whole.
 
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,

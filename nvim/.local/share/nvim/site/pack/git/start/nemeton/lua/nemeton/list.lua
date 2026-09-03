@@ -559,7 +559,12 @@ local function set_hint()
   if message and #rows > 0 then
     keys = { { k.select, "back to the list" }, { k.refresh, "refetch" }, { k.quit, "quit" } }
   elseif message then
-    keys = { { k.refresh, "refetch" }, { k.quit, "quit" } }
+    -- With `new` on it, unlike the branch above: a queue with no rows
+    -- is usually an empty one, and an empty one is exactly where a
+    -- merge request of your own gets made. A hint bar offering nothing
+    -- but "refetch" over "no opened merge requests" is a window that
+    -- reads as a dead end, whatever the key underneath it does.
+    keys = { { k.create, "new" }, { k.refresh, "refetch" }, { k.quit, "quit" } }
   else
     keys = {
       { k.select, "open" },

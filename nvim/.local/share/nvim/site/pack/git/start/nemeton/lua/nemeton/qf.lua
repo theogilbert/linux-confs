@@ -12,6 +12,7 @@
 
 local config = require("nemeton.config")
 local session = require("nemeton.session")
+local threads = require("nemeton.threads")
 
 local M = {}
 
@@ -21,7 +22,7 @@ local M = {}
 --- of it is what the gutter promises anyway.
 local function summary(thread)
   local first = thread.notes[1]
-  local body = vim.split(first.body, "\n", { plain = true })[1] or ""
+  local body = vim.split(threads.short_commits(first.body), "\n", { plain = true })[1] or ""
   local more = #thread.notes > 1 and (" +%d"):format(#thread.notes - 1) or ""
   local mark = thread.draft and "✎" or (thread.resolved and "✓" or "●")
   return ("%s %s%s: %s"):format(mark, first.author, more, body)

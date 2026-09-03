@@ -128,7 +128,7 @@ local function pick_thread(fn)
     format_item = function(t)
       return ("%s: %s"):format(
         t.notes[1].author,
-        vim.split(t.notes[1].body, "\n", { plain = true })[1]
+        vim.split(threads.short_commits(t.notes[1].body), "\n", { plain = true })[1]
       )
     end,
   }, function(choice)

@@ -74,7 +74,11 @@ local function render()
       if i > 1 then
         table.insert(lines, "")
       end
-      local text, painted = threads.flatten(threads.render(t, { summary = true }), #lines)
+      local text, painted = marks.shade_lines(
+        threads.render(t, { summary = true }),
+        #lines,
+        t.resolved and "settled" or "open"
+      )
       vim.list_extend(lines, text)
       vim.list_extend(hls, painted)
       for row = #lines - #text + 1, #lines do
@@ -252,6 +256,15 @@ function M.open()
     title = (" !%d · comments "):format(session.current.iid),
     title_pos = "center",
   })
+  -- The ground a conversation is drawn on is mixed out of `Normal`, and
+  -- so is every band inside it -- the head of a note, the code it was
+  -- written against, the two halves of a suggestion. Drawn on
+  -- `NormalFloat` instead, all five are lifted off a background that is
+  -- not the one they were measured against, and how far the box stands
+  -- off the page becomes whatever the colourscheme happened to make the
+  -- difference between the two. So these windows are the editor's own
+  -- background, and `comments.ground` means what it says in here.
+  vim.wo[M.win].winhighlight = "NormalFloat:Normal"
   vim.wo[M.win].wrap = true
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true

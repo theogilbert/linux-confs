@@ -694,6 +694,21 @@ local function inserted_within(spans, fine, narrow)
   return out
 end
 
+--- Whether a run of atoms holds more than one word.
+---
+--- Half of what decides whether the emphasis is drawn at all -- see the
+--- node loop below -- and whitespace is the test because the emphasis IS
+--- words picked out of other words. A region with no space in it has no
+--- others for the new ones to stand out from.
+local function reads_as_words(regions, text)
+  for _, r in ipairs(regions) do
+    if text:sub(r.col_start + 1, r.col_end):find("%s") then
+      return true
+    end
+  end
+  return false
+end
+
 --- The prose atoms of a change, grouped into NODES and asked -- once for
 --- each node -- whether the emphasis narrowed it.
 ---
@@ -728,6 +743,33 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all)
   table.sort(rows)
 
   local order, narrowed, node, prev = {}, {}, 0, nil
+  -- Whether there is anything here for the stepping back to be a
+  -- comparison WITH, which is the one thing it cannot do without: the
+  -- grey means "changed, but not the part that is new", and that is a
+  -- sentence with two halves.
+  --
+  -- One half or the other will do. Either the atom holds other words for
+  -- the new ones to stand out from, or the emphasis found something new
+  -- inside it to stand out. `'alpha'` -> `'alpha2'` has no sentence in it
+  -- and is still worth drawing that way, because the `2` is there to
+  -- point at.
+  --
+  -- With neither, the grey has nothing to say and says something false.
+  -- difftastic labels `"|"` a `string`, the same as it labels a
+  -- docstring one, so a separator hoisted onto a new line -- reported
+  -- changed with the rest of that line, and holding not one new
+  -- character, being the same three bytes as before -- came out greyed
+  -- in the middle of a green row: "not the part that is new", about a
+  -- thing with no parts and nothing new anywhere near it.
+  --
+  -- Asked of the NODE rather than of the row. difftastic reports a
+  -- multi-line string one word per atom, so a docstring row holding a
+  -- single word is still part of a sentence, and answering per row would
+  -- step half a paragraph back and leave the other half at full tint.
+  --
+  -- Not asked at all where difftastic had no parser: there every atom is
+  -- prose, because there is nothing else it could be.
+  local sentence = {}
   for _, row in ipairs(rows) do
     local text = text_of(row)
     local regions = atoms(spans_by_row[row], text, all)
@@ -770,16 +812,27 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all)
       if fine ~= nil then
         narrowed[node] = true
       end
+      sentence[node] = sentence[node] or all or reads_as_words(regions, text)
+        or #marks[row].fine > 0
       prev = row
     end
   end
 
+  local kept = {}
   for _, row in ipairs(order) do
     local m = marks[row]
-    m.narrowed = narrowed[m.node] or false
-    m.quiet = m.narrowed and unstressed(m.fine, m.regions) or {}
+    if sentence[m.node] then
+      m.narrowed = narrowed[m.node] or false
+      m.quiet = m.narrowed and unstressed(m.fine, m.regions) or {}
+      table.insert(kept, row)
+    else
+      -- Nothing to compare, so nothing to say. Left out of the answer
+      -- entirely, and the row is drawn by the token rules that drew
+      -- every other atom on it.
+      marks[row] = nil
+    end
   end
-  return marks, order
+  return marks, kept
 end
 
 -- There is deliberately no "and nothing but punctuation survived" case
@@ -854,150 +907,6 @@ local function names(ranges, text)
     end
   end
   return false
-end
-
---- How many of `ranges` were cut out of a token rather than being one.
-local function sub_token(ranges)
-  local n = 0
-  for _, r in ipairs(ranges or {}) do
-    if r.partial then
-      n = n + 1
-    end
-  end
-  return n
-end
-
---- Whether a line's removals are small enough to read inside the line
---- that replaced them.
----
---- A before-image costs a screen line and asks the reader to compare two
---- rows character by character. For a word swapped in the middle of a
---- line that is a lot of ceremony for one word, and the comparison is
---- easier when the old text sits where the new text is: `self._closed`
---- with `_shutdown` beside it reads at a glance as one edit, rather than
---- as two rows that have to be lined up first.
----
---- It stops being easier once the old text is long enough to push the
---- real code off to the right, or once enough of the line went for the
---- row to be more removal than line. Past either, the old line is worth a
---- row of its own.
----
---- ...and once a line that has a mark drawn BELOW the token has more
---- than one edit on it at all. A mark that narrow -- the digit, not the
---- number -- reads only while the reader has one thing to read: it says
---- "this much of this word", and that sentence is checkable against the
---- word it is sitting in and nothing else. `f(50_000, 60_000)` becoming
---- `f(20_000, 30_000)` puts two of them on one row, four one-character
---- marks scattered through a line which otherwise looks untouched, to be
---- paired up left to right before any of them means anything.
----
---- Mixing the two granularities is worse still, not better:
---- `f(50_000, 60_000)` -> `f(2_012, 30_000)` draws a whole number in red
---- beside its replacement AND a lone digit in red beside its own, so the
---- same colour in the same line means "this word went" in one place and
---- "this character went" in another. Which is why the count is of every
---- mark on the row once any of them is sub-token, and not of the
---- sub-token ones alone.
----
---- A line whose marks are all whole tokens has neither problem: a red
---- word beside the green word that replaced it says the same thing
---- however many times it happens, and reads in place.
-local function readable_inline(dels, text, adds)
-  if (sub_token(dels) > 0 or sub_token(adds) > 0)
-    and (#dels > 1 or #(adds or {}) > 1) then
-    return false
-  end
-  local bytes = 0
-  for _, d in ipairs(dels) do
-    bytes = bytes + (d.col_end - d.col_start)
-  end
-  if bytes == 0 or bytes > config.diff.line.minor_bytes then
-    return false
-  end
-  if rewritten(dels, text) then
-    return false
-  end
-  local total = 0
-  for col = 1, #text do
-    if text:sub(col, col):match("%S") then
-      total = total + 1
-    end
-  end
-  return total > 0 and (bytes / total) <= config.diff.line.minor_ratio
-end
-
---- Where to draw a removal that belongs at `col` on the new side.
----
---- Sitting it exactly there puts it after whatever replaced it, since the
---- insertion occupies the same gap: `goodbye hello`, new then old, which
---- is backwards from every diff the reader has ever seen. Where an
---- addition ends exactly at that point, the removal goes in front of it.
-local function ahead_of_replacement(adds, col)
-  for _, a in ipairs(adds or {}) do
-    if a.col_end == col then
-      return a.col_start
-    end
-  end
-  return col
-end
-
---- The characters of `text` that no range covers, as (columns, text).
-local function untouched(text, ranges)
-  local marked = {}
-  for _, r in ipairs(ranges or {}) do
-    for col = r.col_start, math.min(r.col_end, #text) - 1 do
-      marked[col] = true
-    end
-  end
-  local cols, kept = {}, {}
-  for col = 0, #text - 1 do
-    if not marked[col] then
-      table.insert(cols, col)
-      table.insert(kept, text:sub(col + 1, col + 1))
-    end
-  end
-  return cols, table.concat(kept)
-end
-
---- Where each removal goes on the new line, as { col, text } in the order
---- they were removed -- or nil when the question has no answer.
----
---- Worked out from what did NOT change. Both sides of a substitution
---- report ranges into their own text, and the leftovers -- the characters
---- neither added nor removed -- are the same sequence on both sides.
---- Counting along it turns a position in the old line into the position
---- in the new line that means the same place, which is exactly where the
---- old text was taken from.
----
---- When the two leftovers are not the same text, they are not describing
---- one line's edit -- the comparison ran over a block and matched
---- something on the row above or below -- and there is no honest place to
---- put the removal. Nil, and the old line keeps its own row.
-local function inline_places(old_text, dels, new_text, adds)
-  local old_cols, old_kept = untouched(old_text, dels)
-  local new_cols, new_kept = untouched(new_text, adds)
-  if old_kept ~= new_kept then
-    return nil
-  end
-
-  -- How many untouched characters lie before each column of the old line.
-  local before, seen = {}, 0
-  for col = 0, #old_text do
-    before[col] = seen
-    if old_cols[seen + 1] == col then
-      seen = seen + 1
-    end
-  end
-
-  local places = {}
-  for _, d in ipairs(dels) do
-    local col = new_cols[(before[d.col_start] or 0) + 1] or #new_text
-    table.insert(places, {
-      col = ahead_of_replacement(adds, col),
-      text = old_text:sub(d.col_start + 1, d.col_end),
-    })
-  end
-  return places
 end
 
 --- Paints the whole of `row`, with `over` ranges drawn on top of it in
@@ -1288,6 +1197,12 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- to be compared against -- see `paired` below.
   local line_marked, token_marked, unpaired = {}, {}, {}
 
+  -- Rows the new-side pass drew nothing on, and rows a before-image was
+  -- drawn above. Where a row is in both, it is the line that replaced
+  -- the one in red above it and carries no sign of it -- see the pass
+  -- below the hunks.
+  local bare, answered = {}, {}
+
   -- Rows carrying a changed PROSE atom, held back until every hunk has
   -- had its say: what to draw on one of them is a question about the
   -- node, and a node can run past a hunk (the blank row in the middle of
@@ -1498,13 +1413,10 @@ function M.render(bufnr, win, result, old_lines, opts)
       end
     end
 
-    -- Lines whose removals are small enough to draw inside the line that
-    -- replaced them, instead of on a row of their own above it. `merged`
-    -- is keyed by the removed line's index in the hunk, which is what the
-    -- before-image loop asks it; `merged_at` by the new row the removals
-    -- get drawn on. The two are the same index only where the sides pair
-    -- up position by position, which difftastic's pairing does not.
-    local merged, merged_at = {}, {}
+    -- Old rows that are already on screen in the line below them, and so
+    -- need no row of their own. Keyed by the removed line's index in the
+    -- hunk, which is what the before-image loop asks it.
+    local carried = {}
     if inline and hunk.count_b > 0 then
       for i = 1, hunk.count_a do
         local dels = inline.dels[i] or {}
@@ -1513,65 +1425,16 @@ function M.render(bufnr, win, result, old_lines, opts)
         if #dels == 0 and diff.content_survives({ old_text }, { new_text }) then
           -- Nothing was taken out of this line: every character of it is
           -- still there in the line below, and a row repeating it says
-          -- only that the line moved down one. Empty rather than absent
-          -- -- there is nothing to draw in place either.
+          -- only that the line moved down one.
           --
           -- Asked of the text rather than read off the token diff, which
           -- can come back with no removals for a line that did lose
           -- something: alignment inside a block is a guess, and a row is
           -- the only place the old text would have been shown.
-          merged[i] = {}
-        elseif readable_inline(dels, old_text, inline.adds[i] or {}) then
-          merged[i] = inline_places(old_text, dels, new_text, inline.adds[i] or {})
-        end
-        merged_at[hunk.start_b + i - 2] = merged[i]
-      end
-    elseif result.precise and result.pairs and hunk.count_b > 0 then
-      -- A new row difftastic paired with an old one and reported no
-      -- changed tokens for. That is not the same as a row that did not
-      -- change: it is what comes back whenever every token the new line
-      -- kept was matched somewhere in the old one, so the whole edit
-      -- lands on the old side as removals and the new side has nothing
-      -- left to mark. `"|".join(col.types)` becoming `types` is the
-      -- shape -- the surviving `types` matches the one inside
-      -- `col.types`, difftastic reports the RHS as unchanged, and the
-      -- line that changed comes out with no mark on it at all while a
-      -- full red copy of the old line sits above saying nothing about
-      -- which part of it went. Side by side that reads fine, because the
-      -- two rows are level with each other; inline it does not, because
-      -- the correspondence is exactly what the layout has spent.
-      --
-      -- So the removals are drawn where they happened, in the line that
-      -- replaced them -- the same statement line mode already makes, and
-      -- the only one that puts the change back on the changed row
-      -- without claiming difftastic found an addition it did not.
-      --
-      -- Compared as a PAIR rather than block against block. difftastic
-      -- already said which old row this one answers to, and a one-line
-      -- comparison is the only one whose untouched text is the same
-      -- sequence on both sides -- which is what `inline_places` needs to
-      -- place anything at all.
-      for i = 0, hunk.count_b - 1 do
-        local row = hunk.start_b - 1 + i
-        local old_row = result.pairs[row + 1]
-        if (not by_row[row] or #by_row[row] == 0)
-          and old_row and old_row >= hunk.start_a
-          and old_row < hunk.start_a + hunk.count_a then
-          local old_text = old_lines[old_row] or ""
-          local new_text = line_text(row)
-          local r = old_text ~= new_text and diff.block_diff({ old_text }, { new_text }) or nil
-          local dels = r and r.dels or {}
-          if #dels > 0 and readable_inline(dels, old_text, r.adds) then
-            local places = inline_places(old_text, dels, new_text, r.adds)
-            if places then
-              merged[old_row - hunk.start_a + 1] = places
-              merged_at[row] = places
-            end
-          end
+          carried[i] = true
         end
       end
     end
-
     -- Present in the new side: highlight the real lines.
     if hunk.count_b > 0 then
       -- Green, whether or not the hunk also removes something. Removal
@@ -1691,12 +1554,14 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- edit the backend explicitly did not report.
           if result.precise and (not by_row[row] or #by_row[row] == 0) then
             token_marked[row] = true
+            bare[row] = true
           elseif ranged and result.precise and #spans == 0 then
             -- Every span the backend reported turned out to be text the
             -- row already had. Nothing to mark, and nothing for the
             -- counts to fall back to: a band here would say the whole
             -- line is new when not one character of it is.
             token_marked[row] = true
+            bare[row] = true
           elseif whole then
             -- Painted below. Whether anything on it steps back depends
             -- on whether it is prose, and if it is, on rows this hunk
@@ -1724,6 +1589,7 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- through the change untouched and only moved. Marking it
             -- would claim a change that did not happen.
             token_marked[row] = true
+            bare[row] = true
           else
             vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
               line_hl_group = hl,
@@ -1733,28 +1599,6 @@ function M.render(bufnr, win, result, old_lines, opts)
             unpaired[row] = not paired_row(row)
           end
 
-          -- The old text, in place. One extmark per position rather than
-          -- one per removal, because two removals from the same gap are
-          -- drawn in the order Neovim happens to stack marks in, and that
-          -- is not the order they were taken out.
-          if merged_at[row] and show_old then
-            local at, order = {}, {}
-            for _, place in ipairs(merged_at[row]) do
-              local col = math.max(0, math.min(place.col, #text))
-              if not at[col] then
-                at[col] = {}
-                table.insert(order, col)
-              end
-              table.insert(at[col], place.text)
-            end
-            for _, col in ipairs(order) do
-              vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, col, {
-                virt_text = { { table.concat(at[col]), "UatisDelete" } },
-                virt_text_pos = "inline",
-                priority = 100,
-              })
-            end
-          end
         end
       end
       -- The blank rows a token-precise backend said nothing about.
@@ -2009,7 +1853,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       -- So where an alignment exists the question is asked again, per
       -- row, where it needs no heuristic at all: a row whose partner is
       -- byte-identical is on screen, in place, and a red copy above it
-      -- says only that it moved down one. The same statement `merged`
+      -- says only that it moved down one. The same statement `carried`
       -- already makes where the sides pair up position by position.
       --
       -- Only when those rows outnumber the changed ones, though. A
@@ -2056,6 +1900,42 @@ function M.render(bufnr, win, result, old_lines, opts)
       local span = collapsed[hidx]
       local from = span and span.first or hunk.start_a
       local upto = span and span.last or (hunk.start_a + hunk.count_a - 1)
+
+      -- ...and whether they are spread over the new side at all, which
+      -- is a question about how many of them there are.
+      --
+      -- Putting a removed row directly above the row it became buys the
+      -- reader one comparison they can check: two lines, adjacent, one
+      -- the old version of the other. That is worth the layout while the
+      -- before-image is a line or two. It stops being worth it when the
+      -- before-image is a passage. Six lines each rewritten come out as
+      -- red, green, red, green all the way down, and the old code is no
+      -- longer anywhere on screen as CODE -- every line of it has a line
+      -- of something else between it and the next, so the block that was
+      -- there cannot be read back at all, which is the one thing a
+      -- before-image is for.
+      --
+      -- So past a handful of rows they go back into one block above the
+      -- hunk: old together, new together, the shape a patch has always
+      -- had. Nothing else changes -- same lines, same order, same marks
+      -- -- and the pairing is still on screen, one block up rather than
+      -- one row up.
+      --
+      -- Counted over the rows that will actually be DRAWN, not over the
+      -- hunk: a row already on screen inside the line below it, or one
+      -- the alignment found still intact, puts nothing between two new
+      -- rows and so costs the reader nothing. A twenty-line hunk with
+      -- two rows that need a row of their own is two rows spread, not
+      -- twenty.
+      local spread = 0
+      for old_row = from, upto do
+        if old_lines[old_row] ~= nil and not carried[old_row - hunk.start_a + 1]
+          and not intact[old_row] then
+          spread = spread + 1
+        end
+      end
+      spread = spread <= config.diff.line.spread_max
+
       for old_row = from, upto do
         local i = old_row - hunk.start_a
         local text = old_lines[old_row]
@@ -2066,7 +1946,7 @@ function M.render(bufnr, win, result, old_lines, opts)
         local survived = span ~= nil and not del_marked[old_row]
         -- ...except where it was already drawn inside the line below, or
         -- is still sitting there unchanged.
-        if text ~= nil and not merged[i + 1] and not intact[old_row] then
+        if text ~= nil and not carried[i + 1] and not intact[old_row] then
           -- Where the removed characters are known, the rest of the old
           -- line is context: it is drawn dimmed so the eye lands on what
           -- actually went away rather than on a solid red band that says
@@ -2160,10 +2040,12 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- block above that line -- not spread by an alignment which,
           -- for rows with no row of their own, says only where they came
           -- in the old file.
-          local at = not span
+          local at = spread and not span
             and ((aligned and result.anchor[old_row]) or (fitted and fitted[old_row]))
           if at then
-            add_before(math.min(at - 1, math.max(line_count - 1, 0)), true, { chunks })
+            local anchor = math.min(at - 1, math.max(line_count - 1, 0))
+            answered[anchor] = true
+            add_before(anchor, true, { chunks })
           else
             table.insert(virt, chunks)
           end
@@ -2175,6 +2057,9 @@ function M.render(bufnr, win, result, old_lines, opts)
         row, above = math.max(hunk.start_b - 1, 0), true
       end
       if #virt > 0 then
+        if above and hunk.count_b > 0 then
+          answered[row] = true
+        end
         add_before(row, above, virt)
       end
       if drawn > 0 and hunk.count_b == 0 then
@@ -2236,6 +2121,36 @@ function M.render(bufnr, win, result, old_lines, opts)
           })
         end
       end
+    end
+  end
+
+  -- The line that replaced the one drawn in red above it, where nothing
+  -- else on it says so.
+  --
+  -- A row the backend reported no additions on gets no mark, and that is
+  -- right: hoisting `"|".join(col.types)` into a variable matches every
+  -- token the shortened line kept against one somewhere in the old line,
+  -- so difftastic calls the new row unchanged and reports the whole edit
+  -- as removals from the left. Nothing was added to it, and painting it
+  -- green would say something the backend explicitly did not.
+  --
+  -- But a red row sitting above a line with no mark on it reads as a
+  -- deletion, with the line below it merely the next line of the file --
+  -- when in fact that line is the answer to it. The quiet tint says the
+  -- one thing that IS true of it: this is what the row above became.
+  -- Not the full tint, which is for text that is new, and none of this
+  -- row's is.
+  --
+  -- Only where a before-image was drawn above it, and only where the row
+  -- carries nothing of its own: a row with marks already says what
+  -- happened to it, and one with no before-image above it has no
+  -- comparison to be the other half of.
+  for row in pairs(answered) do
+    if bare[row] then
+      vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
+        line_hl_group = "UatisAddDim",
+        priority = 100,
+      })
     end
   end
 

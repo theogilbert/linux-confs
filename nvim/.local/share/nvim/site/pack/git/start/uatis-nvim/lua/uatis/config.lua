@@ -347,25 +347,30 @@ return {
     -- cheap answer and the right one agree.
     refit_pairs = 64,
 
+      -- How many removed rows a hunk may draw before they stop being
+      -- spread over the new side and go back into one block above it.
+      --
+      -- A removed row drawn directly above the row it became gives the
+      -- reader a comparison they can check without looking anywhere
+      -- else. A whole passage drawn that way gives them stripes
+      -- instead: every line of the old code with a line of the new code
+      -- between it and the next, so the block that was there cannot be
+      -- read back AS code, which is what a before-image exists to show.
+      -- Two or three rows are lines you check; more than that is a
+      -- passage you read.
+      --
+      -- Counted over the rows that actually get one, so a long hunk
+      -- most of whose old rows are already on screen -- unchanged, or
+      -- carried into the line below -- still spreads the few that are
+      -- not.
+      spread_max = 3,
+
     -- How many lines either side of a hunk count as "still on screen"
       -- when deciding whether an edit removed code or merely moved it --
       -- but not so far that a genuinely deleted line is excused by
       -- similar code elsewhere.
       survives_context = 4,
 
-      -- How small a removal has to be to be drawn INSIDE the line that
-      -- replaced it rather than on a row of its own above it. A
-      -- before-image costs a screen line and asks for a
-      -- character-by-character comparison between two rows; for one word
-      -- swapped in the middle of a line, putting the old text right where
-      -- the new text is says the same thing in one row.
-      --
-      -- Two limits, because both ways of being big spoil it: a removal
-      -- covering more of the line than this makes the row more removal
-      -- than line, and one longer than `minor_bytes` pushes the real code
-      -- off to the right whatever fraction it is.
-      minor_ratio = 0.5,
-      minor_bytes = 32,
 
       -- How much of a line the marks have to cover before the line stops
       -- being a line with marks on it and becomes a rewritten line, drawn
@@ -382,11 +387,25 @@ return {
       major_ratio = 0.85,
     },
 
-    -- Lines with more tokens than this skip the intra-line comparison
-    -- altogether. It is quadratic in the worst case, and it serves both
-    -- engines: line mode marks with it, and structural mode picks the
-    -- novel words inside a changed string out of it.
+    -- How big a replacement run the intra-line comparison will pair up
+    -- token by token: this many old tokens against this many new ones,
+    -- squared, as a budget spent across the whole block. That scoring is
+    -- the quadratic part; the token diff around it is linear, so a long
+    -- block whose edits are small still gets the fine answer and only a
+    -- wholesale rewrite falls back to marking tokens whole. It serves
+    -- both engines: line mode marks with it, and structural mode picks
+    -- the novel words inside a changed string out of it.
     inline_token_limit = 400,
+
+    -- ...and how many tokens a whole block may hold before it is not
+    -- compared at all. That pass is linear, which is why it went
+    -- unnoticed for a long time: tokenizing a hunk and pushing a range
+    -- per token costs nothing until the hunk is a rewritten file, where
+    -- it is most of a second spent on the main loop to produce marks
+    -- that cover every line and are drawn as a band regardless. About
+    -- fifteen hundred lines of ordinary code, well past any hunk a
+    -- reader reads token by token.
+    inline_block_limit = 20000,
   },
 
   highlight = {

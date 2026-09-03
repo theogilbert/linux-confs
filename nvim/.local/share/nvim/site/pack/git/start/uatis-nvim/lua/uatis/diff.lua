@@ -145,8 +145,15 @@ end
 --- lines: reflowing a signature onto three lines is then an insertion of
 --- two line breaks and some indentation, rather than one line replaced by
 --- three unrelated ones.
-local function tokenize(lines)
-  local toks = {}
+---
+--- `limit`, where given, is a ceiling this gives up at: past that many
+--- tokens it returns nil instead of finishing. Counted as it goes rather
+--- than measured afterwards, because splitting the block IS the cost the
+--- ceiling exists to avoid -- a rewritten fifty-thousand-line file is
+--- half a second of it, and finding that out at the end means having
+--- already spent it.
+local function tokenize(lines, limit)
+  local toks, n = {}, 0
   for ln, line in ipairs(lines) do
     local i = 1
     while i <= #line do
@@ -157,12 +164,17 @@ local function tokenize(lines)
       if not a then
         a, b = i, i
       end
-      table.insert(toks, { text = line:sub(a, b), line = ln, col = a - 1 })
+      n = n + 1
+      toks[n] = { text = line:sub(a, b), line = ln, col = a - 1 }
       i = b + 1
     end
     if ln < #lines then
       -- Zero width on purpose: it aligns, but there is nothing to paint.
-      table.insert(toks, { text = "\n", line = ln, col = #line, newline = true })
+      n = n + 1
+      toks[n] = { text = "\n", line = ln, col = #line, newline = true }
+    end
+    if limit and n > limit then
+      return nil
     end
   end
   return toks
@@ -316,28 +328,62 @@ end
 --- here, because one of the two sides has no marks on it at all -- every
 --- mark is a character genuinely removed, or genuinely inserted, and
 --- that is exactly the edit.
-local function worth_char_diff(a, b, ops)
-  local pre, suf = affixes(a, b)
-  if math.max(pre, suf) >= config.diff.line.word_affix then
-    return true
-  end
+--- How many bytes an edit script takes out and puts in.
+local function edit_counts(ops)
   local added, removed = 0, 0
   for _, c in ipairs(ops) do
     removed = removed + c[2]
     added = added + c[4]
   end
+  return added, removed
+end
+
+local function worth_char_diff(a, b, ops)
+  local pre, suf = affixes(a, b)
+  if math.max(pre, suf) >= config.diff.line.word_affix then
+    return true
+  end
+  local added, removed = edit_counts(ops)
   return added == 0 or removed == 0
 end
 
+--- Pushes the byte ranges of a token that was edited rather than replaced.
+---
+--- A one-sided edit -- characters only removed, or only added -- is pushed
+--- as the comparison found it. Every mark there is a character that
+--- genuinely went or genuinely arrived, and only one of the two sides
+--- carries any, so `foobar` -> `fobar` marks the `o` and nothing else
+--- however scattered the losses are.
+---
+--- A two-sided one is pushed as ONE range per side: the stretch between
+--- the shared prefix and the shared suffix, marked whole. The affix test
+--- above says there is a stem for the eye to anchor on; it does not say
+--- the part BETWEEN the stems is anything more than one word replacing
+--- another, and taking that apart character by character lands on
+--- whichever letters the two words happen to share. `report_flags` ->
+--- `parsed_flags` came back as `a` and `sed` marked inside the new word,
+--- with the `p` and the `r` between them left bare as though they had
+--- come through the change untouched -- two fragments of `parsed` where
+--- the edit is the whole of it. That is the coincidence of spelling
+--- `word_affix` exists to catch, one level down: shared letters in the
+--- middle of the differing part are worth no more than shared letters in
+--- the middle of the word.
 local function char_pair(a_tok, b_tok, ops, adds, dels)
-  for _, c in ipairs(ops) do
-    if c[2] > 0 then
-      push(dels, a_tok.line, a_tok.col + c[1] - 1, a_tok.col + c[1] - 1 + c[2], true)
+  local added, removed = edit_counts(ops)
+  if added == 0 or removed == 0 then
+    for _, c in ipairs(ops) do
+      if c[2] > 0 then
+        push(dels, a_tok.line, a_tok.col + c[1] - 1, a_tok.col + c[1] - 1 + c[2], true)
+      end
+      if c[4] > 0 then
+        push(adds, b_tok.line, b_tok.col + c[3] - 1, b_tok.col + c[3] - 1 + c[4], true)
+      end
     end
-    if c[4] > 0 then
-      push(adds, b_tok.line, b_tok.col + c[3] - 1, b_tok.col + c[3] - 1 + c[4], true)
-    end
+    return
   end
+  local pre, suf = affixes(a_tok.text, b_tok.text)
+  push(dels, a_tok.line, a_tok.col + pre, a_tok.col + #a_tok.text - suf, true)
+  push(adds, b_tok.line, b_tok.col + pre, b_tok.col + #b_tok.text - suf, true)
 end
 
 --- Re-aligns one replacement block by similarity rather than by equality.
@@ -436,19 +482,38 @@ end
 --- appearing, which is what a per-line comparison is forced to say and
 --- what makes a reflow read as though the code were rewritten.
 ---
---- Big blocks skip all of this: the alignment is quadratic in the worst
---- case, and a wholesale rewrite is not something the eye reads character
---- by character anyway.
+--- Two limits, because there are two costs. The quadratic one is
+--- `align_block`, which scores every old token in a REPLACEMENT RUN
+--- against every new one, and it is rationed per run rather than per
+--- block: a run is only as big as the code that was actually rewritten,
+--- and charging the whole block for its total token count charged the
+--- wrong thing. One line appended to a forty-line SQL string is a pure
+--- insertion with no alignment in it at all, and it came back as
+--- nothing -- so the string was drawn emphasized end to end when a
+--- single line of it was new. `inline_token_limit` squared is the
+--- budget, spent across the block, which is exactly the work the old
+--- block-wide cap allowed at its own worst case; past it a run is
+--- marked token by token, which is what a wholesale rewrite reads as
+--- anyway.
+---
+--- The other cost is linear and therefore easy to miss: tokenizing a
+--- block and pushing a range per token is nothing on a hunk and most of
+--- a second on a rewritten twenty-thousand-line file, all of it on the
+--- main loop. `inline_block_limit` is where that stops being free, and
+--- past it there is no comparison at all -- the caller falls back to
+--- whole-line highlighting, which is what a hunk that size reads as.
 function M.block_diff(old_lines, new_lines)
   local adds, dels = {}, {}
 
-  local A, B = tokenize(old_lines), tokenize(new_lines)
+  local ceiling = config.diff.inline_block_limit
+  local A, B = tokenize(old_lines, ceiling), tokenize(new_lines, ceiling)
+  if not A or not B then
+    return nil -- caller falls back to whole-line highlighting
+  end
   local limit = config.diff.inline_token_limit
+  local budget = limit * limit
   if #A == 0 and #B == 0 then
     return { adds = adds, dels = dels }
-  end
-  if #A > limit or #B > limit then
-    return nil -- caller falls back to whole-line highlighting
   end
 
   -- One entry per token, and a line break is a token whose text IS a
@@ -468,8 +533,15 @@ function M.block_diff(old_lines, new_lines)
 
   for _, h in ipairs(seq_diff(a_text, b_text)) do
     local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
-    if ca > 0 and cb > 0 then
+    if ca > 0 and cb > 0 and ca * cb <= budget then
+      budget = budget - ca * cb
       align_block(A, sa, ca, B, sb, cb, adds, dels)
+    elseif ca > 0 and cb > 0 then
+      -- Too big to pair up. Both sides marked whole: these tokens went,
+      -- those arrived, which is all an alignment nobody can afford to
+      -- compute would have said more precisely.
+      push_tokens(dels, A, sa, ca)
+      push_tokens(adds, B, sb, cb)
     elseif ca > 0 then
       push_tokens(dels, A, sa, ca)
     elseif cb > 0 then

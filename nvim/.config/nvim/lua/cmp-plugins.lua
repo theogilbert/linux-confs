@@ -80,6 +80,11 @@ cmp.setup({
 	end,
         formatting = {
             format = function (entry, vim_item)
+                -- grannos puts the column type and its owning alias in the menu
+                -- column, which is the point of the entry -- keep it.
+                if entry.source.name == "grannos" then
+                    return vim_item
+                end
                 if vim_item.menu ~= nil and not vim_item.menu:match('^ *%(import .*') then
                     vim_item.menu = nil
                 end
@@ -110,6 +115,7 @@ cmp.setup({
                     max_item_count = 20,
                 },
 		{ name = "path", max_item_count = 10 },
+		{ name = "grannos" },
 	}),
 	completion = {
 		autocomplete = false,

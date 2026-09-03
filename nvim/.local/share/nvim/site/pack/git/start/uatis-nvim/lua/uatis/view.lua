@@ -23,6 +23,21 @@ local M = {}
 
 local views = {} -- bufnr -> view
 
+--- Where `]c` is going, when what it was asking for is not in this file.
+---
+--- Stepping to the next file is one thing and landing on its first change
+--- is another, and the second cannot be done at the time of the first:
+--- opening a view is two git subprocesses deep, so the anchors the cursor
+--- is aimed at do not exist yet. The intent is left here instead and
+--- collected by whichever view draws next. One at a time, and armed only
+--- once the list has said there IS a next file, so nothing is left behind
+--- to hijack an unrelated redraw.
+local landing
+
+--- Assigned further down, beside `]c` itself. `render` is the only place
+--- that knows a view has finished drawing, and it is defined first.
+local land
+
 function M.get(bufnr)
   local v = views[bufnr]
   if v and not vim.api.nvim_buf_is_valid(bufnr) then
@@ -50,6 +65,18 @@ end
 local function render(view)
   view.gen = (view.gen or 0) + 1
   local gen = view.gen
+
+  -- Structural mode is a subprocess, and a file it is still thinking
+  -- about looks exactly like a file it found nothing in: no marks, no
+  -- counts, a header naming the backend as though it had answered. Said
+  -- in the header while it runs, so the two are never the same picture.
+  -- Only where something is actually being waited for: `vim.diff` is
+  -- in-process and answers within the tick, and a word that appears and
+  -- goes again on every keystroke is noise.
+  if view.backend ~= "line" then
+    view.pending = true
+    vim.cmd("redrawstatus")
+  end
 
   local function current()
     return views[view.bufnr] == view
@@ -100,6 +127,7 @@ local function render(view)
       end
       local moved = view.added ~= added or view.removed ~= removed
       view.added, view.removed = added, removed
+      view.pending = false
       view.engine, view.dropped = result.engine, result.dropped
       -- Structural was asked for and difftastic could not answer. Said in
       -- the header rather than notified: this is a fact about what is on
@@ -137,15 +165,33 @@ local function render(view)
       -- ...and the same question asked of the old side, which the old
       -- window draws: `render` is where the two blocks are compared, so
       -- it is where the answer is.
-      view.anchors, view.del_fine = overlay.render(view.bufnr, view.win, result,
+      local refit
+      view.anchors, view.del_fine, refit = overlay.render(view.bufnr, view.win, result,
         vim.split(old_text, "\n", { plain = true }),
         -- Side by side, the old revision is a window of its own: drawing
         -- it here too would say everything twice.
         { before = view.layout ~= "side" })
+      -- ...including the rows whose old side the render MEASURED rather
+      -- than read off the backend, where the backend had paired them
+      -- with a line they were never the old version of and reported the
+      -- whole row as gone. The old window draws from `del_spans`, so it
+      -- is told here too: one edit cannot be two answers because it is
+      -- being looked at in two layouts. Written into this render's own
+      -- table and never into the result, which is cached.
+      if view.del_spans then
+        for line, spans in pairs(refit or {}) do
+          if #spans > 0 then
+            view.del_spans[line] = spans
+          end
+        end
+      end
       oldside.refresh(view)
       -- Counted so a test can wait for a redraw to have happened rather
       -- than for a wall-clock guess, the same way the review's panes do.
       view.renders = (view.renders or 0) + 1
+      -- ...and the cursor, where this view is one `]c` stepped into: the
+      -- anchors it was aimed at have just been worked out.
+      land(view)
       -- The list measures what this view measures, and only this view can
       -- see an edit that has not been saved: `git diff` reads the disk.
       -- Told rather than polled, and only when the numbers actually moved,
@@ -337,25 +383,97 @@ local function toggle_backend(view)
   render(view)
 end
 
---- Next or previous changed chunk. Stops at the ends rather than wrapping,
---- the same as the review: running off the end is a useful signal that
---- there is nothing more, and it leaves `]c` behaving like a motion.
+--- Puts the cursor on `line` in the view's own window, centred.
+local function jump(view, line)
+  local win = view.win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  vim.api.nvim_win_set_cursor(win, { math.min(line, vim.api.nvim_buf_line_count(view.bufnr)), 0 })
+  vim.api.nvim_win_call(win, function()
+    vim.cmd("normal! zz")
+  end)
+end
+
+--- The end of a file, when `]c` was asking for the next change.
+---
+--- The review is a branch, so the next change after the last one here is
+--- the first one in the next file the list names -- and stopping instead
+--- left the reader pressing `]f` and then `]c`, since `]f` lands at the
+--- top of a file rather than on anything that changed in it.
+---
+--- The move needs the list, which is what knows which file comes next.
+--- Read if there is not one yet, the way `]f` reads it, and not put on
+--- screen: the key asked which change comes next, not for somewhere to
+--- stand and look at a list.
+---
+--- Off (`config.pane.chunk_spill`) this is where `]c` stops, which is
+--- what a motion does.
+local step_into
+local function spill(view, dir)
+  if not config.pane.chunk_spill then
+    return
+  end
+  local pane = require("uatis.pane")
+  local list = pane.get()
+  if list and (list.renders or 0) > 0 then
+    return step_into(view, list, dir)
+  end
+  pane.list({
+    on_ready = function(p)
+      step_into(view, p, dir)
+    end,
+  })
+end
+
+step_into = function(view, list, dir)
+  local idx = (list.file_idx or 0) + dir
+  if idx < 1 or idx > #list.files then
+    -- Said in the reader's own words rather than the list's: what ran
+    -- out was the changes, and that there are no more files is the
+    -- reason and not the answer.
+    vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " change",
+      vim.log.levels.INFO)
+    return
+  end
+  landing = { dir = dir, from = view.bufnr }
+  require("uatis.pane").goto_file(list, idx)
+  -- A file already annotated once is annotated no further -- `follow`
+  -- leaves a buffer that has a view of its own alone -- so for that one
+  -- no render is coming to collect the landing. Answered here instead,
+  -- where the window has just changed buffers, and left armed for the
+  -- file being opened for the first time.
+  vim.schedule(function()
+    local win = view.win
+    if not (win and vim.api.nvim_win_is_valid(win)) then
+      return
+    end
+    local dest = views[vim.api.nvim_win_get_buf(win)]
+    if dest then
+      land(dest)
+    end
+  end)
+end
+
+--- Next or previous changed chunk. Stops at the ends of the REVIEW rather
+--- than wrapping, the same as the file list: running off the end is a
+--- useful signal that there is nothing more.
 local function step_hunk(view, dir)
   local win = view.win
-  if not win or not vim.api.nvim_win_is_valid(win) or #(view.anchors or {}) == 0 then
+  if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
   local cur = vim.api.nvim_win_get_cursor(win)[1]
   local target
   if dir > 0 then
-    for _, a in ipairs(view.anchors) do
+    for _, a in ipairs(view.anchors or {}) do
       if a > cur then
         target = a
         break
       end
     end
   else
-    for i = #view.anchors, 1, -1 do
+    for i = #(view.anchors or {}), 1, -1 do
       if view.anchors[i] < cur then
         target = view.anchors[i]
         break
@@ -363,12 +481,41 @@ local function step_hunk(view, dir)
     end
   end
   if not target then
+    return spill(view, dir)
+  end
+  jump(view, target)
+end
+
+--- The other half of `spill`: the cursor, once the file it stepped into
+--- has drawn.
+---
+--- On the end the reader was travelling towards -- the first change going
+--- forward, the last going back. Landing at the top of a file after `[c`
+--- would mean pressing `[c` again to reach the change that was next, and
+--- the whole point of the step was that it already knew.
+---
+--- A view whose own `]c` armed this is not the one it was armed for: the
+--- destination had not been opened yet, and a buffer that redraws for its
+--- own reasons in between must not take the cursor.
+land = function(view)
+  if not landing or landing.from == view.bufnr then
     return
   end
-  vim.api.nvim_win_set_cursor(win, { math.min(target, vim.api.nvim_buf_line_count(view.bufnr)), 0 })
-  vim.api.nvim_win_call(win, function()
-    vim.cmd("normal! zz")
-  end)
+  -- ...and not before it has drawn. A view exists from the moment it is
+  -- attached and its anchors are worked out a diff later, so a view
+  -- caught in between has an empty list rather than no list -- which is
+  -- indistinguishable from a file with nothing in it, and would take the
+  -- landing without being able to answer it.
+  if (view.renders or 0) == 0 then
+    return
+  end
+  local dir = landing.dir
+  landing = nil
+  local anchors = view.anchors or {}
+  local target = dir > 0 and anchors[1] or anchors[#anchors]
+  if target then
+    jump(view, target)
+  end
 end
 
 --- Next or previous changed file, from the buffer you are reading.

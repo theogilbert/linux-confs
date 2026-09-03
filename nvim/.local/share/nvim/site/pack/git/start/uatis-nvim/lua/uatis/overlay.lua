@@ -220,13 +220,30 @@ function M.setup_highlights()
   -- back instead. Two levels either way -- this way round the top one
   -- always means the same thing.
   --
-  -- Mixed towards the editor's background rather than desaturated, so it
-  -- lands between the tint and the buffer whatever the scheme's diff
-  -- colours are. What difftastic called changed is never drawn as
-  -- unchanged, only as less of the story.
-  local add_bg = add.bg and deepen(add.bg, config.highlight.saturation, add_l)
-  vim.api.nvim_set_hl(0, "UatisAddDim", (add_bg and normal)
-    and { bg = mix(normal, add_bg, config.highlight.dim_contrast) }
+  -- The step back is in COLOUR, not in brightness -- the same shape the
+  -- removed side has, where the dim is the scheme's own `DiffDelete`
+  -- background (a muted grey-red) and the band is that colour deepened.
+  -- So the hue is kept, the saturation is capped rather than floored,
+  -- and the row sits a fixed distance from the editor's background like
+  -- every other tint here.
+  --
+  -- It was a mix towards the background, which is a different statement
+  -- and the wrong one: every channel moves together, so what comes out
+  -- is the tint at lower contrast -- a darker green under a green -- and
+  -- the pair reads as one shade with a seam in it however far the mix is
+  -- taken. Greyed, the two differ in the thing the eye is being asked
+  -- about: the words that are new have colour, the sentence around them
+  -- has almost none.
+  --
+  -- Capped and not floored, because this is the one group here that is
+  -- meant to be quiet. A scheme whose `DiffAdd` is already grey-green
+  -- keeps its own answer; one whose green is vivid is brought down to
+  -- it.
+  local add_dim = config.highlight.add_dim_bg
+    or (add.bg and deepen(add.bg, 0, config.highlight.dim_lightness,
+      config.highlight.dim_saturation))
+  vim.api.nvim_set_hl(0, "UatisAddDim", add_dim
+    and { bg = add_dim }
     or { link = "DiffAdd" })
 
   -- Over virtual text. Strikethrough on top of DiffDelete is what makes a
@@ -1286,6 +1303,13 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- disagreeing about what changed.
   local del_fine = {}
 
+  -- ...and the rows whose old-side answer was MEASURED here rather than
+  -- taken from the backend, because the backend had paired them with the
+  -- wrong line. Handed back so the old revision's window can draw the
+  -- same answer instead of the report it would otherwise read: one edit,
+  -- two layouts, and they had better agree.
+  local refit = {}
+
   local function line_text(row)
     return vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
   end
@@ -1831,6 +1855,138 @@ function M.render(bufnr, win, result, old_lines, opts)
     local pure_insertion = nothing_removed
       or (content_survives and (inline ~= nil or result.precise))
 
+    -- Whether that alignment is a correspondence at all, or an order.
+    --
+    -- Putting each removed row directly above the new row it answers
+    -- to is worth the layout only where it ANSWERS to it: the whole
+    -- gain is that a mark on the new row can be checked against the
+    -- line it was measured against, one row up. difftastic reports
+    -- `aligned_lines` for every hunk, though, including a docstring of
+    -- thirty-one lines rewritten as eighteen -- where there is no
+    -- row-for-row anything to report and what comes back is the two
+    -- blocks laid alongside each other in order. Spread on that, the
+    -- old docstring is drawn as thirty-one red rows interleaved
+    -- one-for-one with the new prose, each claiming to be what the
+    -- line below it replaced, and four of them were.
+    --
+    -- So the pairs are asked whether they look like pairs. Where most
+    -- of them do, the alignment is describing an edit and every row
+    -- goes above its own. Where they do not, there is nothing finer to
+    -- say than "these lines became those", and the block is that --
+    -- which is also the only form the old prose is readable in.
+    local function fit(a, b)
+      local lo, hi = math.min(#a, #b), math.max(#a, #b)
+      if hi == 0 then
+        return 1
+      end
+      -- An edit distance is at least the difference in length, so a
+      -- pair this far apart cannot reach the threshold and does not
+      -- need measuring. Which is what keeps this cheap on the hunks
+      -- where it matters: a rewrite pairs long lines against short
+      -- ones, and those are the rows that never reach `similarity`.
+      if lo / hi < config.diff.line.word_similarity or hi > 400 then
+        return 0
+      end
+      return diff.similarity(a, b)
+    end
+    local function resembles(a, b)
+      return fit(a, b) >= config.diff.line.word_similarity
+    end
+    local alike = 0
+    if result.anchor then
+      for i = 0, hunk.count_a - 1 do
+        local at = result.anchor[hunk.start_a + i]
+        if at and resembles(old_lines[hunk.start_a + i] or "", line_text(at - 1)) then
+          alike = alike + 1
+        end
+      end
+    end
+    local aligned = result.anchor ~= nil and alike * 2 > hunk.count_a
+
+    -- ...and where it does not fit, the pairing that does.
+    --
+    -- difftastic aligns by walking the two token streams, so a line
+    -- INSERTED above a changed one takes the changed line's partner:
+    -- putting `assert isinstance(result, ConnectResult)` above a
+    -- `return` whose subscript became an attribute reported the old
+    -- return line as the new assert's opposite number, and the return
+    -- that actually replaced it as an addition answering to nothing.
+    -- Drawn that way the before-image sits above a line it has nothing
+    -- to do with, with the line it really became one row further down
+    -- -- so the reader is asked to compare two rows that were never
+    -- the same code, and the comparison that matters is not drawn at
+    -- all.
+    --
+    -- This does not overrule difftastic about what changed: every mark
+    -- stays where its own answer put it. It is only about which row a
+    -- removed line is drawn above, which is the one thing the
+    -- alignment gets wrong here and the one thing it is used for.
+    --
+    -- All or nothing, and in order. A before-image is one statement --
+    -- these lines became those -- so a hunk where some rows find a
+    -- partner and the rest fall back into the block at the top of it
+    -- would be two statements about one edit; and two old rows
+    -- claiming one new row would say the new row replaced both.
+    --
+    -- Bounded, because the answer is measured rather than looked up: an
+    -- edit distance per candidate pair, and a hunk of a hundred rows
+    -- against a hundred would be ten thousand of them. Past a handful of
+    -- rows either way it is not the case this exists for anyway -- a
+    -- block that size is a substitution, where the alignment is an order
+    -- and "these lines became those" is the whole of what there is to
+    -- say.
+    local fitted
+    if result.anchor and not aligned and hunk.count_a > 0 and hunk.count_b > 0
+      and hunk.count_a * hunk.count_b <= config.diff.line.refit_pairs then
+      fitted = {}
+      local at = hunk.start_b
+      for i = 0, hunk.count_a - 1 do
+        local old_row = hunk.start_a + i
+        local text = old_lines[old_row] or ""
+        local best, score
+        for r = at, hunk.start_b + hunk.count_b - 1 do
+          local s = fit(text, line_text(r - 1))
+          if s >= config.diff.line.word_similarity and (not score or s > score) then
+            best, score = r, s
+          end
+        end
+        if not best then
+          fitted = nil
+          break
+        end
+        fitted[old_row] = best
+        at = best + 1
+      end
+    end
+
+    -- What each re-matched row actually lost, measured against the row
+    -- it was matched to.
+    --
+    -- The backend's own report about that row is a comparison against a
+    -- line it was never the old version of, and it says the same thing
+    -- every time: everything changed. Drawn from that, the removed line
+    -- is a solid red copy of a line the reader can see is still there
+    -- one row below, with the two characters that actually went nowhere
+    -- marked. The pairing having been redone, the answer has to be
+    -- redone with it.
+    --
+    -- Character by character, which is the comparison a 1:1 hunk
+    -- already gets: two lines that resemble each other this closely
+    -- differ in a bracket or a name, and tokens are too coarse to say
+    -- which. No `names` test either, for the same reason -- that test
+    -- guards against dimming a whole block to point at stray
+    -- punctuation across a reflow, and here the punctuation IS the
+    -- edit: `result["connection_id"]` became `result.connection_id`.
+    if fitted then
+      for old_row, at in pairs(fitted) do
+        local pair = diff.inline_diff(old_lines[old_row] or "", line_text(at - 1))
+        refit[old_row] = pair.dels or {}
+        -- The old revision's own window draws from the same answer, or
+        -- the two layouts disagree about one edit: see `oldside.refresh`.
+        del_fine[old_row] = refit[old_row]
+      end
+    end
+
     -- Absent from the new side: draw it as virtual lines.
     if hunk.count_a > 0 and not pure_insertion and show_old then
       local virt, drawn = {}, 0
@@ -1893,51 +2049,6 @@ function M.render(bufnr, win, result, old_lines, opts)
         intact = {}
       end
 
-      -- Whether that alignment is a correspondence at all, or an order.
-      --
-      -- Putting each removed row directly above the new row it answers
-      -- to is worth the layout only where it ANSWERS to it: the whole
-      -- gain is that a mark on the new row can be checked against the
-      -- line it was measured against, one row up. difftastic reports
-      -- `aligned_lines` for every hunk, though, including a docstring of
-      -- thirty-one lines rewritten as eighteen -- where there is no
-      -- row-for-row anything to report and what comes back is the two
-      -- blocks laid alongside each other in order. Spread on that, the
-      -- old docstring is drawn as thirty-one red rows interleaved
-      -- one-for-one with the new prose, each claiming to be what the
-      -- line below it replaced, and four of them were.
-      --
-      -- So the pairs are asked whether they look like pairs. Where most
-      -- of them do, the alignment is describing an edit and every row
-      -- goes above its own. Where they do not, there is nothing finer to
-      -- say than "these lines became those", and the block is that --
-      -- which is also the only form the old prose is readable in.
-      local function resembles(a, b)
-        local lo, hi = math.min(#a, #b), math.max(#a, #b)
-        if hi == 0 then
-          return true
-        end
-        -- An edit distance is at least the difference in length, so a
-        -- pair this far apart cannot reach the threshold and does not
-        -- need measuring. Which is what keeps this cheap on the hunks
-        -- where it matters: a rewrite pairs long lines against short
-        -- ones, and those are the rows that never reach `similarity`.
-        if lo / hi < config.diff.line.word_similarity or hi > 400 then
-          return false
-        end
-        return diff.similarity(a, b) >= config.diff.line.word_similarity
-      end
-      local alike = 0
-      if result.anchor then
-        for i = 0, hunk.count_a - 1 do
-          local at = result.anchor[hunk.start_a + i]
-          if at and resembles(old_lines[hunk.start_a + i] or "", line_text(at - 1)) then
-            alike = alike + 1
-          end
-        end
-      end
-      local aligned = result.anchor ~= nil and alike * 2 > hunk.count_a
-
       -- The rows to draw. Normally the hunk's own; where the removal
       -- happened inside a line the old rows were folded into, the whole
       -- of what was folded, so the before-image is the construct that
@@ -1978,6 +2089,9 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- inline, which says the statement was replaced rather than
           -- that two names in it were.
           local dels = inline and inline.dels[i + 1]
+          if (not dels or #dels == 0) and refit[old_row] then
+            dels = refit[old_row]
+          end
           if (not dels or #dels == 0) and result.precise then
             local reported = del_marked[old_row]
             dels = reported and names(reported, text) and reported or nil
@@ -2046,7 +2160,8 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- block above that line -- not spread by an alignment which,
           -- for rows with no row of their own, says only where they came
           -- in the old file.
-          local at = not span and aligned and result.anchor[old_row]
+          local at = not span
+            and ((aligned and result.anchor[old_row]) or (fitted and fitted[old_row]))
           if at then
             add_before(math.min(at - 1, math.max(line_count - 1, 0)), true, { chunks })
           else
@@ -2166,7 +2281,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       table.insert(uniq, a)
     end
   end
-  return uniq, del_fine
+  return uniq, del_fine, refit
 end
 
 return M

@@ -413,7 +413,16 @@ local function view_winbar_text(view, width)
   if vim.bo[view.bufnr].modified then
     add("modified", "UatisMeta")
   end
-  if view.unavailable then
+  if view.pending then
+    -- Still running. A structural diff is a subprocess, and while it is
+    -- out this window looks exactly like a file with nothing in it: no
+    -- marks, no counts, a header naming a backend that has not answered
+    -- yet. The one place the difference can be stated is the slot that
+    -- otherwise says which backend drew what you are reading, so it
+    -- says so here -- in the same words as the question the reader is
+    -- asking, which is whether anything is coming.
+    add("comparing…", "UatisMeta")
+  elseif view.unavailable then
     -- The backend says `struct` and the answer came from `vim.diff`,
     -- which is worth a word: the reader asked for one thing and is
     -- looking at another.

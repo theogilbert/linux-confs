@@ -255,6 +255,22 @@ return {
     -- buffer. Off, each file is annotated only when you ask for it with
     -- `<leader>gu`, and the review is whatever you have turned on by hand.
     follow = true,
+
+    -- Whether `]c` off the last chunk of a file carries on into the next
+    -- file the list names, and `[c` off the first one back into the
+    -- previous.
+    --
+    -- On, for the same reason the list exists: the unit being read is a
+    -- branch, not a buffer, and "the next change" has an answer past the
+    -- end of this file. Stopping there left the reader pressing `]f` and
+    -- then `]c` to reach a change the review could have gone to itself
+    -- -- and `]f` alone lands at the top of a file rather than on
+    -- anything that changed in it.
+    --
+    -- Off restores the motion: `]c` stays inside the buffer and stops at
+    -- its ends. `]f`/`[f` are unaffected either way -- they are still
+    -- how you move a whole file at a time without reading what is in it.
+    chunk_spill = true,
   },
 
   -- One commit on its own: `:UatisShow [<rev>]`.
@@ -318,7 +334,20 @@ return {
       -- coincidence of spelling. Below this, both words are marked whole.
       word_affix = 2,
 
-      -- How many lines either side of a hunk count as "still on screen"
+      -- How many candidate pairs a hunk may be re-matched over when the
+    -- backend's own row pairing does not fit -- a line inserted above a
+    -- changed one takes the changed line's partner, and the removed row
+    -- is then drawn above a line it has nothing to do with.
+    --
+    -- Bounded because the answer is measured: an edit distance per pair,
+    -- old rows times new rows. Past a handful either way it is not the
+    -- case this exists for -- a block that size is a substitution, where
+    -- the alignment is an order rather than a correspondence and "these
+    -- lines became those" is the whole of what there is to say -- so the
+    -- cheap answer and the right one agree.
+    refit_pairs = 64,
+
+    -- How many lines either side of a hunk count as "still on screen"
       -- when deciding whether an edit removed code or merely moved it --
       -- but not so far that a genuinely deleted line is excused by
       -- similar code elsewhere.
@@ -374,7 +403,14 @@ return {
     -- are skimming -- and scaling that away from the background in RGB
     -- moves every channel at once, which turns a quiet green into a pale
     -- one rather than a deep one.
-    saturation = 0.55,
+    --
+    -- A floor and not a target: it is there to rescue a scheme whose diff
+    -- colours are too quiet to see, not to make every scheme's loud. Kept
+    -- low enough that what it produces still reads as a tint under code
+    -- -- a saturated block behind a line of syntax-coloured text is a
+    -- highlighter pen drawn over it, and the code is what the reader came
+    -- for.
+    saturation = 0.4,
 
     -- ...and how far each sits from the background in lightness. Two
     -- numbers, because the two sides are read differently: the added tint
@@ -412,21 +448,71 @@ return {
     -- where the backend only knows lines and the band only means "this
     -- line changed". Further along both axes, so the two read as one
     -- colour at two strengths rather than as two colours.
-    emphasis_saturation = 0.75,
-    emphasis_lightness = 0.115,
+    --
+    -- Not much further, though. This is a background under code, and a
+    -- vivid one stops being a tint and becomes a marker pen: the eye
+    -- reads the block instead of the words in it, which is the failure
+    -- this whole file is written to avoid. The separation it needs is
+    -- from the tint beside it, not from the buffer -- and against a
+    -- step-back that has had its colour taken out, a soft green at a
+    -- different lightness is already unmistakable.
+    emphasis_saturation = 0.48,
+    emphasis_lightness = 0.09,
 
     -- The other direction, for a changed prose atom -- a docstring, a
     -- comment, a long literal -- where difftastic calls every word
     -- changed and only some of them are the edit. The words that are new
-    -- keep the ordinary tint and the sentence around them steps back
-    -- towards the editor's background by this much: 0 leaves it on the
-    -- background, 1 leaves it at the tint.
+    -- keep the ordinary tint and the sentence around them steps back to
+    -- this, which is the same hue with almost none of the colour left in
+    -- it: a grey that remembers it was green.
     --
     -- Back rather than forward because the strongest colour on screen
     -- should always mean the same thing. Emphasising instead would make
     -- a reworded comment louder than the changed code beside it, which
     -- is the wrong way round.
-    dim_contrast = 0.45,
+    --
+    -- Greyed rather than darkened, which is what it used to be. The pair
+    -- is read ACROSS a line -- `["VARCHAR2"]` becoming `["VARCHAR2(50)"]`
+    -- puts the step-back and the tint a few columns apart -- and a mix
+    -- towards the editor's background moves every channel together, so
+    -- what comes out is the tint at lower contrast: a darker green under
+    -- a green, one shade with a seam in it, however far the mix is
+    -- taken. Dropping the saturation instead separates them by the thing
+    -- the eye is being asked about, and it is what the removed side has
+    -- always done -- its dim is the scheme's own `DiffDelete`
+    -- background, a muted grey-red, with the band that colour deepened.
+    --
+    -- A CAP, unlike `saturation` above, which is a floor: this is the
+    -- one group here meant to be quiet, so a scheme whose `DiffAdd` is
+    -- already grey-green keeps its own answer and only a vivid one is
+    -- brought down.
+    dim_saturation = 0.12,
+
+    -- ...and how far it sits from the editor's background, in the
+    -- direction the scheme already put its diff colours.
+    --
+    -- Its own number rather than `add_lightness`, and a longer one: the
+    -- two are told apart by colour, so the one with the colour taken out
+    -- of it needs the other axis to be seen at all -- at the tint's own
+    -- lightness a grey-green is a shade off the buffer and reads as
+    -- nothing. Past the tint AND past the emphasis, which is the same
+    -- way round the removed side has always had it: a pale ground with
+    -- the words that went drawn on it in a deeper colour.
+    --
+    -- Only just past them, though. This is the half of a changed line
+    -- the reader is meant to skim, and taken far enough to be plainly
+    -- pale it becomes the brightest thing on the row -- the eye lands on
+    -- the context before it lands on the edit, which is the wrong way
+    -- round and the reason the number is not simply "as light as it
+    -- reads clearly".
+    dim_lightness = 0.18,
+
+    -- ...or that colour outright, as `0xrrggbb`, for a reader who would
+    -- rather name it than tune the derivation -- the same escape the two
+    -- removal backgrounds have, and for the same reason: how loud the
+    -- quiet half of a changed line should be is taste, and it varies
+    -- more than the rest of the palette does. `nil` derives it as above.
+    add_dim_bg = nil,
 
     -- The same step back on the removed side, which is a shorter one.
     --

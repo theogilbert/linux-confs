@@ -86,6 +86,13 @@ move to the new fork point together. Views you named a revision for with
 | `<leader>gh` | read the review one commit at a time, on / off |
 | `]C` / `[C` | within that, the next / previous commit |
 
+`]c` off the last chunk of a file carries on into the next file the list
+names and lands on the first change in it, and `[c` off the first one goes
+back to the last change in the file before — the thing being read is a
+branch, so "the next change" has an answer past the end of this file. At
+either end of the review it says so and stays. `pane.chunk_spill = false`
+keeps it inside the buffer, and `]f`/`[f` step whole files either way.
+
 `<leader>gH` (global, like `<leader>gu`) reads any one commit in a tab of
 its own — see [One commit on its own](#one-commit-on-its-own).
 
@@ -193,6 +200,17 @@ string or comment, the words that are actually new are picked out in a
 stronger shade — difftastic shows those too, and its JSON does not report
 them, so they are worked out here.
 
+The rest of that changed string or comment — the sentence the new words
+were dropped into — steps back to the same hue with the colour taken out
+of it: a pale grey-green that remembers what it was, further from the
+buffer than the tint rather than nearer it, since with the colour gone
+lightness is all it has left to be seen by. Both sides work that way: the
+removed side's quiet ground is your scheme's own `DiffDelete`, a muted
+red, with what actually went drawn on top of it in that colour deepened.
+`highlight.dim_saturation` and `dim_lightness` are the two numbers, or
+`add_dim_bg` names the colour outright — as `delete_bg` and
+`delete_dim_bg` do for the other side.
+
 Structural mode is a window onto difftastic rather than a second opinion
 about it. Line mode is `vim.diff` with the histogram algorithm, which
 picks better hunk boundaries than git's default Myers on a restructured
@@ -216,8 +234,12 @@ end
 ```
 
 `status()` also carries `path`, `old_path` on a rename, `rev` (the fork
-point it resolved to), `backend`, `layout`, `tracks_base` and `degraded`
-— the last when difftastic was asked for and could not answer.
+point it resolved to), `backend`, `layout`, `tracks_base`, `degraded`
+— when difftastic was asked for and could not answer — and `pending`,
+true while a structural diff is still running, which is when the counts
+beside it are the last answer rather than this one. The window's own
+header says the same thing in words: `comparing…` where it would name
+the backend.
 `review()` carries `files`, the totals across them, and the file the
 list is standing on. Both return `nil` when there is nothing to say.
 

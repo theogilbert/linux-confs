@@ -588,10 +588,19 @@ function M.content_survives(old_lines, new_lines)
   -- here and a word three rows down, which would excuse a real removal as
   -- a move. Code that genuinely moved keeps its shape, so the span it
   -- matched into should be about its own length: a quarter's growth, plus
-  -- a token or two so the allowance does not round to nothing on a short
+  -- a few tokens so the allowance does not round to nothing on a short
   -- line, covers what a wrap inserts around and inside what it wrapped.
+  --
+  -- Three and not two, which is what a wrap actually costs: `x` becoming
+  -- `str(x)` inserts a name and both brackets, and `VARCHAR2` becoming
+  -- `VARCHAR2(50)` inserts the brackets and what is between them. At two
+  -- the same edit was a move on a long line and a removal on a short one
+  -- -- `assert by_name["VAL"].types == ["VARCHAR2"]` has sixteen tokens
+  -- and a quarter of that covers three, while `assert desc.types ==
+  -- ["VARCHAR2"]` has eleven and a quarter of eleven is two. One edit
+  -- drawn two ways in one file, for no reason the reader can see.
   local span = to - from + 1
-  return span <= #old_toks + math.max(2, math.floor(#old_toks / 4))
+  return span <= #old_toks + math.max(3, math.floor(#old_toks / 4))
 end
 
 --- Single-line convenience wrapper, for callers and tests that only ever

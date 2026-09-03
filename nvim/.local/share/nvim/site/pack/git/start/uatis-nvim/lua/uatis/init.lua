@@ -250,6 +250,8 @@ end
 ---   tracks_base      follows the base branch, rather than pinned by
 ---                    `:Uatis <ref>`
 ---   degraded         difftastic was asked for and could not answer
+---   pending          a structural diff is running: the counts are the
+---                    last answer, not this one
 function M.status(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
   local v = view.get(bufnr)
@@ -268,6 +270,10 @@ function M.status(bufnr)
     layout = v.layout,
     tracks_base = v.tracks_base == true,
     degraded = v.unavailable == true,
+    -- A structural diff that has not come back yet. A statusline that
+    -- shows the counts needs this for the same reason the winbar does:
+    -- `+0 -0` while a subprocess is out is not "nothing changed".
+    pending = v.pending == true,
   }
 end
 

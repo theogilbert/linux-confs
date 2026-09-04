@@ -128,8 +128,13 @@ local function ground()
   --- standing above it. What state it is in the rail and the tick say
   --- outright, and the settled ground still sinks back towards the page
   --- -- the lift is halved for it either way.
-  local function accent_of(from)
-    local pick = config.comments.accent
+  --- `pick` overrules `config.comments.accent`, for a band that leans
+  --- somewhere the ground under it does not. `nil` is "wherever the
+  --- grounds lean".
+  local function accent_of(from, pick)
+    if pick == nil then
+      pick = config.comments.accent
+    end
     if pick == false then
       return nil
     end
@@ -200,19 +205,20 @@ local function ground()
       return
     end
     local under = vim.api.nvim_get_hl(0, { name = base, link = false })
-    local accent = accent_of(from)
+    local accent = accent_of(from, config.comments.heading_accent)
     if not under.bg then
       vim.api.nvim_set_hl(0, name, { link = base, default = true })
       return
     end
-    -- Further into the colour the ground is already tinted towards --
-    -- more of the same thing rather than a second thing -- and then put
-    -- back where it was on the scale that decides what can be read on
-    -- it, plus the hair.
-    -- Without an accent there is nothing to lean into and the head is
-    -- the ground raised again: on a neutral panel a heading is a step
-    -- up rather than a step sideways, which is the whole of what a
-    -- panel with no colour in it has to tell one band from another.
+    -- Into whatever the heading leans towards -- which need not be
+    -- where the ground under it leans, and by default is not: a panel
+    -- with no colour in it can tell its heading from its body by
+    -- lightness alone, and lightness is the one direction that costs
+    -- whatever is written on the band. A tint of its own is a heading
+    -- that is a different colour without being a brighter one.
+    --
+    -- Then put back at the lightness it started from, plus the hair.
+    -- Without a colour to lean into at all the hair is the whole of it.
     local bg = mix(under.bg, accent or normal.fg, accent and (config.comments.heading or 0) or 0)
     vim.api.nvim_set_hl(0, name, {
       bg = at_lum(bg, lum(under.bg) * 1.1),
@@ -293,6 +299,20 @@ local OWN_GROUND = {
   NemetonHeadReply = true,
   NemetonHeadReplySettled = true,
 }
+
+--- The byte range [from, to) cut where an answer's ground starts, so a
+--- chunk lying across the two is drawn on both. One piece where `inset`
+--- is nil or falls outside the range, which is every line that is not
+--- the front of an answer.
+local function split_at(from, to, inset)
+  if not inset or inset <= from or inset >= to then
+    return { { from = from, to = to, outer = inset and to <= inset or false } }
+  end
+  return {
+    { from = from, to = inset, outer = true },
+    { from = inset, to = to, outer = false },
+  }
+end
 
 --- Which of the four grounds a line belongs on: whether the thread is
 --- over, and whether the line is an answer inside it rather than the
@@ -496,6 +516,9 @@ function M.shade_lines(rendered, first_row, settled)
       want = settled[i]
     end
     local base = want and ground_for(want, chunks.reply) or nil
+    -- What the front of an answer's line is on: the thread's ground,
+    -- because the rail belongs to the thread and not to the answer.
+    local outer = base and chunks.inset and ground_for(want, false) or nil
     -- A line that brought a ground of its own -- quoted code, half of a
     -- suggestion, the head of a note -- is drawn on that instead, the
     -- whole line and the rail included. The same choice `shade` makes,
@@ -514,7 +537,11 @@ function M.shade_lines(rendered, first_row, settled)
     -- The ground first and across the whole line: extmarks compose, and
     -- what goes over this is the colour of the words on it.
     if base then
-      table.insert(hls, { row = row, col = 0, end_col = #text, hl = base, eol = true })
+      local from = outer and math.min(chunks.inset, #text) or 0
+      if outer and from > 0 then
+        table.insert(hls, { row = row, col = 0, end_col = from, hl = outer })
+      end
+      table.insert(hls, { row = row, col = from, end_col = #text, hl = base, eol = true })
     end
     local at = 0
     for _, chunk in ipairs(chunks) do
@@ -524,9 +551,19 @@ function M.shade_lines(rendered, first_row, settled)
         -- now is the whole line's, so it is the same call either way.
         group = group[2]
       end
-      local hl = base and on_ground(group, base) or group
-      if hl then
-        table.insert(hls, { row = row, col = at, end_col = at + #chunk[1], hl = hl })
+      if group then
+        -- A chunk that straddles the inset is two spans: the same
+        -- colour, on the two grounds it lies across. The head of an
+        -- answer is one -- the rail and the arrow arrive together.
+        for _, part in ipairs(split_at(at, at + #chunk[1], outer and chunks.inset)) do
+          local under = part.outer and outer or base
+          table.insert(hls, {
+            row = row,
+            col = part.from,
+            end_col = part.to,
+            hl = under and on_ground(group, under) or group,
+          })
+        end
       end
       at = at + #chunk[1]
     end
@@ -641,7 +678,13 @@ local function shade(virt, settled)
           base = named
         end
       end
-      local shaded = {}
+      -- What the front of an answer's line is on: the thread's ground,
+      -- because the rail belongs to the thread and runs the height of
+      -- it. Set in from that, an answer is a panel inside the block
+      -- rather than a stripe across it.
+      local outer = line.inset
+        and ground_for((settled and settled[i]) and "settled" or "open", false)
+      local shaded, at = {}, 0
       for _, chunk in ipairs(line) do
         local group = chunk[2]
         if type(group) == "table" then
@@ -649,7 +692,14 @@ local function shade(virt, settled)
           -- whole line's -- so it is the same call either way.
           group = group[2]
         end
-        table.insert(shaded, { chunk[1], on_ground(group, base) })
+        for _, part in ipairs(split_at(at, at + #chunk[1], outer and line.inset)) do
+          local under = part.outer and outer or base
+          table.insert(
+            shaded,
+            { chunk[1]:sub(part.from - at + 1, part.to - at), on_ground(group, under) }
+          )
+        end
+        at = at + #chunk[1]
       end
       table.insert(shaded, { (" "):rep(math.max(width - widths[i], 1)), base })
       out[i] = shaded

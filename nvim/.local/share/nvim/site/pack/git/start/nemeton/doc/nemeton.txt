@@ -678,10 +678,11 @@ COMMENTS                                             *nemeton-config-comments*
       reply_indent = "  ",   -- what a reply is indented by
       reply_mark = "↳ ",     -- and what stands in that indent
       ground = 0.15,         -- how far the band under one stands off
-      accent = false,        -- which colour it leans towards, if any
+      accent = "DiagnosticHint",  -- which colour it leans towards
       reply_ground = 1.7,    -- how far further off an answer stands
-      head_band = false,     -- a band under the head of a note as well
-      heading = 0.1,         -- how far a note's head leans into that
+      head_band = true,      -- a band under the head of a note as well
+      heading_accent = true, -- ...leaning towards the thread's own colour
+      heading = 0.06,        -- how far it leans
       wrap = 80,             -- the widest a comment is drawn
       peek_height = 20,
     }
@@ -716,17 +717,20 @@ and cached. See |nemeton-syntax|.
 text is drawn in; see |hl-NemetonInline| for what is done with it, and
 `false` for no band at all.
 
-`accent` is which colour the grounds lean towards. `false`, the default,
-is a neutral panel: the page's own background raised off itself and
-nothing else, so a comment is told from the code by standing above it
-rather than by being a colour of its own. The name of a highlight group
-borrows that group's foreground instead -- `"Comment"` for the quietest
-colour any colourscheme defines, `"DiagnosticWarn"` for a warm one that
-reads as paper in a margin. `true` leans each ground towards the colour
-of the thread it is under, an open thread's or a resolved one's, which
-says the most and costs the most: those are diagnostic colours, and a
-scheme whose `DiagnosticInfo` is a saturated cyan turns every comment in
-the window blue.
+`accent` is which colour the grounds lean towards: the name of a
+highlight group, whose foreground they borrow. `DiagnosticHint` because
+it is the colour every scheme keeps for "here is something to know
+about, and nothing is wrong", which is a review comment exactly -- and
+because it is reliably the quieter half of the diagnostic palette, where
+`DiagnosticInfo` is a saturated cyan in enough schemes to turn every
+comment in the window blue. `"Comment"` is quieter still,
+`"DiagnosticWarn"` warm, like paper in a margin.
+
+`false` is a neutral panel instead: the page's own background raised off
+itself and nothing else, so a comment is told from the code by standing
+above it rather than by being a colour. `true` leans each ground towards
+the colour of the thread it is under, an open thread's or a resolved
+one's, which says the most and costs the most.
 
 Whatever it is set to, a settled conversation still sinks back towards
 the page: the lift is halved for it, and the rail and the tick say what
@@ -739,19 +743,32 @@ arrow are the whole of what says so -- and both of those are two
 characters at the head of a line, which is where the eye is not when it
 has just finished the line above. See |hl-NemetonReply|.
 
-`head_band` puts the head of each note on a band as well. Off, because
-backgrounds are the one signal in these windows that cannot be stacked:
-a thread with an answer and a suggestion in it already carries the
-block's ground, the answer's, the code the thread was written against
-and both halves of the diff, and a heading on top of those is a sixth
-background in a dozen lines. Of all of them the head is the one whose
-foreground already says what it is -- a name in the title colour, a date
-in the comment colour, and prose under both.
+`head_band` puts the head of each note on a band as well. Backgrounds
+are the one signal in these windows that cannot be stacked -- a thread
+with an answer and a suggestion in it already carries the block's
+ground, the answer's, the code the thread was written against and both
+halves of the diff -- so this one earns its place by being the quietest
+of them: `heading` is a sixteenth of the way into a colour, which is a
+heading you find without reading and not a bar across the note. `false`
+where the block's ground and the author's own colour are enough.
 
-`heading` is how far the band under the head of a note leans into that
-same colour, on the same scale. With no accent there is nothing to lean
-into and a heading is a step up in lightness instead. See
-|hl-NemetonHead|.
+`heading_accent` is which colour that band leans towards, which need not
+be -- and by default is not -- the one the ground under it leans
+towards. `true`: the colour of the thread the head belongs to, an open
+thread's or a resolved one's. It is the one place in the block where
+saying so is nearly free, because the head is one line of the several a
+note takes and it is the line naming who is talking, which is the line
+you are on when you want to know whether the argument is over. The
+ground under it stays the calmer colour the whole conversation is on.
+
+The other two answers are `accent`'s: `false` for no lean, where
+lightness alone tells the head from the body -- and lightness is the one
+direction that costs whatever is written on the band -- or the name of a
+group to borrow from.
+
+`heading` is how far it leans, on the same scale, and is small for what
+it leans into: a diagnostic colour is a colour chosen to be seen from
+across the room. See |hl-NemetonHead|.
 
 CI                                                         *nemeton-config-ci*
 >
@@ -951,24 +968,34 @@ conversation is then a block with steps in it, and which note you are
 reading is a thing you see rather than a thing you count indents to
 work out.
 
+It starts after the rail, which stays on the thread's own ground the
+height of the thread: the rail is what says these notes are one
+argument, and an answer drawn over it is a stripe across the block
+rather than a panel inside it.
+
                                                             *hl-NemetonHead*
                                                     *hl-NemetonHeadSettled*
 `NemetonHead` is the band the head of a note is drawn on -- who said it
 and when -- and `NemetonHeadSettled` is the same for a thread that is
 over; `NemetonHeadReply` and `NemetonHeadReplySettled` are the pair for
 the head of an answer, which sits on the answer's ground. None of the
-four is drawn unless `config.comments.head_band` asks for it. Each is the ground its block is on |hl-NemetonInline|, taken
-`config.comments.heading` of the way further into whatever colour that
-ground leans towards and then put back at the lightness it started from,
-plus a hair.
+four is drawn unless `config.comments.head_band` asks for it.
 
-Not far, where it leans anywhere at all: the colour on offer is an open
-thread's, which is a diagnostic blue in most colourschemes, and a head
-that has gone most of the way there is a blue bar across every note
-rather than a shade of the conversation it belongs to. On the default
-neutral panel -- `comments.accent = false` -- it leans nowhere, and the
-hair of lightness is the whole of what tells the head from the block
-under it.
+Each is the ground its block is on |hl-NemetonInline|, taken
+`config.comments.heading` of the way into
+`config.comments.heading_accent` and then put back at the lightness it
+started from, plus a hair.
+
+Its own colour, and not the one the ground under it leans towards: a
+heading told apart by lightness alone is a brighter band, and brighter
+is the one direction that costs what is written on it -- the date, in
+the comment colour, which is the quietest group here. A tint of its own
+makes the head a different colour without making it a lighter one, and
+leaves the body the page's own.
+
+Not far, either way. Every colour on offer is somebody's diagnostic
+colour, and a head that has gone most of the way into one is a bar
+across every note rather than a shade of the conversation it belongs to.
 
 Told apart by colour and not by being lighter, which is the point:
 lighter is nearer the colour of the text, and what is written on this

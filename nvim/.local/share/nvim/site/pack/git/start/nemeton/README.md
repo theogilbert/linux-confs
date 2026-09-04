@@ -43,14 +43,13 @@ Every colour is a `Nemeton*` highlight group linked to one your
 colourscheme already defines, so all of them are one `:hi` away. The
 ground a conversation is drawn on is `NemetonInline`: your own
 background lifted towards the colour your text is drawn in — lighter in
-a dark colourscheme, darker in a light one. A panel raised off the page
-and, by default, no more than that: `comments.accent` is `false`, so a
-comment is told from the code by standing above it rather than by being
-a colour. Name a highlight group there (`"Comment"`, `"DiagnosticWarn"`)
-to tint it towards one, or `true` to lean each ground towards the colour
-of the thread it is under — which is the most it can say and the most it
-can cost, since a scheme with a saturated `DiagnosticInfo` turns every
-comment in the window blue. Far enough to hold its own against whatever
+a dark colourscheme, darker in a light one. A panel raised off the page and
+leant towards `comments.accent` — `DiagnosticHint`, the colour every
+scheme keeps for "here is something to know about, and nothing is
+wrong", which is a review comment exactly, and reliably the quieter half
+of the diagnostic palette. `false` there is a neutral panel with no hue
+at all; `true` leans each ground towards the colour of the thread it is
+under, which says the most and costs the most. Far enough to hold its own against whatever
 else paints these lines: a diff plugin's red and green sit on the code
 above and below, and a ground a whisper away from the file's own reads
 as one more band of that. `comments.ground` (0.15, or `false` for no
@@ -65,13 +64,22 @@ between it and the next, is what makes each comment read as its own box.
 Those windows take the editor's own background rather than
 `NormalFloat`, since this band and every band inside it are mixed out of
 `Normal`. An answer inside a thread sits on `NemetonReply`, the same
-ground standing `comments.reply_ground` (1.7) times as far off the page:
+ground standing `comments.reply_ground` (1.7) times as far off the page
+and starting after the rail, so it reads as a panel set inside the block
+rather than a stripe across it:
 an indent and an arrow are two characters at the head of a line, which
 is where the eye is not when it has just finished the line above, and a
 step in the ground says it without being read. `comments.head_band` puts
-the head of each note on a band as well — off, because backgrounds are
-the one signal here that cannot be stacked, and a thread with an answer
-and a suggestion in it already carries four of them.
+the head of each note on a band as well, leaning towards
+`comments.heading_accent` — which is deliberately *not* where the
+grounds lean. `true` there is the colour of the thread the head belongs
+to, which is nearly free to say on that one line: it is the line naming
+who is talking, which is the line you are on when you want to know
+whether the argument is over. The ground under it stays the calmer
+colour the whole conversation is on. Backgrounds are the one signal here
+that cannot be stacked, so `comments.heading` is small — a sixteenth of
+the way, a heading you find without reading rather than a bar across the
+note.
 `:hi NemetonInline guibg=…` picks another, and `:hi link NemetonInline
 Normal` takes it away. The colours drawn *on* either are
 derived from it — `NemetonInlineAuthor`, `NemetonSettledAuthor` and the
@@ -485,6 +493,15 @@ two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts
 once and retries, and that the log records every call without recording
 either the token or what a comment said.
+
+Colour is the one thing here a test cannot settle, because every number
+in `comments` means something different against every colourscheme. Open
+a merge request and `:luafile dev/dial.lua` for a float that turns the
+knobs — `accent`, `ground`, `reply_ground`, `head_band`,
+`heading_accent`, `heading` —
+with the comments window redrawing behind it on every keypress, and `p`
+to print a `setup{}` block for whatever you stopped on. It is not on the
+runtime path and writes nothing; quitting reverts all of it.
 
 `.github/workflows/ci.yml` runs the same suite on the oldest Neovim this
 supports, on stable and on nightly, and lints with

@@ -801,7 +801,6 @@ function M.render(thread, opts)
     -- of what said so, and both are two characters at the start of a
     -- line -- the one place the eye is not when it is reading the line
     -- above. A ground says it before the line is read at all.
-    local opened = #out + 1
     -- Every line of a reply, its heading included, carries the rail and
     -- then the indent -- so the rail stays a straight edge and the
     -- nesting happens inside it. The line the reply opens with spends
@@ -814,6 +813,13 @@ function M.render(thread, opts)
       -- buffers.
       table.insert(out, { { config.comments.rail, rail[2] } })
     end
+    -- Where the answer itself starts, which is *after* the line that
+    -- separates it from what it answers. That line is the gap between
+    -- two notes and belongs to the thread: it is one character wide, so
+    -- an answer's ground laid on it has nothing to be set in from and
+    -- reaches the second column, where on every other line of the
+    -- answer the thread's own ground is.
+    local opened = #out + 1
     -- Who said it and when, on a band of its own inside the block.
     --
     -- A note is two things read two ways -- a line of bookkeeping that
@@ -932,6 +938,12 @@ function M.render(thread, opts)
       -- draws a conversation walks them a great deal.
       for j = opened, #out do
         out[j].reply = true
+        -- ...and how much of the front of it is not the answer: the
+        -- rail, which belongs to the thread and runs the height of it.
+        -- An answer set in from the rail is a panel inside the block
+        -- rather than a stripe across it, and the rail stays the one
+        -- unbroken edge it is there to be.
+        out[j].inset = #rail[1]
       end
     end
   end

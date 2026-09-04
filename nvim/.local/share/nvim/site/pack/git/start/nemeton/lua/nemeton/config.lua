@@ -181,15 +181,15 @@ return {
 
     -- Whether the head of each note gets a band of its own as well.
     --
-    -- Off, because backgrounds are the one signal in this window that
-    -- cannot be stacked: a thread with an answer and a suggestion in it
-    -- already carries the block's ground, the answer's ground, the code
-    -- it was written against and both halves of the diff, and a heading
-    -- on top of those is a sixth background in a dozen lines. Of all of
-    -- them the head is the one whose foreground already says what it is
-    -- -- a name in the title colour, a date in the comment colour, and
-    -- prose under both.
-    head_band = false,
+    -- Backgrounds are the one signal in these windows that cannot be
+    -- stacked -- a thread with an answer and a suggestion in it already
+    -- carries the block's ground, the answer's, the code it was written
+    -- against and both halves of the diff -- so this one earns its
+    -- place by being the quietest of them: `heading` is a sixth of the
+    -- way into a colour, which is a heading you find without reading
+    -- and not a bar across the note. `false` where the block's ground
+    -- and the author's own colour are enough.
+    head_band = true,
 
     -- How far the ground under an *answer* stands off the page, as a
     -- multiple of `ground` above.
@@ -203,41 +203,60 @@ return {
 
     -- Which colour the ground under a conversation leans towards.
     --
-    -- `false` is a neutral panel: the page's own background raised off
-    -- itself and nothing else, so a comment is told from the code by
-    -- standing above it rather than by being a colour. What state a
-    -- thread is in the rail and the tick say outright, and a settled
-    -- block still sinks back towards the page -- it gets half the lift
-    -- whatever this is set to.
+    -- The name of a highlight group borrows that group's foreground.
+    -- `DiagnosticHint` because it is the one colour every colourscheme
+    -- keeps for "here is something to know about, and nothing is
+    -- wrong", which is a review comment exactly -- and because it is
+    -- reliably the quieter half of the diagnostic palette, where
+    -- `DiagnosticInfo` is a saturated cyan in enough schemes to turn
+    -- every comment in the window blue. `"Comment"` is quieter still,
+    -- `"DiagnosticWarn"` warm, like paper in a margin.
     --
-    -- The name of a highlight group borrows that group's foreground for
-    -- every ground instead: `"Comment"` for the quietest colour any
-    -- colourscheme defines, `"DiagnosticWarn"` for a warm one that
-    -- reads as paper in a margin.
+    -- `false` is a neutral panel instead: the page's own background
+    -- raised off itself and nothing else, so a comment is told from the
+    -- code by standing above it rather than by being a colour.
     --
     -- `true` leans each ground towards the colour of the thread it is
     -- under -- an open thread's under an open one, a resolved one's
-    -- under a resolved one. Which is the most it can say and the most
-    -- it can cost: those are diagnostic colours, and a colourscheme
-    -- whose `DiagnosticInfo` is a saturated cyan makes every comment in
-    -- the window blue.
-    accent = false,
-
-    -- ...and how far the band under the head of each note leans into
-    -- that colour, on the same 0-to-1 scale. Nothing to lean into with
-    -- no accent, where a heading is a step up in lightness instead.
+    -- under a resolved one -- which says the most and costs the most.
     --
-    -- A heading is told from the block it sits inside by being a
-    -- different colour rather than a brighter one -- brighter is the one
-    -- direction that costs whatever is written on it, and the head
-    -- carries the quietest group in the plugin. But the colour it leans
-    -- into is an open thread's, which is a diagnostic blue in most
-    -- colourschemes, and far enough into that and the head of every note
-    -- is a blue bar rather than a shade of the conversation under it.
-    -- Enough to find without reading, and not enough to be a second
-    -- colour in the window. 0 for a heading told apart by lightness
-    -- alone.
-    heading = 0.1,
+    -- Whatever this is, the rail and the tick still say what state a
+    -- thread is in outright, and a settled block still sinks back
+    -- towards the page: it gets half the lift either way.
+    accent = "DiagnosticHint",
+
+    -- ...and which colour that band leans towards, which need not be
+    -- the one the ground under it leans towards -- and is not.
+    --
+    -- `true`: the colour of the thread the head belongs to, an open
+    -- thread's or a resolved one's. It is the one place in the block
+    -- where saying so is nearly free -- the head is one line of the
+    -- several a note takes, and it is the line naming who is talking,
+    -- which is the line you are on when you want to know whether the
+    -- argument is over. The ground under it stays the calmer colour the
+    -- whole conversation is on.
+    --
+    -- The other two answers are `accent`'s: `false` for no lean, where
+    -- lightness alone tells the head from the body -- and lightness is
+    -- the one direction that costs whatever is written on the band --
+    -- or the name of a group to borrow from. Only drawn at all where
+    -- `head_band` is on.
+    heading_accent = true,
+
+    -- ...and how far it leans, on the same 0-to-1 scale. Nothing to
+    -- lean into without a colour, where a heading is a step up in
+    -- lightness instead.
+    --
+    -- A sixteenth of the way, because of what it is leaning into: the
+    -- colour of an open thread is a diagnostic colour, which is a
+    -- colour chosen to be seen from across the room. Far enough into
+    -- one and the head of every note is a bar rather than a shade of
+    -- the conversation under it -- and the head carries the quietest
+    -- group in the plugin, the date, in the comment colour, which has
+    -- to stay readable against whatever this makes. Enough to find
+    -- without reading, and no more. 0 for a heading told apart by
+    -- lightness alone.
+    heading = 0.06,
 
     -- The widest a line of a comment is drawn, in columns.
     --

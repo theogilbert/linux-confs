@@ -742,6 +742,134 @@ local function write_temp(text, ext)
   return path
 end
 
+--- Re-aligns the stretches where difftastic paired rows by POSITION
+--- rather than by content.
+---
+--- Four lines inserted into the middle of a docstring is one node
+--- changing, and difftastic walks the node's rows in order: the last old
+--- row of it comes back paired against the FIRST inserted one, and an
+--- identical copy of that old row turns up four rows further down as an
+--- insertion. Read literally that says a line was removed and the same
+--- line added below -- a red before-image of a line that never went
+--- anywhere, sitting above a green line that was already there. The
+--- deletion direction is the same thing mirrored, and worse: every row
+--- below the cut is paired one off from the row it actually is.
+---
+--- So the rows between two the two sides already agree on are diffed
+--- again by LINE, which aligns on identical text and cannot get this
+--- wrong. It is a repair and not a second opinion, though: where the
+--- rows genuinely changed difftastic's pairing is the better one -- a
+--- block rewritten six lines into three has no line-for-line anything
+--- to say, and a line diff over a rewritten FILE is the re-pairing by
+--- coincidence that `linematch` is turned off for above. So it has to
+--- bring most of the region back matched before it is taken at all.
+local function realign(rows, old_lines, new_lines, classify)
+  --- A row both sides have and agree on -- what a region is bounded by,
+  --- and the only thing a line diff could match anyway.
+  local function settled(r)
+    return r.lhs ~= nil and r.rhs ~= nil and r.kind == "same"
+  end
+
+  local out, i = {}, 1
+  while i <= #rows do
+    if settled(rows[i]) then
+      table.insert(out, rows[i])
+      i = i + 1
+    else
+      local j = i
+      while j <= #rows and not settled(rows[j]) do
+        j = j + 1
+      end
+      -- The region's own lines, in the order the alignment has them,
+      -- which for either side is simply that side's rows in file order.
+      local a_idx, b_idx, a_text, b_text = {}, {}, {}, {}
+      local a_solid = 0
+      for k = i, j - 1 do
+        if rows[k].lhs then
+          table.insert(a_idx, rows[k].lhs)
+          table.insert(a_text, old_lines[rows[k].lhs + 1] or "")
+          a_solid = a_solid + (a_text[#a_text]:match("%S") and 1 or 0)
+        end
+        if rows[k].rhs then
+          table.insert(b_idx, rows[k].rhs)
+          table.insert(b_text, new_lines[rows[k].rhs + 1] or "")
+        end
+      end
+
+      local hunks = (#a_idx > 0 and #b_idx > 0) and vim.diff(
+        terminate(table.concat(a_text, "\n")),
+        terminate(table.concat(b_text, "\n")),
+        { result_type = "indices", algorithm = config.diff.line.algorithm }
+      ) or nil
+
+      local fixed = nil
+      if hunks then
+        fixed = {}
+        local ai, bi, matched = 1, 1, 0
+        local function context_to(a_stop)
+          while ai < a_stop do
+            -- Identical by construction -- this is what the line diff
+            -- matched -- so `same` whatever difftastic said about the
+            -- node the row belongs to. Blank rows do not count towards
+            -- the tally: two files almost always have a blank line to
+            -- spare, and re-cutting a region around one is a
+            -- coincidence, not an alignment.
+            if a_text[ai]:match("%S") then
+              matched = matched + 1
+            end
+            table.insert(fixed, { lhs = a_idx[ai], rhs = b_idx[bi], kind = "same" })
+            ai, bi = ai + 1, bi + 1
+          end
+        end
+        for _, h in ipairs(hunks) do
+          local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
+          context_to(ca > 0 and sa or sa + 1)
+          bi = cb > 0 and sb or sb + 1
+          -- Inside a hunk the rows really are different, and pairing
+          -- them off in order is what difftastic would have done had it
+          -- been looking at these rows alone.
+          for k = 0, math.max(ca, cb) - 1 do
+            local lhs = k < ca and a_idx[ai + k] or nil
+            local rhs = k < cb and b_idx[bi + k] or nil
+            table.insert(fixed, { lhs = lhs, rhs = rhs, kind = classify(lhs, rhs) })
+          end
+          ai, bi = ai + ca, bi + cb
+        end
+        context_to(#a_idx + 1)
+
+        -- Two gates, both of them about not overruling difftastic where
+        -- it was right. The answer has to DIFFER from the pairing
+        -- difftastic gave -- otherwise there was nothing wrong with it
+        -- and its reading of the region stands, down to which rows of a
+        -- replacement it called changed. And it has to be a repair
+        -- rather than a re-diff: most of the old side comes back
+        -- matched where a literal only grew or shrank, and a handful of
+        -- braces matched out of a rewritten file is the coincidence
+        -- this must not act on.
+        local moved = #fixed ~= (j - i)
+        for k = 1, #fixed do
+          local was = rows[i + k - 1]
+          moved = moved or not was or fixed[k].lhs ~= was.lhs or fixed[k].rhs ~= was.rhs
+        end
+        if not moved or matched * 2 < a_solid or matched == 0 then
+          fixed = nil
+        end
+      end
+
+      for _, r in ipairs(fixed or {}) do
+        table.insert(out, r)
+      end
+      if not fixed then
+        for k = i, j - 1 do
+          table.insert(out, rows[k])
+        end
+      end
+      i = j
+    end
+  end
+  return out
+end
+
 --- Builds hunks and spans from difftastic's JSON.
 ---
 --- `chunks` gives which lines carry real changes (a line can appear in
@@ -751,7 +879,7 @@ end
 --- or same; runs of non-same rows coalesce into one hunk each, anchored
 --- the way vim.diff anchors an addition or deletion so that the renderer
 --- does not have to know which backend produced the hunk.
-local function from_json(data)
+local function from_json(data, old_lines, new_lines)
   local lhs_changed, rhs_changed, spans = {}, {}, {}
   for _, chunk in ipairs(data.chunks or {}) do
     for _, entry in ipairs(chunk) do
@@ -797,23 +925,46 @@ local function from_json(data)
   -- verified against a reflow and a new function in the same file, where
   -- the reflowed rows come back with none and the new function's rows
   -- come back with one per token.
+  local function classify(lhs, rhs)
+    if lhs == nil and rhs == nil then
+      return "same"
+    elseif lhs == nil then
+      return rhs_changed[rhs] and "gap" or "same"
+    elseif rhs == nil then
+      return lhs_changed[lhs] and "gap" or "same"
+    elseif lhs_changed[lhs] or rhs_changed[rhs] then
+      return "changed"
+    end
+    return "same"
+  end
+
   local rows = {}
   for _, pair in ipairs(data.aligned_lines or {}) do
     local lhs, rhs = pair[1], pair[2]
-    local kind
-    if lhs == nil and rhs == nil then
-      kind = "same"
-    elseif lhs == nil then
-      kind = rhs_changed[rhs] and "gap" or "same"
-    elseif rhs == nil then
-      kind = lhs_changed[lhs] and "gap" or "same"
-    elseif lhs_changed[lhs] or rhs_changed[rhs] then
-      kind = "changed"
-    else
-      kind = "same"
-    end
-    table.insert(rows, { lhs = lhs, rhs = rhs, kind = kind })
+    table.insert(rows, { lhs = lhs, rhs = rhs, kind = classify(lhs, rhs) })
   end
+  rows = realign(rows, old_lines, new_lines, classify)
+
+  -- A row the realignment matched carries no marks, on either side.
+  -- difftastic tints every atom of a changed node and it had these rows
+  -- against the wrong partners, so they arrive here with a full set of
+  -- spans saying every word of them went and every word of them
+  -- arrived. Drawn, that is a block of red beside a block of green over
+  -- text which is character for character the same.
+  local intact = { a = {}, b = {} }
+  for _, r in ipairs(rows) do
+    if r.lhs and r.rhs and r.kind == "same" then
+      intact.a[r.lhs + 1], intact.b[r.rhs + 1] = true, true
+    end
+  end
+  local kept = {}
+  for _, span in ipairs(spans) do
+    local side = span.kind == "delete" and intact.a or intact.b
+    if not side[span.line] then
+      table.insert(kept, span)
+    end
+  end
+  spans = kept
 
   -- A single unchanged row between two changed ones stays inside the run.
   -- Wrapping an expression in parentheses reports the `(` and the `)` as
@@ -1011,7 +1162,9 @@ local function struct_compute(old_text, new_text, opts, cb)
             engine = "difftastic", precise = true,
             prose = textual(data.language) }
         else
-          local hunks, spans, pairs_of, anchor_of = from_json(data)
+          local hunks, spans, pairs_of, anchor_of = from_json(data,
+            vim.split(old_text, "\n", { plain = true }),
+            vim.split(new_text, "\n", { plain = true }))
           result = { hunks = hunks, spans = spans, dropped = 0,
             pairs = pairs_of, anchor = anchor_of,
             engine = "difftastic", precise = true,

@@ -76,12 +76,8 @@ local actions = require("fzf-lua").actions
 
 require("fzf-lua").setup({
 	desc = "Custom FZF profile",
-	winopts = { preview = { default = "bat" } },
 	manpages = { previewer = "man_native" },
 	helptags = { previewer = "help_native" },
-	lsp = { code_actions = { previewer = "bat" } },
-	tags = { previewer = "bat" },
-	btags = { previewer = "bat" },
 	keymap = {
 		builtin = {
 			true,

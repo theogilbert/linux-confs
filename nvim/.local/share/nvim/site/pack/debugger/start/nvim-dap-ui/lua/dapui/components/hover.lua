@@ -83,7 +83,7 @@ return function(client, send_ready)
         canvas:add_mapping("edit", function()
           prompt_func = function(new_expr)
             expression = new_expr
-            prompt_func = prompt_func
+            prompt_func = nil
             send_ready()
           end
           send_ready()

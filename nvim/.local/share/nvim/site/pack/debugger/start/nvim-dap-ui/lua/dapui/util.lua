@@ -265,7 +265,7 @@ function M.send_to_repl(expression)
 end
 
 function M.send_to_watches(expression)
-  require('dapui').elements.watches.add(expression)
+  require("dapui").elements.watches.add(expression)
 end
 
 function M.float_element(elem_name)
@@ -273,7 +273,9 @@ function M.float_element(elem_name)
   local col_no = vim.fn.screencol()
   local position = { line = line_no, col = col_no }
   local elem = require("dapui.elements." .. elem_name)
-  if type(elem) == "function" then elem = elem() end
+  if type(elem) == "function" then
+    elem = elem()
+  end
   return require("dapui.windows").open_float(elem_name, elem, position, elem.settings or {})
 end
 

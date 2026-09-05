@@ -71,8 +71,10 @@ M.helptags = function(opts)
       end)
     end
 
+    local tagpath = vim.env.VIMRUNTIME .. "/doc/tags"
     coroutine.wrap(function()
       local co = coroutine.running()
+      ---@cast co thread
       local tags_map = {}
       local delimiter = string.char(9)
       for _, lang in ipairs(langs) do
@@ -86,7 +88,7 @@ M.helptags = function(opts)
                 add_tag({
                   tag = fields[1],
                   filename = fields[2],
-                  filepath = help_files[fields[2]],
+                  filepath = help_files[fields[2]] or tagpath,
                   cmd = fields[3],
                   lang = lang,
                 }, cb, co)

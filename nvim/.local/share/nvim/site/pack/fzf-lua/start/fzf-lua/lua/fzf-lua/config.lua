@@ -144,6 +144,7 @@ do
   -- used by M.globals.__index and M.defaults.<provider>._actions
   local m = require("fzf-lua.defaults")
   M.defaults = m.defaults
+  ---@diagnostic disable-next-line: inject-field
   m.globals = M.globals
 end
 
@@ -963,6 +964,7 @@ function M.normalize_opts(opts, globals, __resume_key) ---@diagnostic disable
       and (opts.git_icons
         or opts.file_icons
         or opts.file_ignore_patterns
+        or opts.ignore_current_file
         or opts.strip_cwd_prefix
         or opts.render_crlf
         or opts.path_shorten

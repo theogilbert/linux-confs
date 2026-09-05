@@ -265,7 +265,7 @@ return {
     -- date, the file, every count in the plugin, all in the comment
     -- colour -- is read against it, and a band lifted by something
     -- other than this is a band nobody agreed to.
-    ground = 0.15,
+    ground = 0.05,
 
     -- Whether the head of each note gets a band of its own as well.
     --
@@ -287,31 +287,10 @@ return {
     -- arrow are the whole of what says so -- and both of them are two
     -- characters at the head of a line, which is where the eye is not
     -- when it has just finished the line above.
-    reply_ground = 1.7,
+    reply_ground = 4,
 
     -- Which colour the ground under a conversation leans towards.
-    --
-    -- The name of a highlight group borrows that group's foreground.
-    -- `DiagnosticHint` because it is the one colour every colourscheme
-    -- keeps for "here is something to know about, and nothing is
-    -- wrong", which is a review comment exactly -- and because it is
-    -- reliably the quieter half of the diagnostic palette, where
-    -- `DiagnosticInfo` is a saturated cyan in enough schemes to turn
-    -- every comment in the window blue. `"Comment"` is quieter still,
-    -- `"DiagnosticWarn"` warm, like paper in a margin.
-    --
-    -- `false` is a neutral panel instead: the page's own background
-    -- raised off itself and nothing else, so a comment is told from the
-    -- code by standing above it rather than by being a colour.
-    --
-    -- `true` leans each ground towards the colour of the thread it is
-    -- under -- an open thread's under an open one, a resolved one's
-    -- under a resolved one -- which says the most and costs the most.
-    --
-    -- Whatever this is, the rail and the tick still say what state a
-    -- thread is in outright, and a settled block still sinks back
-    -- towards the page: it gets half the lift either way.
-    accent = "DiagnosticHint",
+    accent = "Normal",
 
     -- ...and which colour that band leans towards, which need not be
     -- the one the ground under it leans towards -- and is not.
@@ -329,7 +308,7 @@ return {
     -- the one direction that costs whatever is written on the band --
     -- or the name of a group to borrow from. Only drawn at all where
     -- `head_band` is on.
-    heading_accent = true,
+    heading_accent = "DiagnosticHint",
 
     -- ...and how far it leans, on the same 0-to-1 scale. Nothing to
     -- lean into without a colour, where a heading is a step up in
@@ -344,7 +323,7 @@ return {
     -- to stay readable against whatever this makes. Enough to find
     -- without reading, and no more. 0 for a heading told apart by
     -- lightness alone.
-    heading = 0.06,
+    heading = 0.2,
 
     -- The widest a line of a comment is drawn, in columns.
     --

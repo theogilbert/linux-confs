@@ -28,7 +28,7 @@ if not session.current then
   return
 end
 
-local ACCENTS = { false, "Comment", "DiagnosticWarn", "String", "Title", "DiagnosticHint", true }
+local ACCENTS = { false, "Comment", "DiagnosticWarn", "String", "Title", "DiagnosticHint", "Normal", true }
 local WINDOWS = { "notes", "conversation" }
 
 local state = { accent = 1, heading_accent = 1, window = 1 }

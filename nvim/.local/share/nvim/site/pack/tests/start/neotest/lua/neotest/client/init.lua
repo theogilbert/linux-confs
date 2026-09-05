@@ -498,7 +498,8 @@ function neotest.Client:_start(args)
     end
     local path, line = vim.fn.expand("%:p"), vim.fn.line(".")
 
-    if not lib.files.exists(path) then
+    local stat = vim.uv.fs_stat(path)
+    if not stat or stat.type == "directory" then
       return
     end
 
@@ -570,7 +571,7 @@ function neotest.Client:_update_adapters(dir)
 
   local to_add = {}
   for _, entry in pairs(new_adapters) do
-    to_add[#to_add + 1] = entry.adapter.is_test_file
+    to_add[#to_add + 1] = entry.root
   end
   if #to_add > 0 and lib.subprocess.enabled() then
     local suc, err = pcall(lib.subprocess.add_paths_to_rtp, to_add)

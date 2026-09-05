@@ -112,6 +112,7 @@ local runner = require("utilities.runner")
 local session = require("session")
 vim.keymap.set("n", "<leader>vsl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
 vim.keymap.set("n", "<leader>vsc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
+vim.keymap.set("n", "<leader>vsd", session.drop_background_buffers, { desc = "[v]im [s]ession - [d]rop background buffers" })
 
 vim.keymap.set("v", "<leader>vS", function()
   -- Substitute selected text in the whole buffer

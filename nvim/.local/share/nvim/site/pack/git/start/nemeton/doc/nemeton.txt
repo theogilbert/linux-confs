@@ -46,8 +46,9 @@ What it does:
   - opens one: `glab mr checkout`, then every discussion on it;
   - marks the lines carrying a thread, in every file you open, for as
     long as the review is on;
-  - shows a thread in a float, or all of them at once as virtual lines
-    under the code they are about;
+  - shows a thread in a float, one at a time in a pane beside the code
+    that reads whatever `]m` walks to, or all of them at once as
+    virtual lines under the lines they are about;
   - writes new threads, replies, suggestions and overall comments, and
     keeps them unsent until you publish the review as a whole;
   - resolves and reopens threads, approves the merge request, and says
@@ -128,9 +129,12 @@ A review, end to end:
 
 :Nemeton comments       Markers on or off. A redraw, not a refetch.
 
-:Nemeton expand         The conversations themselves, as virtual lines
-                        under the code they are about. Again to fold
+:Nemeton expand         The conversations themselves: one at a time in
+                        a pane beside the code, or all of them as
+                        virtual lines under the lines they are about,
+                        whichever `comments.expand` says. Again to fold
                         them back to gutter markers.
+                        |nemeton-pane-window|
 
 :Nemeton peek           The thread under the cursor, in a float that
                         closes on the next cursor movement.
@@ -235,7 +239,7 @@ takes `]m` and `[m` for its method motions. Only a buffer-local mapping
 wins that, and the file is loaded again every time it is re-read, which
 a checkout makes it do.
 
-    <leader>mx      expand the conversations inline
+    <leader>mx      expand the conversations -- the pane, or inline
     <leader>mp      peek at the thread on this line
     <leader>ma      comment on this line, or (visual) on these lines
     <leader>mr      reply to the thread on this line
@@ -270,7 +274,9 @@ to change.
 ==============================================================================
 6. WINDOWS                                                   *nemeton-windows*
 
-Every window here is a float with its keys written across the top of it.
+Every window here is a float with its keys written across the top of
+it, save the pane, which is a split because it is read *beside* the code
+rather than over it.
 None of them takes over `hjkl`, `/` or anything else you read with. The
 key that closes one puts the cursor back in the window it was pressed
 in, rather than wherever Neovim would have left it -- which on a split
@@ -279,6 +285,11 @@ that close a window on the way somewhere -- to the code a thread is
 about, to the composer -- go there instead.
 
 THE LIST                                                 *nemeton-list-window*
+
+A queue with nothing in it still carries the keys across the top: what
+to do about "no opened merge requests" -- look at the merged ones, or
+write one of your own -- is the one thing a reader cannot guess from an
+empty window.
 
 One row per merge request: number, CI, how far its approvals have got,
 title, how much it changes, who wrote it, how stale it is, how many
@@ -301,6 +312,7 @@ without asking the forge anything.
     <CR>            check this one out and load its threads
     c               the commits of the row under the cursor
     d               what it says it is for
+    p               what CI made of it, job by job
     s               opened / merged / closed / all, round and round
     ]               another page of them, under the ones on the screen
     +               open one of your own, for the branch you are on
@@ -342,9 +354,20 @@ and a mixed queue is read a row at a time. It is a question asked, not a
 setting changed: close the window and the next one opens on
 `list.state` again. |nemeton-config-list|
 
-`c` and `d` open a pane under the list for the row the cursor is on, and
-follow the cursor down the queue. `d` shows exactly what the merge
-request's own window shows.
+`c`, `d` and `p` open a pane under the list for the row the cursor is
+on, and follow the cursor down the queue. `d` shows exactly what the
+merge request's own window shows.
+
+`p` is the CI column asked what it means: the jobs of the head
+pipeline, grouped under their stages with what each one did and how
+long it took -- the same table |nemeton-jobs-window| draws, on the same
+key the merge request's own window puts the pipeline on. "failed" in a
+column is where the question starts, and "which job" is a question
+about a merge request nobody has opened yet: often it is the answer to
+whether to open it at all. A merge request with no pipeline says so.
+What comes back is kept until `r`, like the rest of the pane -- a
+pipeline that was running when you looked is refetched by the key that
+refetches the queue.
 
 The list does not move when the pane opens: its top edge stays where it
 is and the pane takes the room below. Where there is not enough of it
@@ -412,6 +435,70 @@ EVERY THREAD                                     *nemeton-conversation-window*
     R               refetch
     q               close
 
+THE PANE                                                 *nemeton-pane-window*
+
+`<leader>mx`, where `comments.expand` is "right" or "bottom". One
+conversation in a window beside the code rather than in it, named by
+file and line across the top.
+
+One at a time, because the pane is where a thread is read, and a window
+holding every thread in the file is a window to navigate before anything
+in it can be read. `]m` and `[m` are the navigation -- they are the walk
+through what the review is owed anyway -- and they are the only thing
+that changes what is in there. `<CR>` on a thread in the every-thread
+window, the comments window or the quickfix list puts that one in it.
+
+Not the cursor. Reading a comment and reading the code it is about are
+the same activity: you go to the line it names, then to the function
+that line calls, then back through three files -- and half of that is
+standing on lines other people have commented on too. A pane that
+answered the cursor would spend that walk showing everything except the
+thing being read. So it holds still, and the comment stays on the screen
+while the code under it moves.
+
+One pane, not one per window. It is a place to read, like the quickfix
+window, and a screen with a pane against every split is a screen with no
+code left on it.
+
+Across the top, on the one line of it that does not scroll: the state of
+the conversation in the glyph the gutter marks its line with, where it
+sits, how many answers there are and whether the line carries a second
+argument -- and the keys, on the right. All of it fitted to the width of
+the window, in the order it can be spared: the keys first, then how much
+of it there is, and last the head of the path, which goes as
+`…app.lua:3` because the end of a path is the half that names the file.
+The heads inside the block are trimmed the same way -- the commit, then
+the date, and the name of who said it only when dropping both was not
+enough.
+
+    <CR>            go to the code this thread is about
+    r               reply
+    e               edit one of its comments
+    d               delete one
+    R               refetch
+    q               fold the conversations away
+    ]m  [m          the next thread owed an answer, and the previous
+
+`]m` and `[m` in here move the cursor of the window the pane was opened
+from -- the walk happens in the code, and your reading position stays
+in the prose.
+
+`q` is `<leader>mx` from inside: while the pane is open it is what
+"expanded" means, so closing it folds the conversations away rather than
+leaving the session saying they are open. Closing the window any other
+way says the same thing.
+
+                                                          *nemeton-reading*
+
+While a conversation is on the screen in there, the gutter of the code
+says which lines it was written against. The bubble marks the line a
+thread is anchored to; a comment written over a selection is about the
+lines above that too, and with the words in a window next door nothing
+else says so. Those lines carry `comments.sign_span` -- the rail the
+thread carries down its left in the pane -- in the colour of the same
+state, and under the bubble's own priority, so a sign column one cell
+wide still draws the bubble and a wider one draws both.
+
 THE PIPELINE                                             *nemeton-jobs-window*
 
 `p` on the window above, or `:Nemeton jobs`. Every job of the head
@@ -453,7 +540,13 @@ would ask at a prompt, on one screen and in any order:
 
 The cursor sits on a field and `<CR>` changes it: the title in a
 prompt, the description in the composer (|nemeton-writing|), the target
-branch and the labels picked from what the project has. However the
+branch and the labels picked from what the project has. The labels are
+a dropdown that comes back with the tick moved until it is dismissed --
+labels come in threes, the team, the area and the release, and pressing
+the key three times to say so is three times as long a way of saying
+it. A project the forge will not list the labels of falls back to
+typing them, and says which of "there are none" and "it would not say"
+happened. However the
 composer is left -- its own keys, or `:q` like any other split -- the
 cursor comes back here. A title that
 begins `Draft:` sets the switch instead of staying in the title --
@@ -464,10 +557,11 @@ was typed.
 Under the fields are the three facts nobody types: what CI last made of
 the branch -- it has no pipeline of its own yet, and the branch has run
 one against the same commits -- and how many files and lines it
-changes. The count is git's, `<target>...HEAD` against
-`origin/<target>` where that is here and `<target>` where it is not,
-because the merge request whose diff GitLab would answer with does not
-exist yet.
+changes, in the colours the queue counts a merge request in, because it
+is the same fact about the same branch. The count is git's,
+`<target>...HEAD` against `origin/<target>` where that is here and
+`<target>` where it is not, because the merge request whose diff GitLab
+would answer with does not exist yet.
 
     <CR>            change the field under the cursor
     <C-s>           open the merge request
@@ -484,6 +578,11 @@ next `+` on that branch is a new merge request.
 The branch is pushed on the way out (`--push`) and nothing is confirmed
 at a prompt (`--yes`): a subprocess with no terminal is not a place to
 be asked anything.
+
+What the forge answers with is the merge request that was made, so that
+is what opens: the queue it was written from closes -- it was a list of
+what there is to review, and what there is to review now is this -- and
+the review starts on the new one, discussions and all.
 
 THE PEEK FLOAT                                           *nemeton-peek-window*
 
@@ -521,6 +620,28 @@ sigil and all, because that is what GitLab turns into a notification --
 and the names are the members of this project and of the groups above
 it, which is who GitLab will accept. See |nemeton-config-compose| for
 the two switches and for what to point a completion engine at.
+
+EMOJI                                                          *nemeton-emoji*
+
+`:` and the first letters of a shortcode completes the same way, through
+the same one `omnifunc`: which of the two is being typed is the sigil in
+front of the cursor. What goes in is `:tada:`, both colons and all,
+because that is what GitLab draws as a picture -- and the menu carries
+the picture beside the name, since nobody remembers which of `tada` and
+`confetti_ball` is which. A name is offered for what it contains as well
+as for what it starts with: `:check` is reached for by somebody who
+wants `white_check_mark`.
+
+Read back, a `:name:` is drawn as the character (`comments.emoji`) --
+the way the forge drew it on the page the comment was written on. Drawn
+only: what is sent when a comment is written or rewritten is the text
+its author typed, colons and all. A suggestion is left alone too; it is
+code, and code that says `:tada:` says `:tada:`.
+
+The names are in `lua/nemeton/emoji.lua`, and they are what a review is
+written with rather than the whole of gemoji. One that is not there is
+left exactly as it was typed, which is what a forge does with a name it
+does not know either.
 
                                                               *nemeton-drafts*
 KEEPING IS THE DEFAULT. A comment you write becomes a GitLab draft note:
@@ -670,7 +791,15 @@ COMMENTS                                             *nemeton-config-comments*
       sign_open = "",       -- a thread still owed an answer
       sign_resolved = "",   -- one that is settled
       sign_draft = "",      -- one of yours, not sent yet
+      sign_span = "▎",       -- the lines the thread being read covers
       virt_text = false,     -- the first line of it at end of line
+      expand = "right",      -- "inline", "right" or "bottom"
+      expand_anchor = "window", -- ...a split of it, or of the editor
+      pane_width = 60,       -- where a pane on the right opens
+      pane_height = 15,      -- ...and one along the bottom
+      head_commit = true,    -- the commit a note was written against
+      emoji = true,          -- `:tada:` drawn as the picture it names
+      references = true,     -- `@name` and a commit in a colour of their own
       show_resolved = true,  -- draw resolved threads at all
       short_commits = true,  -- a link to a commit as its short sha
       syntax = true,         -- a suggestion in its language's colours
@@ -688,8 +817,29 @@ COMMENTS                                             *nemeton-config-comments*
     }
 <
 The three signs are Nerd Font glyphs; without one they render as a box.
-"●", "○" and "✎" are the pair-and-a-half to fall back to. `rail` falls
-back to "│".
+"●", "○" and "✎" are the pair-and-a-half to fall back to. `rail` and
+`sign_span` fall back to "│". `sign_span` is drawn only while a thread
+is being read in the pane (|nemeton-reading|); `false` leaves the gutter
+to the bubbles alone.
+
+`expand` is where the conversations go when they are expanded.
+"inline" draws each one under the line it is about, as virtual lines:
+the comment is where the code is, and reading down the file reads the
+review with it -- at the price of four blocks between you and the next
+function, and of a paragraph wrapped to whatever width the window
+happens to be. "right" and "bottom" put them in a pane instead
+(|nemeton-pane-window|), which leaves the code its shape and gives the
+prose a width of its own.
+
+`expand_anchor` is which window that pane is a split of. "window"
+splits the one the code is in, so the pane arrives beside it and the
+rest of the screen keeps its layout; "editor" puts it against the edge
+of the whole editor -- full height down the right, full width along the
+bottom, where the quickfix window already opens. `pane_width` and
+`pane_height` are where it starts, and never more than half the screen
+whatever they are set to: sixty columns is most of an eighty column
+terminal, and a pane that leaves nineteen columns of code is a pane you
+open once. It is an ordinary window afterwards, resized like any other.
 
 A comment is always wrapped to the window it is drawn in: a conversation
 under the code is virtual text, and virtual text takes no 'wrap' and no
@@ -697,6 +847,30 @@ horizontal scroll, so a line past the right-hand edge cannot be read at
 all. `wrap` is the other limit -- prose set across the whole of a wide
 editor is prose the eye loses its place in on the way back to the next
 line. Set it to `false` to wrap to the window and nothing narrower.
+
+`head_commit` puts the commit a note was written against in its head,
+after the date: eight digits, the ones GitLab itself prints. The other
+half of "when" -- a review comment is about code at a moment, the date
+says which afternoon and this says which push, and `git show` on it says
+what the file said then. A comment on the merge request as a whole was
+written against no commit and gets none.
+
+`emoji` draws a `:name:` GitLab knows as the character it names; see
+|nemeton-emoji|.
+
+`references` draws what a comment points at rather than says --
+`@somebody`, and the commit it blames -- in |hl-NemetonMention| and
+|hl-NemetonCommit|, blue by default. They are the two things in a
+comment that are a reference to something outside it, a person to be
+asked and a commit to go and read, and both are found by scanning
+rather than by reading the sentence they are in. An address is not a
+mention and a word is not a sha: a name has to start where a word
+starts, and seven characters count as a commit only if they are both
+digits and letters -- seven of nothing but a-f is a word English
+happens to have, and seven of nothing but digits is a number somebody
+wrote down. Nothing is marked inside a thread that is over: a settled
+conversation is dimmed whole, and a blue name in one would say there is
+something there to answer.
 
 `show_resolved` is a redraw, not a refetch: resolved threads are fetched
 either way.
@@ -796,6 +970,8 @@ COMPOSER                                              *nemeton-config-compose*
       height = 10,            -- rows of the split you write in
       mentions = true,        -- complete `@name` from the project
       mention_menu = true,    -- ...and put the menu up as you type
+      emoji = true,           -- complete `:name:` from the shortcodes
+      emoji_menu = true,      -- ...and put that menu up as you type
     }
 <
 `mentions` puts the people on this project -- the members of it and of
@@ -804,6 +980,11 @@ the composer. They are fetched when the window opens, once per
 repository per editor session, because completion is synchronous and a
 round trip inside a keystroke is a freeze. A forge that will not answer
 leaves the key completing nothing and says nothing about it.
+
+`emoji` and `emoji_menu` are the same two switches for the `:name:` of
+an emoji (|nemeton-emoji|), on the same key: one `omnifunc` answers for
+both, because there is one `omnifunc`. An engine reads
+`require("nemeton.emoji").candidates(prefix)`.
 
 `mention_menu` puts the menu up as the `@` is typed. It needs a Neovim
 that can hold `completeopt` for one buffer (0.11 and newer): a menu that
@@ -816,8 +997,8 @@ the omnifunc reads.
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
-`keys.conversation`, `keys.jobs`, `keys.log`, `keys.create` and
-`keys.compose`, each a table of
+`keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`, `keys.create`
+and `keys.compose`, each a table of
 what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
 can be `false`:
 >
@@ -938,6 +1119,8 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonDraft          one of yours, not sent yet      DiagnosticWarn
     NemetonAuthor         who said it                     Title
     NemetonBranch         a git ref                       Directory
+    NemetonMention        somebody a comment calls on     Directory
+    NemetonCommit         a commit a comment points at    Directory
     NemetonThread         what they said                  Normal's fg
     NemetonMeta           when, where, how many           Comment
     NemetonResolved       the tick on a settled thread    DiagnosticOk
@@ -948,6 +1131,15 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonRemoved        one it takes away               Removed
     NemetonHint           the key hints across a window   Comment
     NemetonKey            the key itself, inside a hint   Special
+
+                                                          *hl-NemetonMention*
+                                                           *hl-NemetonCommit*
+`NemetonMention` and `NemetonCommit` are what a comment points at
+rather than says. `Directory` for both -- the group every colourscheme
+keeps for "this names something that is somewhere else", which is the
+blue a path is drawn in and already what a path and a branch are drawn
+in here. Two groups rather than one so that either can be moved on its
+own. |nemeton-config-comments|
 
                                                                *hl-NemetonWas*
 `NemetonWas` is the band the code a thread was written against is drawn

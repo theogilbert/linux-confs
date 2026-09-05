@@ -72,7 +72,7 @@ end
 
 local function remove(thread, note, after)
   local mr = session.current
-  local first = vim.split(threads.short_commits(note.body), "\n", { plain = true })[1] or ""
+  local first = vim.split(threads.drawn(note.body), "\n", { plain = true })[1] or ""
   M.confirm(
     ("Delete %s: %s"):format(
       (note.draft or thread.draft) and "the comment you have not sent"
@@ -115,7 +115,7 @@ local function pick(thread, prompt, fn, after)
     format_item = function(note)
       return ("%s: %s"):format(
         note.author,
-        vim.split(threads.short_commits(note.body), "\n", { plain = true })[1]
+        vim.split(threads.drawn(note.body), "\n", { plain = true })[1]
       )
     end,
   }, function(choice)

@@ -68,6 +68,14 @@ local function thread_of(discussion)
         author = (note.author and (note.author.username or note.author.name)) or "?",
         body = note.body or "",
         created_at = note.created_at,
+        -- The commit this was said against. GitLab gives every note of
+        -- a diff discussion a copy of the position, and the head sha in
+        -- it is what the merge request was at when it was written --
+        -- which is the difference between "this is wrong" about the
+        -- code you are looking at and about the code from four pushes
+        -- ago. Per note rather than per thread: an answer three days
+        -- later is an answer to a different branch.
+        head_sha = note.position and note.position.head_sha,
       })
       if note.resolvable then
         resolvable = true
@@ -155,7 +163,15 @@ function M.parse_drafts(drafts)
     local t = {
       id = d.id,
       draft = true,
-      notes = { { id = d.id, author = "you", body = d.note or "", position = d.position } },
+      notes = {
+        {
+          id = d.id,
+          author = "you",
+          body = d.note or "",
+          position = d.position,
+          head_sha = d.position and d.position.head_sha,
+        },
+      },
       resolvable = false,
       resolved = false,
       individual_note = false,
@@ -239,6 +255,20 @@ end
 --- to do it.
 function M.span(thread)
   return math.max((thread.line or 0) - (thread.first_line or thread.line or 0), 0)
+end
+
+--- `text` with every `:name:` GitLab would have drawn as a picture
+--- drawn as one. See `nemeton.emoji`, which owns the names.
+function M.emoji(text)
+  return require("nemeton.emoji").render(text)
+end
+
+--- A note's body as it is *drawn*, for the windows that show one line
+--- of it: a link to a commit as its short sha, `:tada:` as the picture.
+--- Both are display only -- rewriting a comment sends back the text its
+--- author wrote, links and colons and all.
+function M.drawn(text)
+  return M.emoji(M.short_commits(text))
 end
 
 --- The body of a suggestion comment: GitLab's fenced block, with the
@@ -589,6 +619,82 @@ local function wrap(text, width)
   return #out > 0 and out or { text }
 end
 
+-- What a comment points at rather than says: a name somebody is being
+-- called by, and a commit somebody is pointing at. Word-bounded, so an
+-- email address is not a mention and a word in the middle of a sentence
+-- is not a sha.
+--
+-- A sha needs a digit *and* a letter in it to count. Seven characters
+-- of nothing but a-f is a word English happens to have -- "defaced",
+-- "acceded" -- and seven of nothing but digits is a number somebody
+-- wrote down; a commit is the thing that is both.
+local REFERENCES = {
+  { "@[%w][%w%._%-]*", "NemetonMention" },
+  {
+    "%x%x%x%x%x%x%x+",
+    "NemetonCommit",
+    function(word)
+      return #word <= 40 and word:match("%d") ~= nil and word:match("[a-fA-F]") ~= nil
+    end,
+  },
+}
+
+--- `text` as runs -- the shape `opts.paint` returns, so that the same
+--- wrapping draws both -- with what it points at in its own colour and
+--- everything else in `hl`. Nil where there is nothing to mark, which
+--- is most lines: a line with one chunk on it is one chunk to slice,
+--- to measure and to draw.
+local function referenced(text, hl)
+  local marks = {}
+  for _, kind in ipairs(REFERENCES) do
+    local at = 1
+    while true do
+      local from, to = text:find(kind[1], at)
+      if not from then
+        break
+      end
+      at = to + 1
+      -- Word-bounded on the left, and on the right by the pattern
+      -- itself: `theo@example` is an address, `1a2b3c4dfix` is not a
+      -- commit, and the first character after a word is where neither
+      -- of them starts.
+      local before = from > 1 and text:sub(from - 1, from - 1) or ""
+      local after = text:sub(to + 1, to + 1)
+      local word = text:sub(from, to)
+      if
+        not before:match("[%w_@%-%.]")
+        and not after:match("[%w_]")
+        and (not kind[3] or kind[3](word))
+      then
+        table.insert(marks, { from = from, to = to, hl = kind[2] })
+      end
+    end
+  end
+  if #marks == 0 then
+    return nil
+  end
+  table.sort(marks, function(a, b)
+    return a.from < b.from
+  end)
+  local out, at = {}, 1
+  for _, mark in ipairs(marks) do
+    -- Two patterns matching the same bytes -- which they do not, but a
+    -- third would -- is the second one dropped rather than a run drawn
+    -- backwards.
+    if mark.from >= at then
+      if mark.from > at then
+        table.insert(out, { text:sub(at, mark.from - 1), hl })
+      end
+      table.insert(out, { text:sub(mark.from, mark.to), mark.hl })
+      at = mark.to + 1
+    end
+  end
+  if at <= #text then
+    table.insert(out, { text:sub(at), hl })
+  end
+  return out
+end
+
 --- The chunks of `runs` covering bytes [from, to) of the line they were
 --- made for, cut to fit -- which is what a wrapped line needs, since
 --- the colours were worked out against the line whole.
@@ -865,9 +971,29 @@ function M.render(thread, opts)
       { i > 1 and (rail[1] .. mark) or lead, on_band(rail[2]) },
       { note.author, on_band("NemetonAuthor") },
     }
+    -- Which pieces of it can be spared, in the order they can be, for a
+    -- window too narrow to hold the whole line. A head cannot wrap --
+    -- it is a name, a date and a state, and a date on a line of its own
+    -- says nothing -- so what does not fit has to go.
+    local spare = {}
     local age = M.age(note.created_at)
     if age then
       table.insert(head, { " · " .. age, on_band("NemetonMeta") })
+      spare[2] = #head
+    end
+    -- ...and the commit it was said against, which is the other half of
+    -- when. A review comment is about code at a moment: eight digits
+    -- say which push it was written on, and `git show` on them says
+    -- what it said then. The note's own where it has one -- an answer
+    -- three days later is an answer to a different branch -- and the
+    -- thread's otherwise, which is what an older GitLab gives.
+    local sha = config.comments.head_commit and (note.head_sha or thread.head_sha)
+    if sha then
+      table.insert(head, { " · " .. sha:sub(1, 8), on_band("NemetonMeta") })
+      -- The first thing dropped: it is the finest-grained fact on the
+      -- line and the one a narrow window can most afford to lose, and
+      -- the date above it still says roughly when.
+      spare[1] = #head
     end
     if i == 1 and opts.summary and thread.path then
       table.insert(head, { " · ", on_band("NemetonMeta") })
@@ -894,6 +1020,31 @@ function M.render(thread, opts)
         ("  +%d"):format(#thread.notes - 1),
         on_band(thread.resolved and "NemetonMeta" or "NemetonSignOpen"),
       })
+    end
+    -- ...and now it is trimmed to the room there is. The commit goes
+    -- first, then the date; the name is cut only when dropping both was
+    -- not enough, because a note nobody is named on is not a note. The
+    -- state on the end -- the tick, the "unsent" -- is never dropped:
+    -- it is three columns, and it is what the head is read for.
+    if limit then
+      local function measured()
+        local w = 0
+        for _, chunk in ipairs(head) do
+          w = w + vim.fn.strdisplaywidth(chunk[1])
+        end
+        return w
+      end
+      for _, at in ipairs({ spare[1], spare[2] }) do
+        if measured() <= limit then
+          break
+        end
+        head[at][1] = ""
+      end
+      local over = measured() - limit
+      if over > 0 then
+        local room = vim.fn.strdisplaywidth(head[2][1]) - over
+        head[2][1] = room > 0 and fit(head[2][1], room) or ""
+      end
     end
     table.insert(out, head)
     -- A GitLab suggestion is a fenced block that the forge can apply
@@ -929,7 +1080,18 @@ function M.render(thread, opts)
       elseif suggesting then
         body(lead, l, "NemetonAdded", "+ ", colours[at], "NemetonSuggestNew")
       else
-        body(lead, l, body_hl)
+        -- The picture a forge would have drawn, and only out here: a
+        -- suggestion is code, and code that says `:tada:` says
+        -- `:tada:`.
+        local prose = M.emoji(l)
+        -- ...and what the line points at, in the colour of a thing
+        -- named elsewhere. Not in a thread that is over: a settled
+        -- conversation is dimmed whole and the tick is the only part of
+        -- it that keeps a colour of its own, and a blue name in the
+        -- middle of it would say there is something here to answer.
+        local runs = config.comments.references
+          and referenced(prose, body_hl)
+        body(lead, prose, body_hl, nil, runs or nil)
       end
     end
     if i > 1 then

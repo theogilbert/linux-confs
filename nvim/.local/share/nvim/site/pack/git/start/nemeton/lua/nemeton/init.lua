@@ -128,7 +128,7 @@ local function pick_thread(fn)
     format_item = function(t)
       return ("%s: %s"):format(
         t.notes[1].author,
-        vim.split(threads.short_commits(t.notes[1].body), "\n", { plain = true })[1]
+        vim.split(threads.drawn(t.notes[1].body), "\n", { plain = true })[1]
       )
     end,
   }, function(choice)
@@ -535,7 +535,7 @@ local function bindings()
   local k = config.keys.session
   return {
     { k.toggle, M.toggle, "comments on/off" },
-    { k.expand, M.expand, "conversations inline" },
+    { k.expand, M.expand, "the conversations themselves" },
     { k.peek, M.peek, "peek at the thread here" },
     { k.comment, M.comment, "comment on this line" },
     { k.comment, over_selection(M.comment), "comment on these lines", "x" },

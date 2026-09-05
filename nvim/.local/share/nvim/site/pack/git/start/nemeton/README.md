@@ -26,9 +26,10 @@ same ground as this file, with tags.
 - marks the lines that carry a thread in the gutter, in every file you
   open for as long as the review is on — open threads and resolved ones
   get different glyphs, because you navigate by the first;
-- shows the conversations: one at a time in a float under the cursor, or
-  all of them at once as virtual lines under the code they are about, on
-  a ground of their own so they do not read as more code;
+- shows the conversations: one at a time in a float under the cursor, in
+  a pane beside the code that reads whatever `]m` walks to, or all of
+  them at once as virtual lines under the lines they are about — on a
+  ground of their own so they do not read as more code;
 - posts a new thread against the line under the cursor, with the position
   GitLab needs (the three diff shas, the path on both sides, the line);
 - replies into an existing thread, and resolves or reopens one;
@@ -110,7 +111,7 @@ rest.
 |---|---|
 | `:Nemeton open 42` | check !42 out and load its threads |
 | `:Nemeton comments` | markers on/off |
-| `:Nemeton expand` | the conversations themselves, under their lines |
+| `:Nemeton expand` | the conversations themselves: one at a time in a pane beside the code, or all of them under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
 | `:Nemeton peek` | the thread under the cursor, in a float |
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
@@ -146,7 +147,7 @@ when there is no line to be about.
 
 | | |
 |---|---|
-| `<leader>mx` | expand the conversations inline |
+| `<leader>mx` | expand the conversations: the pane, or inline |
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>mr` | reply |
@@ -158,8 +159,17 @@ when there is no line to be about.
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
 
-In the list: `<CR>` opens one, `c` shows its commits under the list and
-`d` what it says it is for, `s` walks the queue through opened → merged
+A queue with nothing in it still carries the keys across the top: what
+to do about "no opened merge requests" — look at the merged ones, or
+write one of your own — is the one thing a reader cannot guess from an
+empty window.
+
+In the list: `<CR>` opens one, `c` shows its commits under the list,
+`d` what it says it is for and `p` what CI made of it — the jobs of the
+head pipeline under their stages, the same table the merge request's own
+window draws on the same key, because "failed" in a column is where the
+question starts and "which job" is usually the answer to whether to open
+it at all. `s` walks the queue through opened → merged
 → closed → all (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
 on the screen, `+` writes one of your own for the branch you are on,
@@ -212,19 +222,54 @@ that does not exist yet: the title, whether it is a draft, the
 description, the branch it goes to and the labels, each a field the
 cursor sits on and `<CR>` changes — a title in a prompt, the description
 in the composer, the branch and the labels picked from what the project
-has. Under them are the three facts nobody types: what CI last made of
-the branch, and how many files and lines it changes, counted by git
-against the branch it would go into because the merge request whose diff
-GitLab would answer with does not exist yet. `<C-s>` opens it — the
-branch is pushed on the way and nothing is asked at a prompt — `r` asks
-CI and git again, `X` throws away what has been typed, and `q` closes
-the window with everything still in it: come back to it on the next `+`,
-in the same editor session, and nothing is lost. A title beginning
-`Draft:` sets the switch and leaves the title alone.
+has. The labels are a dropdown that comes back with the tick moved until
+you dismiss it: labels come in threes — the team, the area, the release
+— and pressing the key three times to say so is three times as long a
+way of saying it. Under them are the three facts nobody types: what CI
+last made of the branch, and how many files and lines it changes —
+counted by git against the branch it would go into, because the merge
+request whose diff GitLab would answer with does not exist yet, and
+drawn in the colours the queue counts a merge request in, because it is
+the same fact about the same branch. `<C-s>` opens it — the branch is
+pushed on the way and nothing is asked at a prompt — `r` asks CI and git
+again, `X` throws away what has been typed, and `q` closes the window
+with everything still in it: come back to it on the next `+`, in the
+same editor session, and nothing is lost. A title beginning `Draft:`
+sets the switch and leaves the title alone.
+
+What the forge answers with is the merge request that was made, so that
+is what opens: the queue it was written from closes — it was a list of
+what there is to review, and what there is to review now is this — and
+the review starts on the new one, discussions and all.
 
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `R` refetches, `q` closes.
+
+The pane's own header is the one line of it that does not scroll, so it
+carries what stays true while the conversation is read: its state, in
+the glyph the gutter marks that line with and in the same colour; the
+file and line it sits on; how many answers there are, and whether the
+line carries a second argument as well. The keys sit on the right of it.
+All of it is fitted to the width of the window rather than left to the
+winbar's own truncation — the keys go first when there is no room (a
+pane thirty columns wide is one where the file name is worth more than a
+reminder that `q` closes windows), then how much of it there is, and
+last the head of the path, which goes as `…app.lua:3` because the end of
+a path is the half that says which file it is. The heads inside the
+block are trimmed the same way, in their own order: the commit first,
+then the date, and the name of who said it only when dropping both was
+not enough.
+
+In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the code
+the thread being read is about, `r` replies, `e` edits, `d` deletes, `R`
+refetches — and `q` folds the conversations away rather than only closing
+the window, because while it is open the pane *is* what expanded means.
+Closing it any other way says the same thing: the mode follows the
+window. `]m` and `[m` work in there too: out in the code they move the
+cursor and the pane follows, and in the pane they move the cursor of the
+window it was opened from, so the walk happens without your reading
+position leaving the prose.
 
 In the pipeline's jobs: `<CR>` opens what the job under the cursor
 printed, `o` opens the job on GitLab, `r` refetches, `q` closes.
@@ -260,6 +305,14 @@ colour a keyword is on both of them — so each half is drawn on a band of
 its own, edge to edge, with the `+` and the `-` in the colour that half
 used to be.
 
+The head of every note says what commit it was written against as well
+as when — eight digits after the date, the ones GitLab itself prints.
+That is the other half of "when": a review comment is about code at a
+moment, "27 Aug" says which afternoon and the sha says which push, and
+`git show` on it says what the file said then. A comment on the merge
+request as a whole was written against no commit and gets none.
+`comments.head_commit = false` leaves the date to say it alone.
+
 The head of every note — who said it and when — is drawn on a band told
 apart from the ground the conversation is on by colour rather than by
 being lighter: lighter is nearer the colour of the text, and the date on
@@ -286,6 +339,51 @@ with `git show`, not from the forge — the commit the note was written
 against is one the repository already has — and a commit that is not
 there any more is asked about once and then left alone.
 
+`<leader>mx` expands the conversations, and `comments.expand` says
+where they go. `"right"` and `"bottom"` open a pane beside the code or
+under it; `"inline"` draws each conversation under the line it is about,
+as virtual lines. Inline is the comment where the code is — read down
+the file and you read the review with it — and it is also four blocks
+between you and the next function, wrapped to whatever width the window
+happens to be. The pane leaves the code its shape and gives the prose a
+width of its own.
+
+The pane holds **one conversation at a time**. It is where a thread is
+read, and a window holding every thread in the file is a window you have
+to navigate before you can read anything — so the navigation is `]m` and
+`[m`, which is the walk through what the review is owed anyway, and they
+are the only thing that changes what is in there. Not the cursor:
+reading a comment and reading the code it is about are the same activity
+— you go to the line it names, then to the function that line calls,
+then back through three files, and half of that is standing on lines
+other people have commented on too. A pane that answered the cursor
+would spend that walk showing everything except the thing being read. So
+it holds still, and the comment stays on the screen while the code under
+it moves. It opens on the thread under the cursor, or the next one in
+the file if there is none there, and `<CR>` on a thread from the
+every-thread window, the comments window or the quickfix list puts that
+one in it.
+
+What the gutter does while a conversation is being read is say which
+lines it was written against: the bubble marks the line a thread is
+anchored to, and a comment written over a selection is about the lines
+above that too — which nothing on the code says once the words are in a
+window next door. Those lines get the rail the thread carries down its
+left in the pane (`comments.sign_span`, `false` to leave the gutter to
+the bubbles), in the colour of the same state, under the bubble's own
+priority so a one-cell sign column still shows the bubble.
+
+`comments.expand_anchor` is which window the pane is a split of:
+`"window"` splits the one the code is in, so the pane arrives beside it
+and the rest of the screen keeps the layout you built; `"editor"` puts
+it against the edge of the whole editor — full height down the right,
+full width along the bottom, where the quickfix window already opens.
+`comments.pane_width` (60) and `comments.pane_height` (15) are where it
+starts — never more than half the screen, whatever they are set to,
+since sixty columns is most of an eighty-column terminal and a pane that
+leaves nineteen columns of code is a pane you open once. It is an
+ordinary window afterwards, resized like any other.
+
 A comment is wrapped to the window it is drawn in, and to
 `comments.wrap` — 80 columns by default — wherever the window is wider
 than that. It has to be wrapped somewhere: a conversation under the code
@@ -307,14 +405,42 @@ words its author chose in front of the sha. This is how a comment is
 author wrote, links and all. `comments.short_commits = false` leaves
 them whole.
 
+What a comment *points at* rather than says is drawn in a colour of its
+own: `@somebody` in `NemetonMention` and the commit it blames in
+`NemetonCommit`, both blue — `Directory`, the group every colourscheme
+keeps for "this names something that is somewhere else", which is what
+paths and branches are already drawn in here. They are the two things in
+a comment that are a reference out of it — a person to ask, a commit to
+go and read — and both are looked for by scanning rather than by reading
+the sentence around them. An address is not a mention and a word is not
+a sha: a name has to start where a word starts, and a run of hex counts
+as a commit only if it has both digits and letters in it, since seven
+characters of nothing but a-f is a word English happens to have and
+seven of nothing but digits is a number somebody wrote down. Nothing is
+marked inside a settled thread, which is dimmed whole.
+`comments.references = false` turns it off.
+
+`:tada:` is drawn as 🎉, the way the forge would have drawn it — a
+comment read with the colons still in it has a word missing out of the
+middle of a sentence. Drawn only, on the same promise: what is sent when
+a comment is written or rewritten is the text its author typed, colons
+and all, because that is what GitLab renders and what the next person to
+edit it has to see. A suggestion is left alone as well — it is code, and
+code that says `:tada:` says `:tada:`. `lua/nemeton/emoji.lua` holds the
+names, which are what a review is written with rather than the whole
+eighteen hundred of gemoji; one it does not know is left as it was
+typed, which is what a forge does with an unknown name too.
+`comments.emoji = false` leaves all of them alone.
+
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
-`q` discards it, and `@` completes the people on the project — the menu
-comes up as you type it, `<C-x><C-o>` asks for it where it does not, and
-what goes in is `@username`, sigil and all, because that is what GitLab
-turns into a notification. Keeping is the default because a review is written as
-a whole: a comment posted the moment it is typed cannot be taken back
-after reading the next file.
+`q` discards it, and two sigils complete — `@` the people on the project
+and `:` the emoji GitLab draws as pictures. The menu comes up as you
+type either, `<C-x><C-o>` asks for it where it does not, and what goes in
+is `@username` and `:tada:`, sigils and all, because that is what GitLab
+turns into a notification and into a picture. Keeping is the default
+because a review is written as a whole: a comment posted the moment it
+is typed cannot be taken back after reading the next file.
 
 A **reply** is the other way round — `<C-s>` sends it, `<C-p>` keeps it
 — because a reply is half of a conversation somebody else is already
@@ -464,6 +590,7 @@ lua/nemeton/
   notes.lua      the comments about the merge request rather than about
                  a line of it -- read, answered, written
   conversation.lua  every thread at once, to read rather than to walk
+  pane.lua       the threads of the file you are reading, beside it
   qf.lua         every thread, into the quickfix list
   jobs.lua       what CI did, job by job
   trace.lua      what one job printed, in a tab
@@ -472,6 +599,7 @@ lua/nemeton/
   log.lua        every subprocess, into ~/.local/state, with the token
                  scrubbed out on the way
   mentions.lua   the people you can put an @ in front of
+  emoji.lua      the names between two colons, and what they draw as
   win.lua        where the cursor was before a window of this took it
   sha1.lua       the digest GitLab names a line of a diff with
   health.lua     :checkhealth nemeton

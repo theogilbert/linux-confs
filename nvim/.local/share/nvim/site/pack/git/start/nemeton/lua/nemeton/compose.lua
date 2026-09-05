@@ -21,28 +21,86 @@ local M = {}
 -- guts, in the middle of a keypress that had nothing wrong with it.
 local opened = 0
 
---- Completion for `@name`, on this buffer alone.
+-- What a half-written word can turn into: the `@name` of somebody on
+-- the project, and the `:name:` of an emoji. Each says for itself
+-- whether the cursor is in one of its words, and each is switched off
+-- by its own setting.
+local SOURCES = {
+  { module = "nemeton.mentions", on = "mentions", menu = "mention_menu" },
+  { module = "nemeton.emoji", on = "emoji", menu = "emoji_menu" },
+}
+
+--- The sources switched on, in the order they are asked.
+local function sources()
+  local out = {}
+  for _, source in ipairs(SOURCES) do
+    if config.compose[source.on] then
+      table.insert(out, vim.tbl_extend("keep", { it = require(source.module) }, source))
+    end
+  end
+  return out
+end
+
+--- Whichever source the cursor is inside a word of, and where that word
+--- starts. Nothing where it is inside none.
+local function starts_here()
+  for _, source in ipairs(sources()) do
+    local at = source.it.omnifunc(1, nil)
+    if at >= 0 then
+      return source, at
+    end
+  end
+  return nil, -3
+end
+
+--- Completion for `@name` and `:name:`, on this buffer alone.
 ---
 --- `omnifunc` rather than a completion engine: this plugin has no
 --- dependencies and is not about to grow one over a menu. `<C-x><C-o>`
 --- is where a Vim user looks for a list of what fits here, and anybody
---- with an engine can point it at `nemeton.mentions.candidates` --
---- which is why that is a function and not a closure in this file.
+--- with an engine can point it at `nemeton.mentions.candidates` or
+--- `nemeton.emoji.candidates` -- which is why those are functions and
+--- not closures in this file.
+---
+--- One `omnifunc` for the two of them, because there is one
+--- `omnifunc`. Which is being typed is the sigil in front of the
+--- cursor, and no word begins with both.
+function M.omnifunc(findstart, base)
+  if findstart == 1 then
+    local _, at = starts_here()
+    return at
+  end
+  for _, source in ipairs(sources()) do
+    if (base or ""):sub(1, 1) == source.it.sigil then
+      return source.it.omnifunc(0, base)
+    end
+  end
+  return {}
+end
+
+--- Hangs it on the buffer.
 ---
 --- The menu comes up on its own only where `completeopt` can be held
 --- for one buffer, which is Neovim 0.11. Older, setting it globally
 --- would change how completion behaves in every other buffer of the
 --- editor for the length of a comment, and a menu that picks the first
 --- name for you is worse than no menu at all.
-local function mentions_on(buf, window)
-  if not config.compose.mentions then
+local function completion_on(buf, window)
+  local on = sources()
+  if #on == 0 then
     return
   end
-  local session = require("nemeton.session")
-  local mentions = require("nemeton.mentions")
-  mentions.prefetch(session.root())
-  vim.bo[buf].omnifunc = "v:lua.require'nemeton.mentions'.omnifunc"
-  local held = config.compose.mention_menu
+  for _, source in ipairs(on) do
+    if source.it.prefetch then
+      source.it.prefetch(require("nemeton.session").root())
+    end
+  end
+  vim.bo[buf].omnifunc = "v:lua.require'nemeton.compose'.omnifunc"
+  local wanted = false
+  for _, source in ipairs(on) do
+    wanted = wanted or config.compose[source.menu]
+  end
+  local held = wanted
     and pcall(function()
       vim.bo[buf].completeopt = "menu,menuone,noselect"
     end)
@@ -51,7 +109,7 @@ local function mentions_on(buf, window)
   end
   vim.api.nvim_create_autocmd("TextChangedI", {
     buffer = buf,
-    desc = "nemeton: the names behind an @",
+    desc = "nemeton: what an @ or a : can turn into",
     callback = function()
       if vim.fn.pumvisible() == 1 or vim.api.nvim_get_current_win() ~= window then
         return
@@ -59,7 +117,8 @@ local function mentions_on(buf, window)
       -- Asked of the same function the menu is filled from, so there is
       -- one answer to "is this an @ that means somebody": a mention
       -- that would not complete does not put a menu up either.
-      if mentions.omnifunc(1, nil) >= 0 then
+      local source = starts_here()
+      if source and config.compose[source.menu] then
         vim.api.nvim_feedkeys(vim.keycode("<C-x><C-o>"), "n", false)
       end
     end,
@@ -113,7 +172,7 @@ function M.open(opts)
     second and (" · " .. k.post .. " " .. (posts and "keep for the review" or "post now")) or "",
     k.cancel
   )
-  mentions_on(buf, window)
+  completion_on(buf, window)
   vim.wo[window].number = false
   vim.wo[window].relativenumber = false
   vim.wo[window].signcolumn = "no"

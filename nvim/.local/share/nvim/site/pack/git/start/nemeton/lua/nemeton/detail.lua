@@ -206,6 +206,89 @@ function M.stats_text(stats)
   )
 end
 
+--- The same, as coloured pieces.
+---
+--- The two numbers in the colours a diff is read in -- as foreground,
+--- not as the filled blocks DiffAdd and DiffDelete paint: this is a
+--- count in a sentence, and a coloured tile in the middle of one reads
+--- as highlighting rather than as a number. The queue draws its own
+--- column this way; this is for the windows that draw it in prose.
+function M.stats_chunks(stats)
+  if type(stats) ~= "table" or not stats.files then
+    return nil
+  end
+  return {
+    { ("+%d"):format(stats.added or 0), "NemetonAdded" },
+    { " ", "NemetonMeta" },
+    { ("−%d"):format(stats.removed or 0), "NemetonRemoved" },
+    { (" in %d file%s"):format(stats.files, stats.files == 1 and "" or "s"), "NemetonMeta" },
+  }
+end
+
+--- "1m12s", "8s", "—". Seconds as GitLab sends them: a float, and null
+--- for a job that has not run.
+local function duration(secs)
+  if type(secs) ~= "number" then
+    return "—"
+  end
+  secs = math.floor(secs + 0.5)
+  if secs < 60 then
+    return ("%ds"):format(secs)
+  end
+  return ("%dm%02ds"):format(math.floor(secs / 60), secs % 60)
+end
+
+--- The jobs of a pipeline, grouped under their stages, and the job on
+--- each line -- for the window that reads them and the pane under the
+--- queue that previews them, which are one drawing asked for from two
+--- places.
+---
+--- Grouped in the order the stages first appear rather than sorted:
+--- that order is the pipeline's own, and a reviewer reading down the
+--- window is reading the build in the order it happened.
+function M.job_chunks(jobs)
+  local out, map = {}, {}
+  local seen, order = {}, {}
+  for _, job in ipairs(jobs or {}) do
+    local stage = job.stage or "?"
+    if not seen[stage] then
+      seen[stage] = {}
+      table.insert(order, stage)
+    end
+    table.insert(seen[stage], job)
+  end
+
+  for _, stage in ipairs(order) do
+    if #out > 0 then
+      table.insert(out, {})
+    end
+    table.insert(out, { { stage, "NemetonAuthor" } })
+    for _, job in ipairs(seen[stage]) do
+      local status = M.status(job.status) or { glyph = "•", hl = "NemetonMeta" }
+      -- The glyph in the status's own colour and the name in the
+      -- window's own: a column of names read down, with the verdict
+      -- beside each one to be found without reading it. Nothing asked
+      -- for on the name itself -- it is the text of the window, and a
+      -- group that says so is a group that paints a background through
+      -- whatever the window is drawn on.
+      local rest = ("%-34s %8s  %s"):format(
+        (job.name or "?"):sub(1, 34),
+        duration(job.duration),
+        job.allow_failure and "(allowed to fail)" or ""
+      )
+      table.insert(out, {
+        { "  " .. status.glyph .. " ", status.hl },
+        { (rest:gsub("%s+$", "")) },
+      })
+      map[#out] = job
+    end
+  end
+  if #out == 0 then
+    out = { { { "this pipeline has no jobs", "NemetonMeta" } } }
+  end
+  return out, map
+end
+
 --- The commits, newest first, as GitLab hands them over.
 ---
 --- Only the subject line of each: a commit message's body is written
@@ -509,7 +592,7 @@ local function remember(iid, mode, chunks)
   return chunks
 end
 
---- `mode` is "commits" or "description". cb(lines, highlights) or
+--- `mode` is "commits", "description" or "jobs". cb(lines, highlights) or
 --- cb(nil, err), and called *synchronously* on a cache hit -- which is
 --- what lets the preview pane redraw without a flash of "…" every time
 --- the cursor moves back over a row it has already been on.
@@ -536,6 +619,27 @@ function M.fetch(root, mr, mode, cb)
         return
       end
       hand(remember(mr.iid, mode, M.description_chunks(whole)))
+    end)
+    return
+  end
+
+  if mode == "jobs" then
+    -- Whatever the queue already knows about this row: the CI column is
+    -- the head pipeline, fetched once per row, and the jobs are what is
+    -- inside it. A merge request with no pipeline says so rather than
+    -- reading as one whose jobs would not load -- most branches on most
+    -- projects have never been built.
+    local pipeline = M.ci(mr)
+    if not (pipeline and pipeline.id) then
+      hand({ { { "no pipeline on this merge request", "NemetonMeta" } } })
+      return
+    end
+    glab.pipeline_jobs(root, pipeline.id, function(jobs, err)
+      if not jobs then
+        cb(nil, err)
+        return
+      end
+      hand(remember(mr.iid, mode, M.job_chunks(jobs)))
     end)
     return
   end

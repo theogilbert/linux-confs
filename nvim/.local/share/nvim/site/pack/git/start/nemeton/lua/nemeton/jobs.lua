@@ -9,6 +9,7 @@ local detail = require("nemeton.detail")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 
 local M = {}
@@ -25,65 +26,13 @@ function M.close()
   M.win, M.buf, rows = nil, nil, {}
 end
 
---- "1m12s", "8s", "—". Seconds as GitLab sends them: a float, and null
---- for a job that has not run.
-local function duration(secs)
-  if type(secs) ~= "number" then
-    return "—"
-  end
-  secs = math.floor(secs + 0.5)
-  if secs < 60 then
-    return ("%ds"):format(secs)
-  end
-  return ("%dm%02ds"):format(math.floor(secs / 60), secs % 60)
-end
-
---- The jobs as lines, grouped under their stages.
----
---- Grouped in the order the stages first appear rather than sorted:
---- that order is the pipeline's own, and a reviewer reading down the
---- window is reading the build in the order it happened.
+--- The jobs as lines, grouped under their stages, and the job on each.
+--- `nemeton.detail` draws them, because the pane under the queue draws
+--- them too and one build read two ways is two windows to keep in step.
 function M.lines(jobs)
-  local out, hls, map = {}, {}, {}
-  local seen, order = {}, {}
-  for _, job in ipairs(jobs or {}) do
-    local stage = job.stage or "?"
-    if not seen[stage] then
-      seen[stage] = {}
-      table.insert(order, stage)
-    end
-    table.insert(seen[stage], job)
-  end
-
-  for _, stage in ipairs(order) do
-    if #out > 0 then
-      table.insert(out, "")
-    end
-    table.insert(hls, { row = #out, col = 0, end_col = #stage, hl = "NemetonAuthor" })
-    table.insert(out, stage)
-    for _, job in ipairs(seen[stage]) do
-      local status = detail.status(job.status) or { glyph = "•", hl = "NemetonMeta" }
-      local prefix = "  " .. status.glyph .. " "
-      local line = ("%s%-34s %8s  %s"):format(
-        prefix,
-        (job.name or "?"):sub(1, 34),
-        duration(job.duration),
-        job.allow_failure and "(allowed to fail)" or ""
-      )
-      table.insert(hls, {
-        row = #out,
-        col = 2,
-        end_col = 2 + #status.glyph,
-        hl = status.hl,
-      })
-      table.insert(out, (line:gsub("%s+$", "")))
-      map[#out] = job
-    end
-  end
-  if #out == 0 then
-    out = { "this pipeline has no jobs" }
-  end
-  return out, hls, map
+  local chunks, map = detail.job_chunks(jobs)
+  local lines, hls = threads.flatten(chunks, 0)
+  return lines, hls, map
 end
 
 local function job_at()

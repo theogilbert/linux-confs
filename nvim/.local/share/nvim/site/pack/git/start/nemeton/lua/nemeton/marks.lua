@@ -21,6 +21,18 @@ M.ns = vim.api.nvim_create_namespace("nemeton")
 -- had just painted on itself.
 M.ui_ns = vim.api.nvim_create_namespace("nemeton-ui")
 
+-- Where the conversation being read is anchored, drawn in the gutter of
+-- the code while it is on the screen. A third namespace because it is
+-- cleared and redrawn on its own clock -- the reader moves from one
+-- thread to the next without the markers under them changing at all --
+-- and because a redraw of those must not take it with them.
+M.reading_ns = vim.api.nvim_create_namespace("nemeton-reading")
+
+-- The buffer it was last drawn in. One conversation is read at a time,
+-- so there is one of these, and clearing it is cheaper than asking
+-- every buffer in the editor whether it has any.
+local reading = nil
+
 -- bufnr -> (extmark id -> the line its threads were written against).
 -- The extmark moves with the edits; the index does not, so this is how
 -- "what is under my cursor now" gets back to "which thread is that".
@@ -411,6 +423,10 @@ function M.setup_highlights()
   -- CI, and anything else with a verdict: the three states a glance is
   -- meant to separate, in the three colours an editor already uses for
   -- them.
+  -- What a comment points at rather than says: the name of somebody it
+  -- calls on, the commit it blames.
+  link("NemetonMention", "DiagnosticInfo")
+  link("NemetonCommit", "DiagnosticInfo")
   -- A comment you have written and not sent: not open, not settled,
   -- and owed an action by you rather than by anybody else.
   link("NemetonDraft", "DiagnosticWarn")
@@ -576,6 +592,49 @@ function M.clear(bufnr)
   if vim.api.nvim_buf_is_valid(bufnr) then
     vim.api.nvim_buf_clear_namespace(bufnr, M.ns, 0, -1)
   end
+end
+
+function M.clear_current()
+  if reading and vim.api.nvim_buf_is_valid(reading) then
+    vim.api.nvim_buf_clear_namespace(reading, M.reading_ns, 0, -1)
+  end
+  reading = nil
+end
+
+--- Marks rows `from`..`to` of `bufnr` -- 1-based and inclusive -- as
+--- the lines the conversation now being read was written against.
+---
+--- What the gutter is missing when a thread is read beside the file
+--- rather than under it. A comment written over a selection is about
+--- several lines and anchored to the last of them, which is the only
+--- one carrying a bubble: nothing on the code says where the quotation
+--- in the pane begins. The rail that runs down the thread in there runs
+--- up the gutter out here, in the colour of the same state, so the two
+--- are the same edge of the same block.
+---
+--- Under the thread's own marker rather than over it: on the anchored
+--- line both are in the gutter, a sign column one cell wide draws the
+--- higher priority alone, and between "there is a conversation here"
+--- and "and it starts three lines up" the first is the one to keep. A
+--- wider one (`signcolumn=auto:2`) draws both.
+function M.current(bufnr, from, to, hl)
+  M.clear_current()
+  local glyph = config.comments.sign_span
+  if not glyph or glyph == "" or not vim.api.nvim_buf_is_valid(bufnr) then
+    return 0
+  end
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  local drawn = 0
+  for row = math.max(from, 1), math.min(to, last) do
+    vim.api.nvim_buf_set_extmark(bufnr, M.reading_ns, row - 1, 0, {
+      sign_text = glyph,
+      sign_hl_group = hl or "NemetonSignOpen",
+      priority = 15,
+    })
+    drawn = drawn + 1
+  end
+  reading = bufnr
+  return drawn
 end
 
 --- How much room a conversation drawn into `bufnr` actually has.
@@ -758,8 +817,7 @@ function M.render(bufnr, by_line, mode, opts)
       -- one to lose.
       if config.comments.virt_text and mode ~= "expanded" then
         local first = shown[1].notes[1]
-        local summary = vim.split(threads.short_commits(first.body), "\n", { plain = true })[1]
-          or ""
+        local summary = vim.split(threads.drawn(first.body), "\n", { plain = true })[1] or ""
         local count = #shown > 1 and (" (+%d)"):format(#shown - 1) or ""
         mark.virt_text = {
           { "  " .. first.author .. count .. ": ", "NemetonAuthor" },

@@ -16,6 +16,12 @@ local glab = require("nemeton.glab")
 
 local M = {}
 
+--- What starts the word this completes, and what is inserted with it:
+--- GitLab notifies on `@username`, and a completion that leaves the
+--- sigil to the user is one that silently posts a comment naming
+--- nobody.
+M.sigil = "@"
+
 -- root -> the list, or {} for "asked, and the forge would not say".
 local known = {}
 local asking = {}

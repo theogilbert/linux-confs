@@ -564,12 +564,24 @@ local function set_hint()
     -- merge request of your own gets made. A hint bar offering nothing
     -- but "refetch" over "no opened merge requests" is a window that
     -- reads as a dead end, whatever the key underneath it does.
-    keys = { { k.create, "new" }, { k.refresh, "refetch" }, { k.quit, "quit" } }
+    --
+    -- And the key that walks to the next queue, for the same reason and
+    -- more so: "no opened merge requests" is the one message in this
+    -- window whose likeliest answer is "then show me the merged ones",
+    -- and the key that does it is the one thing a reader cannot guess
+    -- from an empty window.
+    keys = {
+      { k.state, next_state() },
+      { k.create, "new" },
+      { k.refresh, "refetch" },
+      { k.quit, "quit" },
+    }
   else
     keys = {
       { k.select, "open" },
       { k.commits, "commits" },
       { k.description, "description" },
+      { k.jobs, "jobs" },
       -- Named after what pressing it would show rather than after what
       -- is on the screen: every other hint on this bar is a verb.
       { k.state, next_state() },
@@ -852,6 +864,7 @@ local function open_window()
   for _, pane in ipairs({
     { keys.commits, "commits", "the commits on this merge request" },
     { keys.description, "description", "what this merge request is for" },
+    { keys.jobs, "jobs", "what CI made of this merge request, job by job" },
   }) do
     if pane[1] and pane[1] ~= "" then
       vim.keymap.set("n", pane[1], function()

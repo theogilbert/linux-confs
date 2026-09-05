@@ -104,6 +104,14 @@ function M.by_line(bufnr)
   return path and M.current.by_file[path] or nil
 end
 
+--- Whether an expanded conversation is drawn in a pane rather than
+--- under the line it is about. The setting, not the state: the mode is
+--- still "expanded" either way -- what changes is where the words go.
+local function paned()
+  local where = require("nemeton.config").comments.expand
+  return where and where ~= "inline" and where or nil
+end
+
 function M.redraw(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -113,7 +121,13 @@ function M.redraw(bufnr)
     marks.clear(bufnr)
     return
   end
-  marks.render(bufnr, by_line, M.current.mode, {
+  -- With the conversations in a pane the buffer is drawn as it is with
+  -- them folded away: one marker per line, and the words next door.
+  local mode = M.current.mode
+  if mode == "expanded" and paned() then
+    mode = "signs"
+  end
+  marks.render(bufnr, by_line, mode, {
     show_resolved = require("nemeton.config").comments.show_resolved,
     -- Passed in rather than reached for: this module is built on that
     -- one, and a drawing module that calls back into the session it is
@@ -128,6 +142,11 @@ function M.redraw_all()
       M.redraw(bufnr)
     end
   end
+  -- The pane is drawn from the same threads and goes stale for the same
+  -- reasons -- a refresh, a resize, a marker moved by an edit -- so it
+  -- is redrawn wherever the buffers are. It does nothing when it is not
+  -- open, which is most of the time.
+  require("nemeton.pane").redraw()
 end
 
 --- Re-reads the discussions and redraws. Called after posting anything,
@@ -485,6 +504,9 @@ function M.goto_thread(thread, before)
   end
   local last = vim.api.nvim_buf_line_count(0)
   vim.api.nvim_win_set_cursor(0, { math.min(thread.line, last), 0 })
+  -- Going to a thread is asking to be shown it, whichever window asked
+  -- -- the every-thread window, the comments window, the quickfix list.
+  require("nemeton.pane").show(vim.api.nvim_get_current_win())
   return true
 end
 
@@ -638,6 +660,7 @@ function M.close()
   end
   M.current = nil
   blobs = {}
+  require("nemeton.pane").close()
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     marks.clear(bufnr)
   end
@@ -653,18 +676,30 @@ function M.toggle()
     return
   end
   M.current.mode = M.current.mode == "off" and "signs" or "off"
+  -- Comments off is comments off: the pane is the conversations, and
+  -- the key that takes them away takes it with them.
+  require("nemeton.pane").close()
   M.redraw_all()
   return M.current.mode
 end
 
---- The conversations themselves, under the lines they are about, rather
---- than only a mark in the gutter.
+--- The conversations themselves rather than only a mark in the gutter:
+--- under the lines they are about, or in a pane beside them, whichever
+--- `comments.expand` says.
 function M.toggle_expanded()
   if not M.current then
     notify("no merge request open", vim.log.levels.WARN)
     return
   end
   M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"
+  local pane = require("nemeton.pane")
+  if M.current.mode == "expanded" and paned() then
+    pane.open()
+  else
+    -- Closed on the way back to "signs", and closed when the setting
+    -- was changed to "inline" with a pane already on the screen.
+    pane.close()
+  end
   M.redraw_all()
   return M.current.mode
 end
@@ -790,6 +825,10 @@ function M.jump(dir)
   end
   local last = vim.api.nvim_buf_line_count(0)
   vim.api.nvim_win_set_cursor(0, { math.min(target.line, last), 0 })
+  -- The walk is what the pane reads: it holds still while the cursor
+  -- wanders through the code, and moves when the reviewer says "the
+  -- next thing owed an answer".
+  require("nemeton.pane").show(vim.api.nvim_get_current_win())
   return target.line
 end
 

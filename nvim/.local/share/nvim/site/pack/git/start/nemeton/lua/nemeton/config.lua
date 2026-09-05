@@ -90,6 +90,18 @@ return {
     sign_open = "", -- nf-fa-comment
     sign_resolved = "", -- nf-fa-comment_o
 
+    -- ...and what stands in the gutter beside the *other* lines of the
+    -- conversation being read, where it was written over a selection
+    -- and is about several. Drawn only while a thread is on the screen
+    -- in the pane (|nemeton-pane-window|), and only above the line it
+    -- is anchored to -- that one keeps its bubble.
+    --
+    -- The rail the thread carries down its left in the pane, so the
+    -- block out here and the block in there are the same edge; it takes
+    -- the colour of the same state. `false` to leave the gutter to the
+    -- bubbles alone.
+    sign_span = "▎",
+
     -- ...and a comment you have written and not sent yet. A pencil
     -- rather than a third bubble: an unsent comment is not a state of
     -- the conversation, it is a state of you. "✎" without a Nerd Font.
@@ -101,6 +113,82 @@ return {
     -- decide whether to open it. Ignored while the conversations are
     -- expanded, where the note it summarises is the next line down.
     virt_text = false,
+
+    -- Where the conversations go when they are expanded.
+    --
+    -- "inline" draws each one under the line it is about, as virtual
+    -- lines: the comment is where the code is, and reading down the
+    -- file reads the review with it. It also pushes the code apart --
+    -- four threads in a file is four blocks between you and the next
+    -- function -- and it wraps a paragraph to whatever the width of the
+    -- window happens to be, which in a split is a comment read four
+    -- words at a time.
+    --
+    -- "right" and "bottom" put them in a pane instead: every thread in
+    -- the file, in one window, following the cursor down it. The code
+    -- keeps its shape and the prose gets a width of its own; what it
+    -- costs is the anchoring, which the pane buys back by naming the
+    -- line each conversation is on and by moving with you. The gutter
+    -- says which lines carry one either way.
+    expand = "right",
+
+    -- ...and which window that pane is a split of.
+    --
+    -- "window" splits the one the code is in, so the pane arrives
+    -- beside that window and the rest of the screen keeps the layout
+    -- the reviewer built. "editor" puts it against the edge of the
+    -- whole editor -- full height down the right, full width along the
+    -- bottom -- which is where the quickfix window already opens and
+    -- where a reader of one file at a time wants it.
+    expand_anchor = "window",
+
+    -- How big the pane opens: columns for one on the right, rows for
+    -- one along the bottom. Only where it starts -- it is an ordinary
+    -- window afterwards, resized like any other.
+    pane_width = 60,
+    pane_height = 15,
+
+    -- Whether the head of a note also carries the commit it was
+    -- written against -- eight digits, after the date.
+    --
+    -- The other half of "when". A review comment is about code at a
+    -- moment, and "27 Aug" says which afternoon while this says which
+    -- push: an answer written before the fix was pushed and one written
+    -- after it read the same otherwise. `git show` on it says what the
+    -- file said then.
+    --
+    -- GitLab gives it for comments on a line; one on the merge request
+    -- as a whole was written against no commit and gets none.
+    head_commit = true,
+
+    -- Whether a `:name:` in a comment is drawn as the emoji GitLab
+    -- would have drawn -- `:tada:` as the picture rather than as seven
+    -- characters and two colons.
+    --
+    -- Drawn only: what is sent when a comment is written or rewritten
+    -- is the text its author typed, colons and all, because that is
+    -- what the forge renders and what the next person to edit it has to
+    -- see. A suggestion is left alone too -- it is code, and code that
+    -- says `:tada:` says `:tada:`.
+    --
+    -- `nemeton.emoji` holds the names it knows, which is what a review
+    -- is written with rather than the whole of gemoji; one it does not
+    -- know is left as it was typed.
+    emoji = true,
+
+    -- Whether what a comment points at is drawn in a colour of its own:
+    -- `@somebody`, and the commit a note blames.
+    --
+    -- They are the two things in a comment that are not prose but a
+    -- reference to something outside it -- a person to be asked, a
+    -- commit to go and read -- and both are found by scanning rather
+    -- than by reading the sentence they are in. `NemetonMention` and
+    -- `NemetonCommit` are the colours, blue by default.
+    --
+    -- Not in a thread that is over: a settled conversation is dimmed
+    -- whole, and a blue name inside one would say there is something
+    -- there to answer.
+    references = true,
 
     -- Whether resolved threads are drawn at all. They are still fetched
     -- either way -- toggling this is a redraw, not a refetch.
@@ -309,6 +397,17 @@ return {
     -- for a forge.
     mentions = true,
 
+    -- Completion for the `:name:` of an emoji, from the shortcodes
+    -- GitLab draws as pictures. On `<C-x><C-o>` in the composer, like
+    -- the names above and through the same one `omnifunc`: which of
+    -- them is being typed is the sigil in front of the cursor.
+    emoji = true,
+
+    -- ...and the menu on its own, as the `:` is typed. Same footnote as
+    -- `mention_menu` below: it needs a Neovim that can hold
+    -- `completeopt` for one buffer.
+    emoji_menu = true,
+
     -- ...and the menu on its own, as the `@` is typed.
     --
     -- Needs a Neovim that can hold `completeopt` for one buffer (0.11
@@ -394,6 +493,13 @@ return {
       quit = "q",
       commits = "c", -- the changelog of the row under the cursor
       description = "d", -- what the row under the cursor says it is for
+      -- ...and what CI made of it, job by job, in the same pane. The
+      -- column says "failed" and the question that follows is always
+      -- "which job" -- which is a question about a merge request you
+      -- have not opened yet, and often the answer to whether to open
+      -- it. The same letter the merge request's own window puts the
+      -- pipeline on.
+      jobs = "p",
     },
     -- The window holding every comment on the merge request, one line
     -- each. The same keys as the every-thread window below, because it
@@ -432,6 +538,22 @@ return {
     -- Every thread on the merge request, read as conversation rather
     -- than as a list of places to jump to.
     conversation = {
+      code = "<CR>", -- go to the code the thread under the cursor is about
+      reply = "r",
+      edit = "e",
+      delete = "d",
+      refresh = "R",
+      quit = "q",
+    },
+
+    -- The pane the conversations of one file are read in, beside the
+    -- code rather than in it. The same keys as the every-thread window
+    -- above, because it is the same threads read in a narrower window:
+    -- <CR> is the way *into* the code and `r` answers where you are
+    -- sitting. `q` folds the conversations away rather than only
+    -- closing the window -- the pane is what expanded means while it
+    -- is on.
+    pane = {
       code = "<CR>", -- go to the code the thread under the cursor is about
       reply = "r",
       edit = "e",

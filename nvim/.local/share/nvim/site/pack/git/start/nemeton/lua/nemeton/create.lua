@@ -164,22 +164,24 @@ function M.lines(f, branch)
   if ci == false then
     -- Asked, and the branch has never been built -- which on a branch
     -- that has not been pushed is most of what that means.
-    table.insert(parts, { "no pipeline on this branch", "NemetonMeta" })
+    table.insert(parts, { { "no pipeline on this branch", "NemetonMeta" } })
   elseif ci then
-    table.insert(parts, { ci.glyph .. " " .. ci.word, ci.hl })
+    table.insert(parts, { { ci.glyph .. " " .. ci.word, ci.hl } })
   else
-    table.insert(parts, { "…", "NemetonMeta" })
+    table.insert(parts, { { "…", "NemetonMeta" } })
   end
-  local stats = f.stats and detail.stats_text(f.stats)
   if f.counted == false then
     -- No ref to compare against: the target branch is not here, which
     -- is a fetch away and not this window's business to do.
     table.insert(
       parts,
-      { ("nothing here to compare %s against"):format(f.target or "it"), "NemetonMeta" }
+      { { ("nothing here to compare %s against"):format(f.target or "it"), "NemetonMeta" } }
     )
   else
-    table.insert(parts, { stats or "…", stats and "NemetonThread" or "NemetonMeta" })
+    -- In the colours the queue counts a merge request in, because it is
+    -- the same fact about the same branch: how much of the codebase
+    -- this asks somebody to read.
+    table.insert(parts, detail.stats_chunks(f.stats) or { { "…", "NemetonMeta" } })
   end
 
   local line = GUTTER
@@ -188,8 +190,10 @@ function M.lines(f, branch)
       table.insert(hls, { row = #out, col = #line, end_col = #line + 3, hl = "NemetonMeta" })
       line = line .. " · "
     end
-    table.insert(hls, { row = #out, col = #line, end_col = #line + #part[1], hl = part[2] })
-    line = line .. part[1]
+    for _, chunk in ipairs(part) do
+      table.insert(hls, { row = #out, col = #line, end_col = #line + #chunk[1], hl = chunk[2] })
+      line = line .. chunk[1]
+    end
   end
   table.insert(out, line)
   table.insert(out, "")
@@ -428,6 +432,18 @@ function edit.labels()
   end
   local names = state.labels
   if #names == 0 then
+    -- "This project has no labels" and "the forge would not say which
+    -- labels this project has" are different answers, and only one of
+    -- them means typing them out is the best that can be done. Said
+    -- once, here, where the difference is about to cost something.
+    if state.labels_error then
+      session.notify(
+        "could not ask which labels this project has: "
+          .. state.labels_error
+          .. " — type them instead",
+        vim.log.levels.WARN
+      )
+    end
     vim.ui.input(
       { prompt = "labels (comma-separated): ", default = table.concat(f.labels, ",") },
       function(text)
@@ -444,14 +460,20 @@ function edit.labels()
     )
     return
   end
-  -- One press, one label, on or off. A picker that returns a set is a
-  -- picker every `vim.ui.select` in the wild would have to implement;
-  -- this is the same list until you stop pressing the key.
+  -- One choice, one label, on or off -- and then the list again, with
+  -- the tick moved, until it is dismissed. A picker that returns a set
+  -- is a picker every `vim.ui.select` in the wild would have to
+  -- implement; a picker that comes back is one any of them can be.
+  -- Labels come in threes -- the team, the area, the release -- and
+  -- pressing the key three times to say so is three times as long a
+  -- way of saying it.
   local items = {}
   for _, name in ipairs(names) do
     table.insert(items, (on[name] and "✓ " or "  ") .. name)
   end
-  vim.ui.select(items, { prompt = "labels" }, function(choice, index)
+  vim.ui.select(items, {
+    prompt = #f.labels > 0 and ("labels · " .. table.concat(f.labels, ", ")) or "labels",
+  }, function(choice, index)
     if not choice then
       return
     end
@@ -467,6 +489,10 @@ function edit.labels()
       table.insert(f.labels, name)
     end
     draw()
+    -- ...on the next tick, so the picker that is closing is closed
+    -- before the next one opens: two floats fighting over the cursor is
+    -- one of them left on the screen.
+    vim.schedule(edit.labels)
   end)
 end
 
@@ -497,12 +523,16 @@ local function submit()
     end
     kept[branch] = nil
     session.notify(url)
-    -- The queue is what it is a row of now, so the queue is redrawn if
-    -- it is up. Not opened if it is not: creating one from a file you
-    -- are working on is not asking to review it.
-    local list = require("nemeton.list")
-    if list.win and vim.api.nvim_win_is_valid(list.win) then
-      list.open()
+    -- The queue was a list of what there is to review, and it is out of
+    -- date the moment this lands -- but it is also not what is being
+    -- looked at any more. What was just opened is: writing a merge
+    -- request is the last thing you do to a branch, and reading what
+    -- came of it is the next. So the popup goes, and the review opens
+    -- on the merge request that was made.
+    require("nemeton.list").close()
+    local iid = tonumber(url:match("/merge_requests/(%d+)"))
+    if iid then
+      require("nemeton").open(iid)
     end
   end)
 end
@@ -536,6 +566,7 @@ function M.open()
     form = form(branch),
     branches = state and state.branch == branch and state.branches or nil,
     labels = state and state.branch == branch and state.labels or nil,
+    labels_error = state and state.branch == branch and state.labels_error or nil,
   }
 
   local width = math.min(math.floor(vim.o.columns * 0.7), 84)
@@ -619,7 +650,7 @@ function M.open()
   facts()
   branches()
   if not state.labels then
-    glab.labels(root, function(data)
+    glab.labels(root, function(data, err)
       local names = {}
       for _, label in ipairs(type(data) == "table" and data or {}) do
         if label.name then
@@ -627,6 +658,7 @@ function M.open()
         end
       end
       state.labels = names
+      state.labels_error = not data and tostring(err or "no answer") or nil
     end)
   end
   return M.win

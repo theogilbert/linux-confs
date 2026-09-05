@@ -40,7 +40,7 @@ when you ask.
 `:Uatis` does the same. `:Uatis <gitref>` compares against something else,
 completing on your refs.
 
-**One commit on its own** is `<leader>gH`, or `:UatisShow [<rev>]`, which
+**One commit on its own** is `<leader>gA`, or `:UatisShow [<rev>]`, which
 opens it in a tab of its own. That is the other question about history:
 not what you have changed since you forked, but what somebody's commit
 did — the one a colleague pointed at, the one a bisect landed on — as
@@ -48,6 +48,12 @@ likely as not on a branch this checkout is nowhere near. With no
 argument it asks which, through a prompt that completes every ref and
 the recent commits by their subject line. See
 [One commit on its own](#one-commit-on-its-own).
+
+**Everything since a commit** is `<leader>gS`, which asks the same way and
+is `:Uatis <rev>` — the ordinary review, in your own buffers, measured
+against a revision you picked instead of against the fork point. The
+question `<leader>gA` does not answer: not what one commit did, but where
+the tree has got to since one.
 
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
 `main`. `<leader>gB` picks another through `vim.ui.select`, offering the
@@ -93,8 +99,12 @@ branch, so "the next change" has an answer past the end of this file. At
 either end of the review it says so and stays. `pane.chunk_spill = false`
 keeps it inside the buffer, and `]f`/`[f` step whole files either way.
 
-`<leader>gH` (global, like `<leader>gu`) reads any one commit in a tab of
+`<leader>gA` (global, like `<leader>gu`) reads any one commit in a tab of
 its own — see [One commit on its own](#one-commit-on-its-own).
+
+`<leader>gS` (global too) asks the same question one size up: everything
+changed since the revision you pick, in your own buffers — `:Uatis <rev>`
+without typing the rev.
 
 In the list, that toggle is a bare `C` — a scratch buffer of rows has
 nothing for it to change, and it reads as the capital of the two keys
@@ -144,7 +154,7 @@ commit's.
 
 ### One commit on its own
 
-`<leader>gH`, or `:UatisShow <rev>`, reads a single commit anywhere in
+`<leader>gA`, or `:UatisShow <rev>`, reads a single commit anywhere in
 the repository, in a tab of its own — because a review is a mode over a
 tab, and opening it where you are standing would end the one you already
 had. The list is that commit's files, measured against its parent, and
@@ -211,6 +221,34 @@ red, with what actually went drawn on top of it in that colour deepened.
 `add_dim_bg` names the colour outright — as `delete_bg` and
 `delete_dim_bg` do for the other side.
 
+That step-back is offered only while it is a comparison. Past half of an
+atom (`diff.line.emphasis_ratio`) the new words are not one half of
+anything: what is left is whatever the old text happened to contain — a
+backtick, a hyphen, a word as common as `install` — matched because the
+character was there and not because anything survived, and greyed in the
+middle of a new sentence it sends you looking for a line it answers to.
+A rewritten paragraph is drawn as a new paragraph, and so is a line a
+docstring gained.
+
+### Tuning them
+
+```
+:UatisColors
+```
+
+Every number in `highlight` on one dial, with the review redrawing behind
+it as you turn them: `h`/`l` step the setting under the cursor, `H`/`L` go
+five at a time, `r` puts one back as it was, `p` prints a `setup{}` block
+of what is on the screen and yanks it. Nothing is written anywhere — the
+numbers last as long as the session, and the block is how you keep them.
+
+It is here rather than in a `dev/` script because these numbers are not
+really about this plugin. Each one is a statement about a colourscheme
+this repository has never seen — how quiet its `DiffAdd` is, whether it
+wrote a `DiffDelete` background at all — so the answer is not a better
+default, it is a way to look at yours. Open it with a review on screen;
+with none, the dial's own swatches are all it can show you.
+
 Structural mode is a window onto difftastic rather than a second opinion
 about it. Line mode is `vim.diff` with the histogram algorithm, which
 picks better hunk boundaries than git's default Myers on a restructured
@@ -257,7 +295,7 @@ require("uatis").setup({
   list = { width = 48 },              -- the list's width when you do open it
   show = { tab = false },             -- :UatisShow in place, not in a new tab
   diff = { default_backend = "line" },
-  keys = { view = { layout = "<leader>gS" } },
+  keys = { view = { layout = "<leader>gv" } },
 })
 ```
 

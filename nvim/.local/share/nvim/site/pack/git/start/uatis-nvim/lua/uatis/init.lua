@@ -1,12 +1,15 @@
--- What a user touches: two commands, six functions, three mappings.
+-- What a user touches: three commands, eight functions, four mappings.
 --
 --   :Uatis [<gitref>]         annotate this buffer against a revision
 --   :UatisShow [<rev>]        what one commit did, in a tab of its own
+--   :UatisColors              tune the colours against your scheme, live
 --   require("uatis").setup([opts])
 --   require("uatis").toggle_diff()
 --   require("uatis").set_base_branch([name])
 --   require("uatis").toggle_pane() / open_pane() / close_pane()
 --   require("uatis").show_commit([rev])
+--   require("uatis").since_commit([rev])
+--   require("uatis").colors()
 --
 -- The command and the functions are not two ways to do one thing. A
 -- command is what you type when you know the ref you want and you are
@@ -193,6 +196,31 @@ function M.toggle_pane()
   return pane.toggle()
 end
 
+--- Which revision, asked through `prompt.lua`.
+---
+--- The one question two of the keys here ask -- `<leader>gA` about a
+--- commit, `<leader>gS` about everything since one -- and they ask it
+--- the same way, over the same candidates `<leader>gB` types into:
+--- every ref and the recent commits, each carrying its subject line,
+--- because nobody has a sha memorised and a commit is found by what it
+--- did.
+local function ask_revision(label, cb)
+  base.root(function(root, path)
+    if not root then
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    base.candidates(root, function(items)
+      prompt.open({ prompt = label, items = items }, function(text)
+        if text and text ~= "" then
+          cb(text)
+        end
+      end)
+    end)
+  end)
+end
+
 --- What one commit did, in a tab of its own.
 ---
 --- The other question about history. `<leader>gh` reads the commits YOU
@@ -215,20 +243,40 @@ function M.show_commit(rev)
   if rev and rev ~= "" then
     return pane.show_commit(rev)
   end
-  base.root(function(root, path)
-    if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
-      return
-    end
-    base.candidates(root, function(items)
-      prompt.open({ prompt = "uatis: show commit", items = items }, function(text)
-        if text and text ~= "" then
-          pane.show_commit(text)
-        end
-      end)
-    end)
+  ask_revision("uatis: show commit", pane.show_commit)
+end
+
+--- Everything that has changed since a commit -- `:Uatis <rev>`, asked
+--- rather than typed.
+---
+--- The other half of `<leader>gA`, and the difference is what is being
+--- measured: that one reads what a single commit DID, against its
+--- parent; this one reads where the tree has got to SINCE one, against
+--- your live buffers -- the review `<leader>gu` opens, pointed at a
+--- revision you name instead of at the fork point. "What has moved
+--- since the release tag", "what has this branch done since the commit
+--- that broke it".
+---
+--- Pinned, like every `:Uatis <ref>` view: a revision chosen by hand is
+--- not re-pointed when the base branch changes.
+function M.since_commit(rev)
+  if rev and rev ~= "" then
+    return M.run({ fargs = { rev } })
+  end
+  ask_revision("uatis: changes since", function(text)
+    M.run({ fargs = { text } })
   end)
+end
+
+--- The colour dial: every number in `config.highlight`, turned against
+--- your own colourscheme with the review redrawing behind it.
+---
+--- No mapping. It is a thing you do once, when you install this against
+--- a scheme it has never met -- or when a tint reads wrong on the file
+--- in front of you -- and a key kept for it would be a key kept for
+--- something nobody presses twice in a year.
+function M.colors()
+  return require("uatis.colors").open()
 end
 
 --- What is being compared in `bufnr`, as data. nil when nothing is.
@@ -414,6 +462,8 @@ local function setup_keymaps()
     { lhs = k.open_pane, rhs = M.open_pane, desc = "uatis: open the changed-file pane" },
     { lhs = k.show_commit, rhs = function() M.show_commit() end,
       desc = "uatis: show one commit, in a tab of its own" },
+    { lhs = k.since_commit, rhs = function() M.since_commit() end,
+      desc = "uatis: review everything changed since a revision" },
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then

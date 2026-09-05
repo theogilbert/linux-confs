@@ -90,11 +90,21 @@ return {
       --
       -- The capital of the key that reads YOUR branch a commit at a
       -- time, because it is the same gesture one size up: `<leader>gh`
-      -- steps the commits you wrote since you forked, `<leader>gH` is
+      -- steps the commits you wrote since you forked, `<leader>gA` is
       -- any commit in the repository, on its own. Global rather than in
       -- the view, since somebody else's commit is something you look up
       -- from wherever you happen to be standing.
-      show_commit = "<leader>gH",
+      show_commit = "<leader>gA",
+      -- The same prompt, the other question: `<leader>gA` asks what one
+      -- commit DID, against its parent; this asks what has changed
+      -- SINCE one, against the buffers you are editing -- `:Uatis
+      -- <rev>` without typing the rev. Pinned to what you pick, since
+      -- naming a revision by hand is saying you meant that one.
+      --
+      -- Beside its neighbour on the shift of a free key: `<leader>gs`
+      -- stages a hunk in most configs, and the capital is the review
+      -- one size up from a hunk.
+      since_commit = "<leader>gS",
     },
     -- The side pane: files changed since the fork point, beside the file
     -- you are reading. The same keys the view lends out -- ]f/[f -- so
@@ -385,6 +395,32 @@ return {
       -- round islands of punctuation that read as "unchanged" -- true of
       -- the character, false of the line.
       major_ratio = 0.85,
+
+      -- ...and how much of a changed PROSE atom the new words have to
+      -- cover before the emphasis stops being worth drawing.
+      --
+      -- The step-back says "changed, but not the part that is new",
+      -- which is a sentence with two halves, and the second half has to
+      -- be a half. Past this the atom is a new one: what is left is
+      -- whatever the old block happened to contain -- a backtick, a
+      -- hyphen, a common word -- matched because the character was
+      -- somewhere in it and not because anything survived. A README
+      -- paragraph rewritten from `pip install grannos-py` came back
+      -- with `install` greyed in the middle of a new sentence, and the
+      -- reader goes looking for the old line it answers to. That hunt
+      -- is what a patch charges and what this plugin is for not
+      -- charging.
+      --
+      -- A majority, and not the 0.85 above, because the two decisions
+      -- are different. That one is about taking marks AWAY from a line
+      -- the reader could still navigate by, so it is nearly all of it;
+      -- this one is about whether a comparison is being offered at all,
+      -- and half a sentence rewritten is a sentence rewritten.
+      --
+      -- Higher narrows more: at 1.0 every atom with one surviving
+      -- character keeps its step-back. Lower narrows less; at 0 nothing
+      -- is ever stepped back and a changed string is one flat tint.
+      emphasis_ratio = 0.5,
     },
 
     -- How big a replacement run the intra-line comparison will pair up

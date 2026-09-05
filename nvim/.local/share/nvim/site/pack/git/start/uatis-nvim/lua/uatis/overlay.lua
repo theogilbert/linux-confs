@@ -709,6 +709,111 @@ local function reads_as_words(regions, text)
   return false
 end
 
+--- Whether `ranges` take anything nameable out of `text` -- an
+--- identifier, a number, a word.
+---
+--- The mirror of `kept_word` in `rewritten` below, and asked for the
+--- same reason.
+--- Picking removals out of a line means dimming the rest of it, and that
+--- is worth doing only when what is picked out is something the reader
+--- can name. difftastic reports a call reflowed across three lines as
+--- having lost a bracket and two commas: honest, and true of the
+--- characters, but a four-line block dimmed to point at four punctuation
+--- marks is quieter and harder to read than the same block shown as
+--- removed, and says less. A word going is the case worth the dimming.
+local function names(ranges, text)
+  for _, r in ipairs(ranges or {}) do
+    for col = r.col_start, math.min(r.col_end, #text) - 1 do
+      if text:sub(col + 1, col + 1):match("[%w_]") then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+--- The step-back, minus the atoms the emphasis did not really narrow.
+---
+--- The emphasis is a comparison between the words that are new and the
+--- words the sentence already had, and it is worth drawing only while
+--- the second half is a half. Past `emphasis_ratio` of an atom it is
+--- not: what is left is a remainder, which is the judgement `rewritten`
+--- makes about a line of code, at a ratio of its own.
+---
+--- What lands in that remainder is whatever the old block happened to
+--- contain. A backtick, a hyphen, a quote matches the same character
+--- wherever it came from; so does a common word. A README paragraph
+--- rewritten from `pip install grannos-py` to `` `grannos` is a
+--- command-line server ... so install it as a tool `` came back with
+--- both backticks stepped back, the hyphen of `command-line` pale
+--- between two new halves, and `install` -- which is in the old text
+--- only because the old text was a pip command -- greyed in the middle
+--- of a new sentence. Each of those is true of the characters and false
+--- of the line, and each sends the reader looking for a correspondence
+--- that is not there. That hunt is the cost a patch already charges,
+--- and not paying it is what this plugin is for.
+---
+--- Only past the ratio, because the other way up the remainder is the
+--- sentence itself. `'alpha'` gaining a `2` is a literal almost all of
+--- which is old: the reader is being shown one character, and stepping
+--- the rest forward would say the whole literal arrived. So is a
+--- docstring that gained a clause -- there the pale half is the
+--- sentence the reader already knows, and it is doing the work.
+---
+--- And only where the emphasis found something in the atom at all. With
+--- nothing new in it there is nothing for the rest to be part of -- the
+--- closing `"""` of a re-worded docstring is a row of its own, and a
+--- rule without that clause lights up the one row of the node that
+--- gained nothing.
+local function narrowed_atoms(quiet, fine, regions, text)
+  --- Whether the emphasis leaves enough of `sp` for the step-back to be
+  --- a comparison. Non-whitespace only, on both sides of the sum: a
+  --- sentence is mostly spaces, and they belong to no atom's reckoning.
+  local function narrows(sp)
+    local covered = {}
+    for _, r in ipairs(fine or {}) do
+      for col = math.max(r.col_start, sp.col_start), math.min(r.col_end, sp.col_end) - 1 do
+        covered[col] = true
+      end
+    end
+    local total, hit = 0, 0
+    for col = sp.col_start, math.min(sp.col_end, #text) - 1 do
+      if text:sub(col + 1, col + 1):match("%S") then
+        total = total + 1
+        if covered[col] then
+          hit = hit + 1
+        end
+      end
+    end
+    return hit == 0 or total == 0 or (hit / total) < config.diff.line.emphasis_ratio
+  end
+
+  local wholly = {}
+  for _, sp in ipairs(regions or {}) do
+    if not narrows(sp) then
+      table.insert(wholly, sp)
+    end
+  end
+  if #wholly == 0 then
+    return quiet
+  end
+
+  local out = {}
+  for _, q in ipairs(quiet) do
+    local inside = false
+    for _, sp in ipairs(wholly) do
+      if q.col_start >= sp.col_start and q.col_end <= sp.col_end then
+        inside = true
+        break
+      end
+    end
+    if not inside then
+      table.insert(out, q)
+    end
+  end
+  return out
+end
+
 --- The prose atoms of a change, grouped into NODES and asked -- once for
 --- each node -- whether the emphasis narrowed it.
 ---
@@ -824,6 +929,33 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all)
     if sentence[m.node] then
       m.narrowed = narrowed[m.node] or false
       m.quiet = m.narrowed and unstressed(m.fine, m.regions) or {}
+      if m.narrowed then
+        -- ...and the emphasis is what is left once the atoms it did not
+        -- really narrow have gone back to the tint whole. Read off the
+        -- step-back rather than added to directly, so the two go on
+        -- being one partition of the atom: what is not the part to skim
+        -- IS the edit, and a row drawn either way round -- the dim with
+        -- the new words on it, or the tint with the quiet over that --
+        -- says the same thing.
+        m.quiet = narrowed_atoms(m.quiet, m.fine, m.regions, text_of(row))
+        m.fine = unstressed(m.quiet, m.regions)
+        -- Nothing left to skim on this row: every atom on it is the
+        -- edit, which is a new line, and a new line is a band. Drawn
+        -- the other way -- a dim row with the whole of it lit again on
+        -- top -- it looks the same and says it twice, and the two rows
+        -- of a docstring that are wholly new would not even say it the
+        -- same way as each other.
+        --
+        -- `#fine > 0` is what keeps the blank line in the middle of a
+        -- docstring out of this. difftastic reports one empty span for
+        -- such a row -- a statement about the row rather than silence
+        -- about it -- and nothing can be emphasised inside it, so it
+        -- steps back with the paragraph it is inside instead of
+        -- punching a hole through the pale block.
+        if #m.quiet == 0 and #m.fine > 0 then
+          m.narrowed, m.fine = false, {}
+        end
+      end
       table.insert(kept, row)
     else
       -- Nothing to compare, so nothing to say. Left out of the answer
@@ -887,28 +1019,6 @@ local function rewritten(ranges, text)
   return not kept_word or (hit / total) >= config.diff.line.major_ratio
 end
 
---- Whether `ranges` take anything nameable out of `text` -- an
---- identifier, a number, a word.
----
---- The mirror of `kept_word` above, and it is asked for the same reason.
---- Picking removals out of a line means dimming the rest of it, and that
---- is worth doing only when what is picked out is something the reader
---- can name. difftastic reports a call reflowed across three lines as
---- having lost a bracket and two commas: honest, and true of the
---- characters, but a four-line block dimmed to point at four punctuation
---- marks is quieter and harder to read than the same block shown as
---- removed, and says less. A word going is the case worth the dimming.
-local function names(ranges, text)
-  for _, r in ipairs(ranges or {}) do
-    for col = r.col_start, math.min(r.col_end, #text) - 1 do
-      if text:sub(col + 1, col + 1):match("[%w_]") then
-        return true
-      end
-    end
-  end
-  return false
-end
-
 --- Paints the whole of `row`, with `over` ranges drawn on top of it in
 --- `over_hl` -- the emphasis by default, or the dim where what is being
 --- said is that the rest of an atom is the part to skip.
@@ -922,6 +1032,17 @@ end
 --- Takes its namespace, because the old revision's window draws the same
 --- shape in its own (see `oldside.refresh`) and this is not a trick to
 --- have written down twice.
+---
+--- `over` is joined across whitespace first, the same way the tokens
+--- drawn straight onto a row are. It is the same statement in the same
+--- medium: these marks are backgrounds, and a bare space between two of
+--- them is a hole the reader can see. It matters most exactly here --
+--- what is drawn over a row is drawn over a row that already carries a
+--- colour, so the gap is not the buffer showing through but the OTHER
+--- half of the comparison. A markdown paragraph rewritten word by word
+--- came back with every word tinted and every space between them left
+--- at the dim, which reads as though the spaces were the part that did
+--- not change.
 local function paint_row(bufnr, ns, row, hl, over, text, count, over_hl)
   if #over == 0 or row + 1 >= count then
     vim.api.nvim_buf_set_extmark(bufnr, ns, row, 0, {
@@ -937,7 +1058,7 @@ local function paint_row(bufnr, ns, row, hl, over, text, count, over_hl)
       priority = 100,
     })
   end
-  for _, r in ipairs(over) do
+  for _, r in ipairs(joined(over, text)) do
     local s = math.min(r.col_start, #text)
     local e = math.min(r.col_end, #text)
     if e > s then

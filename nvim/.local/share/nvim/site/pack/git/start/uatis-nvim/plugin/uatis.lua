@@ -23,4 +23,10 @@ end, {
   desc = "uatis: what one commit did, in a tab of its own (default: ask which)",
 })
 
+vim.api.nvim_create_user_command("UatisColors", function()
+  require("uatis").colors()
+end, {
+  desc = "uatis: tune the diff colours against this colourscheme, live",
+})
+
 require("uatis").setup()

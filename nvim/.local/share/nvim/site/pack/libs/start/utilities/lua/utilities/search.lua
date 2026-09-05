@@ -9,6 +9,9 @@ local M = {}
 ---@field filetype boolean|nil If true, the user will be prompted for a filetype pattern before running the search
 
 ---Search text with grep.
+---This is a slight addition over the fzflua.live_grep.
+---If we are focused on the NvimTree pane, we limit the search to the directory
+---under the cursor.
 ---
 ---@param opts SearchOptions|nil Options
 function M.grep(opts)

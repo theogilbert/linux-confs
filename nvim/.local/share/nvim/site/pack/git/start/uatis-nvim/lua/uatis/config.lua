@@ -465,7 +465,7 @@ return {
     -- -- a saturated block behind a line of syntax-coloured text is a
     -- highlighter pen drawn over it, and the code is what the reader came
     -- for.
-    saturation = 0.4,
+    saturation = 0.5,
 
     -- ...and how far each sits from the background in lightness. Two
     -- numbers, because the two sides are read differently: the added tint
@@ -475,7 +475,7 @@ return {
     -- where being a shade lighter reads as "look here, this is gone"
     -- rather than as noise under something you are trying to read.
     add_lightness = 0.05,
-    delete_lightness = 0.11,
+    delete_lightness = 0.15,
 
     -- ...or the two removal backgrounds outright, as `0xrrggbb`, for a
     -- reader who would rather name them than tune the derivation.
@@ -541,7 +541,7 @@ return {
     -- one group here meant to be quiet, so a scheme whose `DiffAdd` is
     -- already grey-green keeps its own answer and only a vivid one is
     -- brought down.
-    dim_saturation = 0.12,
+    dim_saturation = 0.05,
 
     -- ...and how far it sits from the editor's background, in the
     -- direction the scheme already put its diff colours.
@@ -560,7 +560,7 @@ return {
     -- the context before it lands on the edit, which is the wrong way
     -- round and the reason the number is not simply "as light as it
     -- reads clearly".
-    dim_lightness = 0.18,
+    dim_lightness = 0.04,
 
     -- ...or that colour outright, as `0xrrggbb`, for a reader who would
     -- rather name it than tune the derivation -- the same escape the two
@@ -603,9 +603,9 @@ return {
     -- background the width of `+12` in a one-line bar reads as a smudge.
     -- Light enough to read on the bar, which is the opposite of what the
     -- tints want -- hence its own numbers.
-    signal_saturation = 0.6,
-    signal_lightness = 0.62,      -- on a dark bar
-    signal_lightness_dark = 0.34, -- ...and on a light one
+    signal_saturation = 0.75,
+    signal_lightness = 0.55,      -- on a dark bar
+    signal_lightness_dark = 0.55, -- ...and on a light one
   },
 
   -- Removed code is drawn as virtual text, which neither the syntax

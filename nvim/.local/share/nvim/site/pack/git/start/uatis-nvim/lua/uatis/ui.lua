@@ -39,6 +39,18 @@ function M.wrap(text, width)
   return #out > 0 and out or { "" }
 end
 
+--- The path a row is DRAWN under, which is not always the path it has.
+---
+--- A review scoped to a subtree draws every path relative to it: the
+--- prefix is the same on every row and saying it once, in the header, is
+--- what leaves the pane's width for the part that differs. The row keeps
+--- its real repo-relative `path` for opening the file and matching a
+--- buffer against it -- those are questions about the repository, and
+--- the repository has not been scoped.
+function M.shown(f)
+  return f.shown or f.path
+end
+
 --- Truncates a path from the left, which keeps the basename -- the part
 --- that identifies the file -- when a narrow pane cannot show all of it.
 function M.truncate_path(path, width)
@@ -49,6 +61,30 @@ function M.truncate_path(path, width)
     return "…"
   end
   return "…" .. path:sub(#path - width + 2)
+end
+
+--- The line that NAMES a commit -- sha, when, who -- joined with `·`
+--- and fitted to `width` by dropping fields off the end rather than by
+--- wrapping or truncating.
+---
+--- Wrapping it puts half an author's name on a row of its own, and in
+--- the walk it can put half a SHA there, which is not a sha anyone can
+--- read. Truncating it leaves `Fixture Auth…`, a name mangled rather
+--- than a field missing. Dropped, the reader loses the least useful
+--- field whole and everything still on the row still means what it
+--- says -- and the fields are already in order of how much they
+--- identify the commit.
+local function names(parts, width)
+  local kept = {}
+  for _, part in ipairs(parts) do
+    if part ~= nil and part ~= "" then
+      table.insert(kept, part)
+    end
+  end
+  while #kept > 1 and vim.fn.strdisplaywidth(table.concat(kept, " · ")) > width do
+    table.remove(kept)
+  end
+  return table.concat(kept, " · ")
 end
 
 local function stat_text(added, removed)
@@ -118,8 +154,37 @@ function M.build_list(pane, width)
 
   -- Identity. Always first, always present: losing track of what is being
   -- compared is the failure this header exists to prevent.
-  for _, l in ipairs(M.wrap(pane.target .. " ← " .. pane.src, inner)) do
-    b:add(pad(l), "UatisHeader")
+  --
+  -- A review that IS one commit says the sha and stops. `<sha>^ ←
+  -- <sha>` is the same sha twice with a caret on one of them, and what
+  -- the caret adds -- "against its parent" -- is the only thing
+  -- `:UatisShow` ever means. The two-sided form earns its keep where
+  -- there are two sides to lose track of: the working tree against a
+  -- branch, or one commit of a walk against the one before it.
+  --
+  -- On a standalone commit it carries the date and the author with it.
+  -- Sha, when, who -- that is one fact about a commit, and splitting it
+  -- over three rows makes the reader assemble it. The message goes
+  -- below, on its own, which is the thing they are actually here to
+  -- read.
+  if pane.standalone and pane.commit then
+    b:add(pad(names({ pane.src, pane.commit.date, pane.commit.author }, inner)),
+      "UatisMeta")
+  else
+    for _, l in ipairs(M.wrap(pane.target .. " ← " .. pane.src, inner)) do
+      b:add(pad(l), "UatisHeader")
+    end
+  end
+
+  -- ...and how much of the tree, where that is not all of it. Directly
+  -- under the identity because it is part of it: every count below is
+  -- counted over this and every path below is drawn relative to it, so a
+  -- list that did not say so would be a list quietly describing a
+  -- smaller branch than the one being reviewed.
+  if pane.scope and pane.scope ~= "" then
+    for _, l in ipairs(M.wrap(pane.scope .. "/", inner)) do
+      b:add(pad(l), "UatisHeader")
+    end
   end
 
   -- The commit on show, when the review is being read one at a time.
@@ -135,20 +200,18 @@ function M.build_list(pane, width)
     -- nor any need to name the sha again, since the line above it is
     -- `<sha>^ ← <sha>` and says which commit this is twice already.
     if not pane.standalone then
-      b:add(pad(("%d/%d · %s"):format(pane.commit_idx, #pane.commits, c.short)),
-        "UatisHeader")
+      b:add(pad(names({
+        ("%d/%d"):format(pane.commit_idx, #pane.commits), c.short, c.date, c.author,
+      }, inner)), "UatisMeta")
     end
-    local by = c.date
-    if c.author and c.author ~= "" then
-      by = by ~= "" and (by .. " · " .. c.author) or c.author
-    end
-    if by ~= "" then
-      for _, l in ipairs(M.wrap(by, inner)) do
-        b:add(pad(l), "UatisMeta")
-      end
-    end
+    -- The message, in the buffer's own colour and nothing else's.
+    -- Everything above it -- sha, count, date, author -- is how you
+    -- FIND a commit, and greying it is what leaves the message as the
+    -- one thing on the header that reads as text. It goes last of the
+    -- three, under what names it, because that is the order the reader
+    -- arrives at it in.
     for _, l in ipairs(M.wrap(c.subject or "", inner)) do
-      b:add(pad(l), "UatisMeta")
+      b:add(pad(l))
     end
   end
 
@@ -173,7 +236,7 @@ function M.build_list(pane, width)
   -- already knows all of its own ancestors.
   local dir_stat = {}
   for _, f in ipairs(pane.files) do
-    for _, d in ipairs(M.dirs_of(f.path)) do
+    for _, d in ipairs(M.dirs_of(M.shown(f))) do
       local t = dir_stat[d] or { added = 0, removed = 0, files = 0 }
       t.added = t.added + (f.added or 0)
       t.removed = t.removed + (f.removed or 0)
@@ -272,11 +335,12 @@ function M.tree_rows(files, collapsed)
   -- rebuilding the prefix set for every file.
   local hidden = nil
   for i, f in ipairs(files) do
-    if hidden and f.path:sub(1, #hidden + 1) ~= hidden .. "/" then
+    local path = M.shown(f)
+    if hidden and path:sub(1, #hidden + 1) ~= hidden .. "/" then
       hidden = nil
     end
     if not hidden then
-      local parts = vim.split(f.path, "/", { plain = true })
+      local parts = vim.split(path, "/", { plain = true })
       local name = table.remove(parts)
       for d = 1, #parts do
         if prev[d] ~= parts[d] then

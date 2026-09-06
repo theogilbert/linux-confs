@@ -29,13 +29,6 @@ M.ns = vim.api.nvim_create_namespace("uatis_overlay")
 --- this plugin is for: the whole point is reading the branch as code.
 --- Taking the background alone tints the line and leaves syntax intact.
 ---
---- UatisAddText is the same colour again, further from the background:
---- the part of a banded line that is the actual edit, standing out
---- inside the tint rather than beside it. Derived from `DiffAdd` rather
---- than `DiffText` so the two are one hue at two strengths -- `DiffText`
---- is a different colour in most schemes, and pairs its background with a
---- black foreground the buffer's syntax colours are not going to match.
----
 --- UatisAddDim is the pair the other way up, for a changed prose atom
 --- whose words are not all the edit: there the new words keep the plain
 --- tint and the sentence around them steps back towards the background,
@@ -185,7 +178,6 @@ function M.setup_highlights()
   local del_l = config.highlight.delete_lightness
 
   tint("UatisAdd", "DiffAdd", add_l)
-  tint("UatisChange", "DiffChange", add_l)
   -- ...including the old revision opened in a window of its own, where
   -- the band marks which lines this branch removed. Background only, and
   -- no strikethrough: everything in that buffer is the old side, so
@@ -193,23 +185,6 @@ function M.setup_highlights()
   -- to read -- and reading it is what that window is for.
   -- ...whose colour is worked out below, since some schemes leave
   -- `DiffDelete` without a background for it to come from.
-
-  -- The emphasis: which part of a banded line is the actual edit, where
-  -- the backend only knows lines and the band on its own says no more
-  -- than "this line changed". The same hue as the tint it sits in,
-  -- pushed further from the background, so the pair reads as one colour
-  -- at two strengths.
-  --
-  -- It was an underline, because a character range cannot override the
-  -- background of a line carrying `line_hl_group` -- still true, verified
-  -- again at every priority. The way round it is to draw that band as a
-  -- multiline range with `hl_eol`, which reaches the window edge the same
-  -- way and DOES compose with a range on top of it. See `paint_row`.
-  local add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
-  vim.api.nvim_set_hl(0, "UatisAddText", add.bg
-    and { bg = deepen(add.bg, config.highlight.emphasis_saturation,
-      config.highlight.emphasis_lightness) }
-    or { link = "DiffText" })
 
   -- ...and the same relationship read the other way, for a changed prose
   -- atom. difftastic calls a reworded docstring changed word by word,
@@ -239,6 +214,7 @@ function M.setup_highlights()
   -- meant to be quiet. A scheme whose `DiffAdd` is already grey-green
   -- keeps its own answer; one whose green is vivid is brought down to
   -- it.
+  local add = vim.api.nvim_get_hl(0, { name = "DiffAdd", link = false })
   local add_dim = config.highlight.add_dim_bg
     or (add.bg and deepen(add.bg, 0, config.highlight.dim_lightness,
       config.highlight.dim_saturation))
@@ -286,7 +262,7 @@ function M.setup_highlights()
   -- is not a step back invented here -- it is the colour the scheme
   -- chose for a removed line, and `deepen` above is what pushes it
   -- FURTHER for the part that is the actual removal. The pair is the
-  -- same shape as `UatisAdd` and `UatisAddText`: one hue, the tint and
+  -- same shape as `UatisAdd` and the dim above it: one hue, the tint and
   -- then more of it, rather than the tint and a retreat from it.
   --
   -- And it is already on the row. `UatisSign` links `DiffDelete`, so the
@@ -765,7 +741,38 @@ end
 --- closing `"""` of a re-worded docstring is a row of its own, and a
 --- rule without that clause lights up the one row of the node that
 --- gained nothing.
-local function narrowed_atoms(quiet, fine, regions, text)
+---
+--- `lost` is what makes the ratio unnecessary in the case it gets
+--- wrong. The ratio measures the wrong thing -- how much of the NEW
+--- atom is new -- and what the step-back actually claims is about the
+--- OLD one: that what is being dimmed is the line the reader already
+--- knows. Where NOTHING was removed, that claim cannot be false. The
+--- whole old atom is on the row, in one piece, and every character
+--- being dimmed is genuinely it -- there is no coincidental remainder
+--- to be misled by, because nothing went missing for the matcher to
+--- find debris in place of.
+---
+--- `"diagram"` becoming `"structural diagram"` is the case: a pure
+--- insertion, eleven of twenty characters new, so the ratio called it a
+--- rewrite and lit `diagram` -- a word that did not change -- while the
+--- old atom was sitting there whole and unmissable. `false` means
+--- nothing was removed; `nil` means the caller does not know, and the
+--- ratio decides as before.
+---
+--- `about.collapsed` is the other way out, and it overrules the ratio
+--- rather than skipping it. The step-back is a comparison between a row
+--- and the row it USED to be, and a hunk that folds several old rows
+--- into fewer new ones has no such pairing to offer: the new row is not
+--- a version of any one of them, it is what replaced all of them.
+---
+--- The emphasis there is computed over the whole block, so the pale
+--- text can be scavenged from a line that is not the one being drawn.
+--- Six lines of `parts.append("title: " + plan.title)` becoming one
+--- f-string came back with `plan.title` and `plan.author` stepped back
+--- inside it -- lifted out of two different old rows, neither of them
+--- the row this one answers to. The structure changed completely;
+--- there is no old half of this line, and the whole of it is new.
+local function narrowed_atoms(quiet, fine, regions, text, about)
   --- Whether the emphasis leaves enough of `sp` for the step-back to be
   --- a comparison. Non-whitespace only, on both sides of the sum: a
   --- sentence is mostly spaces, and they belong to no atom's reckoning.
@@ -785,7 +792,23 @@ local function narrowed_atoms(quiet, fine, regions, text)
         end
       end
     end
-    return hit == 0 or total == 0 or (hit / total) < config.diff.line.emphasis_ratio
+    -- Nothing new in this atom at all, so there is no half for the rest
+    -- to be the other of, whatever shape the hunk has.
+    if hit == 0 or total == 0 then
+      return true
+    end
+    -- Several old rows became fewer new ones: a replacement, not a
+    -- rewording, and no row here is a version of one row there.
+    if about and about.collapsed then
+      return false
+    end
+    -- Nothing was removed from a row that HAS an old half: the old atom
+    -- is on this row whole, so everything about to be dimmed is
+    -- genuinely it and the ratio has nothing to protect against.
+    if about and about.lost == false then
+      return true
+    end
+    return (hit / total) < config.diff.line.emphasis_ratio
   end
 
   local wholly = {}
@@ -840,7 +863,7 @@ end
 ---   quiet     the complement: what to step back
 ---   full      the atoms ARE the row, indentation aside
 ---   narrowed  the node this row belongs to had an emphasis somewhere
-function M.prose_marks(spans_by_row, text_of, fine_of, all)
+function M.prose_marks(spans_by_row, text_of, fine_of, all, about_of)
   local rows, marks = {}, {}
   for row in pairs(spans_by_row) do
     table.insert(rows, row)
@@ -893,9 +916,18 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all)
         node = node + 1
       end
       local fine = fine_of(row)
+      local went = nil
+      if about_of ~= nil then
+        went = about_of(row)
+      end
       marks[row] = {
         regions = regions,
         fine = prose(fine, regions),
+        -- What the hunk this row is in says about it: whether
+        -- anything was taken OUT of the row, and whether the hunk
+        -- folded several old rows into fewer new ones. See
+        -- `narrowed_atoms`.
+        about = went,
         -- Whether the atom IS the row, quotes and indentation aside.
         -- Where it is, the row is what steps back; where it shares the
         -- line with code, only its own columns do.
@@ -937,7 +969,7 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all)
         -- IS the edit, and a row drawn either way round -- the dim with
         -- the new words on it, or the tint with the quiet over that --
         -- says the same thing.
-        m.quiet = narrowed_atoms(m.quiet, m.fine, m.regions, text_of(row))
+        m.quiet = narrowed_atoms(m.quiet, m.fine, m.regions, text_of(row), m.about)
         m.fine = unstressed(m.quiet, m.regions)
         -- Nothing left to skim on this row: every atom on it is the
         -- edit, which is a new line, and a new line is a band. Drawn
@@ -1064,7 +1096,7 @@ local function paint_row(bufnr, ns, row, hl, over, text, count, over_hl)
     if e > s then
       vim.api.nvim_buf_set_extmark(bufnr, ns, row, s, {
         end_col = e,
-        hl_group = over_hl or "UatisAddText",
+        hl_group = over_hl,
         priority = 110,
       })
     end
@@ -1132,11 +1164,18 @@ local function collapsed_span(result, hunk, old_lines, line_text)
   if not first or not after then
     return nil
   end
-  -- The row difftastic aligned with `start_b` belongs to the construct
-  -- only where it is not simply still there: an ordinary deletion sits
-  -- under a row that is its own row on both sides, byte for byte.
+  -- ...but only where something was folded INTO that row. A fold
+  -- rewrites the row it collapses onto, so the row differs from the old
+  -- one it pairs with. Byte for byte the same, and nothing was
+  -- collapsed anywhere: the rows simply went, they went AFTER this one,
+  -- and the before-image belongs below it like any other deletion.
+  --
+  -- Read as a fold, a file whose whole body was deleted put every row
+  -- of that body above the one line it had left -- above the FIRST line
+  -- of the buffer, where there is nothing for the reader to scroll to
+  -- and the removal may as well not have been drawn.
   if line_text(hunk.start_b - 1) == old_lines[first] then
-    first = first + 1
+    return nil
   end
   local last = math.min(after - 1, #old_lines)
   local from, to = hunk.start_a, hunk.start_a + hunk.count_a - 1
@@ -1153,6 +1192,51 @@ end
 --- and -- since it is here that the two blocks are compared -- which
 --- words each removed line actually lost, for the old revision's own
 --- window to draw.
+--- Takes the backend's marks off the rows of a changed node that did not
+--- themselves change.
+---
+--- difftastic reports ATOMS, and a docstring, a regex literal or any
+--- other multi-line string is ONE atom however many rows it spans. Fix a
+--- typo in the middle of one and every row of it comes back tinted, on
+--- both sides -- so a seven-line docstring is drawn as seven pale rows
+--- with three words lit in the middle, and the six rows that did not
+--- move are stepped back for no reason the reader can act on. The node
+--- is what changed; the line is what the reader has to find.
+---
+--- A row whose two sides are byte-identical refutes the claim on its
+--- own, and needs to know nothing about what the atom was. Only the
+--- MARKS go: the alignment stands, so hunks, before-images and `]c` all
+--- go on reading the node as the one thing it is, and the row simply
+--- draws as what it is -- unchanged code, in its own colours.
+---
+--- The new side only. The old side's spans are not just paint: they are
+--- what says a row was removed AT ALL -- `del_marked` picks the rows a
+--- before-image draws out of them, and a file with none anywhere is a
+--- file nothing went out of. Taking them off an unchanged row would say
+--- the row is still there, which is true, by claiming the deletion below
+--- it never happened, which is not.
+local function quiet_unchanged(result, old_lines, text_of)
+  if not result.pairs or not result.spans then
+    return result
+  end
+  local dead = {}
+  for new_row, old_row in pairs(result.pairs) do
+    if old_lines[old_row] ~= nil and old_lines[old_row] == text_of(new_row) then
+      dead[new_row] = true
+    end
+  end
+  if not next(dead) then
+    return result
+  end
+  local kept = {}
+  for _, span in ipairs(result.spans) do
+    if span.kind == "delete" or not dead[span.line] then
+      table.insert(kept, span)
+    end
+  end
+  return vim.tbl_extend("force", {}, result, { spans = kept })
+end
+
 function M.render(bufnr, win, result, old_lines, opts)
   opts = opts or {}
   -- Side-by-side puts the old revision in a window of its own, so drawing
@@ -1166,10 +1250,16 @@ function M.render(bufnr, win, result, old_lines, opts)
   end
 
   local line_count = vim.api.nvim_buf_line_count(bufnr)
+  result = quiet_unchanged(result, old_lines, function(row)
+    return vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
+  end)
   local offset = text_offset(win)
   local marker = config.marker.delete
   local pad = string.rep(" ", math.max(offset - vim.fn.strdisplaywidth(marker), 0))
   local anchors = {}
+  -- anchor row -> the last row of the hunk it stands for. See the pass
+  -- at the end of this function.
+  local spanned = {}
 
   -- Removed lines are drawn as virtual text, and nothing highlights
   -- virtual text: both of Neovim's highlighters run over real buffer
@@ -1282,10 +1372,8 @@ function M.render(bufnr, win, result, old_lines, opts)
     vim.list_extend(before[key].virt, virt)
   end
 
-  -- Spans on the new side, grouped by the line they land on, with
-  -- whether they leave enough of that line unmarked to be worth marking
-  -- at all.
-  local by_row, rewrote = {}, {}
+  -- Spans on the new side, grouped by the line they land on.
+  local by_row = {}
   for _, span in ipairs(result.spans or {}) do
     if span.kind == "add" then
       local row = span.line - 1
@@ -1294,10 +1382,6 @@ function M.render(bufnr, win, result, old_lines, opts)
         table.insert(by_row[row], span)
       end
     end
-  end
-  for row, spans in pairs(by_row) do
-    local text = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
-    rewrote[row] = rewritten(spans, text)
   end
 
   -- Highlight at the granularity the backend actually knows.
@@ -1316,7 +1400,7 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- there the band and the tokens say the same thing, so the band wins
   -- as the cheaper, calmer drawing. So is a line with no line of its own
   -- to be compared against -- see `paired` below.
-  local line_marked, token_marked, unpaired = {}, {}, {}
+  local line_marked, token_marked = {}, {}
 
   -- Rows the new-side pass drew nothing on, and rows a before-image was
   -- drawn above. Where a row is in both, it is the line that replaced
@@ -1330,6 +1414,9 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- a docstring is a row difftastic calls unchanged). See the pass below
   -- `hunks`, and `prose_marks`.
   local prose_spans, prose_fine, prose_band = {}, {}, {}
+  -- row -> what the hunk it belongs to says about it, as
+  -- { lost, collapsed }. nil where no comparison was made.
+  local prose_about = {}
 
   -- ...and the same for the OLD side, which is a window of its own in
   -- side-by-side and needs the same statement made about it: which words
@@ -1618,15 +1705,21 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- whole of `20_000` and `30_000` -- the two halves of one
             -- comparison disagreeing about which characters are the edit.
             --
-            -- Narrowed only where difftastic parsed the file. In text
-            -- mode every atom is prose -- a changed sentence is meant to
-            -- be tinted whole with its new words picked out of it -- so
-            -- there a span keeps its width, and only a span with nothing
-            -- inserted in it at all is dropped.
+            -- Not at all where difftastic never parsed the file. In
+            -- text mode a changed sentence is meant to be tinted whole
+            -- with its new words picked out of it -- and difftastic
+            -- reports that sentence as one span PER WORD, so narrowing
+            -- to the spans something was inserted into keeps the new
+            -- word and throws the sentence away. What arrived at the
+            -- step-back was then a one-word atom with nothing around it
+            -- to step back from, and a reworded line of a README came
+            -- out as one lit word on a bare row while the same edit in a
+            -- docstring -- one span, because that file was parsed --
+            -- came out as the pale sentence it should be. The whole row
+            -- goes through, and `prose_marks` narrows it as a sentence.
             local lost = inline and inline.dels[i + 1]
-            if lost and #lost > 0 then
-              spans = inserted_within(spans, inline.adds[i + 1] or {},
-                not result.prose)
+            if lost and #lost > 0 and not result.prose then
+              spans = inserted_within(spans, inline.adds[i + 1] or {}, true)
             end
             -- A line every token of which the backend called changed is
             -- a line that is new, whether or not it was aligned with
@@ -1656,6 +1749,32 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- story, which is what it is.
             prose_spans[row] = spans
             prose_fine[row] = emphasis and (emphasis[i + 1] or {}) or nil
+            -- ...and whether this row lost anything at all, which is
+            -- what says the step-back cannot be dimming a coincidence.
+            --
+            -- Off `pair`, which is the comparison the emphasis above it
+            -- came from: `inline` is only one of the two ways that is
+            -- produced, and a short literal comes through `block_diff`
+            -- instead -- which is exactly the case this is for.
+            --
+            -- Written with an `if`, since `a and false or nil` is `nil`
+            -- in Lua and `false` is the whole of what this has to say.
+            --
+            -- Only where this row HAS an old half. A row with no
+            -- partner lost nothing because there was never anything for
+            -- it to lose, and reading that as "the old atom is here
+            -- whole" would step back part of a line that arrived
+            -- carrying no sentence at all.
+            -- `collapsed` is a fact about the hunk and is recorded
+            -- whatever the pairing says; `lost` needs a partner for the
+            -- row, since a row with none lost nothing only because
+            -- there was never anything for it to lose.
+            local about = { collapsed = hunk.count_a > hunk.count_b }
+            if pair and pair.dels and result.pairs and result.pairs[row + 1] then
+              local went = pair.dels[i + 1]
+              about.lost = went ~= nil and #went > 0
+            end
+            prose_about[row] = about
           elseif not result.precise and inline then
             spans = inline.adds[i + 1] or {}
             -- Inserted text is inserted text whichever side of a
@@ -1717,7 +1836,6 @@ function M.render(bufnr, win, result, old_lines, opts)
               priority = 100,
             })
             line_marked[row] = true
-            unpaired[row] = not paired_row(row)
           end
 
         end
@@ -1772,7 +1890,14 @@ function M.render(bufnr, win, result, old_lines, opts)
         end
       end
 
-      table.insert(anchors, math.min(hunk.start_b, line_count))
+      local at = math.min(hunk.start_b, line_count)
+      table.insert(anchors, at)
+      -- ...and the rows this hunk covers, so the stop can be pulled
+      -- forward to the first of them the reader can actually see.
+      -- Recorded rather than resolved here: the prose pass draws below
+      -- this loop, and until it has run there is no telling which rows
+      -- end up carrying anything.
+      spanned[at] = math.min(hunk.start_b + math.max(hunk.count_b, 1) - 1, line_count)
     end
 
     -- Nothing was removed from any of these lines, so there is no old
@@ -2124,7 +2249,13 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- right only where there is no syntax to put underneath it.
             local gone = runs and "UatisDeleteBg" or "UatisDelete"
             local at = 0
-            for _, d in ipairs(dels or {}) do
+            -- Joined across whitespace, the same way the marks drawn on a
+            -- real row are. The gap between two words that both went is
+            -- not a word that stayed: `total += self.measure(box)` losing
+            -- its `total` and its `+=` came back with the space between
+            -- them at the step-back, so the row read as though a space
+            -- had survived a deletion on either side of it. See `joined`.
+            for _, d in ipairs(joined(vim.deepcopy(dels or {}), text)) do
               local s = math.min(d.col_start, #text)
               local e = math.min(d.col_end, #text)
               if s > at then
@@ -2199,7 +2330,9 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- whole node is known -- which is here, and not in the loop above.
   local marks, order = M.prose_marks(prose_spans, line_text, function(row)
     return prose_fine[row]
-  end, result.prose)
+  end, result.prose, function(row)
+    return prose_about[row]
+  end)
 
   -- A banded row with no prose on it: nothing here to narrow, and the
   -- band is the whole of what it has to say.
@@ -2288,25 +2421,109 @@ function M.render(bufnr, win, result, old_lines, opts)
     })
   end
 
-  -- Where the line still carries a full-width band -- the line backend,
-  -- whose spans are one coarse range per changed line rather than real
-  -- tokens -- the spans are drawn on top of it in the stronger colour,
-  -- marking which part of the line differs without claiming the precision
-  -- the backend does not have. Skipped where the tokens already ARE the
-  -- highlight, and where they cover the whole line and would only restate
-  -- the band.
+  -- Code that only moved sideways.
   --
-  -- Skipped too on a line banded for want of a line to compare it
-  -- against: emphasising the tokens there says the same untrue thing the
-  -- tint would have, only quieter.
-  for row, spans in pairs(by_row) do
-    if line_marked[row] and not unpaired[row]
-      and not token_marked[row] and not rewrote[row] then
-      local text = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
-      -- Re-drawn rather than added to: the band this row already carries
-      -- is a `line_hl_group`, which no range can be seen on top of.
-      vim.api.nvim_buf_clear_namespace(bufnr, M.ns, row, row + 1)
-      paint_row(bufnr, M.ns, row, "UatisAdd", spans, text, line_count)
+  -- A block wrapped in a guard is reindented, and difftastic is right to
+  -- report nothing for those rows: not a token of them changed. But the
+  -- INDENTATION did, and where the language counts it -- Python most of
+  -- all -- that is the whole of what the wrapping did to those lines.
+  -- Drawn as though nothing had happened, the reader sees `if x:` appear
+  -- above a block that is silently one level deeper and has to check the
+  -- column of every line under it by eye.
+  --
+  -- So the added whitespace is marked, and only that: the columns
+  -- between where the line used to start and where it starts now. The
+  -- code itself keeps its own colours and no claim is made about it,
+  -- which is the difference between saying "this line moved right" and
+  -- saying "this line is new".
+  --
+  -- Only where the rest of the line is byte-identical, so this can never
+  -- be a second opinion about a line the backend already spoke for; and
+  -- only where the run has a hunk directly ABOVE it, which is what a
+  -- wrapper is. `if`, `for`, `with`, `try`, a brace -- the thing you put
+  -- around a block opens above it and the block moves right underneath.
+  --
+  -- A file reindented THROUGHOUT reports no hunks at all: difftastic
+  -- calls that cosmetic and nothing here is drawn. But a file reindented
+  -- throughout AND edited in one place does have a hunk, and a run that
+  -- merely ends next to it is not a block anything was put around --
+  -- twelve reformatted lines lit up because line thirteen was edited,
+  -- which buries the edit under the reformat. Above, and only above.
+  if result.precise and result.pairs and config.diff.indent_marks then
+    local touching = {}
+    for _, h in ipairs(result.hunks or {}) do
+      for row = h.start_b, h.start_b + math.max(h.count_b, 1) - 1 do
+        touching[row] = true
+      end
+    end
+
+    --- The columns a line gained at its front, or nil where it gained
+    --- none or where anything else about it moved.
+    local function gained(was, now)
+      local before = was:match("^[ \t]*")
+      local after = now:match("^[ \t]*")
+      if #after <= #before or was:sub(#before + 1) ~= now:sub(#after + 1) then
+        return nil
+      end
+      return #before, #after
+    end
+
+    local shifted = {}
+    for new_row, old_row in pairs(result.pairs) do
+      local was = old_lines[old_row]
+      if was ~= nil and not touching[new_row]
+        and (not by_row[new_row - 1] or #by_row[new_row - 1] == 0) then
+        local from, to = gained(was, line_text(new_row - 1))
+        if from then
+          shifted[new_row] = { from = from, to = to }
+        end
+      end
+    end
+
+    for new_row, cols in pairs(shifted) do
+      -- The run this row is in, and whether either end of it is against
+      -- a hunk. Walked per row rather than grouped up front: the runs
+      -- are short and there are at most a handful of them.
+      local first = new_row
+      while shifted[first - 1] do
+        first = first - 1
+      end
+      if touching[first - 1] then
+        vim.api.nvim_buf_set_extmark(bufnr, M.ns, new_row - 1, cols.from, {
+          end_col = cols.to,
+          hl_group = "UatisAdd",
+          priority = 100,
+        })
+      end
+    end
+  end
+
+  -- `]c` stops where there is something to look at.
+  --
+  -- difftastic reports a multi-line atom -- a docstring, a regex
+  -- literal, any long string -- as ONE changed node, so the hunk covers
+  -- every row of it while the marks, which know better, sit on the rows
+  -- that actually differ. Anchored at the hunk, `]c` put the cursor on
+  -- the opening `"""` of a seven-row docstring, with nothing on that
+  -- row and the edit three rows below it -- which is the reader being
+  -- told to go and find the change themselves, from a key whose whole
+  -- job is to take them to it.
+  --
+  -- So the stop moves to the first row of the hunk carrying a mark. A
+  -- hunk with nothing drawn on it anywhere keeps its own row: a pure
+  -- deletion is anchored where the before-image hangs, and that row is
+  -- the answer even though the change is not ON it.
+  for i, at in ipairs(anchors) do
+    local last = spanned[at]
+    if last then
+      for row = at, last do
+        local found = vim.api.nvim_buf_get_extmarks(bufnr, M.ns,
+          { row - 1, 0 }, { row - 1, -1 }, { limit = 1 })
+        if #found > 0 then
+          anchors[i] = row
+          break
+        end
+      end
     end
   end
 

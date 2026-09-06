@@ -251,6 +251,17 @@ function M.commit(root, rev, cb)
     end)
 end
 
+--- One commit's whole message, subject and body: cb(text).
+---
+--- Not fetched with the commit itself. A walk reads a thousand of them
+--- and a body is the one field nothing draws until it is asked for --
+--- the header has room for a subject and no more.
+function M.commit_message(root, sha, cb)
+  run(root, { "log", "-1", "--no-walk", "--format=%B", sha }, function(ok, out)
+    cb(ok and vim.trim(out or "") or "")
+  end)
+end
+
 --- Files git has never been told about: `ls-files --others
 --- --exclude-standard`, so what `.gitignore` covers is not in it.
 --- cb({ path, ... }), repo-relative.
@@ -269,6 +280,74 @@ function M.untracked(root, cb)
       table.insert(paths, path)
     end
     cb(paths)
+  end)
+end
+
+--- Every directory git tracks something under, in path order:
+--- cb({ "lua", "lua/uatis", ... }).
+---
+--- Derived from `ls-files` rather than asked for outright, because git
+--- has no command that lists directories: `ls-tree -d -r` comes closest
+--- and answers about a COMMIT, where a directory added and not yet
+--- committed is exactly one someone might want to scope a review to.
+function M.dirs(root, cb)
+  run(root, { "ls-files", "-z" }, function(ok, out)
+    if not ok then
+      cb({})
+      return
+    end
+    local seen, dirs = {}, {}
+    for path in out:gmatch("([^%z]+)") do
+      local at = path:find("/", 1, true)
+      while at do
+        local d = path:sub(1, at - 1)
+        if not seen[d] then
+          seen[d] = true
+          table.insert(dirs, d)
+        end
+        at = path:find("/", at + 1, true)
+      end
+    end
+    table.sort(dirs)
+    cb(dirs)
+  end)
+end
+
+--- Where HEAD is, and whether the working tree has moved off it:
+--- cb({ branch = "main"|nil, dirty = true|false }).
+---
+--- One call for both, which is what `--branch` is for: they are asked
+--- together and answering them apart is two subprocesses per re-read of
+--- the list.
+---
+--- `branch` is nil on a detached HEAD -- git says `## HEAD (no branch)`,
+--- which matches neither pattern here -- and on a repository with no
+--- commits yet, where there is a branch name but nothing on it.
+---
+--- Dirty means anything at all: a modification, a staged change, a file
+--- git has never been told about. The question is whether the working
+--- tree IS the branch, and an untracked file is one of the ways it is
+--- not.
+function M.head_state(root, cb)
+  run(root, { "status", "--porcelain=v1", "--branch" }, function(ok, out)
+    if not ok then
+      cb({ branch = nil, dirty = true })
+      return
+    end
+    local lines = vim.split(out, "\n", { plain = true })
+    local head = lines[1] or ""
+    -- `## main...origin/main [ahead 1]` where there is an upstream and
+    -- `## main` where there is not. Matched up to the `...` rather than
+    -- by a character class, since a branch may be called `v1.2.x`.
+    local branch = head:match("^## (.-)%.%.%.") or head:match("^## (%S+)%s*$")
+    local dirty = false
+    for i = 2, #lines do
+      if lines[i] ~= "" then
+        dirty = true
+        break
+      end
+    end
+    cb({ branch = branch, dirty = dirty })
   end)
 end
 

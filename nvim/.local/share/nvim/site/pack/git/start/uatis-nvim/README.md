@@ -13,6 +13,10 @@ was and not as a rewrite.
 Neovim 0.12+. `git` on your `PATH`. `difft` too, for structural diffing —
 without it you get Neovim's line diff and the header says so.
 
+Full documentation is in the help: `:help uatis`. What this adds on top of
+difftastic — every rule about how a change is drawn, and why — is in
+[rules.md](rules.md).
+
 ## Start here
 
 Nothing to configure: `<leader>gu` and `<leader>gB` are mapped when the

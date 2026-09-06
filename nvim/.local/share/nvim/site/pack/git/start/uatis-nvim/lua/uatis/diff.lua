@@ -972,8 +972,36 @@ local function from_json(data, old_lines, new_lines)
   -- kept apart, each is judged on its own and the expression looks like
   -- it was removed and replaced. Together they are one edit, which is
   -- what they are.
+  --
+  -- Not, though, when that row exists on BOTH sides and one of the rows
+  -- around it does not. A row with a partner is one the alignment says
+  -- went nowhere, and swallowing it puts it inside the hunk's OLD range,
+  -- where the before-image draws it in red -- directly above the
+  -- identical green row it is still sitting on. Between a deletion and
+  -- an insertion that is the whole hunk: one line removed, one line
+  -- added, and an untouched line between them redrawn as though it were
+  -- both. It is the removed-and-added-back-at-once reading `realign`
+  -- exists to undo, put back a layer further down, and it is what a
+  -- regex literal that lost one line and gained another below it came
+  -- out as. Between two rows that DO have both sides -- the `(`/`)`
+  -- case -- the hunk covers the row on both sides alike and there is
+  -- nothing to draw twice.
+  --
+  -- A one-sided same row is free either way: a blank line in the middle
+  -- of an added block has no old row to be drawn as, and belongs to the
+  -- block.
   local function same_at(k)
     return rows[k] ~= nil and rows[k].kind == "same"
+  end
+
+  --- A row the alignment gave a partner on each side.
+  local function two_sided(k)
+    return rows[k] ~= nil and rows[k].lhs ~= nil and rows[k].rhs ~= nil
+  end
+
+  --- Whether a lone unchanged row is one the run can take with it.
+  local function absorbs(k)
+    return not two_sided(k) or (two_sided(k - 1) and two_sided(k + 1))
   end
 
   -- difftastic's own line pairing, kept as it stated it rather than left
@@ -1014,7 +1042,7 @@ local function from_json(data, old_lines, new_lines)
     else
       local j, a_first, a_last, b_first, b_last = i, nil, nil, nil, nil
       while j <= #rows and (rows[j].kind ~= "same" or (same_at(j) and not same_at(j + 1)
-        and j + 1 <= #rows)) do
+        and j + 1 <= #rows and absorbs(j))) do
         if rows[j].lhs then
           a_first = a_first or rows[j].lhs
           a_last = rows[j].lhs

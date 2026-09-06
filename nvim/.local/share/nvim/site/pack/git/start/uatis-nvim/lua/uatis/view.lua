@@ -162,6 +162,25 @@ local function render(view)
         end
       end
       view.del_spans = result.precise and dels or nil
+      -- ...minus the rows of a changed node that did not themselves
+      -- change. The new side stops marking those (`quiet_unchanged` in
+      -- `overlay.lua`), and this window is the same edit seen in the
+      -- other layout: a docstring with one line reworded cannot come
+      -- back solid red here beside a new side that marks the one row.
+      --
+      -- Dropped HERE rather than out of `result.spans`, because over
+      -- there they are not paint: they are what says a row was removed
+      -- at all, and the before-image picks the rows it draws out of
+      -- them.
+      if view.del_spans then
+        local was = vim.split(old_text, "\n", { plain = true })
+        for new_row, old_row in pairs(result.pairs or {}) do
+          local now = vim.api.nvim_buf_get_lines(view.bufnr, new_row - 1, new_row, false)[1]
+          if now ~= nil and was[old_row] == now then
+            view.del_spans[old_row] = nil
+          end
+        end
+      end
       -- ...and the same question asked of the old side, which the old
       -- window draws: `render` is where the two blocks are compared, so
       -- it is where the answer is.

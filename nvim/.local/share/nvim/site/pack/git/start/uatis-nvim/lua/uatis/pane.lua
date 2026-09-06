@@ -25,6 +25,10 @@ local M = {}
 
 local panes = {} -- tabpage -> pane
 
+-- For the marks this module draws itself, which is only the float
+-- behind `peek_commit`: everything in the list is drawn by `filelist`.
+local ns = vim.api.nvim_create_namespace("uatis_pane")
+
 -- Defined further down, among the other ways a review takes a buffer in.
 -- Re-reading the list is one of them, and that is written above them.
 local follow_visible
@@ -62,7 +66,34 @@ end
 ---
 --- Sorted by path, which is the order git gives and the order the tree
 --- drawing relies on.
+--- Whether `path` is inside the review's subtree. "" is the whole
+--- repository, and everything is inside that.
+local function under(scope, path)
+  return scope == "" or path == scope or path:sub(1, #scope + 1) == scope .. "/"
+end
+
+--- A row as the list draws it: the same row, plus the path with the
+--- subtree taken off the front.
+---
+--- Returns nil for a file the scope leaves out. A rename counts as
+--- inside when EITHER end of it is: a file moved into the subtree is
+--- something the branch did to the subtree, and so is one moved out of
+--- it. Drawn under whichever end is in scope, since the other one has no
+--- place in this tree to be drawn at.
+local function scoped_row(scope, row)
+  local path = row.path
+  if not under(scope, path) then
+    if not (row.old_path and under(scope, row.old_path)) then
+      return nil
+    end
+    path = row.old_path
+  end
+  row.shown = scope == "" and row.path or path:sub(#scope + 2)
+  return row
+end
+
 local function compose(pane)
+  local scope = pane.scope or ""
   local files, by_path = {}, {}
   -- A commit on show is finished. What it changed cannot depend on what
   -- is unsaved now, or on a file git has never been told about, so the
@@ -70,7 +101,10 @@ local function compose(pane)
   -- list is exactly the commit's own diff.
   if pane.commit then
     for _, f in ipairs(pane.tracked or {}) do
-      table.insert(files, vim.tbl_extend("force", {}, f))
+      local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
+      if row then
+        table.insert(files, row)
+      end
     end
     table.sort(files, function(a, b) return a.path < b.path end)
     return files
@@ -78,9 +112,11 @@ local function compose(pane)
   for _, f in ipairs(pane.tracked or {}) do
     -- Copied, because this runs again on every keystroke that moves a
     -- count and must not edit what git said last time it was asked.
-    local row = vim.tbl_extend("force", {}, f)
-    table.insert(files, row)
-    by_path[row.path] = row
+    local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
+    if row then
+      table.insert(files, row)
+      by_path[row.path] = row
+    end
   end
 
   -- Files git has never been told about. Not in `git diff` at all --
@@ -90,9 +126,11 @@ local function compose(pane)
   -- everything git does not know about.
   for _, f in ipairs(pane.untracked or {}) do
     if not by_path[f.path] then
-      local row = vim.tbl_extend("force", {}, f)
-      table.insert(files, row)
-      by_path[row.path] = row
+      local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
+      if row then
+        table.insert(files, row)
+        by_path[row.path] = row
+      end
     end
   end
 
@@ -114,7 +152,7 @@ local function compose(pane)
       -- change is still in the buffer. `new_file` is the untracked case --
       -- a file git tracks and the branch added would be in the list
       -- already, because `git diff` counts commits as well as the tree.
-      row = {
+      row = scoped_row(scope, {
         path = view.relpath,
         old_path = view.old_path,
         status = view.new_file and "A" or "M",
@@ -122,9 +160,11 @@ local function compose(pane)
         added = view.added,
         removed = view.removed,
         hunks = {},
-      }
-      table.insert(files, row)
-      by_path[row.path] = row
+      })
+      if row then
+        table.insert(files, row)
+        by_path[row.path] = row
+      end
     end
   end
 
@@ -169,6 +209,42 @@ local function untracked_row(root, path)
   return row
 end
 
+--- Whether anything in this checkout is edited and not written.
+---
+--- `git status` reads the DISK, and the new side of this review is the
+--- live buffer. A file typed into and not saved is a change git cannot
+--- see, and the header must not answer as though the tree were the
+--- branch while one is open.
+local function unsaved(root)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].modified
+      and view_mod.relpath(root, vim.api.nvim_buf_get_name(buf)) then
+      return true
+    end
+  end
+  return false
+end
+
+--- What the header's right-hand side names: the new side of the
+--- comparison.
+---
+--- `working tree` is the honest name for it while there is anything in
+--- the tree that is not in the branch -- an unstaged edit, a staged one,
+--- a file git has never seen, a buffer not yet written. When there is
+--- none, the working tree simply IS the branch, and naming the branch
+--- says the one thing those eleven characters never could: `main ←
+--- working tree` reads the same on every branch you are ever on, and
+--- which branch you are on is most of what a review of it is about.
+---
+--- A detached HEAD has no name to give, so it stays the working tree.
+local function src_of(pane)
+  local head = pane.head
+  if not head or head.dirty or not head.branch or unsaved(pane.root) then
+    return "working tree"
+  end
+  return head.branch
+end
+
 --- Rebuilds the list from both, keeping the highlighted row on `keep_path`
 --- where that file is still in it.
 local function rebuild(pane, keep_path)
@@ -197,6 +273,11 @@ function M.recount(view)
   for _, pane in pairs(panes) do
     if pane.root == view.root and pane.rev == view.rev then
       local cur = pane.files[pane.file_idx]
+      -- No git call: what moved is whether a buffer is written, and
+      -- `pane.head` from the last re-read still answers for the disk.
+      if not pane.commit then
+        pane.src = src_of(pane)
+      end
       rebuild(pane, cur and cur.path or nil)
       if pane.list_buf then
         filelist.render(pane)
@@ -240,6 +321,9 @@ local function refresh(pane, keep_path)
         vim.log.levels.ERROR)
     end
     local function drawn()
+      if not pane.commit then
+        pane.src = src_of(pane)
+      end
       rebuild(pane, keep_path)
       if pane.list_buf then
         filelist.render(pane)
@@ -261,9 +345,31 @@ local function refresh(pane, keep_path)
     -- cannot answer: the files git has never been told about. Read
     -- after the diff rather than beside it so the list is drawn once,
     -- with both halves in it, instead of jumping as the second arrives.
+    --
+    -- ...and where HEAD is, which the header names when the tree has not
+    -- moved off it. Started beside the untracked read rather than after
+    -- it: they are two independent questions about the same checkout,
+    -- and chaining them would put a third subprocess in series on every
+    -- write. Whichever answers second draws.
+    local waiting = 2
+    local function ready()
+      waiting = waiting - 1
+      if waiting == 0 then
+        drawn()
+      end
+    end
+
+    git.head_state(pane.root, function(head)
+      if panes[pane.tab] ~= pane or pane.gen ~= gen then
+        return
+      end
+      pane.head = head
+      ready()
+    end)
+
     if pane.commit or config.pane.untracked_max_bytes <= 0 then
       pane.untracked = {}
-      drawn()
+      ready()
       return
     end
     git.untracked(pane.root, function(paths)
@@ -278,7 +384,7 @@ local function refresh(pane, keep_path)
         end
       end
       pane.untracked = rows
-      drawn()
+      ready()
     end)
   end)
 end
@@ -306,27 +412,234 @@ end
 --- pressed `C` is exactly the reader who needs to be told about them.
 --- `C` itself changes meaning rather than going away -- it is the way
 --- back out -- so it changes what it says instead.
-local function hint_for(pane)
-  local k = config.keys.pane
-  local parts = {
-    k.file_next .. "/" .. k.file_prev .. " file",
-    k.select .. " open",
-  }
-  if pane.standalone then
-    -- Nothing about commits at all. This review IS one -- `:UatisShow`
-    -- asked for that commit and nothing else -- so neither the toggle
-    -- nor the step keys have anywhere to go, and a hint naming keys
-    -- that answer with "there is only this one" is a hint that costs
-    -- the reader a keypress to disbelieve.
-  elseif pane.commit then
-    table.insert(parts, k.commit_prev .. "/" .. k.commit_next .. " commit")
-    table.insert(parts, k.commit_view .. " whole branch")
-  else
-    table.insert(parts, k.commit_view .. " commits")
+--- Every key that does something from this list, as { key, what } rows
+--- with headings between them.
+---
+--- Mode-aware, because a key that answers "there is only this one" is a
+--- key the reader spends a press to disbelieve: a standalone commit
+--- review has no walk to step and no branch to go back out to.
+---
+--- The global keys are in it too. Someone who has just learned that a
+--- review is a mode over a branch wants to know how to leave it, and
+--- that key is not bound here.
+local function keys_of(pane)
+  local k, g, v = config.keys.pane, config.keys.global, config.keys.view
+  local rows = { { head = "in this list" } }
+  local function add(lhs, what)
+    if lhs and lhs ~= "" and lhs ~= false then
+      table.insert(rows, { key = lhs, what = what })
+    end
   end
-  table.insert(parts, k.fold .. " fold")
-  table.insert(parts, k.quit .. " close")
-  return table.concat(parts, " · ")
+
+  add(k.select, "open the file on this row")
+  add(k.file_next .. " " .. k.file_prev, "next / previous changed file")
+  add(k.fold, "fold this directory")
+  add(k.fold_close .. " " .. k.fold_open, "shut it / open it")
+  add(k.fold_close_all .. " " .. k.fold_open_all, "fold everything / open everything")
+  add(k.refresh, "re-read the list from git")
+  add(k.focus_code, "jump to the window the file is in")
+  add(k.quit, "hide this window -- the review stays on")
+  add(k.help, "this")
+
+  if pane.standalone then
+    table.insert(rows, { head = "this commit" })
+    add(k.commit_message, "its whole message")
+  elseif pane.commit then
+    table.insert(rows, { head = "the commit on show" })
+    add(k.commit_prev .. " " .. k.commit_next, "one commit back / forward")
+    add(k.commit_message, "its whole message")
+    add(k.commit_view, "back to the whole branch")
+  else
+    table.insert(rows, { head = "commits" })
+    add(k.commit_view, "read the branch one commit at a time")
+  end
+
+  table.insert(rows, { head = "in a file being reviewed" })
+  add(v.hunk_next .. " " .. v.hunk_prev, "next / previous change")
+  add(v.file_next .. " " .. v.file_prev, "next / previous changed file")
+  add(v.layout, "inline, or the old side in its own window")
+  add(v.diff_mode, "structural or line backend")
+  add(v.files, "toggle this list")
+  add(v.quit, "end the review")
+
+  table.insert(rows, { head = "anywhere" })
+  add(g.toggle_diff, "start or end a review")
+  add(g.base_branch, "what am I reviewing")
+  add(g.show_commit, "one commit, in a tab of its own")
+  add(g.since_commit, "everything since a revision")
+  add(g.open_pane, "open this list")
+  return rows
+end
+
+M.keys_of = keys_of
+
+--- The hint under the header: one key, and that key explains the rest.
+---
+--- It used to be the keys themselves, which is the right answer while
+--- there are four of them. There are now closer to twenty, and a list
+--- naming a third of them wraps to three rows of the pane's height,
+--- teaches the reader only the third that fit, and does it every render
+--- forever -- long after they know them. One key costs one row and can
+--- answer completely.
+local function hint_for(pane)
+  return config.keys.pane.help .. " keys"
+end
+
+--- Every key that does something from here, in a float.
+---
+--- A float rather than more rows in the pane: it is read once or twice
+--- and then never again, and a pane is a thing you look at all day.
+function M.peek_keys(pane)
+  pane = pane or M.get()
+  if not pane then
+    return
+  end
+  local rows = keys_of(pane)
+  local wide = 0
+  for _, r in ipairs(rows) do
+    if r.key then
+      wide = math.max(wide, vim.fn.strdisplaywidth(r.key))
+    end
+  end
+
+  local lines, marks = {}, {}
+  for _, r in ipairs(rows) do
+    if r.head then
+      if #lines > 0 then
+        table.insert(lines, "")
+      end
+      table.insert(lines, "  " .. r.head)
+      marks[#lines] = { from = 0, to = -1, hl = "UatisMeta" }
+    else
+      local key = r.key .. string.rep(" ", wide - vim.fn.strdisplaywidth(r.key))
+      table.insert(lines, "  " .. key .. "   " .. r.what)
+      marks[#lines] = { from = 2, to = 2 + #key, hl = "UatisHeader" }
+    end
+  end
+
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  width = math.min(width + 3, math.max(vim.o.columns - 8, 24))
+  local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].modifiable = false
+  for line, m in pairs(marks) do
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, line - 1, m.from, {
+      end_row = m.to < 0 and line or nil,
+      end_col = m.to >= 0 and m.to or 0,
+      hl_group = m.hl,
+    })
+  end
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    style = "minimal",
+    border = "rounded",
+    title = " uatis keys ",
+    title_pos = "center",
+  })
+  vim.wo[win].wrap = false
+  for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.help }) do
+    if lhs and lhs ~= "" then
+      vim.keymap.set("n", lhs, function()
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_close(win, true)
+        end
+      end, { buffer = buf, nowait = true, silent = true })
+    end
+  end
+  return win
+end
+
+--- The whole message of the commit on show, in a float.
+---
+--- The header has room for a subject and the counts, which is the right
+--- trade for a list you read past all day -- but the subject is the
+--- half of a commit message that says WHAT, and the body is the half
+--- that says why. A review is exactly the activity that wants the
+--- second half, and asking for it should not mean leaving the review.
+---
+--- Read on demand rather than carried on the commit: a walk holds a
+--- thousand of them and draws none.
+function M.peek_commit(pane)
+  pane = pane or M.get()
+  if not pane or not pane.commit then
+    vim.notify("uatis: no commit on show", vim.log.levels.WARN)
+    return
+  end
+  local commit = pane.commit
+  git.commit_message(pane.root, commit.sha, function(text)
+    if panes[pane.tab] ~= pane or pane.commit ~= commit then
+      return
+    end
+    -- Sha, when, who on one row and the message under it, which is the
+    -- same shape the header has: one is where you found the commit, the
+    -- other is what it says.
+    local said = commit.date or ""
+    if commit.author and commit.author ~= "" then
+      said = said ~= "" and (said .. " · " .. commit.author) or commit.author
+    end
+    local lines = { commit.short .. (said ~= "" and (" · " .. said) or ""), "" }
+    for _, l in ipairs(vim.split(text ~= "" and text or (commit.subject or ""),
+      "\n", { plain = true })) do
+      table.insert(lines, l)
+    end
+
+    local width = 0
+    for _, l in ipairs(lines) do
+      width = math.max(width, vim.fn.strdisplaywidth(l))
+    end
+    width = math.min(math.max(width + 2, 40), math.max(vim.o.columns - 8, 20))
+    local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].modifiable = false
+    -- No `gitcommit` filetype. Its syntax is for WRITING a message --
+    -- it colours the subject as an overlong-line warning past 50
+    -- characters and greys everything under a `#` -- and none of that
+    -- is a statement about a message already written. The message is
+    -- drawn in the buffer's own colour, with only the line naming the
+    -- commit greyed, so what the reader is here to read is the one
+    -- thing on the float at full strength.
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      end_row = 1,
+      end_col = 0,
+      hl_group = "UatisMeta",
+      hl_eol = true,
+    })
+    local win = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = width,
+      height = height,
+      row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+      col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+      style = "minimal",
+      border = "rounded",
+      title = " commit message ",
+      title_pos = "center",
+    })
+    vim.wo[win].wrap = true
+    for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.commit_message }) do
+      if lhs and lhs ~= "" then
+        vim.keymap.set("n", lhs, function()
+          if vim.api.nvim_win_is_valid(win) then
+            vim.api.nvim_win_close(win, true)
+          end
+        end, { buffer = buf, nowait = true, silent = true })
+      end
+    end
+  end)
 end
 
 --- Puts one commit on show, or takes the review back to the working
@@ -563,6 +876,38 @@ function M.refresh(pane, keep_path)
   end
 end
 
+--- Re-scopes every list in `root` to `dir` and redraws it.
+---
+--- No git call: which files the branch touched has not changed, only how
+--- much of the answer this review is about, so the same `tracked` and
+--- `untracked` are simply composed again. Folds go, because they are
+--- keyed on the path as DRAWN and every one of those has just moved.
+---
+--- Views on files the scope has dropped are closed. A review is what the
+--- list says it is; leaving an overlay on a file the list no longer
+--- names would be two answers to what is being reviewed, on screen at
+--- once.
+function M.rescope(root, dir)
+  dir = dir or ""
+  for _, pane in pairs(panes) do
+    if pane.root == root and (pane.scope or "") ~= dir then
+      local cur = pane.files[pane.file_idx]
+      pane.scope = dir
+      pane.collapsed = {}
+      for _, v in ipairs(view_mod.matching(pane.root, pane.rev, pane.standalone)) do
+        if not under(dir, v.relpath or "") then
+          view_mod.close(v.bufnr)
+        end
+      end
+      rebuild(pane, cur and cur.path or nil)
+      if pane.list_buf then
+        filelist.render(pane)
+      end
+      pane.renders = (pane.renders or 0) + 1
+    end
+  end
+end
+
 --- Re-points every base-tracked list in `root` at `label`/`sha` and
 --- re-reads it, keeping the highlighted row on the file being read where
 --- that file is still in the list.
@@ -663,7 +1008,7 @@ function M.reveal(pane, idx)
     return
   end
   pane.collapsed = pane.collapsed or {}
-  for _, d in ipairs(ui.dirs_of(f.path)) do
+  for _, d in ipairs(ui.dirs_of(ui.shown(f))) do
     pane.collapsed[d] = nil
   end
 end
@@ -718,13 +1063,13 @@ local function set_all(pane, shut)
   pane.collapsed = {}
   if shut then
     for _, f in ipairs(pane.files) do
-      for _, d in ipairs(ui.dirs_of(f.path)) do
+      for _, d in ipairs(ui.dirs_of(ui.shown(f))) do
         pane.collapsed[d] = true
       end
     end
   end
   local cur = pane.files[pane.file_idx]
-  redraw_at(pane, cur and ui.dirs_of(cur.path)[1] or nil)
+  redraw_at(pane, cur and ui.dirs_of(ui.shown(cur))[1] or nil)
 end
 
 --- Which directory the cursor is asking about: the row itself where that
@@ -737,7 +1082,7 @@ local function fold_target(pane)
     return path
   end
   local f = pane.files[(pane.list_rows or {})[line] or 0]
-  local ds = f and ui.dirs_of(f.path) or {}
+  local ds = f and ui.dirs_of(ui.shown(f)) or {}
   return ds[#ds]
 end
 
@@ -944,6 +1289,13 @@ local function follow(pane, bufnr, win, force)
   -- the list says: git reads the disk, and the list is built from git. Take
   -- it in and it reports itself -- which is how it reaches the list at all.
   if not file and not force and not vim.bo[bufnr].modified then
+    return false
+  end
+  -- ...but only inside the subtree. A scoped review is a statement about
+  -- which half of the branch is being read, and a file outside it that
+  -- happens to be open is not part of that half however much it has been
+  -- edited.
+  if not under(pane.scope or "", relpath) then
     return false
   end
   -- ...but not while one commit is on show. The review is then about
@@ -1186,6 +1538,10 @@ local function setup_keymaps(pane)
     { lhs = k.fold_open, rhs = function()
       set_fold(pane, fold_target(pane), false)
     end, opts = { desc = "uatis: open the directory under the cursor" } },
+    { lhs = k.commit_message, rhs = function() M.peek_commit(pane) end,
+      opts = { desc = "uatis: the whole message of the commit on show" } },
+    { lhs = k.help, rhs = function() M.peek_keys(pane) end,
+      opts = { desc = "uatis: every key that does something from here" } },
     { lhs = k.fold_close_all, rhs = function() set_all(pane, true) end,
       opts = { desc = "uatis: fold every directory shut" } },
     { lhs = k.fold_open_all, rhs = function() set_all(pane, false) end,
@@ -1434,6 +1790,11 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     mode = "overall",
     target = ref,
     src = "working tree",
+    -- How much of the tree this review is about, from the choice made
+    -- for the repository. Read at build rather than at every draw: a
+    -- list that quietly re-scoped itself under the reader is the same
+    -- surprise as one that re-pointed itself.
+    scope = base.dir(root),
     hint = "",
     code_win = vim.api.nvim_get_current_win(),
     -- Whether the tab goes when the review does. True only for the one

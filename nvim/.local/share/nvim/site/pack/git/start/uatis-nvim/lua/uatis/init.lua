@@ -93,6 +93,10 @@ end
 --- Views named by hand -- `:Uatis <gitref>` -- are left alone. They were
 --- pointed at a revision by someone who meant that revision.
 local function repoint(root)
+  -- The scope first, and without waiting: it needs no revision to be
+  -- resolved, and a list that re-drew its files before it re-drew its
+  -- shape would show the old subtree's rows for as long as git takes.
+  pane.rescope(root, base.dir(root))
   base.resolve(root, function(label, sha)
     if label and sha then
       view.repoint(root, label, sha)
@@ -114,12 +118,31 @@ end
 --- reviewing against, and a view that went on measuring against the last
 --- one until you closed and reopened it would be answering the question
 --- you stopped asking.
+--- Two entries in one panel, because they are two halves of one
+--- statement: what am I reviewing against, and how much of the tree am I
+--- reviewing. A branch that touched two hundred files across a monorepo
+--- is not one review, and "main, under services/billing" is a sentence
+--- -- where "main", and then later "services/billing", is two decisions
+--- that happen to have been taken in a row.
+---
+--- So `scope.lua` puts both on the screen at once, each answered by the
+--- picker or the prompt it already had, and nothing is applied until it
+--- closes. Changing the base and then thinking better of the subtree
+--- cannot have re-pointed every view in the repository on the way past,
+--- and the reader gets to look at the pair before committing to it.
+---
+--- With a name given, no panel. That call is the API rather than the
+--- key, and a caller that said which base it wanted did not ask to be
+--- shown anything.
 function M.set_base_branch(name)
-  base.select(name, function(picked, root)
-    if picked then
-      repoint(root)
-    end
-  end)
+  if name and name ~= "" then
+    return base.select(name, function(picked, root)
+      if picked then
+        repoint(root)
+      end
+    end)
+  end
+  require("uatis.scope").open({ on_save = repoint })
 end
 
 --- Starts a review of the branch, or ends the one that is running.

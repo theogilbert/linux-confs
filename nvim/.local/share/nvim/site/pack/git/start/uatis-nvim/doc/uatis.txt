@@ -1,0 +1,543 @@
+*uatis.txt*  Review a branch in the buffer you are already editing  *uatis*
+
+Author:  theogilbert
+License: same terms as Vim itself
+
+==============================================================================
+CONTENTS                                                      *uatis-contents*
+
+    1. Introduction ......................... |uatis-introduction|
+    2. Requirements ......................... |uatis-requirements|
+    3. Quick start .......................... |uatis-quickstart|
+    4. What is compared ..................... |uatis-comparison|
+    5. Commands ............................. |uatis-commands|
+    6. Mappings ............................. |uatis-mappings|
+    7. The file list ........................ |uatis-list|
+    8. Layouts .............................. |uatis-layouts|
+    9. Backends ............................. |uatis-backends|
+   10. How a change is drawn ................ |uatis-marks|
+   11. Commit by commit ..................... |uatis-commits|
+   12. Colours ............................. |uatis-colours|
+   13. Configuration ....................... |uatis-config|
+   14. Statusline .......................... |uatis-statusline|
+   15. Health .............................. |uatis-health|
+   16. Troubleshooting ..................... |uatis-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                           *uatis-introduction*
+
+uatis annotates the buffer you are already editing against a git revision,
+instead of showing you a patch.
+
+The new side of the comparison is your real file. It keeps its window, its
+unsaved edits, its undo history, its LSP, and it stays writable. Only the old
+side is fetched, and it is drawn around your buffer as virtual text or beside
+it in a second window. You are never moved into a rendering of your code.
+
+That is the whole idea. A patch asks you to read code you cannot edit, out of
+context, in a buffer that is not yours. This asks you to read your own file
+with the branch drawn on it.
+
+==============================================================================
+2. REQUIREMENTS                                           *uatis-requirements*
+
+    Neovim 0.12 or newer
+    git
+    difft (difftastic), for structural diffing -- optional
+
+Without `difft` on your PATH everything still works; every view is a line
+diff, and the winbar says so. See |uatis-backends|.
+
+`:checkhealth uatis` reports on all three, and then on what the current
+repository says about itself. See |uatis-health|.
+
+==============================================================================
+3. QUICK START                                              *uatis-quickstart*
+
+Install with any plugin manager. Calling `setup()` is optional; the defaults
+are in force without it. >lua
+
+    require("uatis").setup()
+<
+Then, in a file inside a git repository: >
+
+    <leader>gu          start reviewing this branch -- and press it
+                        again to stop
+    <leader>gf          the list of files the branch changed
+    ]c  [c              move between changes in this file
+    ]f  [f              move between changed files
+    <leader>go          the old side in a window of its own
+    <leader>gB          what am I reviewing: base branch and subtree
+<
+The review is a mode over the whole branch, not a decoration on one buffer.
+While it is running, every file the branch changed is annotated as you arrive
+at it -- through the list, through `gd`, through a picker, however you got
+there. `<leader>gu` turns all of it off in one press.
+
+==============================================================================
+4. WHAT IS COMPARED                                         *uatis-comparison*
+
+                                                                *uatis-base*
+The BASE is the revision your work is measured against. Usually a branch, but
+anything git resolves will do -- a tag, a hash, `HEAD~3`.
+
+It is detected without being asked for: `origin/HEAD` first, then the
+conventional names in `base.fallbacks` (see |uatis-config|). On almost every
+repository you never have to set it. `<leader>gB` sets it when you do.
+
+                                                             *uatis-forkpoint*
+The comparison is always against the FORK POINT -- `merge-base(base, HEAD)`,
+three-dot semantics -- and never against the base branch's tip. Once the base
+branch moves on past where you branched off, its own commits would otherwise
+appear in your diff as changes you have to account for, reversed. What "since
+I branched" means does not change because someone else pushed to main.
+
+                                                               *uatis-subtree*
+The SUBTREE is how much of the tree the review is about, and it is the other
+half of the same question. A branch that touched two hundred files across a
+monorepo is not one review; naming a directory makes it one. The list then
+counts only what is under it, the review only follows you into files under it,
+and every path is drawn relative to it.
+
+Both are chosen in one panel, `<leader>gB`, and both are remembered per
+repository between sessions (`base.remember`).
+
+==============================================================================
+5. COMMANDS                                                   *uatis-commands*
+
+                                                                *:Uatis*
+:Uatis [{rev}]          Review the current file against {rev}, or against the
+                        base branch when no revision is given.
+
+                        A view opened with an explicit {rev} is PINNED to it:
+                        changing the base branch later re-points the
+                        base-tracking views and leaves this one alone.
+
+                        Completes over every ref in the repository and the
+                        recent commits.
+
+                                                                *:UatisShow*
+:UatisShow [{rev}]      What one commit did, against its parent, in a tab of
+                        its own. With no argument it asks, over the same
+                        candidates `:Uatis` completes.
+
+                        This is about a commit that has nothing to do with
+                        what you are working on -- the one a colleague pointed
+                        at, the one a bisect landed on. Its files are always
+                        shown as they were AT that commit, never your own
+                        buffers: a finished commit is finished, and drawing
+                        its diff on a file five commits younger describes
+                        neither.
+
+                                                                *:UatisColors*
+:UatisColors            A float that turns every number in `highlight`, with
+                        everything already on screen following. See
+                        |uatis-colours|.
+
+==============================================================================
+6. MAPPINGS                                                   *uatis-mappings*
+
+Every mapping below is configurable, and any of them can be set to `false` to
+bind it yourself. The Lua functions behind them are the real interface -- see
+|uatis-config| and |uatis-api|.
+
+GLOBAL                                                 *uatis-mappings-global*
+
+Set once, wherever you are, for the things you do before there is anything to
+press a buffer-local key in. >
+
+    <leader>gu      start or end a review of the branch
+    <leader>gB      what am I reviewing: base and subtree, in one panel
+    <leader>gA      one commit against its parent, in a tab of its own
+    <leader>gS      everything since a revision you pick
+<
+IN A REVIEWED FILE                                       *uatis-mappings-view*
+>
+    ]c  [c          next / previous change in this file
+    ]f  [f          next / previous changed file
+    <leader>gf      toggle the file list
+    <leader>go      inline, or the old side in its own window
+    <leader>gm      switch backend: structural <-> line
+    <leader>gh      read the branch one commit at a time
+    [C  ]C          move within the commit on show
+<
+`]c` off the last change of a file steps into the next file the list names and
+lands on the first change in it (`pane.chunk_spill`).
+
+It always stops on a row that has something drawn on it. A multi-line atom is
+one changed node to difftastic, so the hunk can span a whole docstring while
+only two rows of it differ; the stop is the first row of the hunk that carries
+a mark, not the row the hunk starts on. A pure deletion stops where its
+before-image hangs.
+
+IN THE FILE LIST                                         *uatis-mappings-pane*
+>
+    g?              every key that does anything from here, in a float
+    <CR>            open the file on this row
+    K               the whole message of the commit on show
+    ]f  [f          next / previous file
+    za zc zo        fold this directory
+    zM  zR          fold everything / open everything
+    R               re-read the list from git
+    C               put one commit on show, or take it off
+    [C  ]C          move within it
+    <C-t>l          jump to the window the file is open in
+    q               hide the window -- the review stays on
+<
+`g?` is the one worth remembering: the header carries it and nothing else,
+and it lists this list's keys, the ones a reviewed file binds, and the
+global ones -- leaving out anything that has nowhere to go, so a review of a
+single commit is not offered a walk to step through. `q` or `<Esc>` closes
+it.
+
+IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
+>
+    <CR>            jump to the matching row in your file
+    q               close it
+<
+==============================================================================
+7. THE FILE LIST                                                  *uatis-list*
+
+`<leader>gf` opens the changed-file list beside the file you are reading.
+
+The list IS the review. While it exists, arriving at any file it names
+annotates that file, at the list's own revision. So it is read whenever a
+comparison is turned on -- window or no window; `pane.auto_open` only decides
+whether you see it. `q` hides the window and leaves the review running;
+`<leader>gu` ends the review.
+
+                                                          *uatis-list-sources*
+It counts three things, and the last wins where they disagree:
+
+    1. `git diff <fork point>` -- what git can see, commits and working tree
+       together, so a change that is staged, or saved and not committed, is
+       part of what the branch has done.
+    2. `git ls-files --others --exclude-standard` -- files git has never been
+       told about. Counted by reading them, capped at
+       `pane.untracked_max_bytes`.
+    3. The open views -- what is still unsaved. These win, because they are
+       what is drawn on the screen.
+
+                                                           *uatis-list-header*
+The header names what is being compared. Its right-hand side is `working
+tree` while anything in the tree has moved off HEAD -- an unstaged edit, a
+staged one, an untracked file, a buffer typed into and not written -- and the
+name of HEAD's branch when nothing has.
+
+Statuses are `A` added, `M` modified, `D` deleted, `R` renamed. A binary file
+gets a row and no count.
+
+                                                            *uatis-list-moves*
+git can move while Neovim is not looking. The list re-reads on `BufWritePost`
+and on `BufReadPost` of a file it already knew; on `FocusGained`, `TermLeave`
+and `TermClose` it goes further and re-resolves the fork point first, since a
+branch switch, a rebase or a pull on the base branch moves the fork point
+itself. Views pinned with `:Uatis <rev>` keep their revision.
+
+==============================================================================
+8. LAYOUTS                                                     *uatis-layouts*
+
+`<leader>go` switches between them. Both draw the same comparison.
+
+INLINE (the default) ~
+
+Your buffer, with the new side highlighted on its real lines and the old side
+drawn as virtual lines above where it used to be. That asymmetry is the
+design: new content has a line to sit on and old content does not.
+
+SIDE BY SIDE ~
+
+The old revision opens in a window of its own, to the left. It is a real,
+read-only buffer, so it searches and yanks like any other. Rows are held level
+with filler lines, and the cursor and scroll are synchronised.
+
+Three colours exist only here: the band on a removed row, the quieter band on
+the part of a reworded row that did NOT go away, and the filler rows.
+
+==============================================================================
+9. BACKENDS                                                   *uatis-backends*
+
+`<leader>gm` switches. `diff.default_backend` says where a view starts.
+
+STRUCTURAL (the default) ~
+
+difftastic, via `difft --display json`. It parses both sides and compares
+syntax trees, so it can tell reindentation from a rewrite: a branch that moved
+code -- into a class, out of a conditional, across a reflow -- reads as code
+that moved rather than as code that is all new.
+
+LINE ~
+
+`vim.diff`, with the histogram algorithm, refined by an intra-line comparison
+that picks out the words inside a changed line.
+
+                                                              *uatis-degraded*
+Structural mode never fails loudly. If difftastic is missing, errors, or has
+no parser for the file, the view degrades to the line backend and says so in
+the winbar. `status().degraded` reports it too.
+
+==============================================================================
+10. HOW A CHANGE IS DRAWN                                        *uatis-marks*
+
+Worth knowing, because the marks say more than "this line changed".
+
+                                                             *uatis-marks-new*
+On the new side, a line that is wholly new is banded end to end. A line that
+was EDITED has the parts that are new lit, and nothing on the rest -- unmarked
+means unchanged, which is the premise the whole plugin rests on.
+
+                                                           *uatis-marks-prose*
+Inside a prose atom -- a docstring, a comment, a long literal, or any line of
+a file difftastic has no parser for -- a reworded sentence is drawn a shade
+quieter with its new words left at full strength. That says "these words are
+new, the rest is the line you already know", which is a comparison you can
+check without looking anywhere else.
+
+Past `diff.line.emphasis_ratio` of the atom being new there is no old half
+left to step back to, and the atom is tinted whole instead. Below it, the pale
+half is a sentence you recognise, so it stays.
+
+The ratio is skipped where nothing was removed from the row at all: the old
+text is then on the row in one piece, so the dimmed part is certainly it. That
+is what keeps a short string honest -- `"diagram"` becoming `"structural
+diagram"` is more than half new by character count, and `diagram` still did
+not change.
+
+Nothing steps back at all where several lines became fewer: the new line is
+not a version of any one of the old ones, it is what replaced all of them, and
+the block it replaced is drawn above it. That is where the comparison belongs.
+
+                                                            *uatis-marks-node*
+A multi-line node is ONE atom to difftastic, so editing one line of a
+docstring or a regex literal comes back with every row of it reported as
+changed. Rows whose two sides are byte-identical are left alone: the node is
+what changed, the line is what you have to find.
+
+                                                          *uatis-marks-indent*
+Wrapping a block in a guard reindents it, and not a token of it changed.
+The columns it GAINED at the front are marked, and nothing else on the
+row is: that says "this line moved right" without claiming the code is
+new. Only where a hunk sits directly above the run -- which is what a
+wrapper is -- so a reformatted file does not light up every row it
+moved. Turn it off with `diff.indent_marks`.
+
+                                                             *uatis-marks-old*
+Removed lines are drawn as virtual lines above where they were, in the old
+revision's own syntax colours, with a `-` in the gutter. Inside one, the parts
+that went are at full strength and the parts that survived into the line below
+step back.
+
+A removed line is put directly above the line it became, which buys you one
+comparison you can check. Past `diff.line.spread_max` such rows in one hunk
+they go into a single block above it instead -- old together, new together --
+because a whole passage drawn one-above-each is stripes, and the old block
+cannot then be read back as code.
+
+==============================================================================
+11. COMMIT BY COMMIT                                           *uatis-commits*
+
+`<leader>gh` in a file, or `C` in the list, puts ONE commit of your branch on
+show, starting at the newest. `[C` and `]C` move within it; they neither enter
+nor leave the mode, and at either end they say so and stay.
+
+The walk is `--first-parent`, oldest first, so it is the commits their author
+wrote rather than everything ever merged in, in the order the work happened.
+The header counts you through it -- `12/17`.
+
+While a commit is on show, a file whose content still equals the file at that
+commit is your own buffer; anything else opens read-only as
+`uatis://at/<short>/<path>`. Arriving at a file by hand does not annotate it:
+that file holds the working tree, not the commit.
+
+`<leader>gA` (|:UatisShow|) is the same shape reached from outside a review --
+one commit, against its parent, in a tab of its own. Its header names the sha
+and stops: "against its parent" is the only thing it ever means.
+
+                                                        *uatis-commit-message*
+The header puts sha, date and author on one greyed row and the message under
+it in the buffer's own colour: the first is how you FIND a commit, the second
+is what it says. That row never wraps -- it drops fields off the end instead,
+because half an author's name (or half a sha) on a row of its own is worse
+than a field that is simply not there.
+
+`K` in the list opens the whole message -- subject and body -- in a float,
+drawn the same way: the naming row greyed, the message at full strength. The
+body is the half that says why, and a review is exactly the activity that
+wants it. `q` or `<Esc>` closes it.
+
+==============================================================================
+12. COLOURS                                                    *uatis-colours*
+
+Every group is derived from your own colourscheme's `DiffAdd` and `DiffDelete`
+at load: their hue is kept, their saturation floored or capped, and their
+lightness set a set distance from the editor's background, in whichever
+direction the scheme already put them.
+
+Over real code the groups take the BACKGROUND only. A foreground would replace
+the syntax colouring underneath, which is the one thing this plugin exists to
+preserve.
+
+                                                      *uatis-highlight-groups*
+>
+    UatisAdd            a changed or added line, and the new tokens in it
+    UatisAddDim         the half of a changed prose atom that is not the edit
+    UatisDelete         a removed line, in a before-image
+    UatisDeleteBg       the same, where its own syntax colours are known
+    UatisDeleteDim      the part of a removed line that survived
+    UatisDeleteBand     a removed row, in the side-by-side window
+    UatisDeleteBandDim  the part of it that survived
+    UatisFiller         the rows that hold the two windows level
+    UatisSign           the `-` in the gutter of a removed row
+    UatisHeader         the list's identity line
+    UatisMeta           dates, authors, counts
+    UatisHint           key hints
+    UatisDir            a directory row
+    UatisFileCur        the file the list is standing on
+    UatisStatusA        added
+    UatisStatusM        modified
+    UatisStatusD        deleted
+    UatisStatusR        renamed
+<
+Set any of them yourself after `setup()` and the derivation for that group is
+what you replace.
+
+                                                                *uatis-dial*
+`:UatisColors` opens a dial over whatever is on screen. It turns every number
+in `highlight` and the screen follows immediately -- groups are set by name
+and extmarks carry the name, so nothing has to be rendered again. `p` yanks a
+complete `setup{}` block of the numbers as they stand.
+
+The numbers are statements about YOUR colourscheme, not about this plugin, so
+the way to settle them is to look at them over your own code with a review
+running.
+
+==============================================================================
+13. CONFIGURATION                                               *uatis-config*
+
+`setup()` is optional. Pass only what you want to change; it is folded into
+the defaults. Lists are replaced whole rather than merged by index, and an
+unknown key is warned about rather than ignored.
+
+`lua/uatis/config.lua` is the reference: one table, every default, with a
+comment on each saying what it controls. The commonly-changed ones: >lua
+
+    require("uatis").setup({
+      list = {
+        width = 38,           -- columns
+      },
+      base = {
+        fallbacks = { "develop", "master", "main" },
+        remember = true,      -- keep the base and subtree between sessions
+      },
+      pane = {
+        auto_open = true,     -- show the list when a review starts
+        follow = true,        -- annotate a listed file as you arrive at it
+      },
+      diff = {
+        default_backend = "struct",   -- or "line"
+        struct = { bin = "difft" },
+      },
+      keys = {
+        global = {
+          toggle_diff = "<leader>gu",
+          base_branch = "<leader>gB",
+          show_commit = "<leader>gA",
+          since_commit = "<leader>gS",
+        },
+        view = { layout = "<leader>go", diff_mode = "<leader>gm" },
+      },
+    })
+<
+                                                                *uatis-api*
+The functions behind the mappings, for binding yourself: >lua
+
+    require("uatis").toggle_diff()
+    require("uatis").run({ fargs = { "<rev>" } })
+    require("uatis").set_base_branch([name])
+    require("uatis").open_pane()
+    require("uatis").close_pane()
+    require("uatis").toggle_pane()
+    require("uatis").show_commit([rev])
+    require("uatis").since_commit([rev])
+    require("uatis").colors()
+<
+==============================================================================
+14. STATUSLINE                                              *uatis-statusline*
+
+Two functions answer in plain data. Their field names are the only ones this
+plugin promises not to change.
+
+                                                              *uatis.status()*
+`require("uatis").status([bufnr])` -- about one buffer, or nil when it is not
+being reviewed: >
+
+    added, removed      counts for this file
+    base                the revision named, e.g. "main"
+    rev                 the sha it resolved to
+    root, path          repo root, and the path inside it
+    old_path            where a renamed file came from
+    backend             "struct" | "line"
+    layout              "inline" | "side"
+    tracks_base         follows the base, rather than pinned by :Uatis <ref>
+    degraded            difftastic was asked for and could not answer
+    pending             a structural diff is running -- the counts are the
+                        last answer, not this one
+<
+                                                              *uatis.review()*
+`require("uatis").review()` -- about the review in this tab, or nil: >
+
+    base, rev           as above, for the whole review
+    root                repo root
+    files               how many the branch changed
+    added, removed      across all of them
+    file                the one the list is standing on, if any
+    tracks_base         as above
+    window              true while the list has a window up
+<
+`pending` matters if you show the counts: a structural diff that has not come
+back yet looks exactly like a file with nothing in it, and `+0 -0` is not
+"nothing changed".
+
+==============================================================================
+15. HEALTH                                                      *uatis-health*
+
+`:checkhealth uatis` covers the three external requirements -- Neovim's
+version, git, difftastic -- and then what the current repository says about
+itself: which base is in force and where that answer came from, what the fork
+point resolves to, and any git configuration that rewrites `git diff` in a way
+this plugin has to read.
+
+That last one matters: `diff.external`, `GIT_EXTERNAL_DIFF`, `color.ui =
+always`, `diff.noprefix` and `diff.mnemonicPrefix` can each make `git diff`
+print something no unified-diff parser can read, and the symptom is an empty
+file list beside a buffer visibly full of changes.
+
+==============================================================================
+16. TROUBLESHOOTING                                    *uatis-troubleshooting*
+
+The file list is empty but the file clearly changed ~
+    Run `:checkhealth uatis`. Some git configuration rewrites `git diff`
+    output; see |uatis-health|.
+
+Everything reads as new after a refactor ~
+    You are on the line backend. Check the winbar; if it says the structural
+    one is unavailable, `difft` is not on your PATH. See |uatis-backends|.
+
+A file I changed is not in the list ~
+    Check the subtree: `<leader>gB` shows it. A scoped review lists only what
+    is under it. See |uatis-subtree|.
+
+Commits from the base branch appear in my review, reversed ~
+    They should not -- the comparison is against the fork point. If they do,
+    the base is resolving to something unexpected; `:checkhealth uatis` prints
+    what it resolved to. See |uatis-forkpoint|.
+
+The colours are unreadable against my scheme ~
+    `:UatisColors`, with a review on screen behind it. See |uatis-dial|.
+
+`]c` does nothing ~
+    It is only mapped inside a reviewed buffer, and whatever you had mapped to
+    it before is restored when the review ends.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:

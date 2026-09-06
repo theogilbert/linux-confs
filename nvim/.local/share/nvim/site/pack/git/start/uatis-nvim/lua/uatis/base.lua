@@ -24,8 +24,9 @@ local prompt = require("uatis.prompt")
 local M = {}
 
 local chosen = {}   -- root -> name the user picked, this session
+local scoped = {}   -- root -> subtree the user picked, this session ("" = all)
 local detected = {} -- root -> name worked out for the repository
-local kept = nil    -- root -> name picked in an earlier session, read from disk
+local kept = nil    -- root -> what was picked in an earlier session, from disk
 local checked = {}  -- root -> the kept name has been verified to still exist
 
 --- Where a choice of base branch is kept between sessions.
@@ -50,7 +51,22 @@ local function store_file()
   return vim.fs.joinpath(vim.fn.stdpath("state"), "uatis", "base.json")
 end
 
---- What is on disk: { [repo root] = base name }.
+--- One repository's entry as the store holds it: `{ base, dir }`.
+---
+--- Earlier versions wrote the base name alone, so a plain string is read
+--- as that with no subtree rather than thrown away -- forgetting
+--- everybody's base branch is a poor way to add a second field.
+local function entry_of(value)
+  if type(value) == "string" then
+    return { base = value }
+  end
+  if type(value) == "table" then
+    return value
+  end
+  return {}
+end
+
+--- What is on disk: { [repo root] = { base = name, dir = subtree } }.
 ---
 --- Read straight from the file every time it is written back, and cached
 --- for reading. Two editors open on two repositories is the normal case,
@@ -73,13 +89,27 @@ local function read_store()
   return decoded
 end
 
-local function write_store(root, name)
+--- Folds `fields` into the entry for `root`, leaving the other half of
+--- it alone: choosing a base is not saying anything about the subtree,
+--- and choosing a subtree is not saying anything about the base.
+local function write_store(root, fields)
   local path = store_file()
   if not path then
     return
   end
   local all = read_store()
-  all[root] = name
+  local entry = vim.tbl_extend("force", entry_of(all[root]), fields)
+  -- `false` is a field being taken OFF rather than set: JSON has no way
+  -- to say "absent" in a value, and a base branch that has since been
+  -- deleted must not be left behind for the next session to find. `""`
+  -- goes the same way, since the whole repository is what no subtree
+  -- means and is not worth a line in the file.
+  for k, v in pairs(entry) do
+    if v == false or v == "" then
+      entry[k] = nil
+    end
+  end
+  all[root] = next(entry) ~= nil and entry or nil
   kept = all
   vim.fn.mkdir(vim.fs.dirname(path), "p")
   -- Failures are silent on purpose: not being able to remember a base
@@ -88,11 +118,15 @@ local function write_store(root, name)
   pcall(vim.fn.writefile, { vim.json.encode(all) }, path)
 end
 
-local function kept_name(root)
+local function kept_entry(root)
   if kept == nil then
     kept = read_store()
   end
-  return kept[root]
+  return entry_of(kept[root])
+end
+
+local function kept_name(root)
+  return kept_entry(root).base
 end
 
 --- The repo root for wherever the user currently is.
@@ -139,7 +173,7 @@ end
 function M.set(root, name)
   chosen[root] = name
   checked[root] = true
-  write_store(root, name)
+  write_store(root, { base = name })
 end
 
 --- Drops what this SESSION knows about `root`, so the next `get` works
@@ -147,7 +181,58 @@ end
 --- the way a test asks "and what would a new session do?".
 function M.forget(root)
   chosen[root], detected[root], checked[root] = nil, nil, nil
+  scoped[root] = nil
   kept = nil
+end
+
+-- ------------------------------------------------------------------
+-- The subtree
+-- ------------------------------------------------------------------
+
+--- How much of the repository a review is about.
+---
+--- The other half of "what am I reviewing". A branch that touched two
+--- hundred files across a monorepo is not one review, and reading the
+--- half of it that is yours means saying which half: the list counts
+--- only what is under here, the review follows you only into files
+--- under here, and every path is drawn relative to it, since a column of
+--- rows all beginning `services/billing/` spends the pane's width
+--- saying nothing.
+---
+--- "" is the whole repository, which is the default and stays the common
+--- answer.
+function M.dir(root)
+  return scoped[root] or kept_entry(root).dir or ""
+end
+
+--- A subtree as everything downstream expects it: repo-relative, no
+--- leading or trailing slash, "" for the whole repository.
+---
+--- An absolute path is taken as one inside the repository, since that is
+--- what completing a directory from anywhere else in the editor gives
+--- you; one outside it is not a subtree of this review and is refused as
+--- an empty answer rather than silently scoping to something else.
+function M.normalise(root, dir)
+  dir = vim.trim(dir or "")
+  if dir == "" then
+    return ""
+  end
+  if dir:sub(1, 1) == "/" then
+    local prefix = root .. "/"
+    if dir:sub(1, #prefix) ~= prefix then
+      return ""
+    end
+    dir = dir:sub(#prefix + 1)
+  end
+  dir = dir:gsub("^%./", ""):gsub("/+$", "")
+  return dir
+end
+
+--- Sets the subtree for `root`, and remembers it for next time.
+function M.set_dir(root, dir)
+  scoped[root] = M.normalise(root, dir)
+  write_store(root, { dir = scoped[root] })
+  return scoped[root]
 end
 
 --- The base branch for `root`, detecting one if none has been chosen.
@@ -189,7 +274,7 @@ function M.get(root, cb)
         chosen[root] = last
         cb(last)
       else
-        write_store(root, nil)
+        write_store(root, { base = false })
         M.get(root, cb)
       end
     end)
@@ -353,8 +438,7 @@ function M.select(name, cb)
       if cb then cb(nil) end
       return
     end
-
-    local function commit(picked)
+    M.ask(root, name, function(picked)
       if not picked then
         if cb then cb(nil) end
         return
@@ -362,6 +446,21 @@ function M.select(name, cb)
       M.set(root, picked)
       vim.notify("uatis: base " .. picked)
       if cb then cb(picked, root) end
+    end)
+  end)
+end
+
+--- ...and the asking on its own, which is the half the panel wants.
+---
+--- `cb(name|nil)` -- verified, and NOT set. The panel holds both answers
+--- until the reader closes it, so a question answered has to be able to
+--- come back as a value rather than as a decision already taken: picking
+--- a base and then changing your mind about the subtree must not have
+--- re-pointed every view in the repository on the way past.
+function M.ask(root, name, cb)
+  do
+    local function commit(picked)
+      cb(picked or nil)
     end
 
     if name and name ~= "" then
@@ -464,6 +563,70 @@ function M.select(name, cb)
         end)
       end
       try(1)
+    end)
+  end
+end
+
+--- Asks which subtree the review is about, and remembers the answer.
+---
+--- `prompt.lua` again rather than `vim.ui.input`, for the reason the
+--- revision prompt is: this is a path in somebody else's repository and
+--- nobody types one of those from memory. The candidates are every
+--- directory git tracks something under, so the answer is completed
+--- rather than recalled.
+---
+--- It opens on whatever is in force, and an empty line is the whole
+--- repository -- clearing the line is how a scope comes off, which is
+--- the same gesture as never having set one and needs no extra row
+--- saying so.
+---
+--- `cb(dir, root)` on an answer, `cb(nil)` on a cancel or a directory
+--- that is not there. Cancelling leaves the scope exactly as it was:
+--- the question was asked on the way past, after the base, and backing
+--- out of it must not also throw away the answer given last time.
+function M.select_dir(root, cb)
+  M.ask_dir(root, function(dir)
+    if dir == nil then
+      if cb then cb(nil) end
+      return
+    end
+    M.set_dir(root, dir)
+    vim.notify("uatis: " .. (dir == "" and "the whole repository" or (dir .. "/")))
+    if cb then cb(dir, root) end
+  end)
+end
+
+--- ...and the asking on its own. `cb(dir|nil)` -- normalised and
+--- checked, and NOT set, for the same reason `ask` is not `select`.
+function M.ask_dir(root, cb)
+  git.dirs(root, function(dirs)
+    local items = {}
+    for _, d in ipairs(dirs) do
+      table.insert(items, { word = d, kind = "dir" })
+    end
+    prompt.open({
+      prompt = "uatis: subtree (empty for all)",
+      items = items,
+      default = M.dir(root),
+    }, function(text)
+      if text == nil then
+        cb(nil)
+        return
+      end
+      local dir = M.normalise(root, text)
+      -- Checked on the filesystem rather than against the candidates: a
+      -- directory holding nothing git tracks yet is not in that list and
+      -- is a perfectly good thing to be reviewing.
+      if dir ~= "" then
+        local stat = vim.uv.fs_stat(root .. "/" .. dir)
+        if not stat or stat.type ~= "directory" then
+          vim.notify("uatis: no directory " .. dir .. " in " .. root,
+            vim.log.levels.ERROR)
+          cb(nil)
+          return
+        end
+      end
+      cb(dir)
     end)
   end)
 end

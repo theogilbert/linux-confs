@@ -193,6 +193,22 @@ away. The row goes through whole and is narrowed as the sentence it is —
 otherwise one word changed in a README read as a single lit word on a bare row
 while the same edit in a docstring read as a pale sentence.
 
+### A file of bytes is not compared — `view.lua`
+
+Both backends would answer about a PNG: difftastic falls back to comparing
+words where it has no parser, and `vim.diff` will happily split one on whatever
+newline bytes it contains. Both answers are true of the bytes and useless —
+marks over noise, a before-image of noise above them, counts that mean nothing.
+
+Nothing is drawn, and the winbar says the one honest thing: `binary · 2.0 KB →
+3.5 KB`. Detected from the **content** the way git detects it, a NUL byte near
+the start, since the question is whether this can be read as lines and an
+extension does not answer it.
+
+The new size is read off the **disk**, not the buffer. Neovim stores a NUL as a
+newline and splits on the rest, so a PNG round-tripped through buffer lines
+comes back a different length than the file is — 3592 bytes read back as 5427.
+
 ---
 
 ## 4. The red rows
@@ -217,6 +233,30 @@ same and nothing was folded: the rows simply went, and they went *after* it. A
 file whose whole body was deleted otherwise put every removed row above the one
 line it had left — above the first line of the buffer, where there is nothing
 to scroll to.
+
+### Where the red comes from — `overlay.lua`
+
+Four sources, tried in order, for what a removed row lost:
+
+1. the per-row character comparison (`inline.dels`),
+2. the re-measurement against the row it was fitted to (`refit`),
+3. **difftastic's own spans** for that old row — it reports the old side
+   token by token, and knows `self.measure(box)` survived a line whose
+   `total +=` went,
+4. the block-level character comparison (`del_fine`) — the coarsest, and the
+   one the side-by-side window draws from.
+
+`del_fine` is last precisely because it is coarsest; taken earlier it overruled
+better answers. But it is the only one left for a sentence reworded inside a
+multi-line node, where the backend's spans cover the whole atom and `rewritten`
+throws them out — and without it the inline before-image drew the sentence
+solid red while the side-by-side window, reading that same table, stepped it
+back and picked out the one word that went. **One edit cannot read two ways in
+two layouts.**
+
+Sources 3 and 4 both go through `names` and `rewritten`: a range that covers
+the row says nothing, and a range that picks out a bracket and two commas is
+not worth dimming a block for.
 
 ### `fitted` / `refit` — `overlay.lua`
 

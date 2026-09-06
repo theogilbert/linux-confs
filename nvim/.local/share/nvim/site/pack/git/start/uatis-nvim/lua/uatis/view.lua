@@ -111,6 +111,47 @@ local function render(view)
     -- with no blob at the fork point is one the branch added, and the list
     -- cannot tell that from an empty old side once it has been defaulted.
     view.new_file = old_text == nil
+
+    -- A file of bytes is not compared at all.
+    --
+    -- Both backends would answer: difftastic falls back to comparing
+    -- words when it has no parser, and `vim.diff` will happily split
+    -- a PNG on whatever `\n` bytes it contains. Both answers are true
+    -- of the bytes and useless to a reader -- marks drawn over noise,
+    -- a before-image of noise above it, and counts that mean nothing.
+    -- What can honestly be said about a binary file is what it weighs,
+    -- and the winbar says that.
+    --
+    -- Detected the way git detects it: a NUL byte near the start.
+    -- Asked of the CONTENT rather than of the extension, since the
+    -- question is whether this can be read as lines and a `.txt` full
+    -- of bytes cannot.
+    local function bytes(text)
+      return text ~= nil and text:sub(1, 8000):find("\0", 1, true) ~= nil
+    end
+    if bytes(old_text) or bytes(new_text) then
+      overlay.clear(view.bufnr)
+      -- The old size is the blob's, which is the file's. The NEW one is
+      -- read off the disk and not off the buffer: Neovim stores a NUL as
+      -- a newline and splits on the rest, so a PNG round-tripped through
+      -- buffer lines comes back a different length than the file is --
+      -- 3592 bytes read back as 5427. The buffer is not a copy of a
+      -- binary file, and its length is not that file's size.
+      local stat = vim.uv.fs_stat(view.root .. "/" .. view.relpath)
+      view.binary = {
+        old = old_text and #old_text or nil,
+        new = stat and stat.size or #new_text,
+      }
+      view.added, view.removed, view.pending = 0, 0, false
+      view.old_text, view.hunks, view.anchors = old_text or "", {}, {}
+      view.pairs, view.anchor, view.del_spans, view.del_fine = nil, nil, nil, nil
+      oldside.refresh(view)
+      view.renders = (view.renders or 0) + 1
+      require("uatis.pane").recount(view)
+      return
+    end
+    view.binary = nil
+
     old_text = old_text or ""
     diff.compute(old_text, new_text, {
       backend = view.backend,

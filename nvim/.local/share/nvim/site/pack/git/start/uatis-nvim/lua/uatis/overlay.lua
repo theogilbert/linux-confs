@@ -2218,12 +2218,52 @@ function M.render(bufnr, win, result, old_lines, opts)
           if (not dels or #dels == 0) and refit[old_row] then
             dels = refit[old_row]
           end
+          -- ...or the comparison the emphasis itself came from, which is
+          -- what the old WINDOW draws its red out of (`view.del_fine`).
+          -- `inline` is only one of the two ways that answer is
+          -- produced: a sentence reworded inside a multi-line node comes
+          -- through `block_diff` instead, and without this the
+          -- before-image fell through to the backend's whole-atom spans,
+          -- found them covering the row, and drew the sentence solid red
+          -- -- while the side-by-side window, reading the same
+          -- `del_fine`, stepped it back and picked out the one word that
+          -- went. One edit cannot read two ways in two layouts.
           if (not dels or #dels == 0) and result.precise then
             local reported = del_marked[old_row]
             dels = reported and names(reported, text) and reported or nil
           end
           if dels and rewritten(dels, text) then
             dels = nil
+          end
+          -- Last, and only where everything above came back with nothing
+          -- usable: the comparison the emphasis itself came from, which
+          -- is what the old WINDOW draws its red out of (`view.del_fine`).
+          --
+          -- Last because it is the COARSEST of the four. difftastic
+          -- reports the old side token by token and knows
+          -- `self.measure(box)` survived a line whose `total +=` went;
+          -- this is a character comparison over the whole block and says
+          -- the row went entire. Taken earlier it overruled a better
+          -- answer.
+          --
+          -- But it is the only answer left for a sentence reworded
+          -- inside a multi-line node: there the backend's spans cover
+          -- the whole atom, `rewritten` throws them out, and the
+          -- before-image fell through to solid red -- while the
+          -- side-by-side window, reading this very table, stepped the
+          -- sentence back and picked out the one word that went. One
+          -- edit cannot read two ways in two layouts.
+          --
+          -- Through both gates the backend's own spans go through: not
+          -- covering the row, and picking out something the reader can
+          -- NAME. A call reflowed across three lines has honestly lost a
+          -- bracket and two commas, and dimming a block to point at
+          -- those is not a comparison anybody can read.
+          if (not dels or #dels == 0) and del_fine[old_row]
+            and #del_fine[old_row] > 0
+            and names(del_fine[old_row], text)
+            and not rewritten(del_fine[old_row], text) then
+            dels = del_fine[old_row]
           end
           local runs = syn and syn[old_row]
           local chunks = { { marker .. pad, "UatisSign" } }

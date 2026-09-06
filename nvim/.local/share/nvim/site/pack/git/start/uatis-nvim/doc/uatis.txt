@@ -321,6 +321,14 @@ new. Only where a hunk sits directly above the run -- which is what a
 wrapper is -- so a reformatted file does not light up every row it
 moved. Turn it off with `diff.indent_marks`.
 
+                                                          *uatis-marks-binary*
+A file of bytes is not compared at all. Both backends would answer --
+difftastic compares words where it has no parser, and `vim.diff` will split a
+PNG on whatever newline bytes it contains -- and both answers are marks drawn
+over noise. Nothing is drawn, and the winbar says what the file weighed and
+what it weighs: `binary · 2.0 KB → 3.5 KB`. Detected from the content, the way
+git detects it: a NUL byte near the start.
+
                                                              *uatis-marks-old*
 Removed lines are drawn as virtual lines above where they were, in the old
 revision's own syntax colours, with a `-` in the gutter. Inside one, the parts

@@ -87,6 +87,27 @@ local function names(parts, width)
   return table.concat(kept, " · ")
 end
 
+--- A byte count as a person reads one.
+---
+--- Powers of two, and one decimal past the first unit: the question a
+--- size answers here is "did this get bigger, and by roughly how much",
+--- and `1.2 KB -> 1.5 KB` answers it where `1231 -> 1504` makes the
+--- reader do the arithmetic.
+function M.size(bytes)
+  if bytes == nil then
+    return "nothing"
+  end
+  local units = { "B", "KB", "MB", "GB" }
+  local n, at = bytes, 1
+  while n >= 1024 and at < #units do
+    n, at = n / 1024, at + 1
+  end
+  if at == 1 then
+    return string.format("%d B", bytes)
+  end
+  return string.format("%.1f %s", n, units[at])
+end
+
 local function stat_text(added, removed)
   return string.format("+%d -%d", added or 0, removed or 0)
 end
@@ -472,6 +493,22 @@ local function view_winbar_text(view, width)
   -- else about this window looks exactly like the one you can type in.
   if view.at_commit and view.layout ~= "side" then
     add("at " .. view.at_commit, "UatisMeta")
+  end
+  -- A file of bytes says what it weighs, and nothing else.
+  --
+  -- Every other slot on this bar describes a comparison of TEXT: how
+  -- many lines came and went, which backend read them, whether the
+  -- parser managed. None of that is a fact about a PNG, and a diff of
+  -- its bytes is marks drawn over noise -- true of the bytes, and not
+  -- a thing any reader can act on. What they want to know is whether
+  -- it got bigger.
+  if view.binary then
+    add("binary", "UatisMeta")
+    add(M.size(view.binary.old) .. " → " .. M.size(view.binary.new), "UatisMeta")
+    if vim.bo[view.bufnr].modified then
+      add("modified", "UatisMeta")
+    end
+    return compose(left, {}, width)
   end
   table.insert(left, stat_item(view.added, view.removed))
   if vim.bo[view.bufnr].modified then

@@ -26,9 +26,8 @@ same ground as this file, with tags.
 - marks the lines that carry a thread in the gutter, in every file you
   open for as long as the review is on — open threads and resolved ones
   get different glyphs, because you navigate by the first;
-- shows the conversations: one at a time in a float under the cursor, in
-  a pane beside the code that reads whatever `]m` walks to, or all of
-  them at once as virtual lines under the lines they are about — on a
+- shows the conversations: one at a time in a float under the cursor, and
+  in a pane beside the code that reads whatever `]m` walks to — on a
   ground of their own so they do not read as more code;
 - posts a new thread against the line under the cursor, with the position
   GitLab needs (the three diff shas, the path on both sides, the line);
@@ -147,17 +146,26 @@ when there is no line to be about.
 
 | | |
 |---|---|
-| `<leader>mx` | expand the conversations: the pane, or inline |
+| `<leader>mx` | expand the conversations: the pane beside the code |
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
-| `<leader>mr` | reply |
-| `<leader>mR` | resolve / reopen |
-| `<leader>me` | edit a comment in the thread here |
-| `<leader>mD` | delete one, after asking |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
 | `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
+
+What is bound out on the code is what the pane cannot do: read the
+review, walk it, and start a comment where the cursor is. Acting on a
+conversation that is already there — replying, resolving, rewriting or
+deleting a comment in it — happens in the pane, where the thread is on
+the screen and the cursor can be put on the comment being talked about:
+`r`, `x`, `e` and `d`. They were four `<leader>m` keys out on the code,
+and each of them asked a question the pane answers by being open — which
+thread on this line, and which comment in it. Answering out of a picker
+what you could have answered by putting the cursor on it is the long way
+round. Each is still a `:Nemeton` verb, and each still has a
+`keys.session.*` entry: give one a string and it is out on the code
+again.
 
 A queue with nothing in it still carries the keys across the top: what
 to do about "no opened merge requests" — look at the merged ones, or
@@ -196,6 +204,34 @@ comments, `d` deletes one, `R` refetches, `q` closes. Every thread is
 there, the ones on code saying which line they sit on, and each is its
 opening note and nothing else — the answers to it are what
 `:Nemeton conversation` is for.
+
+`<C-]>` follows what is under the cursor — there, in the pane and in the
+every-thread window. It is vim's own key for "go to the thing under the
+cursor" doing what it has always done: a tag jump, into a forge instead
+of a tags file.
+
+What it does by default is the quietest thing that is still an answer:
+it says what is under the cursor — `User alice`, `commit a1b2c3d4` — and
+puts a link on the clipboard. Nothing is opened and no window moves; a
+key that took the editor somewhere would be a key pressed once by
+accident and then never again, and what you usually wanted is the string
+anyway: the sha to `git show`, the name to ask around about, the URL to
+send to somebody. `comments.follow` is one entry per kind — `false` for
+nothing at all, and a function of your own for anything else, called
+with what is written and where it points:
+
+```lua
+comments = {
+  follow = {
+    commit = function(sha)
+      vim.cmd("Git show " .. sha)
+    end,
+    link = function(text, href)
+      vim.ui.open(href)
+    end,
+  },
+}
+```
 
 What is bound out in the buffer is what acts on the line under the
 cursor. A dozen keys under one prefix is a menu nobody has learnt, so
@@ -302,8 +338,29 @@ language has none is drawn plainly, and `comments.syntax = false` turns
 it off. Which half of the
 diff a line is then has to be said some other way — a keyword is the
 colour a keyword is on both of them — so each half is drawn on a band of
-its own, edge to edge, with the `+` and the `-` in the colour that half
-used to be.
+its own, with the `+` and the `-` in the colour that half used to be.
+
+In a box, and without the fence that made it one. ```` ```suggestion:-1+0 ````
+is not something anybody wrote to be read: it is markup GitLab invented
+so a button on the page can apply the block, and the block underneath
+already says everything it says. What the fence did do was mark where the
+code started and stopped, and the box says that better — two bands with a
+ragged right edge in the middle of a paragraph are a stain rather than a
+block. Every line is padded to the same width inside the rule.
+
+On the top rule are the two things the fence said that the diff under it
+does not: what it is, and `-1 +0` — how far it reaches, counted from the
+line the thread sits on. The red half shows those lines where there is a
+file to read them out of; where there is not, the two numbers are all
+there is to say how much would be replaced.
+
+The band stops at the rules, and is the one band in a conversation that
+does — every other one runs the width of the editor, because there is
+nothing on its line to say where it ends. Here the box says it, and red
+running out through a rule and on to the right-hand side of the window is
+the colour escaping the thing drawn to hold it.
+`comments.suggest_box = false` draws the fence lines again, and the band
+is the whole line again with them.
 
 The head of every note says what commit it was written against as well
 as when — eight digits after the date, the ones GitLab itself prints.
@@ -339,14 +396,15 @@ with `git show`, not from the forge — the commit the note was written
 against is one the repository already has — and a commit that is not
 there any more is asked about once and then left alone.
 
-`<leader>mx` expands the conversations, and `comments.expand` says
-where they go. `"right"` and `"bottom"` open a pane beside the code or
-under it; `"inline"` draws each conversation under the line it is about,
-as virtual lines. Inline is the comment where the code is — read down
-the file and you read the review with it — and it is also four blocks
-between you and the next function, wrapped to whatever width the window
-happens to be. The pane leaves the code its shape and gives the prose a
-width of its own.
+`<leader>mx` expands the conversations into a pane, and
+`comments.expand` says which side it opens on: `"right"` or `"bottom"`.
+A comment drawn under the line it is about is the comment where the code
+is — read down the file and you read the review with it — and it is also
+four blocks between you and the next function, wrapped to whatever width
+the window happens to be, with nowhere in it to put a cursor, so nothing
+in it can be acted on. The pane leaves the code its shape, gives the
+prose a width of its own, and makes the thread you are reading one you
+can answer where you are sitting.
 
 The pane holds **one conversation at a time**. It is where a thread is
 read, and a window holding every thread in the file is a window you have
@@ -363,6 +421,23 @@ it moves. It opens on the thread under the cursor, or the next one in
 the file if there is none there, and `<CR>` on a thread from the
 every-thread window, the comments window or the quickfix list puts that
 one in it.
+
+It is also where the review is answered: `r` replies, `x` resolves the
+thread or reopens it, `e` edits the comment the cursor is on, `d`
+deletes it after asking, `<CR>` goes to the code it is about and `q`
+folds the conversations away. `e` and `d` act on the comment you are
+pointing at rather than on one picked out of a list — the whole
+conversation is drawn in here, so you have already answered the question
+a picker would ask. The head of a note counts as part of it; on a line
+that is nobody's comment, the list is still asked.
+
+`g?` prints all eleven of them in a float, which is what the header says
+about the keys: it used to spend its right-hand side on `]m next · r
+reply · <CR> code · q close`, said in full and then as the letters alone
+for a narrow pane, and that was a reminder for the first afternoon and a
+column of the file name's room for ever after. The help is read out of
+the bindings themselves, so it cannot drift from them. `q` or `<Esc>`
+closes it and puts the cursor back.
 
 What the gutter does while a conversation is being read is say which
 lines it was written against: the bubble marks the line a thread is
@@ -394,6 +469,40 @@ prose set across the whole of a wide editor is prose the eye loses its
 place in. `comments.wrap = false` wraps to the window and nothing
 narrower.
 
+A comment is markdown, and wherever one is read it is drawn as the page
+the forge would have drawn rather than as the characters it was typed
+with. The composer is the other half of that promise: what you write
+there is the source, because the source is what is posted.
+
+A **link** is drawn as the words it was given.
+`[the failing job](https://…/-/jobs/1234)` is four words and a hundred
+characters of where they point, and the hundred are what wraps a
+two-line comment across five. `NemetonLink`, underlined, and where it
+goes is not lost — `<C-]>` on it follows it. A picture, `![alt](src)`, is
+drawn as its alt text: a terminal has nowhere to put a picture, and the
+alt text is the sentence its author wrote for exactly this case.
+`comments.links = false` leaves the brackets.
+
+A **heading** is drawn without the hashes, in `NemetonHeading`. There is
+no larger type in a terminal, so a heading here is a colour and a line of
+its own — which is what says "heading" everywhere else in this plugin.
+`comments.headings = false` leaves them.
+
+A **table** is ruled and its columns are lined up, with the alignments
+its delimiter row asked for. Markdown's own is a table only in the sense
+that the columns are named: the cells line up in the source when its
+author lined them up by hand, and what you are reading is somebody else's
+hand. Too wide for the window, the columns give up room from the widest
+first and a cell that still does not fit is cut with an ellipsis — a
+ruled table cannot wrap, because a rule that wraps is two rules.
+`comments.tables = false` leaves the pipes.
+
+None of it changes what is sent: `:Nemeton edit` posts back the text its
+author wrote, brackets and hashes and pipes and all, because that is what
+the forge renders and what the next person to edit it has to see. Inside
+a fenced block nothing is rendered at all — code that says `[a](b)` says
+`[a](b)`.
+
 A link to a commit is drawn as the eight digits GitLab itself prints —
 `a1b2c3d4` where a permalink was, since a permalink is a hundred
 characters whose only content is the forty at the end of it, and a
@@ -416,9 +525,11 @@ the sentence around them. An address is not a mention and a word is not
 a sha: a name has to start where a word starts, and a run of hex counts
 as a commit only if it has both digits and letters in it, since seven
 characters of nothing but a-f is a word English happens to have and
-seven of nothing but digits is a number somebody wrote down. Nothing is
-marked inside a settled thread, which is dimmed whole.
-`comments.references = false` turns it off.
+seven of nothing but digits is a number somebody wrote down. In a settled
+thread as well as an open one: the rest of one is dimmed because it is
+history, and the commit it names is not history — it is what somebody
+reading a resolved argument came for. `comments.references = false` turns
+it off, and takes those two out of what `<C-]>` can find with them.
 
 `:tada:` is drawn as 🎉, the way the forge would have drawn it — a
 comment read with the colons still in it has a word missing out of the
@@ -578,6 +689,11 @@ lua/nemeton/
                  also the host/token environment and the 401 retry
   threads.lua    GitLab's discussions -> "which threads are on line 42",
                  pure, and the part the tests lean on hardest
+  markdown.lua   a comment read as the page rather than as the source:
+                 links, headings, tables, fences -- pure, and a parser
+                 only, since the drawing is threads.lua's
+  follow.lua     what <C-]> goes to, and where each kind of reference
+                 has a page
   session.lua    one merge request at a time, and everything hanging off it
   marks.lua      extmarks: gutter signs, and conversations as virt_lines
   list.lua       the merge request picker
@@ -615,7 +731,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 397 checks — parsing, indexing, the gutter, the
+memory of the API docs. 792 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts

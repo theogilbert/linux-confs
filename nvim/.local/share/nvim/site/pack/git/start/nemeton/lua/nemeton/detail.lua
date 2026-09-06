@@ -687,6 +687,12 @@ end
 --- `opts.winbar` -- a winbar string, for a float that has keys of its own
 --- `opts.keys`   -- { { lhs, fn, desc }, ... }, bound in the float
 --- `opts.quit`   -- what closes it, if not `q`. `<Esc>` always does.
+--- `opts.width`  -- columns, for a float holding something narrower than
+---                  prose. Fitted to the editor either way.
+--- `opts.filetype` -- `false` for a float this plugin has coloured
+---                  itself: markdown over a table of keys is a syntax
+---                  with an opinion about `_` and `*` in somebody's
+---                  keymap.
 function M.float(lines, title, opts)
   opts = opts or {}
   local buf = vim.api.nvim_create_buf(false, true)
@@ -694,11 +700,13 @@ function M.float(lines, title, opts)
   if opts.hls then
     require("nemeton.marks").paint(buf, opts.hls)
   end
-  vim.bo[buf].filetype = "markdown"
+  if opts.filetype ~= false then
+    vim.bo[buf].filetype = "markdown"
+  end
   vim.bo[buf].modifiable = false
   vim.bo[buf].bufhidden = "wipe"
 
-  local width = math.min(math.floor(vim.o.columns * 0.7), 100)
+  local width = math.min(opts.width or math.floor(vim.o.columns * 0.7), 100, vim.o.columns - 4)
   local height = math.max(3, math.min(#lines + 1, math.floor(vim.o.lines * 0.6)))
   local back = require("nemeton.win").came_from()
   local win = vim.api.nvim_open_win(buf, true, {

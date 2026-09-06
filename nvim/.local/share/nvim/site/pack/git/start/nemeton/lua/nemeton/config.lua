@@ -114,22 +114,14 @@ return {
     -- expanded, where the note it summarises is the next line down.
     virt_text = false,
 
-    -- Where the conversations go when they are expanded.
+    -- Which side of the code the pane the conversations are read in
+    -- opens on: "right" or "bottom".
     --
-    -- "inline" draws each one under the line it is about, as virtual
-    -- lines: the comment is where the code is, and reading down the
-    -- file reads the review with it. It also pushes the code apart --
-    -- four threads in a file is four blocks between you and the next
-    -- function -- and it wraps a paragraph to whatever the width of the
-    -- window happens to be, which in a split is a comment read four
-    -- words at a time.
-    --
-    -- "right" and "bottom" put them in a pane instead: every thread in
-    -- the file, in one window, following the cursor down it. The code
-    -- keeps its shape and the prose gets a width of its own; what it
-    -- costs is the anchoring, which the pane buys back by naming the
-    -- line each conversation is on and by moving with you. The gutter
-    -- says which lines carry one either way.
+    -- Every thread in the file, one at a time, in a window of its own.
+    -- The code keeps its shape and the prose gets a width to be set at;
+    -- what that costs is the anchoring, which the pane buys back by
+    -- naming the line each conversation is on and by moving with you.
+    -- The gutter says which lines carry one.
     expand = "right",
 
     -- ...and which window that pane is a split of.
@@ -185,10 +177,99 @@ return {
     -- than by reading the sentence they are in. `NemetonMention` and
     -- `NemetonCommit` are the colours, blue by default.
     --
-    -- Not in a thread that is over: a settled conversation is dimmed
-    -- whole, and a blue name inside one would say there is something
-    -- there to answer.
+    -- In a settled thread as well as an open one. The rest of one is
+    -- dimmed, because it is history; the commit it names is not history
+    -- and is exactly what somebody reading a resolved argument came for.
+    --
+    -- Also what `follow` below has to work with: a reference nobody
+    -- marked is a reference `<C-]>` cannot find.
     references = true,
+
+    -- Whether a markdown link is drawn as the words it was given rather
+    -- than as the brackets it was typed in.
+    --
+    -- `[the failing job](https://…/-/jobs/1234)` is four words and a
+    -- hundred characters of where they point, and the hundred are the
+    -- part that wraps a two-line comment across five. Drawn as "the
+    -- failing job", in `NemetonLink`, the sentence is the sentence its
+    -- author wrote -- and where it goes is not lost: `<C-]>` on it
+    -- follows it, which is what the underlining on a page is for.
+    --
+    -- A picture -- `![alt](src)` -- is drawn as its alt text for the
+    -- same reason and one more: a terminal has nowhere to put a
+    -- picture, and the alt text is the sentence its author wrote for
+    -- exactly this case.
+    --
+    -- Only how it is drawn. Rewriting a comment sends back the text its
+    -- author wrote, brackets and URLs and all.
+    links = true,
+
+    -- Whether `## why` is drawn as "why", in the colour a name is drawn
+    -- in, rather than as the hashes it was typed with.
+    --
+    -- There is no larger type in a terminal, so a heading here is a
+    -- colour and a line of its own -- which is what says "heading"
+    -- everywhere else in this plugin. The hashes said the same thing in
+    -- a notation, and a notation is what a rendered comment is not.
+    headings = true,
+
+    -- Whether a pipe table is drawn as a table: ruled, with the columns
+    -- lined up and the alignments its delimiter row asked for.
+    --
+    -- Markdown's table is a table only in the sense that the columns
+    -- are named -- the cells line up in the source when its author
+    -- lined them up by hand, and what is read here is somebody else's
+    -- hand. Ruled, the columns line up because they are columns, which
+    -- is the whole reason the author reached for a table.
+    --
+    -- Too wide for the window, the columns give up room from the widest
+    -- first and a cell that still does not fit is cut with an ellipsis:
+    -- a ruled table cannot wrap, because a rule that wraps is two
+    -- rules.
+    tables = true,
+
+    -- Whether a suggestion is drawn in a box instead of behind the
+    -- fence GitLab wrote it with.
+    --
+    -- ```suggestion:-1+0 is not something anybody wrote to be read: it
+    -- is markup the forge invented so a button on the page can apply
+    -- the block. What it did do was say where the code started and
+    -- stopped, and the box says that better -- the two halves of the
+    -- diff are two bands, and a band with a ragged right edge in the
+    -- middle of a paragraph is a stain rather than a block.
+    --
+    -- `false` draws the fence lines again, and the halves under them.
+    suggest_box = true,
+
+    -- What `<C-]>` does with the thing under the cursor, in the windows
+    -- that draw a conversation.
+    --
+    -- One entry per kind of reference. `false` is nothing at all. A
+    -- function is yours, and is called with two arguments: what is
+    -- written, and where it points.
+    --
+    --   mention  ("alice", "https://gitlab.example.com/alice")
+    --   commit   ("a1b2c3d4", "https://…/-/commit/a1b2c3d4")
+    --   link     ("the failing job", "https://…/-/jobs/1234")
+    --
+    -- The text is the useful half for a commit -- `:Git show a1b2c3d4`,
+    -- a diff view, a terminal -- and the URL is the useful half for a
+    -- link. Both are handed over either way, and the second is nil
+    -- where this plugin cannot work out a page: a mention read with no
+    -- merge request open has no forge to be a user of.
+    --
+    -- `true` is the built-in, which is the quietest thing that is still
+    -- an answer: `User alice`, `commit a1b2c3d4`, and a link put on the
+    -- clipboard. Nothing is opened and no window moves -- a key that
+    -- took the editor somewhere would be a key pressed once by accident
+    -- and then never again -- and what the reader usually wanted is the
+    -- string anyway: the sha to `git show`, the name to ask around
+    -- about, the URL to send to somebody.
+    follow = {
+      mention = true,
+      commit = true,
+      link = true,
+    },
 
     -- Whether resolved threads are drawn at all. They are still fetched
     -- either way -- toggling this is a redraw, not a refetch.
@@ -287,7 +368,7 @@ return {
     -- arrow are the whole of what says so -- and both of them are two
     -- characters at the head of a line, which is where the eye is not
     -- when it has just finished the line above.
-    reply_ground = 4,
+    reply_ground = 2.4,
 
     -- Which colour the ground under a conversation leans towards.
     accent = "Normal",
@@ -417,13 +498,9 @@ return {
     -- window it is in is `description` -- which is why that is the only
     -- one of these that opens one.
     session = {
-      expand = "<leader>mx", -- the conversations themselves, under the lines
+      expand = "<leader>mx", -- the conversations themselves, in the pane
       peek = "<leader>mp", -- the thread under the cursor, in a float
       comment = "<leader>ma", -- a new thread on this line
-      reply = "<leader>mr", -- a reply into the thread under the cursor
-      resolve = "<leader>mR", -- resolve/unresolve the thread under the cursor
-      edit = "<leader>me", -- rewrite a comment in the thread under the cursor
-      delete = "<leader>mD", -- delete a comment in the thread under the cursor
       suggest = "<leader>ms", -- visual mode: suggest a change to these lines
       description = "<leader>md", -- the merge request itself, in a float
       -- On a key rather than one letter further in, unlike the rest of
@@ -447,6 +524,25 @@ return {
       publish = false, -- `s` there -- send every comment kept unsent
       threads = false, -- :Nemeton threads -- every thread, as a quickfix list
       toggle = false, -- :Nemeton comments -- the markers on and off
+
+      -- ...and the four verbs that act on a conversation that is
+      -- already there, which are `r`, `x`, `e` and `d` in the pane
+      -- (|nemeton-pane-window|).
+      --
+      -- Out here they were four keys that each asked a question the
+      -- pane answers by being open: which thread on this line, and
+      -- which comment in it. Answering out of a picker what you could
+      -- have answered by putting the cursor on it is the long way
+      -- round, and a review is read in the pane anyway -- the gutter
+      -- says where the conversations are, `]m` walks them, and the one
+      -- you are reading is the one in front of you.
+      --
+      -- What stays bound on the code is what the pane cannot do: start
+      -- a comment where the cursor is.
+      reply = false, -- :Nemeton reply -- `r` in the pane
+      resolve = false, -- :Nemeton resolve -- `x` there
+      edit = false, -- :Nemeton edit -- `e` there
+      delete = false, -- :Nemeton delete -- `d` there
     },
     -- The MR list window.
     list = {
@@ -491,6 +587,7 @@ return {
       thread = "t", -- one people can reply to
       edit = "e", -- rewrite one of the comments in this thread
       delete = "d", -- delete one of them, after asking
+      follow = "<C-]>", -- what the word under the cursor points at
       refresh = "R",
       quit = "q",
     },
@@ -521,6 +618,7 @@ return {
       reply = "r",
       edit = "e",
       delete = "d",
+      follow = "<C-]>", -- what the word under the cursor points at
       refresh = "R",
       quit = "q",
     },
@@ -535,10 +633,26 @@ return {
     pane = {
       code = "<CR>", -- go to the code the thread under the cursor is about
       reply = "r",
+      -- The comment under the cursor rather than one picked out of a
+      -- list: the whole conversation is drawn here, so the reader is
+      -- already pointing at the one they mean.
       edit = "e",
       delete = "d",
+      -- ...and the one verb here that is about the whole thread: an
+      -- argument is settled as a whole. `x` because it crosses one off
+      -- and because `r` and `R` are both spoken for.
+      resolve = "x",
+      -- What the word under the cursor points at: a link, a commit, the
+      -- person a comment is calling on. Vim's own key for "go to the
+      -- thing under the cursor", doing what it has always done -- see
+      -- `comments.follow`, which is what it does it with.
+      follow = "<C-]>",
       refresh = "R",
       quit = "q",
+      -- ...and the list of all of them, since there are now more than a
+      -- header has room to name. Vim's own key for "what can I do
+      -- here", which is what it is being asked.
+      help = "g?",
     },
 
     -- The pipeline's jobs.

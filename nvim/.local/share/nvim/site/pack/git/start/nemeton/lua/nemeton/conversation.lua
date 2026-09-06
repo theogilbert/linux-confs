@@ -15,6 +15,7 @@
 
 local config = require("nemeton.config")
 local edit = require("nemeton.edit")
+local follow = require("nemeton.follow")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local syntax = require("nemeton.syntax")
@@ -25,14 +26,16 @@ local M = {}
 
 M.win = nil
 M.buf = nil
--- Line number (1-based) -> the thread drawn on it.
+-- Line number (1-based) -> the thread drawn on it, and the note of it,
+-- for the keys that act on what is under the cursor.
 local rows = {}
+local said = {}
 
 function M.close()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win, M.buf, rows = nil, nil, {}
+  M.win, M.buf, rows, said = nil, nil, {}, {}
 end
 
 --- Everything there is to read, in reading order: the threads on the
@@ -59,7 +62,7 @@ local function render()
   -- window's own furniture -- a file name, a line number, the blank
   -- between two threads. The furniture stays on the window's
   -- background, so that what is on a ground is what somebody said.
-  local chunks, map, ground = {}, {}, {}
+  local chunks, map, notes, ground = {}, {}, {}, {}
 
   -- What a suggestion would replace, read out of the file it is about.
   --
@@ -155,6 +158,7 @@ local function render()
     for _, line in ipairs(drawn) do
       table.insert(chunks, line)
       map[#chunks] = t
+      notes[#chunks] = line.note
       ground[#chunks] = t.resolved and "settled" or "open"
     end
   end
@@ -180,12 +184,13 @@ local function render()
     chunks = { { { "nothing has been said on this merge request yet.", "NemetonMeta" } } }
   end
 
-  local lines, hls = marks.shade_lines(chunks, 0, ground)
-  rows = map
+  local lines, hls, refs = marks.shade_lines(chunks, 0, ground)
+  rows, said = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
+  follow.set(M.buf, refs)
 end
 
 --- The thread the cursor is in. A conversation is several lines tall
@@ -203,17 +208,32 @@ local function thread_at()
   return nil
 end
 
+--- ...and which note of it the cursor is standing on, where it is
+--- standing on one. The head of a note counts as part of it: it is the
+--- line a reader is most likely to be on when they decide to rewrite
+--- what is under it.
+local function note_at()
+  if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
+    return nil
+  end
+  return said[vim.api.nvim_win_get_cursor(M.win)[1]]
+end
+
 --- Closes the window and does `fn`, which is how every key that opens
 --- something else behaves: this is a float over the middle of the
 --- editor and it is in the way of whatever comes next.
+---
+--- `fn` is handed the thread and the note the cursor was on, in that
+--- order -- both read before the window goes, since afterwards there is
+--- no cursor to read them from.
 local function instead(fn)
   return function()
-    local thread = thread_at()
+    local thread, note = thread_at(), note_at()
     if not thread then
       return
     end
     M.close()
-    fn(thread)
+    fn(thread, note)
   end
 end
 
@@ -259,6 +279,9 @@ function M.open()
   vim.wo[M.win].winbar = hint:format(k.code, k.reply, k.edit, k.delete, k.refresh, k.quit)
 
   local bindings = {
+    -- What the word under the cursor points at -- a link, a commit, the
+    -- person a comment is calling on. See `comments.follow`.
+    { k.follow, follow.here, "follow what is under the cursor" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {
@@ -280,8 +303,23 @@ function M.open()
       "go to the code this is about",
     },
     { k.reply, instead(edit.reply), "reply to the thread here" },
-    { k.edit, instead(edit.thread), "edit a comment in the thread here" },
-    { k.delete, instead(edit.delete), "delete a comment in the thread here" },
+    -- The comment under the cursor, not one picked out of a list: this
+    -- window draws the whole conversation, so the reader is already
+    -- pointing at the one they mean.
+    {
+      k.edit,
+      instead(function(thread, note)
+        edit.thread(thread, nil, note)
+      end),
+      "edit the comment under the cursor",
+    },
+    {
+      k.delete,
+      instead(function(thread, note)
+        edit.delete(thread, nil, note)
+      end),
+      "delete the comment under the cursor",
+    },
     {
       k.refresh,
       function()

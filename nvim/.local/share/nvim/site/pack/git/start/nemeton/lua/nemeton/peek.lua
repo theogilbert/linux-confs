@@ -1,9 +1,9 @@
 -- The thread under the cursor, in a float.
 --
--- The counterpart to expanded mode: expanded shows every conversation in
--- the file at once and pushes the code apart to do it, while this shows
--- one, over the top, and is gone on the next keystroke. Reading a
--- thread and reading the file are different activities.
+-- The counterpart to the pane: that is a window to read a conversation
+-- in and answer it from, while this shows one over the top and is gone
+-- on the next keystroke. A glance at what is on this line, without
+-- opening anything.
 
 local config = require("nemeton.config")
 local marks = require("nemeton.marks")

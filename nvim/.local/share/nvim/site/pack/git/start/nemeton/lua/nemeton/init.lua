@@ -20,9 +20,9 @@ local threads = require("nemeton.threads")
 
 local M = {}
 
--- vim.system, vim.ui.open, extmark `sign_text` and `virt_lines` are all
--- 0.10-or-later, and none of them degrade: on anything older this errors
--- rather than doing less.
+-- vim.system, vim.ui.open and extmark `sign_text` are all 0.10-or-later,
+-- and none of them degrade: on anything older this errors rather than
+-- doing less.
 local FLOOR = { 0, 10, 0 }
 
 local function supported()
@@ -324,22 +324,7 @@ M.reply = with_session(function()
 end)
 
 M.resolve = with_session(function()
-  local mr = session.current
-  pick_thread(function(thread)
-    if not thread.resolvable then
-      session.notify("that thread cannot be resolved", vim.log.levels.WARN)
-      return
-    end
-    local want = not thread.resolved
-    glab.resolve(mr.root, mr.iid, thread.id, want, function(data, err)
-      if not data then
-        session.notify("could not resolve: " .. tostring(err), vim.log.levels.ERROR)
-        return
-      end
-      session.notify(want and "resolved" or "reopened")
-      session.refresh()
-    end)
-  end)
+  pick_thread(require("nemeton.edit").resolve)
 end)
 
 --- What the merge request says it is for, in a float over the code.

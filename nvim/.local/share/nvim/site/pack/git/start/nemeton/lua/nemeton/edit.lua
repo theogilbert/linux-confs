@@ -172,17 +172,57 @@ function M.reply(thread)
   })
 end
 
+--- Resolves `thread`, or reopens it: whichever it is not.
+---
+--- Here rather than beside the key that used to be the only way to
+--- press it, because it is the same verb from the pane, and a thread is
+--- settled from wherever it is being read.
+function M.resolve(thread)
+  local mr = session.current
+  if not mr or not thread then
+    session.notify("no thread here", vim.log.levels.WARN)
+    return
+  end
+  if not thread.resolvable then
+    session.notify("that thread cannot be resolved", vim.log.levels.WARN)
+    return
+  end
+  local want = not thread.resolved
+  glab.resolve(mr.root, mr.iid, thread.id, want, function(data, err)
+    if not data then
+      session.notify("could not resolve: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+    session.notify(want and "resolved" or "reopened")
+    session.refresh()
+  end)
+end
+
 --- Deletes one note of `thread`, after asking. A thread whose only note
 --- goes is gone with it -- that is GitLab's rule, not ours.
-function M.delete(thread, after)
+---
+--- `note` is the one to act on where the caller knows which: a window
+--- that draws the whole conversation knows which comment the cursor is
+--- standing on, and asking a reader to pick out of a list what they are
+--- already pointing at is a question with the answer in it. Without
+--- one -- a summary, a marker in the gutter -- the thread is asked
+--- about instead.
+function M.delete(thread, after, note)
+  if note then
+    return remove(thread, note, after)
+  end
   pick(thread, "delete which comment", remove, after)
 end
 
---- Edits one note of `thread`, asking which when the thread has more
---- than one. Not filtered to your own: this plugin does not know who
---- you are without another call, and GitLab already refuses the ones
---- that are not yours -- with a message that says so.
-function M.thread(thread, after)
+--- Edits one note of `thread`, asking which when the caller does not
+--- say and the thread has more than one. Not filtered to your own: this
+--- plugin does not know who you are without another call, and GitLab
+--- already refuses the ones that are not yours -- with a message that
+--- says so.
+function M.thread(thread, after, note)
+  if note then
+    return rewrite(thread, note, after)
+  end
   pick(thread, "edit which comment", rewrite, after)
 end
 

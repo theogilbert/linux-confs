@@ -20,6 +20,7 @@
 
 local compose = require("nemeton.compose")
 local config = require("nemeton.config")
+local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
@@ -65,7 +66,7 @@ local function render()
   if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
     return
   end
-  local lines, hls, map = {}, {}, {}
+  local lines, hls, map, refs = {}, {}, {}, {}
   local list = everything()
   if #list == 0 then
     lines = { "nothing has been said on this merge request yet." }
@@ -74,13 +75,14 @@ local function render()
       if i > 1 then
         table.insert(lines, "")
       end
-      local text, painted = marks.shade_lines(
+      local text, painted, pointed = marks.shade_lines(
         threads.render(t, { summary = true }),
         #lines,
         t.resolved and "settled" or "open"
       )
       vim.list_extend(lines, text)
       vim.list_extend(hls, painted)
+      vim.list_extend(refs, pointed)
       for row = #lines - #text + 1, #lines do
         map[row] = t
       end
@@ -91,6 +93,7 @@ local function render()
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
+  follow.set(M.buf, refs)
 end
 
 local function thread_at()
@@ -285,6 +288,9 @@ function M.open()
   })
 
   local bindings = {
+    -- What the word under the cursor points at -- a link, a commit, the
+    -- person a comment is calling on. See `comments.follow`.
+    { k.follow, follow.here, "follow what is under the cursor" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {

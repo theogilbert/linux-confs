@@ -1,12 +1,13 @@
 -- The conversations of the file you are reading, in a pane beside it.
 --
--- The other half of expanding. Inline, a thread is drawn under the line
--- it is about, which is where it belongs and which pushes the code
--- apart to say so: four threads in a file is four blocks between you
--- and the next function, and a comment wrapped into a narrow split is a
--- comment read four words at a time. Here the code keeps its shape and
--- the conversations get a window of their own, wide enough to read
--- prose in.
+-- What expanding means. A comment drawn under the line it is about is
+-- where it belongs and pushes the code apart to say so: four threads in
+-- a file is four blocks between you and the next function, a paragraph
+-- is wrapped to whatever the window happens to be, and there is nowhere
+-- in it to put a cursor -- so nothing in it can be acted on. Here the
+-- code keeps its shape, the prose gets a width of its own, and the
+-- thread you are reading is a thread you can answer where you are
+-- sitting.
 --
 -- One conversation at a time: the pane is where a thread is *read*, and
 -- a window holding every thread in the file is a window you have to
@@ -30,6 +31,7 @@
 
 local config = require("nemeton.config")
 local edit = require("nemeton.edit")
+local follow = require("nemeton.follow")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local syntax = require("nemeton.syntax")
@@ -49,10 +51,12 @@ M.source = nil
 -- come back drawing what the forge now says about the same place.
 M.at = nil
 
--- Pane row (1-based) -> the thread drawn there, for the keys that act
--- on the one under the cursor. A line of code can carry two
--- conversations; the pane shows a place, and both of them are here.
+-- Pane row (1-based) -> the thread drawn there, and the note of it, for
+-- the keys that act on what is under the cursor. A line of code can
+-- carry two conversations; the pane shows a place, and both of them are
+-- here.
 local rows = {}
+local said = {}
 
 local function valid()
   return M.win and vim.api.nvim_win_is_valid(M.win)
@@ -95,8 +99,7 @@ end
 --- and the gutter marker moves with the edit while the index still
 --- keys on the line the thread was written against. What a suggestion
 --- would replace is read at the line the marker is on now, because
---- that is the code the comment is now about -- the same answer the
---- inline view gives, arrived at the same way.
+--- that is the code the comment is now about.
 local function moved(bufnr)
   local out = {}
   local known = marks.line_of_mark[bufnr] or {}
@@ -123,6 +126,19 @@ local function thread_at()
     end
   end
   return nil
+end
+
+--- ...and which note of it the cursor is standing on, where it is
+--- standing on one. The head of a note counts as part of it: it is the
+--- line a reader is most likely to be on when they decide to rewrite
+--- what is under it. Nil on the blank between two threads and on the
+--- code a thread was written against, where the thread is all there is
+--- to go on.
+local function note_at()
+  if not valid() then
+    return nil
+  end
+  return said[vim.api.nvim_win_get_cursor(M.win)[1]]
 end
 
 --- The line of `by_file` a row of `bufnr` carries a thread for, by
@@ -180,11 +196,11 @@ end
 ---
 --- Fitted here rather than left to the winbar's own truncation, which
 --- happens at `%<` and takes everything after it. What is dropped is
---- dropped in order: the keys first -- a pane thirty columns wide is
---- one where the file name is worth more than a reminder that `q`
---- closes windows -- then how much of it there is, and last the head of
---- the path, which goes as `…app.lua:3`, because the end of a path is
---- the half that says which file it is.
+--- dropped in order: the help first -- a pane thirty columns wide is
+--- one where the file name is worth more than a reminder that `g?`
+--- exists -- then how much of it there is, and last the head of the
+--- path, which goes as `…app.lua:3`, because the end of a path is the
+--- half that says which file it is.
 local function header(list, path, row, width)
   local first = list[1]
   local unsent = threads.unsent(first)
@@ -207,32 +223,23 @@ local function header(list, path, row, width)
     table.insert(much, ("+%d"):format(notes - #list))
   end
 
-  -- The keys, said twice: with what they do, and -- for a pane too
-  -- narrow for that -- as the keys alone. A row of letters is a
-  -- reminder rather than an explanation, which is what it is for by the
-  -- fourth time a reviewer sees it.
-  local said, alone = {}, {}
-  for _, pair in ipairs({
-    { config.keys.session.next, "next" },
-    { config.keys.pane.reply, "reply" },
-    { config.keys.pane.code, "code" },
-    { config.keys.pane.quit, "close" },
-  }) do
-    if pair[1] and pair[1] ~= "" then
-      table.insert(said, ("%s %s"):format(pair[1], pair[2]))
-      table.insert(alone, pair[1])
-    end
-  end
-
   local place = ("%s:%d"):format(path, row)
   local left = { { " " .. glyph .. " ", hl }, { place, "NemetonPath" } }
   if #much > 0 then
     table.insert(left, { "  " .. table.concat(much, " · "), "NemetonMeta" })
   end
-  -- Two columns and a gap of at least two, or one column and no keys.
-  for _, keys in ipairs({ said, alone }) do
-    local right = { { table.concat(keys, " · ") .. " ", "NemetonHint" } }
-    if #keys > 0 and measure(left) + measure(right) + 2 <= width then
+  -- One key on the right, and it is the one that names the rest.
+  --
+  -- This used to be four of them -- `]m next · r reply · <CR> code · q
+  -- close` -- said in full and then, for a pane too narrow, as the
+  -- letters alone. Both were a reminder for the first afternoon and a
+  -- column of the file name's room for ever after, and neither had room
+  -- for the four keys that have since been added. `g?` is what vim
+  -- already asks this with, and it costs seven columns.
+  local help = config.keys.pane.help
+  if help and help ~= "" then
+    local right = { { help, "NemetonKey" }, { " help ", "NemetonHint" } }
+    if measure(left) + measure(right) + 2 <= width then
       return bar(left) .. "%=" .. bar(right)
     end
   end
@@ -266,7 +273,7 @@ function M.render()
   local by_line = path and session.current.by_file[path] or nil
   local shown = visible(by_line and by_line[at.line])
 
-  local chunks, map, ground = {}, {}, {}
+  local chunks, map, notes, ground = {}, {}, {}, {}
   local head = bar({ { " nothing being read ", "NemetonMeta" } })
   if #shown > 0 then
     -- Where the line has got to since the markers were drawn, which is
@@ -314,9 +321,10 @@ function M.render()
         was = session.was(t, replaced(threads.span(t), 0)),
         paint = paint,
       })
-      for _, said in ipairs(drawn) do
-        table.insert(chunks, said)
+      for _, line in ipairs(drawn) do
+        table.insert(chunks, line)
         map[#chunks] = t
+        notes[#chunks] = line.note
         ground[#chunks] = t.resolved and "settled" or "open"
       end
     end
@@ -348,12 +356,13 @@ function M.render()
     }
   end
 
-  local text, hls = marks.shade_lines(chunks, 0, ground)
-  rows = map
+  local text, hls, refs = marks.shade_lines(chunks, 0, ground)
+  rows, said = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, text)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
+  follow.set(M.buf, refs)
   -- Back to the top: this is one conversation, read from the first
   -- thing anybody said, and a pane still scrolled to where the last one
   -- ended is a pane that opens in the middle of a sentence.
@@ -515,11 +524,9 @@ function M.open()
       end
     end
   end
+  -- In the order they are worth reading, because this list is also the
+  -- help: `g?` prints it.
   local bindings = {
-    -- Not `M.close`: the pane is what "expanded" means while it is on,
-    -- so the key that puts it away is the key that folds the
-    -- conversations back into the gutter.
-    { k.quit, session.toggle_expanded, "put the conversations away" },
     {
       k.code,
       function()
@@ -535,15 +542,31 @@ function M.open()
       "go to the code this is about",
     },
     { k.reply, on_thread(edit.reply), "reply to the thread here" },
-    { k.edit, on_thread(edit.thread), "edit a comment in the thread here" },
-    { k.delete, on_thread(edit.delete), "delete a comment in the thread here" },
+    -- The one verb here that is about the thread rather than about a
+    -- comment in it: an argument is settled as a whole.
+    { k.resolve, on_thread(edit.resolve), "resolve the thread, or reopen it" },
+    -- The comment under the cursor, not one picked out of a list: this
+    -- window draws the whole conversation, so the reader is already
+    -- pointing at the one they mean, and a picker offered to somebody
+    -- pointing at the answer is a question with the answer in it. The
+    -- list is still there for the lines that belong to no note in
+    -- particular -- the blank between two threads, the code one was
+    -- written against.
     {
-      k.refresh,
-      function()
-        session.refresh()
-      end,
-      "refetch",
+      k.edit,
+      on_thread(function(thread)
+        edit.thread(thread, nil, note_at())
+      end),
+      "edit the comment under the cursor",
     },
+    {
+      k.delete,
+      on_thread(function(thread)
+        edit.delete(thread, nil, note_at())
+      end),
+      "delete the comment under the cursor",
+    },
+    { k.follow, follow.here, "follow what is under the cursor" },
   }
   -- The walk, from inside the pane. `]m` and `[m` are bound everywhere
   -- while a review is on, and out in the code they move the cursor,
@@ -569,6 +592,26 @@ function M.open()
       walk[3],
     })
   end
+  vim.list_extend(bindings, {
+    {
+      k.refresh,
+      function()
+        session.refresh()
+      end,
+      "refetch",
+    },
+    -- Not `M.close`: the pane is what "expanded" means while it is on,
+    -- so the key that puts it away is the key that folds the
+    -- conversations back into the gutter.
+    { k.quit, session.toggle_expanded, "put the conversations away" },
+    {
+      k.help,
+      function()
+        M.help(bindings)
+      end,
+      "these keys",
+    },
+  })
   for _, b in ipairs(bindings) do
     if b[1] and b[1] ~= "" then
       vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
@@ -608,6 +651,48 @@ function M.open()
     M.render()
   end
   return M.win
+end
+
+--- What can be done in here, in a float over it.
+---
+--- Out of the bindings themselves rather than out of a list written
+--- beside them: a help that is a second copy of the keymaps is a help
+--- that is wrong the first time one of them moves. The order is the
+--- order they are bound in, which is the order they are worth reading.
+---
+--- `g?` because that is what vim already asks it with, and because the
+--- pane's header used to spend its right-hand side naming three of
+--- these -- which was a reminder for the first afternoon and a column
+--- of the file name's room for ever after.
+function M.help(bindings)
+  local chunks, widest = {}, 0
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      widest = math.max(widest, vim.fn.strdisplaywidth(b[1]))
+    end
+  end
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      local pad = widest - vim.fn.strdisplaywidth(b[1])
+      table.insert(chunks, {
+        { " " .. b[1] .. (" "):rep(pad), "NemetonKey" },
+        { "  " .. b[3], "NemetonThread" },
+      })
+    end
+  end
+  local lines, hls = threads.flatten(chunks, 0)
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  -- Not markdown, and no wider than the keys: this is a table of two
+  -- columns that this module has coloured itself, and a syntax with an
+  -- opinion about the `*` in somebody's keymap is not wanted over it.
+  return require("nemeton.detail").float(lines, " the conversation ", {
+    hls = hls,
+    width = width + 2,
+    filetype = false,
+  })
 end
 
 --- Redraws it if it is open, and does nothing if it is not: this is

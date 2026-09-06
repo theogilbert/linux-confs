@@ -83,7 +83,7 @@ end
 -- work is done once per colour rather than once per line drawn.
 local grounded = {}
 
---- The two grounds an expanded conversation is drawn on.
+--- The two grounds a conversation is drawn on.
 ---
 --- Not CursorLine, which this used to be: CursorLine is a grey band,
 --- and a grey band under every conversation in the file is the file
@@ -301,7 +301,7 @@ end
 -- thread was written against, and the two halves of a suggestion. Each
 -- is a band inside the block rather than text on it, and a line
 -- carrying one is drawn on it instead of on the conversation's -- see
--- `shade`.
+-- `M.shade_lines`.
 local OWN_GROUND = {
   NemetonWas = true,
   NemetonSuggestNew = true,
@@ -351,6 +351,18 @@ local function is_ground(name)
   end
   local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
   return (hl.bg or hl.ctermbg) ~= nil
+end
+
+--- The band a chunk brings with it, or nil where it brings none: a
+--- chunk drawn in one, or one asking for a colour on one.
+---
+--- Only asked on a line that says its bands are its chunks' rather than
+--- the line's -- `line.contained`, which is a suggestion inside a box.
+--- Everywhere else a band is the whole line, edge to edge, because
+--- there is nothing else on the line to say where it stops.
+local function band_of(chunk)
+  local named = type(chunk[2]) == "table" and chunk[2][1] or chunk[2]
+  return is_ground(named) and named or nil
 end
 
 --- `group`, with `base` behind it.
@@ -427,6 +439,17 @@ function M.setup_highlights()
   -- calls on, the commit it blames.
   link("NemetonMention", "DiagnosticInfo")
   link("NemetonCommit", "DiagnosticInfo")
+  -- ...and the third of them: a page it says to go and read. Underlined
+  -- rather than only coloured, because that is what a link has looked
+  -- like since before any of this: the words are the author's own
+  -- sentence, and the line under them is what says they are also a
+  -- door. `Underlined` is the group Neovim ships for exactly this.
+  link("NemetonLink", "Underlined")
+  -- A heading inside a comment, drawn without the hashes that made it
+  -- one. The colour a name is drawn in, because a terminal has no
+  -- larger type and this plugin already spends that colour on "the
+  -- line you are looking for".
+  link("NemetonHeading", "Title")
   -- A comment you have written and not sent: not open, not settled,
   -- and owed an action by you rather than by anybody else.
   link("NemetonDraft", "DiagnosticWarn")
@@ -498,9 +521,9 @@ function M.paint(bufnr, hls)
   end
 end
 
---- A conversation as lines and highlight spans for a real buffer: what
---- `threads.flatten` returns, drawn on the ground `shade` puts the
---- expanded view on.
+--- A conversation as lines and highlight spans, for the windows that
+--- draw one: what `threads.flatten` returns, on the ground a
+--- conversation is read on.
 ---
 --- The ground is what makes a comment look like one. Without it a
 --- thread is words on the window's own background -- the same
@@ -520,8 +543,13 @@ end
 --- between two threads. One string for the whole of a block, or a table
 --- of one per line for a window that draws its own furniture among
 --- them.
+---
+--- Third, and passed through rather than worked out here: where each of
+--- the things a comment points at ended up. See `threads.flatten`,
+--- which is what these windows would be calling if they did not need a
+--- ground under the words.
 function M.shade_lines(rendered, first_row, settled)
-  local lines, hls = {}, {}
+  local lines, hls, refs = {}, {}, {}
   for i, chunks in ipairs(rendered) do
     -- Spelled out rather than as `and`/`or`: a table whose entry for
     -- this line is nil falls through to the table itself, which is
@@ -537,16 +565,26 @@ function M.shade_lines(rendered, first_row, settled)
     local outer = base and chunks.inset and ground_for(want, false) or nil
     -- A line that brought a ground of its own -- quoted code, half of a
     -- suggestion, the head of a note -- is drawn on that instead, the
-    -- whole line and the rail included. The same choice `shade` makes,
-    -- so the block is the same block in all four windows that draw one.
-    for _, chunk in ipairs(chunks) do
-      local named = type(chunk[2]) == "table" and chunk[2][1] or chunk[2]
-      if base and is_ground(named) then
-        base = named
+    -- whole line and the rail included.
+    --
+    -- ...unless the line says the band belongs to the chunks that asked
+    -- for it rather than to the line: a suggestion drawn in a box, where
+    -- the rules are what say where the half of the diff stops.
+    if base and not chunks.contained then
+      for _, chunk in ipairs(chunks) do
+        base = band_of(chunk) or base
       end
     end
     local text = ""
     for _, chunk in ipairs(chunks) do
+      if chunk.ref then
+        table.insert(refs, {
+          row = (first_row or 0) + i - 1,
+          col = #text,
+          end_col = #text + #chunk[1],
+          ref = chunk.ref,
+        })
+      end
       text = text .. chunk[1]
     end
     local row = (first_row or 0) + i - 1
@@ -567,12 +605,15 @@ function M.shade_lines(rendered, first_row, settled)
         -- now is the whole line's, so it is the same call either way.
         group = group[2]
       end
+      -- The band this chunk brought, where the line handed them out
+      -- chunk by chunk.
+      local own = chunks.contained and band_of(chunk) or nil
       if group then
         -- A chunk that straddles the inset is two spans: the same
         -- colour, on the two grounds it lies across. The head of an
         -- answer is one -- the rail and the arrow arrive together.
         for _, part in ipairs(split_at(at, at + #chunk[1], outer and chunks.inset)) do
-          local under = part.outer and outer or base
+          local under = own or (part.outer and outer or base)
           table.insert(hls, {
             row = row,
             col = part.from,
@@ -585,7 +626,7 @@ function M.shade_lines(rendered, first_row, settled)
     end
     table.insert(lines, text)
   end
-  return lines, hls
+  return lines, hls, refs
 end
 
 function M.clear(bufnr)
@@ -637,29 +678,6 @@ function M.current(bufnr, from, to, hl)
   return drawn
 end
 
---- How much room a conversation drawn into `bufnr` actually has.
----
---- The narrowest window the buffer is open in, minus whatever that
---- window spends on the gutter. Narrowest, because the same buffer can
---- be in two windows at two widths and both are drawn from these
---- marks: wrapping to the wider one leaves the narrow one with lines
---- running off its edge, and virtual text has no way back from there.
---- Wrapping to the narrower leaves the wide one with short lines, which
---- is a comment nobody has to work to read.
-local function room(bufnr)
-  local width
-  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
-    local info = vim.fn.getwininfo(win)[1]
-    if info then
-      local w = info.width - (info.textoff or 0)
-      width = math.min(width or w, w)
-    end
-  end
-  -- Drawn before it is shown anywhere -- a buffer loaded but not yet in
-  -- a window -- and redrawn once it is.
-  return width or vim.o.columns
-end
-
 local function visible(list, show_resolved)
   if show_resolved then
     return list
@@ -671,103 +689,12 @@ end
 
 --- Draws `by_line` (line number -> list of threads) onto `bufnr`.
 ---
---- `mode` is "signs" -- the gutter only -- or "expanded", which also
---- puts the conversation itself under the line as virtual lines. The
---- two are one function because they are one decision made twice a
---- minute: the gutter is always on, the text comes and goes.
---- Puts the expanded conversations on a ground of their own.
----
---- Without one they are text in the middle of a file: same background,
---- same column, and the only thing saying "you are not reading Lua any
---- more" is a rail one cell wide. A ground says it before anything is
---- read.
----
---- Padded to the width of the whole editor, which is at least the width
---- of any window the buffer is in.
----
---- Which window's width to draw to is not a question a buffer can
---- answer -- the same file is open in two of them, at two widths, and
---- both draw these marks. It does not have to be answered: a virtual
---- line longer than the window it is drawn in is cut off at the edge
---- rather than wrapped, so padding past the widest possible window
---- gives every one of them a band that reaches its own right-hand side.
---- `columns` changes when the editor is resized, which is why that is
---- one of the things a redraw hangs off.
---- `settled[i]` says which of the two grounds line `i` belongs on: the
---- threads on a line are drawn one after another, and one of them being
---- over does not settle the next.
-local function shade(virt, settled)
-  local widths = {}
-  for i, line in ipairs(virt) do
-    local w = 0
-    for _, chunk in ipairs(line) do
-      w = w + vim.fn.strdisplaywidth(chunk[1])
-    end
-    widths[i] = w
-  end
-  local width = vim.o.columns
-
-  local out = {}
-  for i, line in ipairs(virt) do
-    -- The line between two threads is left bare: no chunks, so no
-    -- ground. Two conversations on one line of code are two blocks with
-    -- the file showing between them, which says "another argument"
-    -- where a continuous ground would say "more of the same one". It is
-    -- the same break the rail makes, made in the one other way this
-    -- window has of making it.
-    if #line == 0 then
-      out[i] = {}
-    else
-      -- Which ground this line is drawn on: the conversation's, or one
-      -- of its own where it brought one. The whole line, edge to edge
-      -- and the rail included -- a band with two cells of another
-      -- colour at the start of it is not a band, and one that stops
-      -- where the code stops is a strip with a ragged end in the middle
-      -- of the block. The rail keeps its *colour* either way, which is
-      -- what says the quotation is inside a conversation and which
-      -- conversation it is.
-      local base = ground_for((settled and settled[i]) and "settled" or "open", line.reply)
-      for _, chunk in ipairs(line) do
-        -- A chunk names a band either by being drawn in one -- the
-        -- quoted code -- or by asking for one behind a colour of its
-        -- own, which is what a syntax-coloured suggestion does: the
-        -- language decides the words and the band decides the half.
-        local named = type(chunk[2]) == "table" and chunk[2][1] or chunk[2]
-        if is_ground(named) then
-          base = named
-        end
-      end
-      -- What the front of an answer's line is on: the thread's ground,
-      -- because the rail belongs to the thread and runs the height of
-      -- it. Set in from that, an answer is a panel inside the block
-      -- rather than a stripe across it.
-      local outer = line.inset
-        and ground_for((settled and settled[i]) and "settled" or "open", false)
-      local shaded, at = {}, 0
-      for _, chunk in ipairs(line) do
-        local group = chunk[2]
-        if type(group) == "table" then
-          -- The colour on the band it asked for, which by now is the
-          -- whole line's -- so it is the same call either way.
-          group = group[2]
-        end
-        for _, part in ipairs(split_at(at, at + #chunk[1], outer and line.inset)) do
-          local under = part.outer and outer or base
-          table.insert(
-            shaded,
-            { chunk[1]:sub(part.from - at + 1, part.to - at), on_ground(group, under) }
-          )
-        end
-        at = at + #chunk[1]
-      end
-      table.insert(shaded, { (" "):rep(math.max(width - widths[i], 1)), base })
-      out[i] = shaded
-    end
-  end
-  return out
-end
-
-function M.render(bufnr, by_line, mode, opts)
+--- The gutter, and at the end of the line the first words of what is on
+--- it where `comments.virt_text` asks for them. The conversation itself
+--- is not drawn here: it is read in a window of its own
+--- |nemeton-pane-window|, where it has a width to be wrapped to and a
+--- cursor that can be put in it.
+function M.render(bufnr, by_line, opts)
   opts = opts or {}
   M.clear(bufnr)
   if not by_line or not vim.api.nvim_buf_is_valid(bufnr) then
@@ -810,12 +737,7 @@ function M.render(bufnr, by_line, mode, opts)
         priority = 20,
       }
 
-      -- Not when the conversation itself is drawn under the line: the
-      -- summary is the first sixty characters of the first note, and
-      -- the first note is the next thing on the screen. Two of it is
-      -- one too many, and the one that is cut off mid-sentence is the
-      -- one to lose.
-      if config.comments.virt_text and mode ~= "expanded" then
+      if config.comments.virt_text then
         local first = shown[1].notes[1]
         local summary = vim.split(threads.drawn(first.body), "\n", { plain = true })[1] or ""
         local count = #shown > 1 and (" (+%d)"):format(#shown - 1) or ""
@@ -826,62 +748,6 @@ function M.render(bufnr, by_line, mode, opts)
           { summary:sub(1, 60), "NemetonMeta" },
         }
         mark.virt_text_pos = "eol"
-      end
-
-      if mode == "expanded" then
-        -- threads.render already returns virtual-line chunks, which is
-        -- the shape it returns *because* of this line.
-        -- The lines a suggestion in this thread would replace, read
-        -- off the buffer at the row the marker has moved to rather than
-        -- the row the thread was written against.
-        local function replaced(above, below)
-          local first = math.max(row - above, 0)
-          return vim.api.nvim_buf_get_lines(bufnr, first, row + below + 1, false)
-        end
-        local virt, settled = {}, {}
-        local width = room(bufnr)
-        -- The colours of the language this file is in, for the code
-        -- inside a suggestion. The buffer's own filetype rather than
-        -- the thread's path: it is the same file, and the editor has
-        -- already made up its mind about it -- modeline and all.
-        local syntax = require("nemeton.syntax")
-        local lang = syntax.of_buf(bufnr)
-        local paint = syntax.painter(lang)
-        -- ...unless the line this thread sits on is inside a docstring
-        -- or a comment, where what a suggestion replaces is prose. Cut
-        -- out and parsed on its own it would come back as a keyword
-        -- here and a function call there, which is a worse answer than
-        -- leaving it the colour of the half of the diff it is.
-        if paint and syntax.prose(bufnr, row, lang) then
-          paint = nil
-        end
-        -- The lines this thread was written against, when the buffer no
-        -- longer says what they said. Read off the buffer rather than
-        -- the file: what is on the screen is what the comment now reads
-        -- as being about, saved or not.
-        local function was(t)
-          return opts.was and opts.was(t, replaced(threads.span(t), 0)) or nil
-        end
-        for _, t in ipairs(shown) do
-          -- A blank line between two threads, and nothing but a blank
-          -- line: it is the one place the rail stops and the one place
-          -- the ground does, which is what makes "a new argument" look
-          -- different from "an answer to the one above".
-          if #virt > 0 then
-            table.insert(virt, {})
-          end
-          local body = threads.render(t, {
-            replaced = replaced,
-            width = width,
-            was = was(t),
-            paint = paint,
-          })
-          for _, said in ipairs(body) do
-            table.insert(virt, said)
-            settled[#virt] = t.resolved and true or false
-          end
-        end
-        mark.virt_lines = shade(virt, settled)
       end
 
       local id = vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, mark)

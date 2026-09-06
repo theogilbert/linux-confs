@@ -104,14 +104,6 @@ function M.by_line(bufnr)
   return path and M.current.by_file[path] or nil
 end
 
---- Whether an expanded conversation is drawn in a pane rather than
---- under the line it is about. The setting, not the state: the mode is
---- still "expanded" either way -- what changes is where the words go.
-local function paned()
-  local where = require("nemeton.config").comments.expand
-  return where and where ~= "inline" and where or nil
-end
-
 function M.redraw(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -121,18 +113,11 @@ function M.redraw(bufnr)
     marks.clear(bufnr)
     return
   end
-  -- With the conversations in a pane the buffer is drawn as it is with
-  -- them folded away: one marker per line, and the words next door.
-  local mode = M.current.mode
-  if mode == "expanded" and paned() then
-    mode = "signs"
-  end
-  marks.render(bufnr, by_line, mode, {
+  -- The buffer is drawn the same way expanded or not: one marker per
+  -- line, and the words next door in the pane. Expanding is where the
+  -- conversation is read, not what the code looks like.
+  marks.render(bufnr, by_line, {
     show_resolved = require("nemeton.config").comments.show_resolved,
-    -- Passed in rather than reached for: this module is built on that
-    -- one, and a drawing module that calls back into the session it is
-    -- drawing for is a circle.
-    was = M.was,
   })
 end
 
@@ -684,8 +669,7 @@ function M.toggle()
 end
 
 --- The conversations themselves rather than only a mark in the gutter:
---- under the lines they are about, or in a pane beside them, whichever
---- `comments.expand` says.
+--- in a pane beside the code, on the side `comments.expand` says.
 function M.toggle_expanded()
   if not M.current then
     notify("no merge request open", vim.log.levels.WARN)
@@ -693,11 +677,9 @@ function M.toggle_expanded()
   end
   M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"
   local pane = require("nemeton.pane")
-  if M.current.mode == "expanded" and paned() then
+  if M.current.mode == "expanded" then
     pane.open()
   else
-    -- Closed on the way back to "signs", and closed when the setting
-    -- was changed to "inline" with a pane already on the screen.
     pane.close()
   end
   M.redraw_all()

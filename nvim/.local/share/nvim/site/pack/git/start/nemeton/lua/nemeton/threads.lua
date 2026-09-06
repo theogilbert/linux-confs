@@ -8,6 +8,7 @@
 -- that can be tested without a forge.
 
 local config = require("nemeton.config")
+local markdown = require("nemeton.markdown")
 local sha1 = require("nemeton.sha1")
 
 local M = {}
@@ -264,11 +265,12 @@ function M.emoji(text)
 end
 
 --- A note's body as it is *drawn*, for the windows that show one line
---- of it: a link to a commit as its short sha, `:tada:` as the picture.
---- Both are display only -- rewriting a comment sends back the text its
---- author wrote, links and colons and all.
+--- of it: a link as the words it was given, a link to a commit as its
+--- short sha, `:tada:` as the picture. All of it display only --
+--- rewriting a comment sends back the text its author wrote, brackets
+--- and colons and all.
 function M.drawn(text)
-  return M.emoji(M.short_commits(text))
+  return M.emoji(markdown.plain(text))
 end
 
 --- The body of a suggestion comment: GitLab's fenced block, with the
@@ -481,75 +483,6 @@ function M.age(iso, now)
   return os.date(fmt, at)
 end
 
---- The sha a URL names, short, or nil for a URL that names no commit.
----
---- Both shapes the forge writes. `/-/commit/<sha>` is a commit of the
---- project; `merge_requests/N/diffs?commit_id=<sha>` is one of them as
---- this merge request shows it, which is what "copy link" gives you on
---- a row of the commit list you were reading. Eight digits because that
---- is the number GitLab itself prints -- the same string is on the row
---- the link came from.
----
---- Seven at least, or this is not a sha: a link to `/commit/main` names
---- a branch, and one to `/commit/HEAD` names wherever it has got to.
-local function commit_sha(url)
-  local sha = url:match("/commit/(%x+)") or url:match("[?&]commit_id=(%x+)")
-  if sha and #sha >= 7 then
-    return sha:sub(1, 8)
-  end
-  return nil
-end
-
---- Whether a link's text is the commit's own name rather than words
---- about it -- which is how GitLab writes one itself, and the one case
---- where keeping the text as well would print the sha twice.
-local function names(text, sha)
-  return text:match("^%x+$") ~= nil and sha:lower():find(text:lower(), 1, true) == 1
-end
-
---- A note as it is drawn, with every link to a commit replaced by the
---- commit's short sha.
----
---- A permalink to a commit is a hundred characters whose only content
---- is the forty at the end of it. Left whole it wraps a two-line
---- comment across five and pushes what was said around it off the page;
---- as `a1b2c3d4` it says the same thing in what git would have called
---- it anyway, and the reviewer who wants the page has the sha to go to
---- it with.
----
---- Display only, and deliberately not done where a note is parsed:
---- rewriting one sends its body back to the forge, and a comment that
---- came home from a round trip through this window with its links taken
---- out of it is a comment the plugin has quietly damaged.
-function M.short_commits(text)
-  if type(text) ~= "string" or not config.comments.short_commits then
-    return text
-  end
-  -- Markdown links first: the target inside one is a URL too, and taken
-  -- in the other order the sha replaces it and leaves `[the fix](a1b2)`
-  -- pointing at nothing. The text of the link is what the author chose
-  -- to call the commit and is kept.
-  text = text:gsub("%[([^%]\n]*)%]%((%S-)%)", function(label, url)
-    local sha = commit_sha(url)
-    if not sha then
-      return nil
-    end
-    return (label == "" or names(label, sha)) and sha or ("%s (%s)"):format(label, sha)
-  end)
-  return (
-    text:gsub("https?://%S+", function(url)
-      -- What ends a sentence is not part of what it links to. Taken with
-      -- the URL it would be swallowed by the sha that replaces it.
-      local tail = url:match("[%.,;:!%?%)%]]+$") or ""
-      local sha = commit_sha(url:sub(1, #url - #tail))
-      if not sha then
-        return nil
-      end
-      return sha .. tail
-    end)
-  )
-end
-
 --- The longest prefix of `s` that fits in `width` columns, whole
 --- characters only.
 local function fit(s, width)
@@ -619,82 +552,6 @@ local function wrap(text, width)
   return #out > 0 and out or { text }
 end
 
--- What a comment points at rather than says: a name somebody is being
--- called by, and a commit somebody is pointing at. Word-bounded, so an
--- email address is not a mention and a word in the middle of a sentence
--- is not a sha.
---
--- A sha needs a digit *and* a letter in it to count. Seven characters
--- of nothing but a-f is a word English happens to have -- "defaced",
--- "acceded" -- and seven of nothing but digits is a number somebody
--- wrote down; a commit is the thing that is both.
-local REFERENCES = {
-  { "@[%w][%w%._%-]*", "NemetonMention" },
-  {
-    "%x%x%x%x%x%x%x+",
-    "NemetonCommit",
-    function(word)
-      return #word <= 40 and word:match("%d") ~= nil and word:match("[a-fA-F]") ~= nil
-    end,
-  },
-}
-
---- `text` as runs -- the shape `opts.paint` returns, so that the same
---- wrapping draws both -- with what it points at in its own colour and
---- everything else in `hl`. Nil where there is nothing to mark, which
---- is most lines: a line with one chunk on it is one chunk to slice,
---- to measure and to draw.
-local function referenced(text, hl)
-  local marks = {}
-  for _, kind in ipairs(REFERENCES) do
-    local at = 1
-    while true do
-      local from, to = text:find(kind[1], at)
-      if not from then
-        break
-      end
-      at = to + 1
-      -- Word-bounded on the left, and on the right by the pattern
-      -- itself: `theo@example` is an address, `1a2b3c4dfix` is not a
-      -- commit, and the first character after a word is where neither
-      -- of them starts.
-      local before = from > 1 and text:sub(from - 1, from - 1) or ""
-      local after = text:sub(to + 1, to + 1)
-      local word = text:sub(from, to)
-      if
-        not before:match("[%w_@%-%.]")
-        and not after:match("[%w_]")
-        and (not kind[3] or kind[3](word))
-      then
-        table.insert(marks, { from = from, to = to, hl = kind[2] })
-      end
-    end
-  end
-  if #marks == 0 then
-    return nil
-  end
-  table.sort(marks, function(a, b)
-    return a.from < b.from
-  end)
-  local out, at = {}, 1
-  for _, mark in ipairs(marks) do
-    -- Two patterns matching the same bytes -- which they do not, but a
-    -- third would -- is the second one dropped rather than a run drawn
-    -- backwards.
-    if mark.from >= at then
-      if mark.from > at then
-        table.insert(out, { text:sub(at, mark.from - 1), hl })
-      end
-      table.insert(out, { text:sub(mark.from, mark.to), mark.hl })
-      at = mark.to + 1
-    end
-  end
-  if at <= #text then
-    table.insert(out, { text:sub(at), hl })
-  end
-  return out
-end
-
 --- The chunks of `runs` covering bytes [from, to) of the line they were
 --- made for, cut to fit -- which is what a wrapped line needs, since
 --- the colours were worked out against the line whole.
@@ -705,15 +562,18 @@ local function slice(runs, from, to)
     at = last
     local a, b = math.max(first, from), math.min(last, to)
     if b > a then
-      table.insert(out, { run[1]:sub(a - first + 1, b - first), run[2] })
+      -- What the run points at goes with every piece of it: a link
+      -- wrapped across two lines is one link, and the key that follows
+      -- it is pressed on whichever half the cursor is on.
+      table.insert(out, { run[1]:sub(a - first + 1, b - first), run[2], ref = run.ref })
     end
   end
   return out
 end
 
---- A thread as coloured lines, for the peek float, the overall-notes
---- window and the expanded in-buffer view. One shape for all three, so
---- the three never drift apart.
+--- A thread as coloured lines, for the pane, the peek float and the two
+--- windows that list every thread. One shape for all of them, so they
+--- never drift apart.
 ---
 --- Each line is a list of `{ text, highlight }` chunks rather than a
 --- string, for two reasons. Virtual lines are drawn from exactly this
@@ -820,42 +680,255 @@ function M.render(thread, opts)
         end
         for _, run in ipairs(slice(runs, at, at + #piece)) do
           local colour = run[2] or hl
-          table.insert(line, { run[1], band and { band, colour } or colour })
+          table.insert(line, { run[1], band and { band, colour } or colour, ref = run.ref })
         end
         table.insert(out, line)
       end
     end
   end
 
-  --- The code of every suggestion in a note, coloured: the index of a
-  --- line in the note to the chunks it is drawn as. Nothing at all
-  --- without `opts.paint`, and nothing for the prose either way.
-  local function coloured(said)
-    if not opts.paint then
-      return {}
+  --- `text` wrapped to `room`, as the pieces it comes to and the
+  --- colours of each -- the same cut `body` makes, for the two things
+  --- that cannot go through `body` because they are drawn inside
+  --- something: a table's cell and a suggestion's box.
+  local function pieces(text, runs, room)
+    local cut, cursor = {}, 1
+    for _, piece in ipairs(wrap(text, room)) do
+      local at = text:find(piece, cursor, true) or cursor
+      cursor = at + #piece
+      table.insert(cut, { text = piece, runs = runs and slice(runs, at, at + #piece) or nil })
     end
-    local per_line, block, first = {}, nil, nil
-    local function flush()
-      for j, runs in ipairs(opts.paint(block) or {}) do
-        per_line[first + j - 1] = runs
+    return cut
+  end
+
+  --- How wide `chunks` is drawn.
+  local function measure(chunks)
+    local w = 0
+    for _, chunk in ipairs(chunks) do
+      w = w + vim.fn.strdisplaywidth(chunk[1])
+    end
+    return w
+  end
+
+  -- The box a suggestion is drawn in. U+256D and friends.
+  local BOX = { "╭", "╮", "╰", "╯", "─", "│" }
+
+  --- What goes on the top rule: the fence's own word, and the span it
+  --- covers.
+  ---
+  --- `-1 +0` is the whole of what the fence said that the block under
+  --- it does not -- how much of the file this would replace, counted
+  --- from the line the thread sits on. The red half shows those lines
+  --- where there is a file to read them out of; where there is not --
+  --- the every-thread window, a thread on a file the branch has since
+  --- deleted -- the two numbers are the only thing saying how far the
+  --- change reaches.
+  local function label(block)
+    return (" suggestion -%d +%d "):format(block.above or 0, block.below or 0)
+  end
+
+  --- A suggestion: the lines it would take away, then the lines it
+  --- would put there, inside a box.
+  ---
+  --- The fence itself is not drawn. ```suggestion:-1+0 is not something
+  --- anybody wrote to be read -- it is markup GitLab invented so that a
+  --- button on the page can apply the block, and the block underneath
+  --- already says everything it says. What it *did* do was mark where
+  --- the code started and stopped, and that is what the box is for: the
+  --- two halves of a diff are two bands, and a band with a ragged right
+  --- edge in the middle of a paragraph is a stain rather than a block.
+  --- Every line padded to the same width inside a rule, and the
+  --- suggestion is a thing on the page with a shape.
+  local function suggestion(lead, block)
+    local gone = opts.replaced and opts.replaced(block.above, block.below) or {}
+    local gone_colours = opts.paint and opts.paint(gone) or {}
+    local new_colours = opts.paint and opts.paint(block.lines) or {}
+    if not config.comments.suggest_box then
+      -- What it was before there was a box: the fence as GitLab wrote
+      -- it, and the two halves under it.
+      body(lead, block.fence, "NemetonMeta")
+      for j, l in ipairs(gone) do
+        body(lead, l, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld")
       end
-      block, first = nil, nil
+      for j, l in ipairs(block.lines) do
+        body(lead, l, "NemetonAdded", "+ ", new_colours[j], "NemetonSuggestNew")
+      end
+      if block.close then
+        body(lead, block.close, "NemetonMeta")
+      end
+      return
     end
-    for at, l in ipairs(said) do
-      local fence = l:match("^%s*```(.*)$")
-      if block and fence then
-        flush()
-      elseif block then
-        table.insert(block, l)
-      elseif fence and fence:match("^suggestion") then
-        block, first = {}, at + 1
+
+    -- Two columns of the box and two of the sign in front of the code.
+    local room = limit and (limit - vim.fn.strdisplaywidth(lead) - 4)
+    local rows, inner = {}, 0
+    local function half(lines, colours, sign, hl, band)
+      for j, l in ipairs(lines) do
+        for k, piece in ipairs(pieces(l, colours[j], room)) do
+          local marker = k > 1 and "  " or sign
+          table.insert(rows, { piece = piece, marker = marker, hl = hl, band = band })
+          inner = math.max(inner, vim.fn.strdisplaywidth(marker .. piece.text))
+        end
       end
     end
-    if block then
-      -- A fence GitLab never saw closed, which it applies anyway.
-      flush()
+    -- What it would replace, above what it would put there: a
+    -- suggestion is a diff, and half a diff is a block of code with
+    -- nothing to compare it to.
+    half(gone, gone_colours, "- ", "NemetonRemoved", "NemetonSuggestOld")
+    half(block.lines, new_colours, "+ ", "NemetonAdded", "NemetonSuggestNew")
+    if #rows == 0 then
+      return
     end
-    return per_line
+
+    -- The label goes on the top rule where there is room for it, and a
+    -- box too narrow to name is still a box.
+    local said = label(block)
+    local wide = vim.fn.strdisplaywidth(said)
+    local top = inner >= wide + 1 and (BOX[5] .. said .. BOX[5]:rep(inner - wide - 1))
+      or BOX[5]:rep(inner)
+    table.insert(out, { { lead, rail[2] }, { BOX[1] .. top .. BOX[2], "NemetonMeta" } })
+    for _, row in ipairs(rows) do
+      -- The rules are not on the band. Everywhere else in a
+      -- conversation a band is the line, edge to edge, because there is
+      -- nothing else on the line to say where it ends; here the box
+      -- says it, and red running out through the rule and on to the
+      -- right-hand side of the window is the colour escaping the thing
+      -- that was drawn to hold it. So the rules stand on the
+      -- conversation's own ground and the half of the diff is what is
+      -- between them -- which is what `line.contained` tells the two
+      -- shading passes, since both of them would otherwise take a band
+      -- on a line to be the ground of the whole line.
+      local line = { { lead, rail[2] }, { BOX[6], "NemetonMeta" } }
+      -- The `+` and the `-` are on the band and nothing else: they are
+      -- not code, and the band's own foreground is the colour the whole
+      -- half used to be drawn in.
+      table.insert(line, { row.marker, row.band })
+      for _, run in ipairs(row.piece.runs or { { row.piece.text } }) do
+        table.insert(line, { run[1], { row.band, run[2] or row.hl }, ref = run.ref })
+      end
+      -- The band reaches the closing rule: padded, so it is a rectangle
+      -- inside the box rather than a strip with a ragged end in it.
+      local pad = inner - measure(line) + vim.fn.strdisplaywidth(lead) + 1
+      if pad > 0 then
+        table.insert(line, { (" "):rep(pad), row.band })
+      end
+      table.insert(line, { BOX[6], "NemetonMeta" })
+      line.contained = true
+      table.insert(out, line)
+    end
+    table.insert(out, {
+      { lead, rail[2] },
+      { BOX[3] .. BOX[5]:rep(inner) .. BOX[4], "NemetonMeta" },
+    })
+  end
+
+  -- The rules of a table: the corners, the tees and the cross.
+  local RULE = {
+    top = { "┌", "┬", "┐" },
+    head = { "├", "┼", "┤" },
+    bottom = { "└", "┴", "┘" },
+  }
+
+  --- A pipe table, drawn as a table.
+  ---
+  --- Markdown's own is a table only in the sense that the columns are
+  --- named: the cells line up in the source when its author lined them
+  --- up by hand and not otherwise, and what is read here is somebody
+  --- else's hand. Ruled and padded, the columns line up because they
+  --- are columns, which is the whole reason the author reached for a
+  --- table instead of a list.
+  ---
+  --- Too wide for the window, the columns give up room from the widest
+  --- first -- a table of shas and sentences is nearly all sentence --
+  --- and a cell that then does not fit is cut with an ellipsis. A
+  --- ruled table cannot wrap: a rule that wraps is two rules.
+  local function tabled(lead, block)
+    local grid, widths, columns = {}, {}, 0
+    for r, row in ipairs(block.rows) do
+      grid[r] = {}
+      for c, cell in ipairs(row) do
+        local text, runs = markdown.inline(M.emoji(cell))
+        grid[r][c] = { text = text, runs = runs }
+        widths[c] = math.max(widths[c] or 0, vim.fn.strdisplaywidth(text))
+        columns = math.max(columns, c)
+      end
+    end
+    if columns == 0 then
+      return
+    end
+    for c = 1, columns do
+      widths[c] = widths[c] or 0
+    end
+
+    -- Three columns per cell that are not the cell: a rule and the
+    -- space on either side of the words, plus the rule that closes the
+    -- last one.
+    local room = limit and (limit - vim.fn.strdisplaywidth(lead))
+    if room then
+      local total = 1
+      for c = 1, columns do
+        total = total + widths[c] + 3
+      end
+      while total > room do
+        local widest, at = 0, nil
+        for c = 1, columns do
+          if widths[c] > widest then
+            widest, at = widths[c], c
+          end
+        end
+        -- Nothing left to give: a window this narrow gets a table that
+        -- runs past its edge, which is at least a table.
+        if not at or widest <= 3 then
+          break
+        end
+        widths[at], total = widths[at] - 1, total - 1
+      end
+    end
+
+    local function rule(kind)
+      local parts = { RULE[kind][1] }
+      for c = 1, columns do
+        table.insert(parts, ("─"):rep(widths[c] + 2))
+        table.insert(parts, c < columns and RULE[kind][2] or RULE[kind][3])
+      end
+      return { { lead, rail[2] }, { table.concat(parts), "NemetonMeta" } }
+    end
+
+    table.insert(out, rule("top"))
+    for r, row in ipairs(grid) do
+      -- The head in the colour a name is drawn in: it is what the
+      -- columns are called and not one of the values in them.
+      local hl = r == 1 and "NemetonAuthor" or body_hl
+      local line = { { lead, rail[2] } }
+      for c = 1, columns do
+        local cell = row[c] or { text = "" }
+        local text, runs = cell.text, cell.runs
+        if vim.fn.strdisplaywidth(text) > widths[c] then
+          local kept = fit(text, math.max(widths[c] - 1, 0))
+          runs = runs and slice(runs, 1, #kept + 1) or nil
+          text = kept .. "…"
+          if runs then
+            table.insert(runs, { "…" })
+          end
+        end
+        local slack = widths[c] - vim.fn.strdisplaywidth(text)
+        local left = (block.align[c] == "right" and slack)
+          or (block.align[c] == "center" and math.floor(slack / 2))
+          or 0
+        table.insert(line, { "│", "NemetonMeta" })
+        table.insert(line, { (" "):rep(left + 1), hl })
+        for _, run in ipairs(runs or { { text } }) do
+          table.insert(line, { run[1], run[2] or hl, ref = run.ref })
+        end
+        table.insert(line, { (" "):rep(slack - left + 1), hl })
+      end
+      table.insert(line, { "│", "NemetonMeta" })
+      table.insert(out, line)
+      if r == 1 then
+        table.insert(out, rule("head"))
+      end
+    end
+    table.insert(out, rule("bottom"))
   end
 
   -- What the thread is *about*, when that is no longer what is on the
@@ -903,7 +976,9 @@ function M.render(thread, opts)
 
   for i, note in ipairs(notes) do
     -- Where this note starts, so that every line of it can be marked as
-    -- an answer once it is drawn. An indent and an arrow were the whole
+    -- an answer once it is drawn -- and so that every line of it can
+    -- say which note it is, which is what a window acting on "the
+    -- comment under the cursor" looks up. An indent and an arrow were the whole
     -- of what said so, and both are two characters at the start of a
     -- line -- the one place the eye is not when it is reading the line
     -- above. A ground says it before the line is read at all.
@@ -1047,57 +1122,55 @@ function M.render(thread, opts)
       end
     end
     table.insert(out, head)
-    -- A GitLab suggestion is a fenced block that the forge can apply
-    -- with a button, and it is the one part of a comment that is not
-    -- prose: it is the code that would replace what you are looking at.
-    -- Drawn as an addition, in the colour the editor already uses for
-    -- one, so it reads as a diff rather than as more sentences.
-    local said = vim.split(M.short_commits(note.body), "\n", { plain = true })
-    -- The colours of the code in it, worked out a block at a time and
-    -- before a line of it is drawn: a line of code on its own is not a
-    -- program, and a string that opens on one line and closes on the
-    -- next parses as neither of them.
-    local colours = coloured(said)
-    local suggesting = false
-    for at, l in ipairs(said) do
-      local fence = l:match("^%s*```(.*)$")
-      if fence and suggesting then
-        suggesting = false
-        body(lead, l, "NemetonMeta")
-      elseif fence and fence:match("^suggestion") then
-        suggesting = true
-        body(lead, l, "NemetonMeta")
-        -- What it would replace, above what it would put there: a
-        -- suggestion is a diff, and half a diff is a block of code with
-        -- nothing to compare it to.
-        local above = tonumber(fence:match("%-(%d+)")) or 0
-        local below = tonumber(fence:match("%+(%d+)")) or 0
-        local gone_lines = opts.replaced and opts.replaced(above, below) or {}
-        local gone_colours = opts.paint and opts.paint(gone_lines) or {}
-        for j, gone in ipairs(gone_lines) do
-          body(lead, gone, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld")
+    -- What was said, as the markdown it was written in rather than as
+    -- the characters it was typed with: `nemeton.markdown` decides what
+    -- each block is, and each is drawn as the thing it is.
+    for _, block in ipairs(markdown.blocks(vim.split(note.body or "", "\n", { plain = true }))) do
+      if block.kind == "suggestion" then
+        -- A GitLab suggestion is a fenced block that the forge can
+        -- apply with a button, and it is the one part of a comment that
+        -- is not prose: it is the code that would replace what you are
+        -- looking at. Drawn as a diff, in the colours the editor
+        -- already uses for one, so it reads as a change rather than as
+        -- more sentences.
+        suggestion(lead, block)
+      elseif block.kind == "code" then
+        -- Somebody else's fence, drawn as they typed it -- the fence
+        -- lines included, because they are the only thing saying where
+        -- their code starts and stops. Nothing rendered inside it: code
+        -- that says `:tada:` says `:tada:`, and code that says
+        -- `[a](b)` says `[a](b)`.
+        body(lead, block.fence, "NemetonMeta")
+        for _, l in ipairs(block.lines) do
+          body(lead, l, body_hl)
         end
-      elseif suggesting then
-        body(lead, l, "NemetonAdded", "+ ", colours[at], "NemetonSuggestNew")
+        if block.close then
+          body(lead, block.close, "NemetonMeta")
+        end
+      elseif block.kind == "table" then
+        tabled(lead, block)
       else
-        -- The picture a forge would have drawn, and only out here: a
-        -- suggestion is code, and code that says `:tada:` says
-        -- `:tada:`.
-        local prose = M.emoji(l)
-        -- ...and what the line points at, in the colour of a thing
-        -- named elsewhere. Not in a thread that is over: a settled
-        -- conversation is dimmed whole and the tick is the only part of
-        -- it that keeps a colour of its own, and a blue name in the
-        -- middle of it would say there is something here to answer.
-        local runs = config.comments.references
-          and referenced(prose, body_hl)
-        body(lead, prose, body_hl, nil, runs or nil)
+        -- The picture a forge would have drawn, and the link as the
+        -- words it was given: what this line points at is kept beside
+        -- the run it is drawn in, for the key that follows it.
+        local prose, runs = markdown.inline(M.emoji(block.text))
+        -- A heading in the colour a name is drawn in and without its
+        -- hashes. There is no bigger type in a terminal, so what says
+        -- "this is a heading" is what says it everywhere else here: a
+        -- colour, and the words on their own line.
+        body(lead, prose, block.kind == "heading" and "NemetonHeading" or body_hl, nil, runs)
       end
     end
+    -- Which note each line of it belongs to, on the line rather than in
+    -- it: a field beside the chunks is invisible to everything that
+    -- walks them with `ipairs`, and what draws a conversation walks
+    -- them a great deal. The head included -- it is the line a reader
+    -- is most likely to be standing on when they decide to rewrite what
+    -- is under it.
+    for j = opened, #out do
+      out[j].note = note
+    end
     if i > 1 then
-      -- On the line rather than in it: a field beside the chunks is
-      -- invisible to everything that walks them with `ipairs`, and what
-      -- draws a conversation walks them a great deal.
       for j = opened, #out do
         out[j].reply = true
         -- ...and how much of the front of it is not the answer: the
@@ -1116,11 +1189,24 @@ end
 --- them -- for the two surfaces that are real buffers rather than
 --- virtual text. Rows are 0-based and offset by `first_row`; columns are
 --- byte offsets, which is what extmarks want.
+---
+--- ...and third, where each of the things a comment points at ended up:
+--- `{ row, col, end_col, ref }`, which is what `nemeton.follow` looks
+--- the cursor up in. Nothing draws them -- they are already drawn, in
+--- the colour of a reference -- and nothing has to ask for them.
 function M.flatten(rendered, first_row)
-  local lines, hls = {}, {}
+  local lines, hls, refs = {}, {}, {}
   for i, chunks in ipairs(rendered) do
     local text = ""
     for _, chunk in ipairs(chunks) do
+      if chunk.ref then
+        table.insert(refs, {
+          row = (first_row or 0) + i - 1,
+          col = #text,
+          end_col = #text + #chunk[1],
+          ref = chunk.ref,
+        })
+      end
       if chunk[2] then
         -- A chunk asking for a band behind a colour comes out as two
         -- highlights over the same bytes, the band first: extmarks are
@@ -1143,7 +1229,7 @@ function M.flatten(rendered, first_row)
     end
     table.insert(lines, text)
   end
-  return lines, hls
+  return lines, hls, refs
 end
 
 return M

@@ -165,4 +165,16 @@ require("grannos").setup({
     server_cmd = "grannos --log -v"
 })
 
-require("uatis")
+local uatis = require("uatis")
+
+require("nemeton").setup({
+    comments = {
+        follow = {
+            commit = uatis.show_commit,
+            link = function(_, href)
+                vim.fn.setreg('+', href)
+                vim.notify("Link content copied to clipboard", vim.log.levels.INFO)
+            end,
+        }
+    }
+})

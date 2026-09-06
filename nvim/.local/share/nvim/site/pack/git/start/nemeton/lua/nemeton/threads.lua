@@ -951,14 +951,14 @@ function M.render(thread, opts)
     -- One space inside the band on each side: text against the edge of
     -- a colour reads as text that has been cut off.
     local room = limit and (limit - vim.fn.strdisplaywidth(rail[1]) - 2)
-    local pieces, widest = {}, 0
+    local band, widest = {}, 0
     for _, line in ipairs(opts.was) do
       for _, piece in ipairs(wrap(line, room)) do
-        table.insert(pieces, piece)
+        table.insert(band, piece)
         widest = math.max(widest, vim.fn.strdisplaywidth(piece))
       end
     end
-    for _, piece in ipairs(pieces) do
+    for _, piece in ipairs(band) do
       local pad = widest - vim.fn.strdisplaywidth(piece) + 1
       table.insert(out, {
         { rail[1], rail[2] },

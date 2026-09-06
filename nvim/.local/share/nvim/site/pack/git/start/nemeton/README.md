@@ -477,8 +477,9 @@ there is the source, because the source is what is posted.
 A **link** is drawn as the words it was given.
 `[the failing job](https://…/-/jobs/1234)` is four words and a hundred
 characters of where they point, and the hundred are what wraps a
-two-line comment across five. `NemetonLink`, underlined, and where it
-goes is not lost — `<C-]>` on it follows it. A picture, `![alt](src)`, is
+two-line comment across five. `NemetonLink` — the colour a reference is
+drawn in here, underlined the way a link has always been — and where it
+goes is not lost: `<C-]>` on it follows it. A picture, `![alt](src)`, is
 drawn as its alt text: a terminal has nowhere to put a picture, and the
 alt text is the sentence its author wrote for exactly this case.
 `comments.links = false` leaves the brackets.
@@ -516,12 +517,11 @@ them whole.
 
 What a comment *points at* rather than says is drawn in a colour of its
 own: `@somebody` in `NemetonMention` and the commit it blames in
-`NemetonCommit`, both blue — `Directory`, the group every colourscheme
-keeps for "this names something that is somewhere else", which is what
-paths and branches are already drawn in here. They are the two things in
-a comment that are a reference out of it — a person to ask, a commit to
-go and read — and both are looked for by scanning rather than by reading
-the sentence around them. An address is not a mention and a word is not
+`NemetonCommit`, both `DiagnosticInfo` — the same colour as a link, since
+all three are one kind of thing: a reference out of the comment. They are
+the things in a comment that point somewhere else — a person to ask, a
+commit to go and read, a page — and all of them are looked for by
+scanning rather than by reading the sentence around them. An address is not a mention and a word is not
 a sha: a name has to start where a word starts, and a run of hex counts
 as a commit only if it has both digits and letters in it, since seven
 characters of nothing but a-f is a word English happens to have and

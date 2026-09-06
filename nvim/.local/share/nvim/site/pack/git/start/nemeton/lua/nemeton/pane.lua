@@ -85,14 +85,6 @@ local function split_cmd()
   return ("%s %dsplit"):format(edge, math.max(height, 3))
 end
 
---- The buffer the pane is showing the threads of.
-local function source_buf()
-  if M.source and vim.api.nvim_win_is_valid(M.source) then
-    return vim.api.nvim_win_get_buf(M.source)
-  end
-  return vim.api.nvim_get_current_buf()
-end
-
 --- Where each thread's line has got to since the markers were drawn.
 ---
 --- A review is a session in which you change the file you are reading,

@@ -439,12 +439,26 @@ function M.setup_highlights()
   -- calls on, the commit it blames.
   link("NemetonMention", "DiagnosticInfo")
   link("NemetonCommit", "DiagnosticInfo")
-  -- ...and the third of them: a page it says to go and read. Underlined
-  -- rather than only coloured, because that is what a link has looked
-  -- like since before any of this: the words are the author's own
-  -- sentence, and the line under them is what says they are also a
-  -- door. `Underlined` is the group Neovim ships for exactly this.
-  link("NemetonLink", "Underlined")
+  -- ...and the third of them: a page it says to go and read. The same
+  -- colour as the other two, because all three are one kind of thing --
+  -- a reference out of the comment -- and underlined as well, because
+  -- that is what a link has looked like since before any of this: the
+  -- words are the author's own sentence, and the line under them is
+  -- what says they are also a door.
+  --
+  -- Copied from `DiagnosticInfo` rather than linked to it, because a
+  -- link is all or nothing: a group that links somewhere takes that
+  -- group's attributes entire, and there is nowhere to hang the
+  -- underline. `Underlined` on its own was the other half of this and
+  -- carried no colour at all.
+  local info = vim.api.nvim_get_hl(0, { name = "DiagnosticInfo", link = false })
+  vim.api.nvim_set_hl(0, "NemetonLink", {
+    fg = info.fg,
+    ctermfg = info.ctermfg,
+    underline = true,
+    cterm = { underline = true },
+    default = true,
+  })
   -- A heading inside a comment, drawn without the hashes that made it
   -- one. The colour a name is drawn in, because a terminal has no
   -- larger type and this plugin already spends that colour on "the

@@ -710,8 +710,9 @@ there is the source, because the source is what is posted.
 A LINK is drawn as the words it was given.
 `[the failing job](https://…/-/jobs/1234)` is four words and a hundred
 characters of where they point, and the hundred are what wraps a
-two-line comment across five. `NemetonLink` is the colour, underlined,
-and where it goes is not lost: `<C-]>` on it follows it. A picture --
+two-line comment across five. `NemetonLink` is the colour -- underlined,
+the way a link has always been -- and where it goes is not lost: `<C-]>`
+on it follows it. A picture --
 `![alt](src)` -- is drawn as its alt text, since a terminal has nowhere
 to put a picture and the alt text is the sentence its author wrote for
 exactly this case. `comments.links = false` leaves the brackets.
@@ -1259,9 +1260,10 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonDraft          one of yours, not sent yet      DiagnosticWarn
     NemetonAuthor         who said it                     Title
     NemetonBranch         a git ref                       Directory
-    NemetonMention        somebody a comment calls on     Directory
-    NemetonCommit         a commit a comment points at    Directory
-    NemetonLink           a page a comment points at      Underlined
+    NemetonMention        somebody a comment calls on     DiagnosticInfo
+    NemetonCommit         a commit a comment points at    DiagnosticInfo
+    NemetonLink           a page a comment points at      DiagnosticInfo,
+                                                          underlined
     NemetonHeading        a heading inside a comment      Title
     NemetonThread         what they said                  Normal's fg
     NemetonMeta           when, where, how many           Comment
@@ -1278,16 +1280,19 @@ with `default`, and re-linked on every |ColorScheme|.
                                                            *hl-NemetonCommit*
                                                              *hl-NemetonLink*
 `NemetonMention`, `NemetonCommit` and `NemetonLink` are what a comment
-points at rather than says, and what |nemeton-follow| goes to. The first
-two are `Directory` -- the group every colourscheme keeps for "this
-names something that is somewhere else", which is the blue a path is
-drawn in and already what a path and a branch are drawn in here. Three
-groups rather than one so that any of them can be moved on its own.
+points at rather than says, and what |nemeton-follow| goes to. All three
+are `DiagnosticInfo`, since all three are one kind of thing: a reference
+out of the comment. Three groups rather than one so that any of them can
+be moved on its own.
 
-`NemetonLink` is `Underlined` instead, because that is what a link has
-looked like since before any of this: its words are the author's own
-sentence, and the line under them is what says they are also a door.
-|nemeton-config-comments|
+`NemetonLink` carries an underline on top of that colour, because that
+is what a link has looked like since before any of this: its words are
+the author's own sentence, and the line under them is what says they are
+also a door. It is copied from `DiagnosticInfo` rather than linked to
+it, because a `:highlight link` is all or nothing and leaves nowhere to
+hang the underline -- so a scheme that moves `DiagnosticInfo` moves this
+with it only on the next |ColorScheme|, which is when this plugin reads
+its colours anyway. |nemeton-config-comments|
 
                                                           *hl-NemetonHeading*
 `NemetonHeading` is a heading inside a comment, drawn without the hashes

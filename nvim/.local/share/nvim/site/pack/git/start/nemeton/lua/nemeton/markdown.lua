@@ -234,7 +234,7 @@ function M.inline(text)
 
   if c.references then
     for _, kind in ipairs(REFERENCES) do
-      local from, to, word = 0, 0, nil
+      local from, to, word
       at = 1
       while true do
         from, to, word = text:find(kind[1], at)

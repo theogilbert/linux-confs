@@ -93,7 +93,7 @@ local function render()
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
-  follow.set(M.buf, refs)
+  follow.set(M.buf, refs, M.close)
 end
 
 local function thread_at()
@@ -236,7 +236,14 @@ function M.reply()
   )
 end
 
-function M.open()
+--- The comments window, with `focus` -- a thread of `everything()` --
+--- under the cursor where one is given.
+---
+--- Given by whatever sent the reader here rather than looked up: a link
+--- to a comment on the merge request itself has nowhere else to go, and
+--- a window that opens at the top of a list of nine threads has not
+--- shown anybody the one they asked for.
+function M.open(focus)
   if not session.current then
     session.notify("no merge request open — :Nemeton to pick one", vim.log.levels.WARN)
     return
@@ -356,6 +363,21 @@ function M.open()
   end
 
   render()
+  if focus then
+    for row = 1, vim.api.nvim_buf_line_count(M.buf) do
+      if rows[row] == focus then
+        vim.api.nvim_win_set_cursor(M.win, { row, 0 })
+        -- The head of the thread at the top of the window rather than
+        -- wherever the cursor landing put it: what is being opened is a
+        -- conversation, and one opened at its last line is one you have
+        -- to scroll back through to read.
+        vim.api.nvim_win_call(M.win, function()
+          vim.cmd("normal! zt")
+        end)
+        break
+      end
+    end
+  end
   return M.win
 end
 

@@ -717,10 +717,44 @@ on it follows it. A picture --
 to put a picture and the alt text is the sentence its author wrote for
 exactly this case. `comments.links = false` leaves the brackets.
 
-A HEADING is drawn without the hashes, in `NemetonHeading`. There is no
-larger type in a terminal, so a heading here is a colour and a line of
-its own -- which is what says "heading" everywhere else in this plugin.
-`comments.headings = false` leaves them.
+A HEADING is drawn without the hashes. There is no larger type in a
+terminal, so a heading here is a colour and a line of its own -- which
+is what says "heading" everywhere else in this plugin -- and the level
+it was is a weight rather than a size: `NemetonHeading1` is underlined
+and bold, `NemetonHeading2` is bold, `NemetonHeading3` is the colour
+alone, and `4` to `6` fall away through italic to the quiet colour, so
+that a comment with two levels of heading in it reads as two levels. All
+six take their colour from `NemetonHeading`. `comments.headings = false`
+leaves them.
+
+EMPHASIS is drawn as emphasis: `**must**` in bold, `*maybe*` and
+`_perhaps_` in italic, `***both***` as both, `~~was~~` struck through.
+These are the marks a reviewer reaches for to say which word of a
+sentence carries it, and read as the asterisks they were typed with they
+say it about the punctuation instead. `NemetonBold`, `NemetonItalic` and
+`NemetonStrike` carry no colour of their own -- a bold word in a settled
+thread is dim and bold, and a bold link is still blue and underlined.
+An underscore inside a word emphasises nothing, so `snake_case_name` is
+a name; a marker nobody closed is the character it is, so `2 * 3` is
+arithmetic; and one with a backslash in front of it is the character it
+escapes, which is how an asterisk is written in a sentence about a glob.
+
+A CODE SPAN is drawn without its backticks, in `NemetonCode`, and
+nothing inside one is markup: `a_b` in backticks is an identifier, a URL
+in them is a string somebody quoted rather than a page to go to, and
+`@alice` in them is not somebody to notify. A run of backticks closes on
+a run of the same length. `comments.styles = false` leaves every marker
+as it was typed.
+
+A LINK TO ANOTHER COMMENT -- the `…#note_1234` permalink GitLab's own
+"copy link" gives you -- is drawn as `!7 (comment 1234)`, which is what
+the forge calls the review and the comment in it, and |nemeton-follow|
+on it goes to that conversation rather than copying a URL. The same
+argument as a commit permalink: a hundred characters of which twelve are
+the content. Words of the author's own win, as ever:
+`[why we dropped it](…#note_1234)` is drawn as "why we dropped it" and
+still goes there. `comments.links = false` leaves it whole, which also
+leaves nothing for the key to find.
 
 A TABLE is ruled and its columns are lined up, with the alignments its
 delimiter row asked for. Markdown's own is a table only in the sense
@@ -746,20 +780,51 @@ the cursor", doing what it has always done: a tag jump, into a forge
 instead of a tags file. On a line with nothing on it to follow it does
 nothing and says nothing -- it is pressed while reading.
 
-Three kinds of thing, and one setting each in `comments.follow`:
+Five kinds of thing, and one setting each in `comments.follow`:
 
-    mention   `@alice`     the person's page on the forge
-    commit    `a1b2c3d4`   the commit's page on the project
-    link      a link       wherever it points
+    mention   @alice                 the person's page on the forge
+    commit    a1b2c3d4               the commit's page on the project
+    thread    !7 (comment 1234)      the conversation itself, in here
+    path      a link written as one  a page on this forge
+    url       a link to a page       wherever it points
 
-`true` -- the default for all three -- opens the page with |vim.ui.open|.
+`true` is the default for all five. For four of them it is the quietest
+thing that is still an answer: it says what is under the cursor and puts
+the link on the clipboard. Nothing is opened and no window moves -- a
+key that took the editor somewhere would be a key pressed once by
+accident and then never again -- and what was usually wanted is the
+string: the sha to `git show`, the name to ask around about, the URL to
+send to somebody.
+
+THREAD is the exception, because it is the one kind whose destination is
+not a page somewhere else. A link to another comment on this merge
+request is a link to a conversation this editor already has open, so
+`true` goes to it: a thread on a line opens its file, puts the cursor on
+the line and the conversation in the pane |nemeton-pane-window|, and a
+comment on the merge request itself opens the comments window
+|nemeton-notes-window| with it under the cursor. The window the link was
+read in is left first -- `:edit` from inside a float opens the file in
+the float -- so a float closes and the pane stays where it is.
+
+A comment this review cannot show is not silently nothing: a comment on
+another merge request, one in a thread resolved while resolved threads
+are not drawn |nemeton-config-comments|, or one deleted since somebody
+linked it falls back to the clipboard and says which of those it was.
+
 `false` does nothing. A function is yours, and is called with two
-arguments: what is written, and where it points. >lua
+arguments -- what is written, and where it points -- and a `thread` with
+a third: the thread itself, or nil for one this review has not got
+open. >lua
 
     comments = {
       follow = {
         commit = function(sha)
           vim.cmd("Git show " .. sha)
+        end,
+        -- a page on the forge in a browser, and somebody else's
+        -- website on the clipboard
+        path = function(_, href)
+          vim.ui.open(href)
         end,
         mention = false,
       },
@@ -769,7 +834,15 @@ The URL is worked out from the merge request's own page, so a mention
 read with no review open has no forge to be a user of: the second
 argument is then nil, and `true` says so rather than opening nothing. A
 reference GitLab wrote as a path -- `/group/proj/-/issues/3`, which is
-what its own autolinks look like -- is resolved against the host.
+what its own autolinks look like -- is resolved against the host, which
+is the whole of the difference between `path` and `url`; they are one
+kind of thing until you want the forge's own pages opened and nobody
+else's.
+
+`url` and `path` were one `link` until they were two. A config that
+still says `link` is read as both of them; a config that says `link` and
+one of the two new names is a migration half-done, and the specific name
+is the one to keep.
 
 `comments.references = false` takes the colours off `@name` and the
 shas, and takes them out of what `<C-]>` can find with them: a reference
@@ -932,13 +1005,16 @@ COMMENTS                                             *nemeton-config-comments*
       emoji = true,          -- `:tada:` drawn as the picture it names
       references = true,     -- `@name` and a commit in a colour of their own
       links = true,          -- a link as the words it was given
-      headings = true,       -- `## why` without the hashes
+      styles = true,         -- `**bold**`, `*italic*`, `~~struck~~`, `code`
+      headings = true,       -- `## why` without the hashes, by level
       tables = true,         -- a pipe table ruled and lined up
       suggest_box = true,    -- a suggestion in a box, not behind a fence
       follow = {             -- what `<C-]>` does with one |nemeton-follow|
         mention = true,      -- true: its page | false | fun(text, href)
         commit = true,
-        link = true,
+        thread = true,       -- true: go to the thread, in here
+        path = true,         -- a page on this forge
+        url = true,          -- a page anywhere
       },
       show_resolved = true,  -- draw resolved threads at all
       short_commits = true,  -- a link to a commit as its short sha
@@ -1265,6 +1341,11 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonLink           a page a comment points at      DiagnosticInfo,
                                                           underlined
     NemetonHeading        a heading inside a comment      Title
+    NemetonHeading1..6    which level of one it is        Title, by weight
+    NemetonBold           a word written `**like this**`  bold, no colour
+    NemetonItalic         one written `*like this*`       italic, no colour
+    NemetonStrike         one written `~~like this~~`     struck through
+    NemetonCode           one written `` `like this` ``   String
     NemetonThread         what they said                  Normal's fg
     NemetonMeta           when, where, how many           Comment
     NemetonResolved       the tick on a settled thread    DiagnosticOk
@@ -1298,6 +1379,33 @@ its colours anyway. |nemeton-config-comments|
 `NemetonHeading` is a heading inside a comment, drawn without the hashes
 that made it one. `Title` -- the colour a name is drawn in here -- since
 a terminal has no larger type to say it with.
+
+`NemetonHeading1` to `NemetonHeading6` are which level of one, which the
+hashes used to say and nothing else on the line does. A terminal cannot
+draw a bigger word, so the six are told apart the way everything else in
+these windows is: loud at the top and quiet at the bottom. Underlined
+and bold is a title with a rule under it, bold is a section, plain is
+the colour alone, and the three below that are the same fall in
+|hl-NemetonMeta|'s colour -- which is where a heading nested that deep
+in a review comment belongs. The colours are copied from
+`NemetonHeading` and `NemetonMeta` on every |ColorScheme|, for the
+reason |hl-NemetonLink| is copied: a `:highlight link` is all or nothing
+and leaves nowhere to hang the weight.
+
+                                                             *hl-NemetonBold*
+                                                           *hl-NemetonItalic*
+                                                           *hl-NemetonStrike*
+                                                             *hl-NemetonCode*
+`NemetonBold`, `NemetonItalic` and `NemetonStrike` are the weight a word
+was written with. They carry no colour and none is wanted: extmarks
+compose, so what these do is put a weight on whatever colour the word
+was already drawn in -- dim inside a settled thread, blue and underlined
+inside a link, the language's own inside a suggestion.
+
+`NemetonCode` is a code span, which is a colour and not a weight: it is
+the one piece of a comment that quotes something rather than says it,
+and `String` is the colour an editor already draws quoted text in.
+|nemeton-config-comments|
 
                                                                *hl-NemetonWas*
 `NemetonWas` is the band the code a thread was written against is drawn

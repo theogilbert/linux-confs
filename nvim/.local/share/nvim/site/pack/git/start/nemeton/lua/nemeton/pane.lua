@@ -62,6 +62,21 @@ local function valid()
   return M.win and vim.api.nvim_win_is_valid(M.win)
 end
 
+--- Out of the pane, into the window the code is being read in.
+---
+--- What has to happen before anything is shown from in here: the pane
+--- is not a window to put code in, and `goto_thread` puts the file in
+--- the window it is called from whenever it is not already on the
+--- screen. The pane stays open behind the jump, which is the whole
+--- difference between this and the floats -- it is a split, and the
+--- conversation you jumped from is worth keeping up while you read what
+--- it pointed at.
+local function to_source()
+  if M.source and vim.api.nvim_win_is_valid(M.source) then
+    vim.api.nvim_set_current_win(M.source)
+  end
+end
+
 --- Where the pane opens.
 ---
 --- `expand_anchor` decides which window it is a split *of*. "window"
@@ -354,7 +369,7 @@ function M.render()
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, text)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
-  follow.set(M.buf, refs)
+  follow.set(M.buf, refs, to_source)
   -- Back to the top: this is one conversation, read from the first
   -- thing anybody said, and a pane still scrolled to where the last one
   -- ended is a pane that opens in the middle of a sentence.
@@ -522,14 +537,7 @@ function M.open()
     {
       k.code,
       function()
-        local thread = thread_at()
-        -- Out of the pane before the jump. `goto_thread` puts the file
-        -- in the window it is called from when it is not already on the
-        -- screen, and the pane is not a window to put code in.
-        if M.source and vim.api.nvim_win_is_valid(M.source) then
-          vim.api.nvim_set_current_win(M.source)
-        end
-        session.goto_thread(thread)
+        session.goto_thread(thread_at(), to_source)
       end,
       "go to the code this is about",
     },

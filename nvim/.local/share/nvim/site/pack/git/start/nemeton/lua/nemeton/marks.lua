@@ -464,6 +464,53 @@ function M.setup_highlights()
   -- larger type and this plugin already spends that colour on "the
   -- line you are looking for".
   link("NemetonHeading", "Title")
+  -- ...and which level of one, which the hashes used to say and now
+  -- nothing does. A terminal cannot draw a bigger word, so the six are
+  -- told apart the way the rest of this window tells anything apart:
+  -- loud at the top and quiet at the bottom. Underlined and bold is a
+  -- title with a rule under it; bold is a section; plain is the colour
+  -- alone; and the three below that are the same fall in the quiet
+  -- colour, which is where a heading nested that deep in a review
+  -- comment belongs.
+  --
+  -- Copied rather than linked, for the reason `NemetonLink` is: a group
+  -- that links somewhere takes that group's attributes entire, and
+  -- there is nowhere to hang the weight. From the two groups above
+  -- rather than from what they link to, so that a scheme which has
+  -- said what a heading in here looks like has said it for all six.
+  local title = vim.api.nvim_get_hl(0, { name = "NemetonHeading", link = false })
+  local comment = vim.api.nvim_get_hl(0, { name = "NemetonMeta", link = false })
+  local LEVELS = {
+    { title, { bold = true, underline = true } },
+    { title, { bold = true } },
+    { title, {} },
+    { title, { italic = true } },
+    { comment, { bold = true } },
+    { comment, { italic = true } },
+  }
+  for level, want in ipairs(LEVELS) do
+    local hl = { fg = want[1].fg, ctermfg = want[1].ctermfg, cterm = {}, default = true }
+    for attr in pairs(want[2]) do
+      hl[attr], hl.cterm[attr] = true, true
+    end
+    vim.api.nvim_set_hl(0, "NemetonHeading" .. level, hl)
+  end
+  -- The weight a word was written with. No colour of their own and none
+  -- wanted: extmarks compose, so what these do is put a weight on
+  -- whatever colour the word was already drawn in -- dim inside a
+  -- settled thread, blue and underlined inside a link, the language's
+  -- own inside a suggestion.
+  local function weight(name, attr)
+    vim.api.nvim_set_hl(0, name, { [attr] = true, cterm = { [attr] = true }, default = true })
+  end
+  weight("NemetonBold", "bold")
+  weight("NemetonItalic", "italic")
+  weight("NemetonStrike", "strikethrough")
+  -- ...and a code span, which is a colour and not a weight: it is the
+  -- one piece of a comment that is quoting something rather than saying
+  -- it, and `String` is the colour an editor already draws quoted text
+  -- in.
+  link("NemetonCode", "String")
   -- A comment you have written and not sent: not open, not settled,
   -- and owed an action by you rather than by anybody else.
   link("NemetonDraft", "DiagnosticWarn")
@@ -635,6 +682,13 @@ function M.shade_lines(rendered, first_row, settled)
             hl = under and on_ground(group, under) or group,
           })
         end
+      end
+      -- The weight the word was written with, on top of whatever colour
+      -- it came out in and never through `on_ground`: these groups
+      -- carry no colour and no background, which is the whole of what
+      -- lets a bold word stay the colour the sentence around it is.
+      for _, weight in ipairs(chunk.style or {}) do
+        table.insert(hls, { row = row, col = at, end_col = at + #chunk[1], hl = weight })
       end
       at = at + #chunk[1]
     end

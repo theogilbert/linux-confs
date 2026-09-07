@@ -190,7 +190,7 @@ local function render()
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
-  follow.set(M.buf, refs)
+  follow.set(M.buf, refs, M.close)
 end
 
 --- The thread the cursor is in. A conversation is several lines tall

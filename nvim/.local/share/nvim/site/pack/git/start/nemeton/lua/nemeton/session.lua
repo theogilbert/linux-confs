@@ -453,6 +453,35 @@ function M.open(iid, opts)
   end
 end
 
+--- The thread a comment id belongs to, and the note itself -- or nil
+--- for one this review has not got open.
+---
+--- What a link to another comment is resolved through. Nil is an
+--- ordinary answer and not a failure: the comment may be on another
+--- merge request, or in a thread that was resolved while resolved
+--- threads are not being drawn, or deleted since somebody linked it.
+---
+--- Drafts are not searched. A draft note's id is a draft note's id --
+--- its own sequence, on its own endpoint -- and nobody can link to a
+--- comment that GitLab shows to nobody but you, so a match in there
+--- would be two different numbers that happened to be equal.
+function M.thread_of(id)
+  if not (M.current and id) then
+    return nil
+  end
+  id = tostring(id)
+  for _, list in ipairs({ M.current.inline or {}, M.current.overview or {} }) do
+    for _, thread in ipairs(list) do
+      for _, note in ipairs(thread.notes or {}) do
+        if not note.draft and tostring(note.id) == id then
+          return thread, note
+        end
+      end
+    end
+  end
+  return nil
+end
+
 --- To the code a thread is about, from whatever window is showing it.
 ---
 --- `before` runs once the thread turns out to have somewhere to go and

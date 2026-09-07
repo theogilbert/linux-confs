@@ -204,6 +204,30 @@ return {
     -- author wrote, brackets and URLs and all.
     links = true,
 
+    -- Whether the weight a comment was written with is drawn as
+    -- weight: `**must**` in bold, `*maybe*` in italic, `~~was~~` struck
+    -- through, and `` `a_b` `` in the colour of code without the
+    -- backticks that made it code.
+    --
+    -- These are the marks a reviewer reaches for to say which word of a
+    -- sentence carries it, and read as the asterisks they were typed
+    -- with they say it about the punctuation instead. Drawn, the
+    -- emphasis is where its author put it and the sentence is four
+    -- characters shorter.
+    --
+    -- A code span is drawn first and nothing inside one is read as
+    -- markup: `` `a_b` `` is an identifier, and a URL inside backticks
+    -- is a string somebody quoted rather than a page to go to.
+    --
+    -- `NemetonBold`, `NemetonItalic`, `NemetonStrike` and `NemetonCode`
+    -- are the groups. The first three carry no colour of their own --
+    -- a bold word in a settled thread is dim and bold, and a bold link
+    -- is still a link.
+    --
+    -- Only how it is drawn. Rewriting a comment sends back the text its
+    -- author typed, asterisks and all.
+    styles = true,
+
     -- Whether `## why` is drawn as "why", in the colour a name is drawn
     -- in, rather than as the hashes it was typed with.
     --
@@ -211,6 +235,11 @@ return {
     -- colour and a line of its own -- which is what says "heading"
     -- everywhere else in this plugin. The hashes said the same thing in
     -- a notation, and a notation is what a rendered comment is not.
+    --
+    -- The level is a weight rather than a size, for the same reason:
+    -- `NemetonHeading1` down to `NemetonHeading6`, underlined and bold
+    -- at the top, quiet and italic at the bottom, so that a comment
+    -- with two levels of heading in it reads as two levels.
     headings = true,
 
     -- Whether a pipe table is drawn as a table: ruled, with the columns
@@ -250,13 +279,17 @@ return {
     --
     --   mention  ("alice", "https://gitlab.example.com/alice")
     --   commit   ("a1b2c3d4", "https://…/-/commit/a1b2c3d4")
-    --   link     ("the failing job", "https://…/-/jobs/1234")
+    --   thread   ("1234", "https://…/-/merge_requests/7#note_1234")
+    --   path     ("the failing job", "https://…/-/jobs/1234")
+    --   url      ("the docs", "https://example.com/docs")
     --
     -- The text is the useful half for a commit -- `:Git show a1b2c3d4`,
     -- a diff view, a terminal -- and the URL is the useful half for a
     -- link. Both are handed over either way, and the second is nil
     -- where this plugin cannot work out a page: a mention read with no
-    -- merge request open has no forge to be a user of.
+    -- merge request open has no forge to be a user of. A `thread` gets
+    -- a third argument as well: the thread itself, where the comment it
+    -- names is one this review has open, and nil where it is not.
     --
     -- `true` is the built-in, which is the quietest thing that is still
     -- an answer: `User alice`, `commit a1b2c3d4`, and a link put on the
@@ -265,10 +298,26 @@ return {
     -- and then never again -- and what the reader usually wanted is the
     -- string anyway: the sha to `git show`, the name to ask around
     -- about, the URL to send to somebody.
+    --
+    -- `thread` is the exception, and it is the one kind where going
+    -- there *is* the quiet answer: the destination is a conversation in
+    -- the review already open, in this editor, and the reader who
+    -- pressed the key on "see !7 (comment 1234)" asked to be shown it.
+    -- A comment on another merge request has nowhere to go and falls
+    -- back to the clipboard, with the reason said out loud.
+    --
+    -- `url` and `path` are the two halves of what was one `link`: a
+    -- page anywhere, and a page on this forge written as the path to
+    -- one. Both quiet by default, and apart so that they need not be --
+    -- `path = function(_, href) vim.ui.open(href) end` opens the job
+    -- and the issue in a browser and leaves somebody's blog post on the
+    -- clipboard. A config that still says `link` is read as both.
     follow = {
       mention = true,
       commit = true,
-      link = true,
+      thread = true,
+      url = true,
+      path = true,
     },
 
     -- Whether resolved threads are drawn at all. They are still fetched

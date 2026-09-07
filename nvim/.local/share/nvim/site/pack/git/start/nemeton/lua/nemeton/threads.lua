@@ -565,7 +565,10 @@ local function slice(runs, from, to)
       -- What the run points at goes with every piece of it: a link
       -- wrapped across two lines is one link, and the key that follows
       -- it is pressed on whichever half the cursor is on.
-      table.insert(out, { run[1]:sub(a - first + 1, b - first), run[2], ref = run.ref })
+      table.insert(
+        out,
+        { run[1]:sub(a - first + 1, b - first), run[2], ref = run.ref, style = run.style }
+      )
     end
   end
   return out
@@ -680,7 +683,12 @@ function M.render(thread, opts)
         end
         for _, run in ipairs(slice(runs, at, at + #piece)) do
           local colour = run[2] or hl
-          table.insert(line, { run[1], band and { band, colour } or colour, ref = run.ref })
+          table.insert(line, {
+            run[1],
+            band and { band, colour } or colour,
+            ref = run.ref,
+            style = run.style,
+          })
         end
         table.insert(out, line)
       end
@@ -804,7 +812,10 @@ function M.render(thread, opts)
       -- half used to be drawn in.
       table.insert(line, { row.marker, row.band })
       for _, run in ipairs(row.piece.runs or { { row.piece.text } }) do
-        table.insert(line, { run[1], { row.band, run[2] or row.hl }, ref = run.ref })
+        table.insert(
+          line,
+          { run[1], { row.band, run[2] or row.hl }, ref = run.ref, style = run.style }
+        )
       end
       -- The band reaches the closing rule: padded, so it is a rectangle
       -- inside the box rather than a strip with a ragged end in it.
@@ -918,7 +929,7 @@ function M.render(thread, opts)
         table.insert(line, { "│", "NemetonMeta" })
         table.insert(line, { (" "):rep(left + 1), hl })
         for _, run in ipairs(runs or { { text } }) do
-          table.insert(line, { run[1], run[2] or hl, ref = run.ref })
+          table.insert(line, { run[1], run[2] or hl, ref = run.ref, style = run.style })
         end
         table.insert(line, { (" "):rep(slack - left + 1), hl })
       end
@@ -1158,7 +1169,15 @@ function M.render(thread, opts)
         -- hashes. There is no bigger type in a terminal, so what says
         -- "this is a heading" is what says it everywhere else here: a
         -- colour, and the words on their own line.
-        body(lead, prose, block.kind == "heading" and "NemetonHeading" or body_hl, nil, runs)
+        -- ...and which level of one: there is no bigger type in a
+        -- terminal, so the six are told apart by weight instead --
+        -- underlined and bold at the top, quiet and italic at the
+        -- bottom. See `marks.setup_highlights`.
+        local hl = body_hl
+        if block.kind == "heading" then
+          hl = "NemetonHeading" .. math.min(block.level or 1, 6)
+        end
+        body(lead, prose, hl, nil, runs)
       end
     end
     -- Which note each line of it belongs to, on the line rather than in
@@ -1207,7 +1226,7 @@ function M.flatten(rendered, first_row)
           ref = chunk.ref,
         })
       end
-      if chunk[2] then
+      if chunk[2] or chunk.style then
         -- A chunk asking for a band behind a colour comes out as two
         -- highlights over the same bytes, the band first: extmarks are
         -- composed rather than replaced, so what is drawn is the band's
@@ -1216,13 +1235,22 @@ function M.flatten(rendered, first_row)
         -- resolved differently -- see `marks.shade` -- because virtual
         -- text has one ground for the whole block and a chunk cannot
         -- punch a hole in it.
-        for _, group in ipairs(type(chunk[2]) == "table" and chunk[2] or { chunk[2] }) do
+        local function over(group)
           table.insert(hls, {
             row = (first_row or 0) + i - 1,
             col = #text,
             end_col = #text + #chunk[1],
             hl = group,
           })
+        end
+        for _, group in ipairs(type(chunk[2]) == "table" and chunk[2] or { chunk[2] }) do
+          over(group)
+        end
+        -- ...and the weight last of all: a group that says a word is
+        -- bold says nothing about what colour it is, and going on top
+        -- of the colour is what leaves the colour alone.
+        for _, group in ipairs(chunk.style or {}) do
+          over(group)
         end
       end
       text = text .. chunk[1]

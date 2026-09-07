@@ -216,8 +216,23 @@ puts a link on the clipboard. Nothing is opened and no window moves; a
 key that took the editor somewhere would be a key pressed once by
 accident and then never again, and what you usually wanted is the string
 anyway: the sha to `git show`, the name to ask around about, the URL to
-send to somebody. `comments.follow` is one entry per kind — `false` for
-nothing at all, and a function of your own for anything else, called
+send to somebody.
+
+**A link to another comment on this merge request is the exception**,
+because it is the one kind whose destination is not a page somewhere
+else: it is a conversation this editor already has open, so `<C-]>` goes
+to it. A thread on a line opens its file, puts the cursor on the line
+and the conversation in the pane; a comment on the merge request itself
+opens the comments window with it under the cursor. The window you read
+the link in is left first, so a float closes behind you and the pane
+stays where it is. A comment this review cannot show — one on another
+merge request, one resolved while resolved threads are hidden, one
+deleted since it was linked — falls back to the clipboard and says which
+of those it was.
+
+`comments.follow` is one entry per kind — `mention`, `commit`, `thread`,
+`path` (a page on this forge) and `url` (a page anywhere) — with `false`
+for nothing at all and a function of your own for anything else, called
 with what is written and where it points:
 
 ```lua
@@ -226,12 +241,17 @@ comments = {
     commit = function(sha)
       vim.cmd("Git show " .. sha)
     end,
-    link = function(text, href)
+    -- the forge's own pages in a browser, and somebody else's
+    -- website on the clipboard
+    path = function(_, href)
       vim.ui.open(href)
     end,
   },
 }
 ```
+
+`url` and `path` were one `link` until they were two; a config that
+still says `link` is read as both.
 
 What is bound out in the buffer is what acts on the line under the
 cursor. A dozen keys under one prefix is a menu nobody has learnt, so
@@ -484,10 +504,44 @@ drawn as its alt text: a terminal has nowhere to put a picture, and the
 alt text is the sentence its author wrote for exactly this case.
 `comments.links = false` leaves the brackets.
 
-A **heading** is drawn without the hashes, in `NemetonHeading`. There is
-no larger type in a terminal, so a heading here is a colour and a line of
-its own — which is what says "heading" everywhere else in this plugin.
+A **heading** is drawn without the hashes. There is no larger type in a
+terminal, so a heading here is a colour and a line of its own — which is
+what says "heading" everywhere else in this plugin — and the level it
+was is a weight rather than a size: `NemetonHeading1` is underlined and
+bold, `NemetonHeading2` is bold, `NemetonHeading3` is the colour alone,
+and `4` to `6` fall away through italic to the quiet colour, so a
+comment with two levels of heading in it reads as two levels. All six
+take their colour from `NemetonHeading`, which is `Title`.
 `comments.headings = false` leaves them.
+
+**Emphasis** is drawn as emphasis: `**must**` in bold, `*maybe*` and
+`_perhaps_` in italic, `***both***` as both, `~~was~~` struck through.
+These are the marks a reviewer reaches for to say which word of a
+sentence carries it, and read as the asterisks they were typed with they
+say it about the punctuation instead. `NemetonBold`, `NemetonItalic` and
+`NemetonStrike` carry no colour of their own — a bold word in a settled
+thread is dim and bold, and a bold link is still blue and underlined.
+An underscore inside a word emphasises nothing, so `snake_case_name` is
+a name; a marker nobody closed is the character it is, so `2 * 3` is
+arithmetic; and one written `\*like this\*` is drawn as the characters
+it escapes, which is how you write an asterisk in a sentence about a
+glob.
+
+A **code span** is drawn without its backticks, in `NemetonCode`
+(`String`), and nothing inside one is markup: `` `a_b` `` is an
+identifier, a URL in backticks is a string somebody quoted rather than a
+page to go to, and `` `@alice` `` is not somebody to notify. A run of
+backticks closes on a run of the same length, so `` ``a `b` c`` `` is
+one span. `comments.styles = false` leaves every marker as it was typed.
+
+A **link to another comment** — the `…#note_1234` permalink GitLab's
+own "copy link" gives you — is drawn as `!7 (comment 1234)`, what the
+forge calls the review and the comment in it, and `<C-]>` on it goes to
+that conversation rather than copying a URL. It is the same argument as
+a commit permalink: a hundred characters of which twelve are the
+content. Words of your own win, as ever —
+`[why we dropped it](…#note_1234)` is drawn as "why we dropped it" and
+still goes there.
 
 A **table** is ruled and its columns are lined up, with the alignments
 its delimiter row asked for. Markdown's own is a table only in the sense
@@ -690,10 +744,10 @@ lua/nemeton/
   threads.lua    GitLab's discussions -> "which threads are on line 42",
                  pure, and the part the tests lean on hardest
   markdown.lua   a comment read as the page rather than as the source:
-                 links, headings, tables, fences -- pure, and a parser
-                 only, since the drawing is threads.lua's
-  follow.lua     what <C-]> goes to, and where each kind of reference
-                 has a page
+                 links, headings, emphasis, code, tables, fences -- pure,
+                 and a parser only, since the drawing is threads.lua's
+  follow.lua     what <C-]> goes to: where each kind of reference has a
+                 page, and the one kind that is a thread in here instead
   session.lua    one merge request at a time, and everything hanging off it
   marks.lua      extmarks: gutter signs, and conversations as virt_lines
   list.lua       the merge request picker

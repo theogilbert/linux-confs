@@ -1,10 +1,11 @@
 -- What a comment points at, gone to.
 --
 -- A review comment is half made of things that are not words: a person
--- to ask, a commit to read, a page to open. Drawn, each of the three is
--- already in a colour of its own -- and until now that was the whole of
--- what the plugin did about them, which left the reader copying eight
--- digits out of a floating window by hand.
+-- to ask, a commit to read, a page to open, another argument to go and
+-- read first. Drawn, each of them is already in a colour of its own --
+-- and until now that was the whole of what the plugin did about them,
+-- which left the reader copying eight digits out of a floating window
+-- by hand.
 --
 -- So `<C-]>` in the windows that draw a conversation. The same key vim
 -- has always used for "go to the thing under the cursor", because that
@@ -21,8 +22,15 @@
 -- Nothing is opened and no window moves -- a key that took the editor
 -- somewhere would be a key pressed once by accident and never again --
 -- and the URL a reader is given is worked out the same way whatever
--- they do with it. `config.comments.follow` is the three kinds, and
--- `true` in any of them is that.
+-- they do with it. `config.comments.follow` is the kinds, and `true` in
+-- any of them is that.
+--
+-- With one exception, which is the one destination that is not a page
+-- somewhere else: a link to another comment on this merge request is a
+-- link to a conversation this editor already has open, and `true` goes
+-- to it. Nothing is opened that was not open, no browser is raised, and
+-- the reader who pressed the key on "see !7 (comment 1234)" asked for
+-- exactly this.
 --
 -- The refs themselves come from `threads.render`, which puts what a run
 -- points at beside the run: this module only remembers where they
@@ -33,24 +41,32 @@ local config = require("nemeton.config")
 local M = {}
 
 -- Buffer -> the references drawn in it, as `threads.flatten` hands
--- them over. Replaced whole on every render, because every render
--- replaces the whole buffer.
+-- them over, and the way out of the window drawing them. Replaced
+-- whole on every render, because every render replaces the whole
+-- buffer.
 local drawn = {}
 
 --- Remembers what `buf` now has in it. Called by every window that
 --- draws a conversation, straight after it writes the lines.
 ---
+--- `leave` is that window's way out, for the one kind of reference
+--- whose destination is inside this editor: a float has to close before
+--- anything else can be shown, since `:edit` from inside one opens the
+--- file in the float. The window that is a split rather than a float
+--- passes what it does instead, and one with nowhere to go passes
+--- nothing.
+---
 --- ...and forgets the buffers that have gone away, here rather than on
 --- an autocommand of their own: these windows wipe their buffer when
 --- they close, buffer numbers are reused, and there are never more than
 --- three of them to walk.
-function M.set(buf, refs)
+function M.set(buf, refs, leave)
   for other in pairs(drawn) do
     if not vim.api.nvim_buf_is_valid(other) then
       drawn[other] = nil
     end
   end
-  drawn[buf] = refs or {}
+  drawn[buf] = { refs = refs or {}, leave = leave }
 end
 
 --- The reference at (row, col) of `buf` -- 0-based, the way the cursor
@@ -62,7 +78,7 @@ end
 --- Nothing at all from a line that carries none, which is most of them.
 function M.at(buf, row, col)
   local best = nil
-  for _, ref in ipairs(drawn[buf] or {}) do
+  for _, ref in ipairs((drawn[buf] or {}).refs or {}) do
     if ref.row == row then
       if col >= ref.col and col < ref.end_col then
         return ref.ref
@@ -102,7 +118,9 @@ function M.href(ref)
     return nil
   end
   local host, project = forge()
-  if ref.kind == "link" then
+  -- The three that carry where they point: a page, a page on this forge
+  -- written as the path to one, and a comment anchored on a page.
+  if ref.kind == "url" or ref.kind == "path" or ref.kind == "thread" then
     local href = ref.href or ""
     if href:match("^https?://") then
       return href
@@ -120,6 +138,33 @@ function M.href(ref)
   return nil
 end
 
+--- Which merge request is open, or nil for none.
+local function mine()
+  local session = require("nemeton.session")
+  return session.current and session.current.iid or nil
+end
+
+--- Shows `thread`, wherever this plugin shows one of its sort, and
+--- leaves the window the link was read in first.
+---
+--- Two destinations because there are two sorts. A thread on a line is
+--- read beside the code it is about -- `goto_thread` opens the file,
+--- puts the cursor on the line and the pane on the thread -- and a
+--- comment on the merge request itself is about no line and has no code
+--- to be read beside: it is shown in the comments window, which is
+--- where it was written and where the rest of them are.
+local function shown(thread, leave)
+  local session = require("nemeton.session")
+  if thread.path and thread.line then
+    return session.goto_thread(thread, leave)
+  end
+  if leave then
+    leave()
+  end
+  require("nemeton.notes").open(thread)
+  return true
+end
+
 --- What `true` does with each kind: say what it is, and leave what to
 --- do about it to you.
 ---
@@ -132,13 +177,25 @@ end
 --- to somebody. So the default hands over the string.
 ---
 --- A link goes to the clipboard as well as to the message, because a
---- URL is the one of the three that is never typed out again by hand.
+--- URL is the one of them that is never typed out again by hand.
 local function said(ref, href)
   if ref.kind == "mention" then
     return ("User %s"):format(ref.text)
   end
   if ref.kind == "commit" then
     return ("commit %s"):format(ref.text)
+  end
+  -- A comment this review cannot show. Said out loud rather than passed
+  -- over in silence: the reader pressed the key expecting to be taken
+  -- there, and "link copied" on its own reads as the plugin having
+  -- decided not to bother.
+  local why = nil
+  if ref.kind == "thread" then
+    why = ref.iid ~= mine() and ("comment %s is on !%s"):format(ref.text, ref.iid)
+      -- Resolved while resolved threads are not being drawn, deleted
+      -- since somebody linked it, or written on a merge request this
+      -- editor has not got open.
+      or ("comment %s is not in this review"):format(ref.text)
   end
   local url = href or ref.href
   if not url then
@@ -149,7 +206,7 @@ local function said(ref, href)
   -- built without one leaves it in the unnamed register, which is
   -- still a paste away.
   pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', url)
-  return "Link copied to clipboard"
+  return why and (why .. " — link copied") or "Link copied to clipboard"
 end
 
 --- Follows `ref`: whatever `config.comments.follow` says to do with one
@@ -159,18 +216,39 @@ end
 --- with it nil where this plugin cannot work one out: what to do with
 --- `a1b2c3d4` is a question `git` can answer without a forge, and this
 --- is not the module to decide it cannot be answered.
-function M.go(ref)
+function M.go(ref, leave)
   if not ref then
     return false
   end
-  local how = (config.comments.follow or {})[ref.kind]
+  local follow = config.comments.follow or {}
+  local how = follow[ref.kind]
+  -- `url` and `path` were one `link` until they were two, and a config
+  -- written while they were one means both of them. The default table
+  -- has no `link` in it any more, so anything there is the reader's own
+  -- and is honoured; saying `link` and `url` both is a migration
+  -- half-done, and the specific one is the one to write.
+  if follow.link ~= nil and (ref.kind == "url" or ref.kind == "path") then
+    how = follow.link
+  end
   if not how then
     return false
   end
   local href = M.href(ref)
+  -- The thread the comment named, where it is one this review has open:
+  -- worked out before anything is done about it, because it is the
+  -- difference between a place to go and a link to copy -- and it is
+  -- handed to a function of yours as well, which is the whole of what
+  -- one would otherwise have to go and look up.
+  local thread = nil
+  if ref.kind == "thread" and ref.iid == mine() then
+    thread = require("nemeton.session").thread_of(ref.text)
+  end
   if type(how) == "function" then
-    how(ref.text, href)
+    how(ref.text, href, thread)
     return true
+  end
+  if thread then
+    return shown(thread, leave)
   end
   local message = said(ref, href)
   if not message then
@@ -188,7 +266,7 @@ end
 function M.here()
   local buf = vim.api.nvim_get_current_buf()
   local pos = vim.api.nvim_win_get_cursor(0)
-  return M.go(M.at(buf, pos[1] - 1, pos[2]))
+  return M.go(M.at(buf, pos[1] - 1, pos[2]), (drawn[buf] or {}).leave)
 end
 
 return M

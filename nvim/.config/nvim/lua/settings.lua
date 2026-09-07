@@ -96,6 +96,14 @@ vim.opt.updatetime = 400
 -- vim.opt.timeoutlen = 300
 
 vim.opt.clipboard = "unnamedplus"
+-- Clipboard backend, toggled at runtime with <Leader>Oc (see keymaps.lua):
+--   "osc52" : yanks are pushed to the terminal emulator, i.e. to the clipboard
+--             of the machine physically in front of me.
+--   "tmux"  : yanks stay on this machine, in the tmux buffer shared by every
+--             nvim of the tmux server (wl-copy / xsel when outside of tmux).
+-- Overridden by $NVIM_CLIPBOARD, and by whatever <Leader>Oc last remembered
+-- for this machine.
+require("utilities.clipboard").setup({ default = "osc52" })
 
 -- Configure how new splits should be opened
 vim.opt.splitbelow = true

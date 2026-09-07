@@ -1,0 +1,500 @@
+*utilities.txt*               Small modules this configuration is built out of
+
+                    U T I L I T I E S    ~
+
+A library pack, not a plugin. Nothing here installs itself, registers a
+mapping or runs at startup on its own: every module is a `require()` away and
+does exactly what it is called for.
+
+==============================================================================
+CONTENTS                                                  *utilities-contents*
+
+     1. Introduction ........................ |utilities-introduction|
+     2. Dependencies ........................ |utilities-dependencies|
+     3. buffer .............................. |utilities-buffer|
+     4. clipboard ........................... |utilities-clipboard|
+        4.1 Backends ........................ |utilities-clipboard-backends|
+        4.2 Usage ........................... |utilities-clipboard-usage|
+        4.3 Choosing the default ............ |utilities-clipboard-default|
+        4.4 Functions ....................... |utilities-clipboard-functions|
+        4.5 Design notes .................... |utilities-clipboard-design|
+        4.6 Troubleshooting ................. |utilities-clipboard-trouble|
+     5. commands ............................ |utilities-commands|
+     6. dap ................................. |utilities-dap|
+     7. lsp_sort ............................ |utilities-lsp_sort|
+     8. quick_term .......................... |utilities-quick_term|
+     9. runner .............................. |utilities-runner|
+    10. scratch ............................. |utilities-scratch|
+    11. search .............................. |utilities-search|
+    12. table ............................... |utilities-table|
+    13. tabs ................................ |utilities-tabs|
+    14. terminal ............................ |utilities-terminal|
+    15. window_picker ....................... |utilities-window_picker|
+    16. Tests ............................... |utilities-tests|
+
+==============================================================================
+1. INTRODUCTION                                       *utilities-introduction*
+                                                                   *utilities*
+
+`utilities` is a pack of small single-purpose Lua modules shared by this
+Neovim configuration. It lives in `pack/libs/start/`, so its `lua/` directory
+is on the runtimepath from startup, but no code of its own runs until a
+module is required.
+
+Each module is `require("utilities.<name>")` and returns a table. Modules that
+need to be armed once -- |utilities-clipboard|, |utilities-scratch|,
+|utilities-tabs| -- expose a `setup()` for the configuration to call; the rest
+are called directly, usually from a mapping.
+
+Two modules are large enough to have documents of their own:
+|quick_term.txt| and |tabs.txt|. They are summarised here and detailed there.
+
+==============================================================================
+2. DEPENDENCIES                                       *utilities-dependencies*
+
+The pack as a whole needs nothing. Individual modules do:
+
+    fzf-lua              |utilities-scratch|, |utilities-search|
+    nvim-tree            |utilities-search|
+    nvim-dap, nvim-dap-ui |utilities-dap|
+    `python3`            |utilities-runner|
+    `tmux`               |utilities-clipboard| ("tmux" backend)
+
+A module requires its dependency at the top of the file, so requiring it
+without the dependency installed is an error, not a silent no-op.
+
+==============================================================================
+3. BUFFER                                                   *utilities-buffer*
+
+Predicates and lookups over the windows of the current tab page, used by
+|utilities-terminal|, |utilities-runner| and |utilities-dap|. Everything here
+is scoped to the current tab page, never to the whole session.
+
+utilities.buffer.is_in_visual_mode()    *utilities.buffer.is_in_visual_mode()*
+
+    True in charwise, linewise or blockwise visual mode.
+
+utilities.buffer.get_selection()            *utilities.buffer.get_selection()*
+
+    The visually selected text as a single string, lines joined with "\n",
+    or nil when not in visual mode. Works from within the selection, using
+    `getpos("v")` and `getpos(".")`, and normalises a backwards selection.
+
+    Blockwise visual mode is not handled: the selection is returned as
+    whole lines rather than as the block.
+
+                                     *utilities.buffer.find_one_by_filetype()*
+utilities.buffer.find_one_by_filetype({filetype})
+
+    The window id of the first window in the current tab displaying a
+    buffer of {filetype}, or nil.
+
+                                           *utilities.buffer.focus_filetype()*
+utilities.buffer.focus_filetype({filetype})
+
+    Focus that window if there is one; do nothing otherwise.
+
+utilities.buffer.find_terminal()            *utilities.buffer.find_terminal()*
+
+    The window id and buffer number of the first terminal in the current
+    tab, or `nil, nil`.
+
+utilities.buffer.find_all_terminals()  *utilities.buffer.find_all_terminals()*
+
+    A list of `{ win = <winid>, buf = <bufnr> }` for every terminal in the
+    current tab.
+
+==============================================================================
+4. CLIPBOARD                                             *utilities-clipboard*
+
+The `utilities.clipboard` module decides what 'clipboard' actually talks to,
+and lets that decision change at runtime.
+
+Neovim picks a clipboard provider once, at startup, from a fixed list of
+candidates. That is the wrong granularity for a configuration used both on a
+local desktop and over ssh: the same nvim wants wl-copy on the desktop, the
+tmux paste buffer on a remote server, and OSC 52 only when a yank genuinely
+has to reach the machine sitting in front of you.
+
+This module turns that into a two-way switch with a remembered default.
+
+------------------------------------------------------------------------------
+4.1 BACKENDS                                    *utilities-clipboard-backends*
+
+"osc52"                                            *utilities-clipboard-osc52*
+
+    Yanks are written to the terminal emulator as an OSC 52 escape
+    sequence, so they land in the clipboard of the machine you are
+    physically sitting at, across ssh.
+
+    Only the copy direction uses OSC 52. Reads keep using the tmux buffer
+    when there is one, because terminals that implement OSC 52 writes
+    commonly refuse OSC 52 reads, and Neovim then blocks waiting for an
+    answer that never comes: one second, then a "Waiting for OSC 52
+    response from the terminal" message, then nine seconds more. Outside
+    of tmux, reads do fall back to a real OSC 52 query.
+
+"tmux"                                              *utilities-clipboard-tmux*
+
+    Yanks stay on the machine nvim runs on. Inside tmux they go to the
+    tmux paste buffer, which is shared by every nvim running in the same
+    tmux server, so yanking in one pane and pasting in another works with
+    nothing crossing the ssh link.
+
+    Outside of tmux this backend leaves |g:clipboard| unset and lets
+    Neovim autodetect as usual, which picks wl-copy, xsel, pbcopy and so
+    on. "tmux" therefore means "keep it local", whether or not tmux is
+    actually running.
+
+------------------------------------------------------------------------------
+4.2 USAGE                                          *utilities-clipboard-usage*
+
+Call |utilities.clipboard.setup()| once during startup, after 'clipboard'
+itself is set: >lua
+
+    vim.opt.clipboard = "unnamedplus"
+    require("utilities.clipboard").setup({ default = "osc52" })
+<
+Then bind |utilities.clipboard.toggle()| to switch backends without
+restarting: >lua
+
+    vim.keymap.set("n", "<Leader>Oc", require("utilities.clipboard").toggle,
+        { desc = "Toggle [O]ption [C]lipboard (tmux-local <-> osc52)" })
+<
+------------------------------------------------------------------------------
+4.3 CHOOSING THE DEFAULT                         *utilities-clipboard-default*
+
+The backend applied at startup is the first of these that names a known
+backend:
+
+    1. the $NVIM_CLIPBOARD environment variable;
+    2. the machine-local default remembered by |utilities.clipboard.toggle()|,
+       in `stdpath("state") .. "/clipboard-backend"`;
+    3. `opts.default` passed to |utilities.clipboard.setup()|;
+    4. "osc52".
+
+An unrecognised value at any level is ignored rather than applied, so a typo
+degrades to the next source instead of leaving nvim without a provider.
+
+The state file deliberately lives under `stdpath("state")`, outside of the
+dotfiles repository, so that each machine can disagree with the checked-in
+default without a local commit. Pressing the toggle key once on a host is
+enough to change that host's default for good.
+
+$NVIM_CLIPBOARD is the right lever when the machine running nvim is not what
+decides: one remote server reached from two different terminal emulators
+needs the answer to depend on the client, not on the host. Set it from the
+client's `~/.ssh/config`: >
+
+    Host devbox
+        SetEnv NVIM_CLIPBOARD=tmux
+<
+This needs `AcceptEnv NVIM_CLIPBOARD` in the server's sshd_config. Note that
+tmux caches the session environment, so panes created after the variable
+changed will not see it unless `.tmux.conf` carries: >
+
+    set -ga update-environment " NVIM_CLIPBOARD"
+<
+------------------------------------------------------------------------------
+4.4 FUNCTIONS                                  *utilities-clipboard-functions*
+
+utilities.clipboard.setup({opts})                *utilities.clipboard.setup()*
+
+    Resolve and apply the effective backend, as described in
+    |utilities-clipboard-default|. {opts} is optional; the only field read
+    is `default`, a backend name.
+
+utilities.clipboard.toggle()                    *utilities.clipboard.toggle()*
+
+    Switch to the other backend immediately, write it to the state file as
+    this machine's default, and notify with the provider name Neovim ended
+    up using. If the state file cannot be written the switch still applies
+    for this session and the notification says it was not remembered.
+
+utilities.clipboard.provider_name()      *utilities.clipboard.provider_name()*
+
+    The name of the provider Neovim actually resolved, as reported by
+    `provider#clipboard#Executable()`: "osc52", "tmux-local", "wl-copy",
+    and so on, or "none". Use this rather than the requested backend when
+    you want to know what is really in effect.
+
+utilities.clipboard.backend                      *utilities.clipboard.backend*
+
+    Field, not a function: the backend name currently applied, one of
+    `utilities.clipboard.TMUX` ("tmux") or `utilities.clipboard.OSC52`
+    ("osc52").
+
+------------------------------------------------------------------------------
+4.5 DESIGN NOTES                                  *utilities-clipboard-design*
+
+Two deliberate departures from Neovim's built-in providers, both of which
+exist to keep a held `x` from stalling the editor when 'clipboard' is
+"unnamedplus" and every delete is therefore a clipboard write.
+
+`tmux load-buffer -` is used without `-w`~
+
+    Neovim's own tmux provider passes `-w` on tmux 3.2 and newer, which
+    tells tmux to forward the buffer onward to the outer terminal over
+    OSC 52. Under "unnamedplus" that is one escape sequence per delete,
+    and a held `x` floods the terminal emulator until a write stalls for
+    seconds. Dropping `-w` keeps the buffer on the server.
+
+`tmux save-buffer -` is used without `refresh-client -l`~
+
+    Neovim's own tmux provider pastes with `tmux refresh-client -l && sleep
+    0.05 && tmux save-buffer -`. The `-l` asks the terminal for its
+    clipboard over OSC 52, which write-only terminals never answer.
+    Reading tmux's own buffer directly avoids both the query and the sleep.
+
+There is a third asymmetry worth knowing about, in Neovim rather than here:
+a provider registered as a |List| of arguments is run with `jobstart()` and
+does not block, while one registered as a |Funcref| -- which is how OSC 52
+is registered -- runs inline on the main loop. That is the structural reason
+the "tmux" backend cannot stall the editor and the "osc52" one can.
+
+------------------------------------------------------------------------------
+4.6 TROUBLESHOOTING                              *utilities-clipboard-trouble*
+
+Editing `opts.default` changes nothing~
+
+    A state file written by |utilities.clipboard.toggle()| outranks it; see
+    |utilities-clipboard-default|. Remove it: >
+
+        :call delete(stdpath('state') .. '/clipboard-backend')
+<
+What is actually in effect?~
+>vim
+    :echo provider#clipboard#Executable()
+    :lua = vim.g.clipboard
+    :checkhealth vim.provider
+<
+    The health check reports the tool Neovim found, but never names OSC 52,
+    which is built in rather than an external tool.
+
+Yanks do not reach the physical machine on the "osc52" backend~
+
+    tmux must be willing to forward an application's OSC 52 outward: >
+
+        :!tmux show -g set-clipboard
+<
+    `on` or `external` will forward, `off` will not. The terminal emulator
+    must also accept OSC 52 writes; that support is common, unlike OSC 52
+    reads.
+
+==============================================================================
+5. COMMANDS                                               *utilities-commands*
+
+One helper for shelling out when only success matters.
+
+                                          *utilities.commands.run_and_check()*
+utilities.commands.run_and_check({command})
+
+    Run {command} with `system()` and return true when it exited zero.
+    Output is discarded; use `system()` directly when you want it.
+
+==============================================================================
+6. DAP                                                         *utilities-dap*
+
+Reading a long string in a debugger, without the escapes.
+
+utilities.dap.peek_string_value()          *utilities.dap.peek_string_value()*
+
+    Evaluate the visual selection, or `<cexpr>` under the cursor, in the
+    active `nvim-dap` session.
+
+    When the result is a quoted Python string -- including a `b`, `r`, `f`
+    or `u` prefixed one -- its escapes are decoded and the text is shown in
+    a bordered float sized to the content, with real newlines and tabs.
+    `q` and <Esc> close it.
+
+    Anything else -- a dict, a list, an object -- falls through to
+    `dapui.eval()`, which keeps its expandable tree view. With no session
+    running, `dapui.eval()` is called directly.
+
+==============================================================================
+7. LSP_SORT                                               *utilities-lsp_sort*
+
+Reordering LSP results that arrive in an unhelpful order. Both functions
+work by wrapping `vim.lsp.buf_request()` so that the handler for one method
+sees a sorted result; requests for other methods are passed straight
+through.
+
+Call each at most once. They install by wrapping whatever `buf_request` is
+current, so calling one twice stacks two wrappers on the same method.
+
+                                 *utilities.lsp_sort.sort_workspace_symbols()*
+utilities.lsp_sort.sort_workspace_symbols()
+
+    Sort `workspace/symbol` results by match quality: symbols whose name
+    contains the query rank by where the match starts and then by name
+    length, and symbols that do not contain it at all sink below them.
+
+                           *utilities.lsp_sort.deprioritize_test_references()*
+utilities.lsp_sort.deprioritize_test_references()
+
+    Sort `textDocument/references` so that hits whose URI contains a
+    `/test/` or `/tests/` segment come last.
+
+==============================================================================
+8. QUICK_TERM                                           *utilities-quick_term*
+
+Runs a command in a throwaway floating or bottom-split terminal, closing the
+window when the process exits. See |quick_term.txt|.
+
+==============================================================================
+9. RUNNER                                                   *utilities-runner*
+
+Running the Python file you are editing, and feeding a REPL from the buffer.
+Both open a `belowright` split and return focus to the window you started
+from, so the code stays where your cursor was. Every buffer they create is
+deleted on `VimLeavePre`.
+
+utilities.runner.run_python_file()        *utilities.runner.run_python_file()*
+
+    Run the current file with `python3` in a terminal split.
+
+    The window is remembered per file path: running the same file again
+    reuses its window and replaces the previous output, while a different
+    file gets a window of its own. If the remembered window was closed, a
+    new split is opened.
+
+                                   *utilities.runner.send_selection_to_repl()*
+utilities.runner.send_selection_to_repl()
+
+    Send the visual selection to a persistent `python3` REPL, starting one
+    in a split on first use and reopening its window if it was closed but
+    the job is still alive.
+
+    Blank lines are stripped before sending: an empty line inside an
+    indented block would otherwise end the block early in the REPL.
+
+==============================================================================
+10. SCRATCH                                                *utilities-scratch*
+
+Throwaway files that persist, kept together in
+`stdpath("data") .. "/scratches/"` rather than scattered across `/tmp`.
+
+utilities.scratch.setup()                          *utilities.scratch.setup()*
+
+    Create the scratch directory if it does not exist. Call once at
+    startup.
+
+utilities.scratch.search_scratches()    *utilities.scratch.search_scratches()*
+
+    Pick an existing scratch file with `fzf-lua`.
+
+                                         *utilities.scratch.prompt_new_file()*
+utilities.scratch.prompt_new_file({prompt}, {previous_filename})
+
+    Ask for a name and edit that file in the scratch directory. Both
+    arguments are optional and exist for the re-prompt: if the name is
+    already taken the prompt reappears carrying the rejected name and the
+    reason, so it can be corrected rather than retyped.
+
+==============================================================================
+11. SEARCH                                                  *utilities-search*
+
+utilities.search.grep({opts})                        *utilities.search.grep()*
+
+    `fzf-lua` live grep, with one addition: when the cursor is in the
+    NvimTree pane, the search is limited to the directory under the cursor
+    -- its parent directory when the cursor is on a file. A path that no
+    longer exists on disk is reported and ignored rather than searched.
+
+    {opts} is optional:
+        `resume`    boolean, reuse the previous pattern.
+        `filetype`  boolean, prompt for an `rg` type (`py`, `md`, ...)
+                    and pass it as `-t` before searching.
+
+==============================================================================
+12. TABLE                                                    *utilities-table*
+
+A CSV parser and a fixed-width table formatter, used to render query results
+as aligned text.
+
+The parser is character by character rather than a `split()` on commas: it
+tracks whether it is inside a quoted cell and treats a doubled quote within
+one as an escaped quote, so cells containing commas, quotes or newlines
+survive.
+
+                                                  *utilities.table.from_csv()*
+utilities.table.from_csv({csv_text}, {header_lines})
+
+    Parse {csv_text}, comma separated, and format it. {header_lines}
+    defaults to 1.
+
+    Returns a FormattedTable and an error message, the latter nil on
+    success. A FormattedTable carries:
+        `lines`          the parsed rows, each a list of cells;
+        `columns_width`  the display width of each column;
+        `text`           the formatted table, as a list of lines.
+
+                                      *utilities.table.from_structured_data()*
+utilities.table.from_structured_data({lines}, {header_lines})
+
+    The same, from rows already in memory. Every row must have the same
+    number of cells. {header_lines} defaults to 1.
+
+                                      *utilities.table.get_column_at_cursor()*
+utilities.table.get_column_at_cursor({cols_width}, {virtual_col})
+
+    The 1-indexed column the cursor is in, given a FormattedTable's
+    `columns_width` and a display column (see |virtcol()|), or nil when the
+    cursor sits on a separator between columns.
+
+==============================================================================
+13. TABS                                                      *utilities-tabs*
+
+Pins an explicit name to a tab page, so a tab stops renaming itself every
+time you switch buffers inside it. Registers |:TabName| and |:TabClearName|.
+See |tabs.txt|.
+
+==============================================================================
+14. TERMINAL                                              *utilities-terminal*
+
+Sending buffer text to the terminals of the current tab. Each send appends a
+newline, so what is sent is executed.
+
+                                  *utilities.terminal.send_sel_to_terminals()*
+utilities.terminal.send_sel_to_terminals()
+
+    Send the visual selection to every terminal in the current tab.
+    Notifies and does nothing when the selection is empty.
+
+                                      *utilities.terminal.send_to_terminals()*
+utilities.terminal.send_to_terminals({text})
+
+    Send {text} to every terminal in the current tab. Notifies and does
+    nothing when the tab has no terminal.
+
+==============================================================================
+15. WINDOW_PICKER                                    *utilities-window_picker*
+
+Jumping to a window by letter instead of by repeated <C-w>w.
+
+utilities.window_picker.pick()                *utilities.window_picker.pick()*
+
+    Draw a letter over every window of the current tab, floats included,
+    then focus the one whose letter is pressed. Any other key, <Esc>
+    included, cancels and leaves focus alone.
+
+                                  *utilities.window_picker.get_ordered_wins()*
+utilities.window_picker.get_ordered_wins()
+
+    The windows of the current tab in reading order -- top to bottom, then
+    left to right within a row -- as a list of
+    `{ win, row, col, label }`. Sorting by (row, col) is enough to get
+    reading order out of a split layout, so rows are never detected
+    explicitly. `label` is nil past the 26th window.
+
+                                                *UtilWindowPickerLabel*
+    The labels are drawn with the `UtilWindowPickerLabel` highlight group.
+
+==============================================================================
+16. TESTS                                                    *utilities-tests*
+
+Specs live in `tests/`, one `<module>_spec.lua` per covered module, written
+in the `describe`/`it` style. |utilities-table|, |utilities-tabs| and
+|utilities-window_picker| are covered; the rest are not.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

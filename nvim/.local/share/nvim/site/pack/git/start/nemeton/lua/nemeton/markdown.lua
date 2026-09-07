@@ -21,12 +21,12 @@
 --                      what `<C-]>` follows -- and in `style` the
 --                      weight it was written with.
 --
--- Deliberately a subset. A comment on a merge request is a paragraph,
--- a link, a word somebody leant on, a list and now and then a table; a markdown implementation
--- is a fortnight, and every part of one that is not those is a part
--- that can be wrong about somebody's code review. What is not
--- recognised is drawn as it was typed, which is where the whole plugin
--- started.
+-- Deliberately a subset. A comment on a merge request is a paragraph, a
+-- link, a word somebody leant on, a list and now and then a table; a
+-- markdown implementation is a fortnight, and every part of one that is
+-- not those is a part that can be wrong about somebody's code review.
+-- What is not recognised is drawn as it was typed, which is where the
+-- whole plugin started.
 
 local config = require("nemeton.config")
 
@@ -671,6 +671,30 @@ local function alignments(line)
   return out
 end
 
+--- A prose line with its hard break taken off the end of it.
+---
+--- A backslash at the end of a line is markdown for "and the next line
+--- goes underneath this one" -- which is what these windows do with
+--- every line of a comment anyway, since a note is drawn as the lines
+--- it was typed in. So the mark itself is not drawn: it did its work in
+--- the source, and left whole it is a stray backslash at the end of
+--- somebody's sentence.
+---
+--- Only where there is a line under it to break to. A backslash at the
+--- end of a paragraph broke nothing and is a backslash its author
+--- typed, and an even number of them is an escaped backslash and not a
+--- break at all.
+local function broken(line, next_line)
+  if not next_line or vim.trim(next_line) == "" then
+    return line
+  end
+  local slashes = line:match("\\*$") or ""
+  if #slashes % 2 == 0 then
+    return line
+  end
+  return line:sub(1, #line - 1)
+end
+
 --- The lines of a note, as the blocks it is written in.
 ---
 --- One pass, and greedy: a fence swallows everything up to the next
@@ -734,7 +758,7 @@ function M.blocks(lines)
       table.insert(out, { kind = "table", rows = rows, align = align })
       i = j
     else
-      table.insert(out, { kind = "prose", text = line })
+      table.insert(out, { kind = "prose", text = broken(line, lines[i + 1]) })
       i = i + 1
     end
   end

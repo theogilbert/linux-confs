@@ -22,6 +22,15 @@ local M = {}
 -- comes up.
 local cached_env = nil
 
+-- What the forge turned out to be, resolved once and kept beside the
+-- credentials: its version, and whether it refuses the line numbers
+-- inside a `line_range`. Both are set where a position is posted, far
+-- below -- declared up here because `M.reset_credentials` forgets them
+-- and comes first, and a local declared after it would leave that
+-- function writing to two globals of the same name.
+local forge_version = nil
+local trims_ranges = false
+
 -- A token typed into the prompt below. It lives here, in this variable,
 -- for as long as the editor does: not written to `config`, not written
 -- to a file, not passed to `glab auth login`. A token that a plugin
@@ -100,6 +109,9 @@ function M.reset_credentials()
   -- Which project a directory belongs to is a question about the host
   -- as much as about the directory.
   project_paths = {}
+  -- ...and so is what the forge is and what its API will take: a
+  -- different host is a different GitLab, of a different age.
+  forge_version, trims_ranges = nil, false
 end
 
 --- What is configured, without the token itself -- for `:checkhealth`,
@@ -799,6 +811,137 @@ local function post(root, path, body, cb, opts)
   send("POST", root, path, body, cb, opts)
 end
 
+-- The first GitLab whose API takes the line numbers inside a
+-- `line_range`.
+--
+-- Up to 18.5 it declares the `old_line` and `new_line` of a range as
+-- strings, coerces the integers a client sends into them, and then
+-- validates the position it built against its own schema, which says
+-- those two are integers. So every multi-line comment is refused, with
+-- `position: ["must be a valid json schema"]` and nothing about which
+-- field. 18.6 declares them integers and takes them.
+local RANGE_NUMBERS = { 18, 6 }
+
+-- `forge_version` is what it said it is, `{major, minor}` or false for
+-- one that would not say; `trims_ranges` is whether it has turned out
+-- to refuse the numbers anyway, which is what is believed over the
+-- version -- a self-managed instance can be a patched one, and the
+-- string it reports says nothing about what its administrator
+-- backported. Both are declared at the top of the file, with the
+-- credentials they are reset alongside.
+
+--- `position` with the line numbers taken out of the two ends of its
+--- `line_range`, or nil where there is no range to trim or nothing left
+--- to name the lines with.
+---
+--- The workaround for a bug in GitLab's own API. It declares the
+--- `old_line` and `new_line` of a `line_range` as strings, coerces the
+--- integers a client sends into them, and then validates the position
+--- it built against a schema that says those two are integers -- so
+--- every multi-line comment is refused, with `position: ["must be a
+--- valid json schema"]` and nothing about which field. Fixed upstream
+--- after 18.4; every release before that has it.
+---
+--- Left out, the same comment is accepted: the `line_code` on each end
+--- names the line, and it is the anchor. What is lost is the "lines 19
+--- to 21" label on the page, which GitLab reads out of the two numbers
+--- and does not derive from the codes -- so this is the second thing
+--- tried and never the first.
+local function trimmed(position)
+  local range = type(position) == "table" and position.line_range
+  if type(range) ~= "table" then
+    return nil
+  end
+  local out = vim.deepcopy(position)
+  for _, at in ipairs({ "start", "end" }) do
+    local side = out.line_range[at]
+    if type(side) ~= "table" or not side.line_code then
+      -- A range end with no line code names no line once its numbers
+      -- are gone, and a comment anchored to nothing is worse than one
+      -- the forge refused.
+      return nil
+    end
+    side.old_line, side.new_line = nil, nil
+  end
+  return out
+end
+
+--- Whether a failure was the forge refusing a position it built itself.
+--- The message names the field and nothing else in GitLab says it.
+local function is_schema_failure(text)
+  return text ~= nil and text:match("must be a valid json schema") ~= nil
+end
+
+--- What the forge says it is, as `{major, minor}` -- or false, for one
+--- that would not say.
+---
+--- Asked once and kept, like the host and the token: it is a fact about
+--- the instance rather than about the call, and every comment written
+--- after the first would otherwise ask again. Asked at all only where
+--- the answer changes what is sent, so a session that writes no
+--- multi-line comment never makes the call.
+local function version(root, cb)
+  if forge_version ~= nil then
+    cb(forge_version)
+    return
+  end
+  json({ "api", "version" }, { cwd = root }, function(data)
+    local said = type(data) == "table" and data.version or nil
+    local major, minor = tostring(said or ""):match("^(%d+)%.(%d+)")
+    -- False and not nil for a forge that would not answer: nil is "not
+    -- asked yet", and asking again on every comment is a round trip for
+    -- a question already answered with a shrug.
+    forge_version = major and { tonumber(major), tonumber(minor) } or false
+    cb(forge_version)
+  end)
+end
+
+--- Whether `v` is older than `want`, and false for a version nobody
+--- could read -- an unknown forge is treated as a current one, because
+--- the payload that is right everywhere else is the one to try.
+local function older(v, want)
+  if type(v) ~= "table" then
+    return false
+  end
+  return v[1] < want[1] or (v[1] == want[1] and v[2] < want[2])
+end
+
+--- POSTs (or PUTs) a note carrying a `position`.
+---
+--- Two ways of not being refused by a GitLab older than 18.6, and they
+--- are not the same thing. The version is asked first, so an instance
+--- known to be too old is never sent a payload it is known to refuse --
+--- which is also what lets `:checkhealth` say so in advance. The retry
+--- is for the rest: a forge that would not say what it is, and one that
+--- says 18.6 and refuses anyway, which a patched self-managed instance
+--- can.
+---
+--- The retry is safe. What failed was a validation, so there is no
+--- half-written comment on the other side for a second attempt to
+--- duplicate.
+local function with_position(method, root, path, body, cb)
+  version(root, function(v)
+    if trims_ranges or older(v, RANGE_NUMBERS) then
+      body.position = trimmed(body.position) or body.position
+    end
+    send(method, root, path, body, function(data, err)
+      if data or not is_schema_failure(err) then
+        cb(data, err)
+        return
+      end
+      local without = trimmed(body.position)
+      if not without then
+        cb(data, err)
+        return
+      end
+      log.note("position refused: sending it again without the line numbers in its range")
+      trims_ranges = true
+      body.position = without
+      send(method, root, path, body, cb)
+    end)
+  end)
+end
+
 --- A new thread anchored to a line of a file in the diff.
 ---
 --- `position` is GitLab's, verbatim: the three shas that identify the
@@ -806,7 +949,8 @@ end
 --- `nemeton.position`, which is where one gets built out of a buffer and
 --- a cursor.
 function M.create_discussion(root, iid, body, position, cb)
-  post(
+  with_position(
+    "POST",
     root,
     ("projects/:fullpath/merge_requests/%d/discussions"):format(iid),
     { body = body, position = position },
@@ -864,7 +1008,8 @@ end
 --- Writes one: against a line, against a thread already there, or
 --- against the merge request as a whole.
 function M.create_draft(root, iid, body, position, discussion_id, cb)
-  post(
+  with_position(
+    "POST",
     root,
     ("projects/:fullpath/merge_requests/%d/draft_notes"):format(iid),
     { note = body, position = position, in_reply_to_discussion_id = discussion_id },
@@ -880,7 +1025,7 @@ end
 --- comment on the merge request as a whole. An unsent reply has no
 --- position to send -- it hangs off the discussion it answers.
 function M.update_draft(root, iid, draft_id, body, position, cb)
-  send(
+  with_position(
     "PUT",
     root,
     ("projects/:fullpath/merge_requests/%d/draft_notes/%s"):format(iid, draft_id),

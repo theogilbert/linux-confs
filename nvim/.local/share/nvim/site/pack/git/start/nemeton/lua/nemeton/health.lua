@@ -21,6 +21,16 @@ local FLOOR = { 0, 10, 0 }
 -- and keeps the rest.
 local NEEDS = { 15, 10 }
 
+-- ...and the oldest that takes a multi-line comment whole.
+--
+-- Up to 18.5 the API declares the two line numbers inside a `line_range`
+-- as strings, coerces the integers into them and then refuses the
+-- position it built for not matching its own schema. `glab.lua` leaves
+-- them out for a forge this old, which costs GitLab's "Comment on lines
+-- 57 to 59" label and nothing else -- but it is worth saying out loud
+-- here, since the label is missing on the page and the reason is not.
+local RANGES = { 18, 6 }
+
 --- What the forge itself can do, asked of the forge rather than assumed.
 ---
 --- Two calls, and blocking ones: a health check is read top to bottom
@@ -41,6 +51,7 @@ local function forge()
       reported,
       reported:match("ee") and " (Enterprise Edition)" or ""
     )
+    local ranges = major > RANGES[1] or (major == RANGES[1] and minor >= RANGES[2])
     if enough then
       vim.health.ok(said)
     else
@@ -49,6 +60,14 @@ local function forge()
         "keeping a comment unsent needs the draft notes API (GitLab 15.10)",
         "`<C-p>` in the composer posts one on the spot, which works anywhere",
       })
+    end
+    if not ranges then
+      vim.health.info(
+        "a comment over a selection goes without its line numbers (GitLab "
+          .. table.concat(RANGES, ".")
+          .. " takes them): it is anchored by its line codes, and the page's"
+          .. ' own "Comment on lines 57 to 59" is what is lost'
+      )
     end
   end
 

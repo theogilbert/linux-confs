@@ -213,6 +213,21 @@ local function first_line(s)
   return line
 end
 
+--- A line of this plugin's own, among the subprocesses.
+---
+--- For the one thing worth writing down that is not a call: a decision
+--- taken about how to make the next one. `glab.lua` records here that
+--- the forge refused a payload and what it sent instead -- which is the
+--- only trace of a workaround that is otherwise invisible, and the
+--- first thing to look for when a comment lands on the page not quite
+--- as it was written.
+function M.note(text)
+  if not config.log.enabled or disabled then
+    return
+  end
+  append("     note  " .. tostring(text))
+end
+
 --- Records a command about to run, and hands back the function that
 --- records how it went:
 ---

@@ -320,6 +320,42 @@ return {
       path = true,
     },
 
+    -- Which file and which revision a buffer is showing the OLD side
+    -- of, for a buffer this plugin did not open: a function taking a
+    -- buffer number and returning `{ path = ..., sha = ... }`, or nil
+    -- for an ordinary buffer.
+    --
+    -- What it is for: a line the change deleted is in no buffer of the
+    -- branch, so the only place to put a cursor on one is a buffer
+    -- holding the file as it was. This plugin does not draw that
+    -- buffer -- reviewing in the file you are editing is its whole
+    -- shape -- so it takes one from whoever did.
+    --
+    -- Which is also why this is a function of yours rather than a list
+    -- of plugin names: your diff view need not have heard of nemeton,
+    -- nemeton need not have heard of it, and the two are introduced
+    -- here, in your config, which is the only place that knows you run
+    -- both.
+    --
+    --   old_side = function(bufnr)
+    --     local view = require("uatis.oldside").view_for(bufnr)
+    --     if view then
+    --       return { path = view.old_path or view.relpath, sha = view.rev }
+    --     end
+    --   end,
+    --
+    -- Asked when a key is pressed rather than watched for, so nothing
+    -- has to fire an event or set anything up in advance, and nothing
+    -- goes stale when the view redraws.
+    --
+    -- Unset, two things still answer: `b:nemeton_old`, the same table
+    -- put on the buffer by whatever made it, and the buffer's own name
+    -- -- `<scheme>://…/<sha>/<path>`, which is how fugitive, diffview
+    -- and gitsigns all name one, and which therefore works with no
+    -- config at all. The `sha` has to be what the merge request is
+    -- measured against either way |nemeton-old-side|.
+    old_side = nil,
+
     -- Whether resolved threads are drawn at all. They are still fetched
     -- either way -- toggling this is a redraw, not a refetch.
     show_resolved = true,
@@ -551,6 +587,12 @@ return {
       peek = "<leader>mp", -- the thread under the cursor, in a float
       comment = "<leader>ma", -- a new thread on this line
       suggest = "<leader>ms", -- visual mode: suggest a change to these lines
+      -- A permalink to the line, or to the selection, on the clipboard:
+      -- what you paste into a comment to point at code the comment is
+      -- not on. Under the same prefix as the rest of a review and not
+      -- under git's, because it is a link to the merge request's own
+      -- page and means nothing outside one.
+      link = "<leader>ml", -- a link to this line on the forge
       description = "<leader>md", -- the merge request itself, in a float
       -- On a key rather than one letter further in, unlike the rest of
       -- the verbs below: ending a review is not something you go to a

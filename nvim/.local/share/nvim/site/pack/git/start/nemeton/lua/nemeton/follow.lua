@@ -138,6 +138,40 @@ function M.href(ref)
   return nil
 end
 
+--- The other direction: a link to a line of this branch, for pasting
+--- into a comment about code somewhere else.
+---
+--- Against the head sha rather than the branch name. A link to a branch
+--- says whatever that branch says next week, and a review comment is
+--- about the code as it was argued over -- which is the whole reason
+--- the forge offers a permalink on the page. `#L3-4` is GitLab's own
+--- spelling of a span.
+---
+--- Nil where there is no page to point at: no review open, or a merge
+--- request this plugin never learned the URL of.
+function M.line_link(path, first, last, at)
+  local session = require("nemeton.session")
+  local mr = session.current
+  local sha = at or (mr and mr.diff_refs and mr.diff_refs.head_sha)
+  local _, project = forge()
+  if not (path and sha and project) then
+    return nil
+  end
+  local lines = (last and last > first) and ("#L%d-%d"):format(first, last)
+    or ("#L%d"):format(first)
+  return ("%s/-/blob/%s/%s%s"):format(project, sha, path, lines)
+end
+
+--- Puts `text` where a paste will find it.
+---
+--- The `+` register: the system clipboard, which is where "copied"
+--- means what a reader outside this editor thinks it means. An editor
+--- built without one leaves it in the unnamed register, which is still
+--- a paste away.
+function M.copy(text)
+  pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', text)
+end
+
 --- Which merge request is open, or nil for none.
 local function mine()
   local session = require("nemeton.session")
@@ -201,11 +235,7 @@ local function said(ref, href)
   if not url then
     return nil
   end
-  -- The `+` register: the system clipboard, which is where "copied"
-  -- means what a reader outside this editor thinks it means. An editor
-  -- built without one leaves it in the unnamed register, which is
-  -- still a paste away.
-  pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', url)
+  M.copy(url)
   return why and (why .. " — link copied") or "Link copied to clipboard"
 end
 

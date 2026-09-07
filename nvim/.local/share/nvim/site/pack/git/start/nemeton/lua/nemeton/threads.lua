@@ -303,6 +303,13 @@ end
 --- line an added one was inserted before. It is not part of a position
 --- and is only ever half of a `line_code`, which GitLab builds out of
 --- both sides even where one of them does not exist.
+---
+--- `map[new_path].gone[o]` is the other direction, and only for the
+--- lines the change removed: old line `o` -> the new-side line it was
+--- taken out in front of. A comment on a deleted line is a position on
+--- the old side, and its line code still needs a number from both --
+--- which for a line that is not on the new side at all is where it
+--- would have been.
 function M.line_map(changes)
   local list = changes and changes.changes or changes
   if type(list) ~= "table" then
@@ -312,7 +319,7 @@ function M.line_map(changes)
   for _, change in ipairs(list) do
     local path = change.new_path or change.old_path
     if path then
-      local lines, old_pos = {}, {}
+      local lines, old_pos, gone = {}, {}, {}
       -- `in_hunk` rather than "have we seen a line number yet": a file
       -- added by the merge request has a hunk header of `@@ -0,0 +1,N`,
       -- its old side starts at zero, and reading that zero as "no hunk
@@ -341,6 +348,10 @@ function M.line_map(changes)
           lines[new], old_pos[new] = true, old
           new = new + 1
         elseif in_hunk and line:sub(1, 1) == "-" then
+          -- The line is not on the new side, so `new` does not move:
+          -- what is recorded is where on the new side it went missing,
+          -- which is what a comment on it is anchored beside.
+          gone[old] = new
           old = old + 1
         elseif in_hunk and (line == "" or line:sub(1, 1) == " ") then
           lines[new], old_pos[new] = old, old
@@ -352,8 +363,16 @@ function M.line_map(changes)
       -- sends the ones past the cap with an empty `diff`. Left out
       -- entirely, so that a comment on it is attempted rather than
       -- refused on the strength of a diff nobody has seen.
-      if next(lines) then
-        map[path] = { old_path = change.old_path or path, lines = lines, old_pos = old_pos }
+      -- A file with lines on neither side is a file whose diff did not
+      -- arrive; one with only removals is a file this change empties,
+      -- and every line of it is commentable on the old side.
+      if next(lines) or next(gone) then
+        map[path] = {
+          old_path = change.old_path or path,
+          lines = lines,
+          old_pos = old_pos,
+          gone = gone,
+        }
       end
     end
   end
@@ -387,8 +406,32 @@ end
 --- `first` is where the selection started. Both ends have to be lines
 --- of the diff -- a range half outside it is refused here rather than
 --- half drawn on the page.
-function M.position(diff_refs, path, line, map, first)
+---
+--- `side` is which file the numbers are line numbers *of*. "new" is the
+--- branch as it is checked out, which is where a review is read and is
+--- everything above. "old" is the revision it is being compared with,
+--- read in whatever buffer is showing it |nemeton-old-side| -- and it
+--- is the only way to say anything about a line the change deleted,
+--- since a deleted line is in no buffer of the branch to put a cursor
+--- on.
+function M.position(diff_refs, path, line, map, first, side)
   local file = map and map[path]
+  if side == "old" then
+    -- Named on either side. The map is keyed by the path the merge
+    -- request's new side has, and what is showing the old side of a
+    -- file the branch renamed knows it by the name it had -- which is
+    -- the only name that file has in that buffer.
+    local at = path
+    if not file and map then
+      for new_path, one in pairs(map) do
+        if one.old_path == path then
+          file, at = one, new_path
+          break
+        end
+      end
+    end
+    return M.old_position(diff_refs, at, line, file, first)
+  end
   local pos = {
     base_sha = diff_refs.base_sha,
     start_sha = diff_refs.start_sha,
@@ -417,19 +460,91 @@ function M.position(diff_refs, path, line, map, first)
   return pos
 end
 
+--- Where old line `o` is on the new side, and whether the change
+--- removed it: the number for a line still there, and for one that is
+--- not, the line it was taken out in front of.
+---
+--- Nil for a line the diff does not reach, which is most of a file: a
+--- comment on one of those is refused here rather than by the forge.
+local function on_new(file, o)
+  if not file then
+    return nil, false
+  end
+  if file.gone and file.gone[o] then
+    return file.gone[o], true
+  end
+  for new, was in pairs(file.lines or {}) do
+    if was == o then
+      return new, false
+    end
+  end
+  return nil, false
+end
+
+--- The position payload for a thread on the OLD side: a line of the
+--- revision the merge request is measured against, which is the only
+--- place a deleted line exists.
+---
+--- A line the change removed is `old_line` and nothing else -- there is
+--- no new line to name. One it left alone is both, exactly as a comment
+--- from the branch would be: it is the same line of the same file, and
+--- a thread on it belongs where the reader of the branch will find it
+--- rather than filed against a revision nobody has checked out.
+---
+--- Without a map -- the diff has not arrived -- nothing: on the new
+--- side "no map" means "assume it is an added line and let GitLab
+--- decide", and there is no equivalent guess here. The old line's code
+--- needs the new-side number of a line that is not on the new side, and
+--- only the diff knows it.
+function M.old_position(diff_refs, path, line, file, first)
+  local at, removed = on_new(file, line)
+  if not at then
+    return nil
+  end
+  local pos = {
+    base_sha = diff_refs.base_sha,
+    start_sha = diff_refs.start_sha,
+    head_sha = diff_refs.head_sha,
+    position_type = "text",
+    new_path = path,
+    old_path = (file and file.old_path) or path,
+    old_line = line,
+    new_line = not removed and at or nil,
+  }
+  if first and first < line then
+    if not on_new(file, first) then
+      return nil
+    end
+    pos.line_range = {
+      start = M.line_end(path, first, file, "old"),
+      ["end"] = M.line_end(path, line, file, "old"),
+    }
+  end
+  return pos
+end
+
 --- One end of a `line_range`: a line named the way GitLab names the two
 --- ends of a multi-line comment.
 ---
---- `type` is always "new" because the selection was made in a buffer of
---- the branch, and `old_line` is there only for a line that exists on
---- both sides, exactly as in the position itself.
+--- `type` is the side the selection was made on, and `old_line` and
+--- `new_line` are there for whichever sides the line is on, exactly as
+--- in the position itself.
 ---
 --- The `line_code` is GitLab's own: the sha1 of the path and the line's
 --- number on each side. It is left out when the diff could not be
 --- fetched, which is the one case where its old half cannot be known --
 --- GitLab stores a range without one, and the alternative is inventing
 --- an identifier for a line and hoping nothing looks it up.
-function M.line_end(path, line, file)
+function M.line_end(path, line, file, side)
+  if side == "old" then
+    local at, removed = on_new(file, line)
+    return {
+      line_code = at and ("%s_%d_%d"):format(sha1.hex(path), line, at) or nil,
+      type = "old",
+      new_line = not removed and at or nil,
+      old_line = line,
+    }
+  end
   local was = file and file.lines[line]
   local old = file and file.old_pos and file.old_pos[line]
   return {

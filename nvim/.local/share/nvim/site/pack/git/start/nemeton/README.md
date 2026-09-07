@@ -150,6 +150,7 @@ when there is no line to be about.
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
+| `<leader>ml` | a link to this line, or to the selection, on the clipboard |
 | `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
@@ -489,6 +490,60 @@ prose set across the whole of a wide editor is prose the eye loses its
 place in. `comments.wrap = false` wraps to the window and nothing
 narrower.
 
+A comment written over a selection is anchored to its last line and
+carries the rest as a line range — which is what GitLab draws as
+"Comment on lines 57 to 59". **On GitLab older than 18.6 that range goes
+without its two line numbers**: up to 18.5 the API declares them as
+strings, coerces the integers a client sends into them, and then
+validates the position it built against its own schema, which says
+integers — so it refuses its own payload with
+`position: ["must be a valid json schema"]` and names no field. nemeton
+asks the forge its version before the first one and leaves those two out
+where they will not be taken; the line codes are what anchor the
+comment, and only GitLab's own range label is the poorer for it. A forge
+that will not say what it is gets the whole payload and is sent it again
+without them if it refuses — once, and remembered for the session.
+
+### A line the change deleted
+
+A deleted line is in no buffer of the branch — that's what deleted
+means — so there is nowhere to put the cursor. nemeton doesn't draw a
+second copy of your file to fix that; reviewing in the buffer you are
+editing is the whole shape of the plugin. It takes an old side from
+whoever drew one instead.
+
+Any buffer showing the file at the revision the merge request is
+measured against will do, and there are three ways to say which:
+`comments.old_side`, a function of yours given the buffer number and
+returning `{ path = …, sha = … }`; `b:nemeton_old`, the same table on
+the buffer; or the buffer's own name, `<scheme>://…/<sha>/<path>`, which
+is how fugitive, diffview and gitsigns each name one — so those work
+with no configuration at all. The name is a guess and is taken only when
+the sha is one this merge request is compared with; a buffer showing
+some other revision is refused with what it is showing, rather than
+building a position against a diff GitLab has never seen.
+
+There, `<leader>ma` comments on the old line — a removed line is
+anchored on the old side alone, a line the change left alone on both.
+`<leader>ms` is refused, since a suggestion patches the branch and there
+is nothing on the old side to patch, and `<leader>ml` links to that
+revision.
+
+```lua
+require("nemeton").setup({
+  comments = {
+    -- the example is uatis, which puts the old revision in a window of
+    -- its own; neither plugin has to have heard of the other
+    old_side = function(bufnr)
+      local view = require("uatis.oldside").view_for(bufnr)
+      if view then
+        return { path = view.old_path or view.relpath, sha = view.rev }
+      end
+    end,
+  },
+})
+```
+
 A comment is markdown, and wherever one is read it is drawn as the page
 the forge would have drawn rather than as the characters it was typed
 with. The composer is the other half of that promise: what you write
@@ -526,6 +581,12 @@ a name; a marker nobody closed is the character it is, so `2 * 3` is
 arithmetic; and one written `\*like this\*` is drawn as the characters
 it escapes, which is how you write an asterisk in a sentence about a
 glob.
+
+A line that ends in a **backslash** is markdown's hard break — "and the
+next line goes under this one" — which is what these windows do with
+every line of a comment anyway, so the backslash itself is not drawn.
+Only where there is a line under it to break to: one at the end of a
+paragraph broke nothing and is a backslash its author typed.
 
 A **code span** is drawn without its backticks, in `NemetonCode`
 (`String`), and nothing inside one is markup: `` `a_b` `` is an

@@ -5,6 +5,7 @@
 -- and every file you open from then on is drawn against them. That mode
 -- is this module.
 
+local config = require("nemeton.config")
 local detail = require("nemeton.detail")
 local glab = require("nemeton.glab")
 local log = require("nemeton.log")
@@ -92,6 +93,78 @@ function M.relpath(bufnr)
     return nil
   end
   return full:sub(#prefix + 1)
+end
+
+--- The old revision of a file, as some buffer that is showing one.
+---
+--- A line the change deleted is in no buffer of the branch -- that is
+--- what "deleted" means -- so the only way to say anything about one is
+--- from a buffer holding the file as it was. This plugin does not draw
+--- that buffer: reviewing in the file you are editing is its whole
+--- shape, and a second rendering of the same file is the thing it exists
+--- not to be. What it does instead is take one from whoever drew it.
+---
+--- Three ways of knowing, in the order they are believed:
+---
+---   `comments.old_side`   your own function, asked with the buffer
+---   `b:nemeton_old`       `{ path = ..., sha = ... }` on the buffer
+---   the buffer's name     a 40-character sha in it, and a path after
+---
+--- The last is what makes fugitive, diffview and gitsigns work with no
+--- configuration at all: all three name such a buffer `<scheme>://…/
+--- <sha>/<path>`, and reading a name is a convention rather than a list
+--- of plugins. It is also a guess, so it is taken only when the sha is
+--- one this merge request is measured against -- otherwise an ordinary
+--- file living under a directory named like a sha would be read as a
+--- revision of something.
+---
+--- The other two are told, not guessed, and are handed back whatever
+--- they said: a caller that gets a revision this review knows nothing
+--- about should say so rather than quietly do nothing.
+function M.old_side(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local ask = config.comments.old_side
+  local told = (type(ask) == "function" and ask(bufnr)) or vim.b[bufnr].nemeton_old
+  if type(told) == "table" and told.path and told.sha then
+    return { path = told.path, sha = told.sha }
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  local at = 1
+  while true do
+    local from, to = name:find("%x+", at)
+    if not from then
+      return nil
+    end
+    at = to + 1
+    local sha = name:sub(from, to)
+    if #sha == 40 and M.against(sha) then
+      local path = name:sub(to + 1):gsub("^[/:]+", "")
+      if path ~= "" then
+        return { path = path, sha = sha }
+      end
+    end
+  end
+end
+
+--- Whether `sha` is the revision this merge request is measured
+--- against.
+---
+--- Both of them, because GitLab has two: `base_sha` is where the
+--- branches parted and `start_sha` is where the target branch was when
+--- the diff was taken. They are the same commit on a merge request
+--- nobody has rebased, and either is a fair thing for a diff view to
+--- have compared against.
+---
+--- What it is for: a buffer showing a file at some *other* revision --
+--- one commit's parent, a stash, a tag -- would build a position
+--- against a diff GitLab has never seen, and a comment anchored to one
+--- of those either bounces or lands somewhere nobody meant.
+function M.against(sha)
+  local refs = M.current and M.current.diff_refs
+  if not (refs and sha) then
+    return false
+  end
+  return sha == refs.base_sha or sha == refs.start_sha
 end
 
 --- The line -> threads table for a buffer, or nil if there is nothing

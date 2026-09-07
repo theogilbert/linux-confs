@@ -147,6 +147,71 @@ local function span(path, first, last)
   return ("%s:%d"):format(path, first)
 end
 
+--- Which file a buffer is, and which side of the diff it is showing:
+--- the path, "new" or "old", and the revision an old side is at.
+---
+--- The old side is asked about first. Something that says outright
+--- "this buffer is src/app.lua at a1b2c3d4" -- your own
+--- `comments.old_side`, or the buffer's own `b:nemeton_old` -- knows
+--- better than a file name does, and a buffer of a revision is usually
+--- not a file in the repository at all.
+---
+--- Nil and a sentence for a buffer there is nothing to be said about,
+--- which the caller says out loud: a key pressed in the wrong window
+--- should explain itself rather than do nothing.
+local function reading(bufnr)
+  local old = session.old_side(bufnr)
+  if old then
+    if not session.against(old.sha) then
+      return nil,
+        nil,
+        nil,
+        ("that buffer is %s at %s, which is not what this merge request is compared with"):format(
+          old.path,
+          old.sha:sub(1, 8)
+        )
+    end
+    return old.path, "old", old.sha
+  end
+  local path = session.relpath(bufnr)
+  if not path then
+    return nil, nil, nil, "this buffer is not a file in the repository"
+  end
+  return path, "new", nil
+end
+
+--- The line under the cursor, as a link to it on the forge.
+---
+--- What you paste into a comment to point at code the comment is not
+--- on: "the same thing we did in src/parse.lua:88". GitLab's own copy
+--- permalink is three clicks into a page you are not reading, and this
+--- is a key on the line you are already standing on.
+---
+--- Over a selection it links to the span, which is what GitLab draws as
+--- a block of highlighted lines. Nothing is opened and nothing is
+--- posted: it goes to the clipboard, because pasting it is the next
+--- thing that happens to it -- into a comment here, or into a message
+--- to somebody somewhere else.
+M.link = with_session(function(first, last)
+  local path, _, sha, why = reading(vim.api.nvim_get_current_buf())
+  if not path then
+    session.notify(why, vim.log.levels.WARN)
+    return
+  end
+  first = first or vim.api.nvim_win_get_cursor(0)[1]
+  last = math.max(last or first, first)
+  -- On the old side, a link against the revision that buffer is
+  -- showing: the line numbers are that file's, and against the head
+  -- they would point at whatever happens to be there now.
+  local url = require("nemeton.follow").line_link(path, first, last, sha)
+  if not url then
+    session.notify("no page to link to — the merge request has no url", vim.log.levels.WARN)
+    return
+  end
+  require("nemeton.follow").copy(url)
+  session.notify(span(path, first, last) .. " — link copied")
+end)
+
 --- A new thread against the line under the cursor, or against the lines
 --- of a visual selection.
 ---
@@ -160,9 +225,9 @@ end
 --- puts a multi-line thread and where the reviewer's cursor already is.
 M.comment = with_session(function(first, last)
   local bufnr = vim.api.nvim_get_current_buf()
-  local path = session.relpath(bufnr)
+  local path, side, _, why = reading(bufnr)
   if not path then
-    session.notify("this buffer is not a file in the repository", vim.log.levels.WARN)
+    session.notify(why, vim.log.levels.WARN)
     return
   end
   local mr = session.current
@@ -180,11 +245,14 @@ M.comment = with_session(function(first, last)
   -- Worked out before the composer opens rather than after it is
   -- written: a line GitLab will not take a comment on is a paragraph
   -- you should not have been invited to type.
-  local position = threads.position(mr.diff_refs, path, last, mr.lines, first)
+  local position = threads.position(mr.diff_refs, path, last, mr.lines, first, side)
   if not position then
-    local why = "%s is not in this merge request's diff"
-      .. " — GitLab anchors a comment to lines the change touches"
-    session.notify(why:format(where), vim.log.levels.WARN)
+    local tail = side == "old" and " — on the old side that is a line the change removed"
+      or " — GitLab anchors a comment to lines the change touches"
+    session.notify(
+      ("%s is not in this merge request's diff"):format(where) .. tail,
+      vim.log.levels.WARN
+    )
     return
   end
   require("nemeton.compose").open({
@@ -267,9 +335,20 @@ end)
 --- anything at all.
 M.suggest = with_session(function(first, last)
   local bufnr = vim.api.nvim_get_current_buf()
-  local path = session.relpath(bufnr)
+  local path, side, _, why = reading(bufnr)
   if not path then
-    session.notify("this buffer is not a file in the repository", vim.log.levels.WARN)
+    session.notify(why, vim.log.levels.WARN)
+    return
+  end
+  -- A suggestion is a patch the author can apply with a button, and
+  -- what it would patch is the branch. There is nothing on the old side
+  -- for one to replace -- GitLab will not take it, and the answer to
+  -- "this deleted line should have said X" is a comment.
+  if side == "old" then
+    session.notify(
+      "a suggestion replaces code on the branch — say it in a comment instead",
+      vim.log.levels.WARN
+    )
     return
   end
   local mr = session.current
@@ -289,9 +368,9 @@ M.suggest = with_session(function(first, last)
   -- anchors a thread on a span to.
   local position = threads.position(mr.diff_refs, path, last, mr.lines, first)
   if not position then
-    local why = "%s is not in this merge request's diff"
+    local because = "%s is not in this merge request's diff"
       .. " — GitLab anchors a suggestion to lines the change touches"
-    session.notify(why:format(where), vim.log.levels.WARN)
+    session.notify(because:format(where), vim.log.levels.WARN)
     return
   end
   local lines = vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false)
@@ -528,6 +607,8 @@ local function bindings()
     { k.edit, M.edit, "edit a comment in the thread here" },
     { k.delete, M.delete, "delete a comment in the thread here" },
     { k.suggest, over_selection(M.suggest), "suggest a change to these lines", "x" },
+    { k.link, M.link, "copy a link to this line" },
+    { k.link, over_selection(M.link), "copy a link to these lines", "x" },
     { k.resolve, M.resolve, "resolve the thread here" },
     { k.description, M.description, "what this merge request is for" },
     { k.notes, M.notes, "every comment on the merge request" },
@@ -670,6 +751,9 @@ local SUBCOMMANDS = {
   delete = M.delete,
   suggest = function()
     M.suggest()
+  end,
+  link = function()
+    M.link()
   end,
   jobs = M.jobs,
   conversation = M.conversation,

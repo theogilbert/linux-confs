@@ -48,8 +48,8 @@ end
 vim.keymap.set("n", "<Leader>Ob", toggleBytesInfo, { desc = "Toggle [O]ption [B]ytes info" })
 
 local clipboard_utils = require("utilities.clipboard")
-vim.keymap.set("n", "<Leader>Oc", clipboard_utils.toggle,
-    { desc = "Toggle [O]ption [C]lipboard (tmux-local <-> osc52)" })
+vim.keymap.set("n", "<Leader>Oc", clipboard_utils.rotate,
+    { desc = "Toggle [O]ption [C]lipboard (osc52 -> tmux -> auto)" })
 
 -- Diagnostic keymaps
 --

@@ -146,6 +146,18 @@ This module turns that into a two-way switch with a remembered default.
     on. "tmux" therefore means "keep it local", whether or not tmux is
     actually running.
 
+"auto"                                              *utilities-clipboard-auto*
+
+    No |g:clipboard| at all: whatever Neovim would have picked on its own,
+    as though this module were not installed. Inside tmux that is Neovim's
+    own tmux provider, `tmux load-buffer -w`, whose `-w` forwards each yank
+    onward over OSC 52 -- see |utilities-clipboard-design| for why this
+    module avoids it by default.
+
+    It is the escape hatch: reach for it to compare against stock
+    behaviour, or when a machine has a clipboard tool that neither other
+    backend knows about.
+
 ------------------------------------------------------------------------------
 4.2 USAGE                                          *utilities-clipboard-usage*
 
@@ -155,11 +167,11 @@ itself is set: >lua
     vim.opt.clipboard = "unnamedplus"
     require("utilities.clipboard").setup({ default = "osc52" })
 <
-Then bind |utilities.clipboard.toggle()| to switch backends without
-restarting: >lua
+Then bind |utilities.clipboard.rotate()| to step through the backends
+without restarting: >lua
 
-    vim.keymap.set("n", "<Leader>Oc", require("utilities.clipboard").toggle,
-        { desc = "Toggle [O]ption [C]lipboard (tmux-local <-> osc52)" })
+    vim.keymap.set("n", "<Leader>Oc", require("utilities.clipboard").rotate,
+        { desc = "Toggle [O]ption [C]lipboard (osc52 -> tmux -> auto)" })
 <
 ------------------------------------------------------------------------------
 4.3 CHOOSING THE DEFAULT                         *utilities-clipboard-default*
@@ -168,7 +180,7 @@ The backend applied at startup is the first of these that names a known
 backend:
 
     1. the $NVIM_CLIPBOARD environment variable;
-    2. the machine-local default remembered by |utilities.clipboard.toggle()|,
+    2. the machine-local default remembered by |utilities.clipboard.rotate()|,
        in `stdpath("state") .. "/clipboard-backend"`;
     3. `opts.default` passed to |utilities.clipboard.setup()|;
     4. "osc52".
@@ -178,7 +190,7 @@ degrades to the next source instead of leaving nvim without a provider.
 
 The state file deliberately lives under `stdpath("state")`, outside of the
 dotfiles repository, so that each machine can disagree with the checked-in
-default without a local commit. Pressing the toggle key once on a host is
+default without a local commit. Pressing the rotation key once on a host is
 enough to change that host's default for good.
 
 $NVIM_CLIPBOARD is the right lever when the machine running nvim is not what
@@ -202,14 +214,24 @@ utilities.clipboard.setup({opts})                *utilities.clipboard.setup()*
 
     Resolve and apply the effective backend, as described in
     |utilities-clipboard-default|. {opts} is optional; the only field read
-    is `default`, a backend name.
+    is `default`, a backend name: "osc52", "tmux" or "auto".
 
-utilities.clipboard.toggle()                    *utilities.clipboard.toggle()*
+utilities.clipboard.rotate()                    *utilities.clipboard.rotate()*
 
-    Switch to the other backend immediately, write it to the state file as
-    this machine's default, and notify with the provider name Neovim ended
-    up using. If the state file cannot be written the switch still applies
-    for this session and the notification says it was not remembered.
+    Step to the next backend -- "osc52", then "tmux", then "auto", then
+    round again -- write it to the state file as this machine's default,
+    and notify. If the state file cannot be written the switch still
+    applies for this session and the notification says so.
+
+    The notification leads with the backend, which is what the press
+    changed and what the next press steps away from, and reports the
+    provider after it: >
+
+        Clipboard: auto (provider: wl-copy, remembered)
+<
+    Both are named because they do not always match: "auto" and "tmux"
+    outside of tmux resolve to the same autodetected provider, so only the
+    backend name tells them apart.
 
 utilities.clipboard.provider_name()      *utilities.clipboard.provider_name()*
 
@@ -221,8 +243,8 @@ utilities.clipboard.provider_name()      *utilities.clipboard.provider_name()*
 utilities.clipboard.backend                      *utilities.clipboard.backend*
 
     Field, not a function: the backend name currently applied, one of
-    `utilities.clipboard.TMUX` ("tmux") or `utilities.clipboard.OSC52`
-    ("osc52").
+    `utilities.clipboard.OSC52` ("osc52"), `utilities.clipboard.TMUX`
+    ("tmux") or `utilities.clipboard.AUTO` ("auto").
 
 ------------------------------------------------------------------------------
 4.5 DESIGN NOTES                                  *utilities-clipboard-design*
@@ -257,7 +279,7 @@ the "tmux" backend cannot stall the editor and the "osc52" one can.
 
 Editing `opts.default` changes nothing~
 
-    A state file written by |utilities.clipboard.toggle()| outranks it; see
+    A state file written by |utilities.clipboard.rotate()| outranks it; see
     |utilities-clipboard-default|. Remove it: >
 
         :call delete(stdpath('state') .. '/clipboard-backend')

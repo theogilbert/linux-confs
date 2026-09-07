@@ -101,6 +101,7 @@ vim.opt.clipboard = "unnamedplus"
 --             of the machine physically in front of me.
 --   "tmux"  : yanks stay on this machine, in the tmux buffer shared by every
 --             nvim of the tmux server (wl-copy / xsel when outside of tmux).
+--   "auto"  : no g:clipboard at all, whatever nvim autodetects on its own.
 -- Overridden by $NVIM_CLIPBOARD, and by whatever <Leader>Oc last remembered
 -- for this machine.
 require("utilities.clipboard").setup({ default = "osc52" })

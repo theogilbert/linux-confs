@@ -20,6 +20,7 @@ tabs.txt	tabs.txt	/*tabs.txt*
 utilities	utilities.txt	/*utilities*
 utilities-buffer	utilities.txt	/*utilities-buffer*
 utilities-clipboard	utilities.txt	/*utilities-clipboard*
+utilities-clipboard-auto	utilities.txt	/*utilities-clipboard-auto*
 utilities-clipboard-backends	utilities.txt	/*utilities-clipboard-backends*
 utilities-clipboard-default	utilities.txt	/*utilities-clipboard-default*
 utilities-clipboard-design	utilities.txt	/*utilities-clipboard-design*
@@ -51,8 +52,8 @@ utilities.buffer.get_selection()	utilities.txt	/*utilities.buffer.get_selection(
 utilities.buffer.is_in_visual_mode()	utilities.txt	/*utilities.buffer.is_in_visual_mode()*
 utilities.clipboard.backend	utilities.txt	/*utilities.clipboard.backend*
 utilities.clipboard.provider_name()	utilities.txt	/*utilities.clipboard.provider_name()*
+utilities.clipboard.rotate()	utilities.txt	/*utilities.clipboard.rotate()*
 utilities.clipboard.setup()	utilities.txt	/*utilities.clipboard.setup()*
-utilities.clipboard.toggle()	utilities.txt	/*utilities.clipboard.toggle()*
 utilities.commands.run_and_check()	utilities.txt	/*utilities.commands.run_and_check()*
 utilities.dap.peek_string_value()	utilities.txt	/*utilities.dap.peek_string_value()*
 utilities.lsp_sort.deprioritize_test_references()	utilities.txt	/*utilities.lsp_sort.deprioritize_test_references()*

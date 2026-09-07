@@ -708,6 +708,45 @@ local function names(ranges, text)
   return false
 end
 
+--- Whether the emphasis `fine` leaves enough of the span `sp` for the
+--- step-back to be a comparison: past `emphasis_ratio` of the span's
+--- non-whitespace, what stays pale is a remainder rather than the half
+--- the reader already knows.
+---
+--- Non-whitespace only, on both sides of the sum: a sentence is mostly
+--- spaces, and they belong to no atom's reckoning.
+---
+--- `nil` where the emphasis found nothing in the span at all. That is
+--- not an answer to this question -- there is no half for the rest to
+--- be the other of -- and what a caller does about it differs.
+---
+--- Its own function because two layouts ask it of the same data.
+--- `narrowed_atoms` asks it per atom for the step-back, and the inline
+--- before-image asks it of a whole row before taking `del_fine` for it;
+--- with the question spelled twice they answered differently, and one
+--- edit read two ways in two windows.
+local function narrows_span(fine, sp, text)
+  local covered = {}
+  for _, r in ipairs(fine or {}) do
+    for col = math.max(r.col_start, sp.col_start), math.min(r.col_end, sp.col_end) - 1 do
+      covered[col] = true
+    end
+  end
+  local total, hit = 0, 0
+  for col = sp.col_start, math.min(sp.col_end, #text) - 1 do
+    if text:sub(col + 1, col + 1):match("%S") then
+      total = total + 1
+      if covered[col] then
+        hit = hit + 1
+      end
+    end
+  end
+  if hit == 0 or total == 0 then
+    return nil
+  end
+  return (hit / total) < config.diff.line.emphasis_ratio
+end
+
 --- The step-back, minus the atoms the emphasis did not really narrow.
 ---
 --- The emphasis is a comparison between the words that are new and the
@@ -773,28 +812,11 @@ end
 --- the row this one answers to. The structure changed completely;
 --- there is no old half of this line, and the whole of it is new.
 local function narrowed_atoms(quiet, fine, regions, text, about)
-  --- Whether the emphasis leaves enough of `sp` for the step-back to be
-  --- a comparison. Non-whitespace only, on both sides of the sum: a
-  --- sentence is mostly spaces, and they belong to no atom's reckoning.
   local function narrows(sp)
-    local covered = {}
-    for _, r in ipairs(fine or {}) do
-      for col = math.max(r.col_start, sp.col_start), math.min(r.col_end, sp.col_end) - 1 do
-        covered[col] = true
-      end
-    end
-    local total, hit = 0, 0
-    for col = sp.col_start, math.min(sp.col_end, #text) - 1 do
-      if text:sub(col + 1, col + 1):match("%S") then
-        total = total + 1
-        if covered[col] then
-          hit = hit + 1
-        end
-      end
-    end
+    local under = narrows_span(fine, sp, text)
     -- Nothing new in this atom at all, so there is no half for the rest
     -- to be the other of, whatever shape the hunk has.
-    if hit == 0 or total == 0 then
+    if under == nil then
       return true
     end
     -- Several old rows became fewer new ones: a replacement, not a
@@ -808,7 +830,7 @@ local function narrowed_atoms(quiet, fine, regions, text, about)
     if about and about.lost == false then
       return true
     end
-    return (hit / total) < config.diff.line.emphasis_ratio
+    return under
   end
 
   local wholly = {}
@@ -2259,11 +2281,59 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- NAME. A call reflowed across three lines has honestly lost a
           -- bracket and two commas, and dimming a block to point at
           -- those is not a comparison anybody can read.
+          --
+          -- And through a third gate the old WINDOW is already
+          -- applying to this very table: that what stays pale is a
+          -- half of something rather than a remainder. Being a
+          -- comparison across the whole BLOCK, this is the one source
+          -- whose pale text can be scavenged out of a row that is not
+          -- the one being drawn -- five rows of comment rewritten as
+          -- six came back with `th` of `the` stepped back and its `e`
+          -- lit, matched against a `th` two sentences away. `rewritten`
+          -- passes that: the marks cover two thirds of the row, under
+          -- `major_ratio`, and `is`, `group` and `this` did survive
+          -- whole. `emphasis_ratio` is the test the old window makes of
+          -- the same data, and it bands the row -- so inline said the
+          -- edit was three words and side by side said it was the line.
           if (not dels or #dels == 0) and del_fine[old_row]
             and #del_fine[old_row] > 0
             and names(del_fine[old_row], text)
-            and not rewritten(del_fine[old_row], text) then
+            and not rewritten(del_fine[old_row], text)
+            and narrows_span(del_fine[old_row],
+              { col_start = 0, col_end = #text }, text) ~= false then
             dels = del_fine[old_row]
+          end
+          -- ...and where that comparison was MADE and came back
+          -- empty, the row is not one this had no source for: it is a
+          -- row nothing was taken out of, and the whole of it is the
+          -- part that did not change.
+          --
+          -- Missing and negative read the same way without this, and
+          -- the difference is the whole row. A docstring that only
+          -- gained a clause loses nothing on the rows it did not
+          -- touch, so every source here answers nothing for them and
+          -- the before-image banded them solid red -- while the old
+          -- WINDOW, which has had the state all along (`fine ~= nil`
+          -- rather than `#fine > 0` in `prose_marks`), stepped the
+          -- same rows back whole. Red on the left, pale on the right,
+          -- one edit.
+          --
+          -- Empty, not merely unnameable. A row whose `del_fine` holds
+          -- a bracket and two commas DID lose them; `names` refuses to
+          -- dim a block to point at punctuation, and what that leaves
+          -- is a row drawn as removed, which is the rule above.
+          --
+          -- And only where the row is drawn as its own comparison,
+          -- directly above the row it became. A before-image the reader
+          -- is given as a BLOCK is one passage of the old code, and
+          -- which of its rows individually lost nothing is not a
+          -- question being asked of it: a call reflowed across three
+          -- lines keeps its closing bracket, and greying that one row
+          -- of four says the passage came apart rather than that it
+          -- moved.
+          if (not dels or #dels == 0) and del_fine[old_row]
+            and #del_fine[old_row] == 0 and spread and not span then
+            survived = true
           end
           local runs = syn and syn[old_row]
           local chunks = { { marker .. pad, "UatisSign" } }

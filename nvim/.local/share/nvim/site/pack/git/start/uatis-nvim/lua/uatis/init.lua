@@ -472,6 +472,24 @@ end
 --- the one outcome someone setting a key to `false` is trying to avoid.
 local mapped = {}
 
+--- Refuses in the command-line window.
+---
+--- `q:` is a normal-mode window like any other, so these mappings fire
+--- in it -- and every one of them ends in opening a window or leaving
+--- the buffer, both of which Neovim forbids there (`E11`). Since the
+--- window is two git calls past the keypress, the refusal arrives as a
+--- traceback out of a `vim.schedule` callback rather than as an answer
+--- to anything the reader did. Say it at the key instead.
+local function outside_cmdwin(fn)
+  return function()
+    if vim.fn.getcmdwintype() ~= "" then
+      vim.notify("uatis: not from the command-line window", vim.log.levels.WARN)
+      return
+    end
+    fn()
+  end
+end
+
 local function setup_keymaps()
   for _, lhs in ipairs(mapped) do
     pcall(vim.keymap.del, "n", lhs)
@@ -490,7 +508,7 @@ local function setup_keymaps()
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then
-      vim.keymap.set("n", m.lhs, m.rhs, { silent = true, desc = m.desc })
+      vim.keymap.set("n", m.lhs, outside_cmdwin(m.rhs), { silent = true, desc = m.desc })
       table.insert(mapped, m.lhs)
     end
   end

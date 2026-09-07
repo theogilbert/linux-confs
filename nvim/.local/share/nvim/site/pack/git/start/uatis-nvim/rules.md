@@ -258,6 +258,30 @@ Sources 3 and 4 both go through `names` and `rewritten`: a range that covers
 the row says nothing, and a range that picks out a bracket and two commas is
 not worth dimming a block for.
 
+An **empty** `del_fine` for a row is not a missing answer, it is a negative
+one: the block comparison was made and found nothing taken out of that row, so
+the whole of the row is the part that did not change and it steps back rather
+than banding. `prose_marks` has had this state all along — it tests `fine ~=
+nil`, not `#fine > 0` — so without it a docstring that only gained a clause
+came out solid red inline and pale side by side. Two conditions on it: the
+answer must be *empty*, not merely unnameable (a row that lost a bracket and
+two commas did lose them, and `names` refusing to dim a block for punctuation
+leaves the row drawn as removed); and the row must be drawn as its own
+comparison, directly above the row it became. A before-image given as a
+**block** is one passage of old code, and greying the one row of four that
+kept its closing bracket says the passage came apart rather than that it moved.
+
+Source 4 goes through one more, `narrows_span` at `diff.line.emphasis_ratio` —
+the test the side-by-side window is already applying to that same table. Being
+a comparison over the whole *block*, `del_fine` is the one source whose pale
+text can be scavenged out of a row that is not the one being drawn. Five rows
+of comment rewritten as six came back with the `th` of `the` stepped back and
+its `e` lit, matched against a `th` two sentences away. `rewritten` passes
+that — the marks cover two thirds of the row, under `major_ratio`, and `is`,
+`group` and `this` did survive whole — so the same edit read as three words
+inline and as a banded line side by side. See `narrowed_atoms` below, which
+asks the same question per atom.
+
 ### `fitted` / `refit` — `overlay.lua`
 
 Which row a before-image goes above is difft's alignment where the pair

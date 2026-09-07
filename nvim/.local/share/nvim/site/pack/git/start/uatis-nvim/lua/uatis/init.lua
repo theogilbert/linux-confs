@@ -302,6 +302,43 @@ function M.colors()
   return require("uatis.colors").open()
 end
 
+--- Which file, and which side of the comparison, `bufnr` is showing --
+--- as data. nil for a buffer this plugin has nothing to do with.
+---
+---   side             "new", the live buffer being annotated, or "old",
+---                    the window `<leader>go` opens
+---   path             inside the repository, as that side names it: the
+---                    old name on the old side of a renamed file
+---   rev              the sha being compared against, the fork point
+---   root             the repository
+---
+--- For anything outside this plugin that has to know what a buffer is
+--- before it acts on the line under the cursor -- a review tool wanting
+--- to say something about a line this branch deleted, which is a line
+--- that exists in no buffer but the one `<leader>go` opens.
+---
+--- `status` above answers for the new side already and answers with
+--- more, being shaped for a statusline; this answers for both sides and
+--- with the four things an outside caller needs to identify a line. Its
+--- field names are contract, like `status`'s and `review`'s: reading
+--- `view.lua` or `oldside.lua` instead means reading private tables
+--- whose names are free to change.
+function M.showing(bufnr)
+  bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
+  local v = view.get(bufnr)
+  if v then
+    return { side = "new", path = v.relpath, rev = v.rev, root = v.root }
+  end
+  -- Required here rather than at the top: the old side is a window the
+  -- reader opens now and then, and an editor that starts is an editor
+  -- that has not loaded it.
+  v = require("uatis.oldside").view_for(bufnr)
+  if v then
+    return { side = "old", path = v.old_path or v.relpath, rev = v.rev, root = v.root }
+  end
+  return nil
+end
+
 --- What is being compared in `bufnr`, as data. nil when nothing is.
 ---
 --- For a statusline, and shaped for one: numbers and strings, no

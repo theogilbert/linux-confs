@@ -285,6 +285,36 @@ the backend.
 `review()` carries `files`, the totals across them, and the file the
 list is standing on. Both return `nil` when there is nothing to say.
 
+## Telling another plugin what a buffer is
+
+`showing()` is the third of these, and answers a different question:
+which file, and which side of the comparison, a buffer is — `side`
+(`"new"` or `"old"`), `path` as that side names it, `rev`, and `root`.
+`nil` for a buffer this plugin has nothing to do with.
+
+It is for a tool outside uatis that has to know what a buffer *is*
+before acting on the line under the cursor. The case it exists for: a
+review plugin wanting to comment on a line this branch **deleted** —
+which is a line that exists in no buffer except the one `<leader>go`
+opens.
+
+uatis names no other plugin, and needs naming by none. Introducing the
+two is a job for the config that knows you run both:
+
+```lua
+-- in your own config, not in either plugin
+require("nemeton").setup({
+  comments = {
+    old_side = function(bufnr)
+      local at = require("uatis").showing(bufnr)
+      if at and at.side == "old" then
+        return { path = at.path, sha = at.rev }
+      end
+    end,
+  },
+})
+```
+
 ## Configuration
 
 `setup()` takes the same shape as `lua/uatis/config.lua`, and you name

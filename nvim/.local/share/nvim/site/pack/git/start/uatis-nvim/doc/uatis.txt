@@ -472,8 +472,8 @@ The functions behind the mappings, for binding yourself: >lua
 ==============================================================================
 14. STATUSLINE                                              *uatis-statusline*
 
-Two functions answer in plain data. Their field names are the only ones this
-plugin promises not to change.
+Three functions answer in plain data. Their field names are the only ones
+this plugin promises not to change.
 
                                                               *uatis.status()*
 `require("uatis").status([bufnr])` -- about one buffer, or nil when it is not
@@ -505,6 +505,39 @@ being reviewed: >
 `pending` matters if you show the counts: a structural diff that has not come
 back yet looks exactly like a file with nothing in it, and `+0 -0` is not
 "nothing changed".
+
+                                                             *uatis.showing()*
+`require("uatis").showing([bufnr])` -- which file and which side of the
+comparison a buffer is, or nil for one this plugin has nothing to do with: >
+
+    side                "new", the buffer being annotated, or "old", the
+                        window <leader>go opens
+    path                inside the repository, as that side names it: the
+                        old name on the old side of a renamed file
+    rev                 the sha being compared against
+    root                repo root
+<
+For a tool outside this plugin that has to know what a buffer *is* before it
+acts on the line under the cursor. The case it exists for: a review plugin
+wanting to say something about a line this branch deleted, which is a line
+that exists in no buffer except the one `<leader>go` opens.
+|uatis-mappings-old|
+
+It says nothing about nemeton, or about any other plugin. Introducing the two
+is a job for the config that knows you run both: >lua
+
+    -- in your own config, not in either plugin
+    require("nemeton").setup({
+      comments = {
+        old_side = function(bufnr)
+          local at = require("uatis").showing(bufnr)
+          if at and at.side == "old" then
+            return { path = at.path, sha = at.rev }
+          end
+        end,
+      },
+    })
+<
 
 ==============================================================================
 15. HEALTH                                                      *uatis-health*

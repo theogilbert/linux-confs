@@ -167,14 +167,31 @@ require("grannos").setup({
 
 local uatis = require("uatis")
 
+local function copy_link(_, href)
+    vim.fn.setreg('+', href)
+    vim.notify("Link content copied to clipboard", vim.log.levels.INFO)
+end
+
 require("nemeton").setup({
     comments = {
         follow = {
             commit = uatis.show_commit,
-            link = function(_, href)
-                vim.fn.setreg('+', href)
-                vim.notify("Link content copied to clipboard", vim.log.levels.INFO)
-            end,
-        }
+            -- `link` was split into these two: a page on the forge, and
+            -- a page anywhere.
+            url = copy_link,
+            path = copy_link,
+        },
+        -- Where the two plugins meet, and the only place that knows
+        -- both are installed. uatis says which buffer is showing which
+        -- side of the comparison; nemeton wants that for the one thing
+        -- it cannot do on its own -- commenting on a line the branch
+        -- deleted, which exists in no buffer but the old-revision
+        -- window.
+        old_side = function(bufnr)
+            local at = uatis.showing(bufnr)
+            if at and at.side == "old" then
+                return { path = at.path, sha = at.rev }
+            end
+        end,
     }
 })

@@ -423,6 +423,10 @@ utilities.search.grep({opts})                        *utilities.search.grep()*
     -- its parent directory when the cursor is on a file. A path that no
     longer exists on disk is reported and ignored rather than searched.
 
+    Such a scoped search runs with `--no-ignore-vcs`: a directory picked in
+    the tree is searched for everything it holds, git ignored files
+    included. A global search still skips them.
+
     {opts} is optional:
         `resume`    boolean, reuse the previous pattern.
         `filetype`  boolean, prompt for an `rg` type (`py`, `md`, ...)

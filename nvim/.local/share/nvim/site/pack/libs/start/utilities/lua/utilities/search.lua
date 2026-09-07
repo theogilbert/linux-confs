@@ -36,11 +36,26 @@ function M.grep(opts)
 
     local search_opts = { cwd = cwd, resume = resume }
 
+    if cwd ~= nil then
+        -- A directory picked in the tree is searched for what it holds, git
+        -- ignored files included.
+        search_opts.rg_opts = H.rg_opts("--no-ignore-vcs", search_opts.rg_opts)
+    end
+
     if filetype then
         H.prompt_ft_and_search(search_opts)
     else
         FzfLua.live_grep(search_opts)
     end
+end
+
+---Prepend flags to the rg options a search runs with.
+---
+---@param flags string The flags to prepend
+---@param opts string|nil The options to prepend to, fzf-lua's defaults if nil
+---@return string
+function H.rg_opts(flags, opts)
+    return flags .. " " .. (opts or require('fzf-lua.defaults').defaults.grep.rg_opts)
 end
 
 function H.prompt_ft_and_search(search_opts)
@@ -51,8 +66,7 @@ function H.prompt_ft_and_search(search_opts)
                 return
             end
 
-            local existing_opts = require('fzf-lua.defaults').defaults.grep.rg_opts
-            search_opts.rg_opts = "-t " .. filetype .. " " .. existing_opts
+            search_opts.rg_opts = H.rg_opts("-t " .. filetype, search_opts.rg_opts)
             FzfLua.live_grep(search_opts)
         end
     )

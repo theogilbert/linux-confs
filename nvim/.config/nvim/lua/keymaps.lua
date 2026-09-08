@@ -12,6 +12,17 @@ vim.keymap.set("n", "<C-Right>", "<Cmd>vertical resize +1<CR>", { silent = true 
 
 vim.keymap.set("n", "<C-w>Q", "<Cmd>tabclose<CR>", { silent = true })
 
+local tabs = require("utilities.tabs")
+vim.keymap.set("n", "<C-w>N", function()
+	vim.cmd("tabnew")
+	vim.ui.input({ prompt = "Tab name: " }, function(name)
+		if name and name ~= "" then
+			tabs.name_current_tab(name)
+			vim.cmd("redrawtabline")
+		end
+	end)
+end, { silent = true, desc = "Open a [N]ew, named tab" })
+
 vim.keymap.set("n", "<leader>f", require("utilities.window_picker").pick, { desc = "[F]ocus window" })
 
 -- If the number column is displayed, hide it and hide the sign column

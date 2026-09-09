@@ -7,6 +7,7 @@
 -- render it as.
 
 local config = require("nemeton.config")
+local kept = require("nemeton.kept")
 local win = require("nemeton.win")
 
 local M = {}
@@ -125,6 +126,40 @@ local function completion_on(buf, window)
   })
 end
 
+--- `text` put into the buffer under the cursor, on lines of its own.
+---
+--- Under it rather than at it: what this inserts is a block, and a
+--- block that starts in the middle of the sentence you were writing is
+--- neither. A blank line above it for the same reason -- a fence
+--- against the last line of a paragraph is not read as a fence -- and
+--- one below it only where there was something below to be pushed
+--- apart from.
+---
+--- The cursor ends up on the first line *inside* the block, in normal
+--- mode: what is in it is the code as it stands, and a suggestion is
+--- edited from there rather than typed from nothing.
+local function insert_block(window, buf, text)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  -- Over the blank line an empty composer is, rather than under it.
+  local empty = #lines == 1 and lines[1] == ""
+  local at = empty and 0 or vim.api.nvim_win_get_cursor(window)[1]
+  local add = {}
+  if at > 0 and vim.trim(lines[at] or "") ~= "" then
+    table.insert(add, "")
+  end
+  local fence = at + #add + 1
+  vim.list_extend(add, vim.split(text, "\n", { plain = true }))
+  if at < #lines then
+    table.insert(add, "")
+  end
+  vim.api.nvim_buf_set_lines(buf, at, empty and -1 or at, false, add)
+  vim.cmd("stopinsert")
+  vim.api.nvim_win_set_cursor(window, {
+    math.min(fence + 1, vim.api.nvim_buf_line_count(buf)),
+    0,
+  })
+end
+
 --- opts.title    -- shown in the winbar, says what this comment attaches to
 --- opts.body     -- text to start from, for editing something already said
 --- opts.on_draft(text)  -- the same, for a comment kept rather than sent
@@ -135,6 +170,16 @@ end
 --- opts.lang     -- the treesitter language of the code in a
 ---                  `suggestion` fence, for the one comment that has
 ---                  code in it. See `nemeton.syntax`.
+--- opts.remember -- what to file this comment's unsent text under, so
+---                  that closing the window keeps it and opening the
+---                  same comment again gives it back. Absent where
+---                  there is nothing stable to key on. See
+---                  `nemeton.kept`.
+--- opts.suggest  -- the lines the comment is about, which `keys.compose`
+---                  `suggest` drops in as the block that would replace
+---                  them. Absent where the comment is about no code, or
+---                  about code on the old side of the diff, which is
+---                  code the branch has nothing to patch.
 --- opts.empty    -- whether an empty buffer is an answer. It is not for
 ---                  a comment, which is why the default is no; it is
 ---                  for a merge request's description, which has to be
@@ -178,7 +223,28 @@ function M.open(opts)
   vim.wo[window].signcolumn = "no"
   vim.wo[window].spell = true
 
+  local root = opts.remember and require("nemeton.session").root() or nil
+  -- Whether this comment has gone. Every way out files what is in the
+  -- buffer; the one that sends it must not, and it closes the window
+  -- like the rest of them.
+  local sent = false
+
+  --- What is in the buffer, filed under `opts.remember` -- or, when
+  --- there is nothing in it, thrown away.
+  ---
+  --- Called from every way out that is not sending: `q`, `:q`, the
+  --- window going down with the tab. What is remembered is what is in
+  --- the buffer, which is what makes emptying it the way to discard
+  --- one on purpose.
+  local function set_aside()
+    if sent or not (root and vim.api.nvim_buf_is_valid(buf)) then
+      return
+    end
+    kept.set(root, opts.remember, table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"))
+  end
+
   local function close()
+    set_aside()
     if vim.api.nvim_win_is_valid(window) then
       vim.api.nvim_win_close(window, true)
     end
@@ -202,6 +268,7 @@ function M.open(opts)
     once = true,
     desc = "nemeton: back to where the composer was opened from",
     callback = function()
+      set_aside()
       vim.schedule(back)
     end,
   })
@@ -215,6 +282,13 @@ function M.open(opts)
       if text == "" and not opts.empty then
         vim.notify("nemeton: nothing to post", vim.log.levels.WARN)
         return
+      end
+      -- Sent is sent: the copy kept for the next time this comment is
+      -- written has a home on the forge now, and giving it back on top
+      -- of the comment already there would be the paragraph twice.
+      sent = true
+      if root then
+        kept.forget(root, opts.remember)
       end
       -- Closed before the request goes out, not after it comes back:
       -- the window has done its job, and leaving it up during a round
@@ -245,12 +319,27 @@ function M.open(opts)
     callback = submit,
   })
 
+  -- The lines the comment is about, as the block that would replace
+  -- them. Bound only when the caller passed some: see `keys.compose`.
+  if opts.suggest and #opts.suggest > 0 and k.suggest and k.suggest ~= "" then
+    vim.keymap.set({ "n", "i" }, k.suggest, function()
+      insert_block(window, buf, require("nemeton.threads").suggestion_body(opts.suggest))
+    end, { buffer = buf, desc = "nemeton: suggest a change to these lines" })
+  end
+
   -- A new comment starts in insert mode, where you were going anyway.
   -- One that arrives with text in it does not: the cursor belongs at
   -- the end of what is already there, in normal mode, because editing
   -- starts with reading it back.
-  if opts.body and opts.body ~= "" then
-    local lines = vim.split(opts.body, "\n", { plain = true })
+  -- What was left here last time, where the caller has not brought
+  -- text of its own: rewriting a posted comment starts from what is
+  -- posted, whatever was abandoned halfway through rewriting it before.
+  local body = opts.body
+  if (not body or body == "") and root then
+    body = kept.get(root, opts.remember)
+  end
+  if body and body ~= "" then
+    local lines = vim.split(body, "\n", { plain = true })
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.api.nvim_win_set_cursor(window, { #lines, #lines[#lines] })
   else

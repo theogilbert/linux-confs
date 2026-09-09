@@ -188,6 +188,17 @@ local function ground()
   end
   tint("NemetonInline", "NemetonSignOpen", 1)
   tint("NemetonSettled", "NemetonResolved", 0.5)
+  -- ...and the same ground out on the code, under the lines the
+  -- conversation being read was written against |nemeton-reading|. The
+  -- same colour on purpose: the block in the pane and the lines out
+  -- here are one block read in two windows. Weaker, because this one is
+  -- under code that is being read rather than under prose.
+  local reading_share = config.comments.reading_ground
+  if reading_share == false then
+    vim.api.nvim_set_hl(0, "NemetonReading", { link = "Normal", default = true })
+  else
+    tint("NemetonReading", "NemetonSignOpen", reading_share or 0.6)
+  end
   -- ...and the ground an answer is drawn on, which is the same ground
   -- standing further off the page.
   --
@@ -463,6 +474,14 @@ function M.setup_highlights()
   -- one. The colour a name is drawn in, because a terminal has no
   -- larger type and this plugin already spends that colour on "the
   -- line you are looking for".
+  -- A reaction on a note, and one of your own. Both are a count beside
+  -- a picture, and the picture carries its own colour whatever this
+  -- says -- an emoji is drawn from the font's own palette. So what is
+  -- left to colour is the number, and the only thing worth saying with
+  -- it is which of the rows you are already in: the key that adds a
+  -- reaction takes yours back, and yours are the ones it would.
+  link("NemetonReaction", "Comment")
+  link("NemetonReactionMine", "DiagnosticInfo")
   link("NemetonHeading", "Title")
   -- ...and which level of one, which the hashes used to say and now
   -- nothing does. A terminal cannot draw a bigger word, so the six are
@@ -729,15 +748,21 @@ end
 function M.current(bufnr, from, to, hl)
   M.clear_current()
   local glyph = config.comments.sign_span
-  if not glyph or glyph == "" or not vim.api.nvim_buf_is_valid(bufnr) then
+  local ground_it = config.comments.reading_ground ~= false
+  if (not ground_it and (not glyph or glyph == "")) or not vim.api.nvim_buf_is_valid(bufnr) then
     return 0
   end
   local last = vim.api.nvim_buf_line_count(bufnr)
   local drawn = 0
   for row = math.max(from, 1), math.min(to, last) do
     vim.api.nvim_buf_set_extmark(bufnr, M.reading_ns, row - 1, 0, {
-      sign_text = glyph,
-      sign_hl_group = hl or "NemetonSignOpen",
+      sign_text = (glyph and glyph ~= "") and glyph or nil,
+      sign_hl_group = (glyph and glyph ~= "") and (hl or "NemetonSignOpen") or nil,
+      -- ...and the band the gutter cannot draw: the anchor line keeps
+      -- its bubble, a thread about one line has no line above it to put
+      -- a rail on, and a sign column can be off altogether. The ground
+      -- says it in all three.
+      line_hl_group = ground_it and "NemetonReading" or nil,
       priority = 15,
     })
     drawn = drawn + 1

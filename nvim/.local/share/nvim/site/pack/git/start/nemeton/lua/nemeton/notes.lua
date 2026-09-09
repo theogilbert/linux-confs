@@ -127,7 +127,7 @@ local function write(title, send, keep, default)
   local function landed(said)
     return function(data, err)
       if not data then
-        session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
+        session.refused("could not post", err)
         return
       end
       session.notify(said .. " !" .. mr.iid)

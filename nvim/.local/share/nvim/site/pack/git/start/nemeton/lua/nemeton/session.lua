@@ -218,7 +218,7 @@ function M.refresh(cb)
   -- Both at once. The drafts are a second round trip and a refresh runs
   -- after everything that posts anything, so they go out together and
   -- the buffers are redrawn once, when both are in.
-  local pending, ok = 2, true
+  local pending, ok = 3, true
   local function done()
     pending = pending - 1
     if pending > 0 or M.current ~= mr then
@@ -229,6 +229,12 @@ function M.refresh(cb)
     -- from the forge on every refresh, so this cannot double up.
     threads.attach_drafts(mr.inline, mr.draft_replies)
     threads.attach_drafts(mr.overview, mr.draft_replies)
+    -- ...and the reactions onto the notes they were given to. After the
+    -- drafts, for the same reason they are after the threads: what is
+    -- unsent has never been reacted to, and has no id on the forge to
+    -- have been reacted to by.
+    threads.attach_reactions(mr.inline, mr.reactions, mr.me)
+    threads.attach_reactions(mr.overview, mr.reactions, mr.me)
     local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
     mr.by_file = threads.index(all)
     M.redraw_all()
@@ -249,6 +255,22 @@ function M.refresh(cb)
     done()
   end)
 
+  -- ...and the reactions, in one call for the whole review. Quietly
+  -- too, and for a softer reason than the drafts below: this is
+  -- decoration, and a forge that will not answer for it is a review
+  -- drawn without pictures.
+  if not config.comments.reactions then
+    done()
+  else
+    glab.me(mr.root, function(who)
+      mr.me = who and who.username or nil
+      glab.reactions(mr.root, mr.iid, function(given)
+        mr.reactions = given
+        done()
+      end)
+    end)
+  end
+
   -- Quietly: draft notes arrived in GitLab 15.x and the endpoint 404s
   -- on anything older, where the right answer is "you have no drafts"
   -- rather than an error on every refresh.
@@ -259,6 +281,27 @@ function M.refresh(cb)
     mr.draft_replies = parsed.replies
     done()
   end)
+end
+
+--- What a write that came back a failure does: says so, and asks the
+--- forge anyway.
+---
+--- Because "it failed" and "nothing happened" are not the same thing. A
+--- call can land, be written down, and still come back an error -- a
+--- timeout after the note was created, a proxy that gave up on the way
+--- home, a 4xx about something the forge did *after* creating it. The
+--- editor is then holding a picture the forge does not agree with, and
+--- the comment you can see in `glab` is the one that is not on your
+--- screen.
+---
+--- Everything that posts refreshes when it succeeds, for the reason
+--- written at the top of `M.refresh`: the forge is the source of truth.
+--- This is that reason applied to the other half. It costs one call on
+--- a path that is rare, and it is the only thing that can tell the
+--- difference.
+function M.refused(said, err)
+  notify(said .. ": " .. tostring(err), vim.log.levels.ERROR)
+  M.refresh()
 end
 
 -- "<sha>:<path>" -> the file's lines as of that commit, or false for

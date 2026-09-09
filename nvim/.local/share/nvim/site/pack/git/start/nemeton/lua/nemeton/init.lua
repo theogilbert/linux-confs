@@ -63,13 +63,83 @@ function M.list()
   require("nemeton.list").open()
 end
 
+-- What the prompt below completes over, from the fetch that opened it.
+-- Module-local because `vim.fn.input`'s completion is the name of a
+-- function, and a name has nowhere to carry a list.
+local candidates = {}
+
+--- The merge requests the prompt offers, for `v:lua`.
+---
+--- Offered for what a row contains as well as for what it starts with,
+--- like the names in the composer: somebody typing `proxy` is reaching
+--- for the proxy one and does not know its number, which is the whole
+--- reason they are at this prompt.
+function M.complete_open(arg_lead)
+  return vim.tbl_filter(function(row)
+    return arg_lead == "" or row:find(arg_lead, 1, true) ~= nil
+  end, candidates)
+end
+
+--- Which merge request to open, asked rather than typed.
+---
+--- `:Nemeton open 42` is what you type when you know the number. This
+--- is the other half of it: you know it is "the proxy one", and the
+--- number is the thing you would have to go and look up. The queue
+--- answers that too -- it is a window of rows to pick from -- but a
+--- window is the long way round for a reviewer who already knows which
+--- one and only wants it open.
+---
+--- The number is taken off the front of whatever comes back, so a
+--- candidate accepted whole and a number typed over the top of it are
+--- the same answer. `!7` too, which is how the forge writes one and so
+--- how it arrives pasted from somewhere else.
+---
+--- Fetched before the prompt goes up rather than behind it: the prompt
+--- holds the loop, and a list that arrives while it is holding is a
+--- list that arrives after the question has been answered.
+function M.ask_open(opts)
+  ready()
+  local root = session.root()
+  if not root then
+    session.notify("not inside a git repository", vim.log.levels.ERROR)
+    return
+  end
+  glab.mr_list(root, nil, function(mrs, err)
+    if not mrs then
+      session.notify("could not list merge requests: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+    candidates = {}
+    for _, mr in ipairs(mrs) do
+      table.insert(candidates, ("%d  %s"):format(mr.iid, mr.title or ""))
+    end
+    vim.ui.input({
+      prompt = "open merge request: ",
+      completion = "customlist,v:lua.require'nemeton'.complete_open",
+    }, function(answer)
+      answer = vim.trim(answer or "")
+      local iid = tonumber(answer:match("^!?(%d+)"))
+      if not iid then
+        if answer ~= "" then
+          session.notify("no merge request number in " .. answer, vim.log.levels.WARN)
+        end
+        return
+      end
+      M.open(iid, opts)
+    end)
+  end)
+end
+
 --- `opts.on_open` / `opts.on_error` are the list's: it keeps its window
 --- up, saying what it is waiting for, until one of them fires.
+---
+--- Without a number it asks for one. `:Nemeton open` used to open the
+--- queue, which is what `:Nemeton` on its own already does.
 function M.open(iid, opts)
   ready()
   iid = tonumber(iid)
   if not iid then
-    return M.list()
+    return M.ask_open(opts)
   end
   opts = opts or {}
   session.open(iid, {
@@ -257,10 +327,19 @@ M.comment = with_session(function(first, last)
   end
   require("nemeton.compose").open({
     title = ("!%d  %s"):format(mr.iid, where),
+    -- What an unfinished one is filed under: the merge request and the
+    -- lines, which is what makes it the same comment when it is opened
+    -- again. See `nemeton.kept`.
+    remember = ("!%d %s"):format(mr.iid, where),
+    -- What the composer's `suggest` key would put in the block, and the
+    -- colours to draw it in once it is there. Only on the new side: a
+    -- suggestion is a patch, and what it patches is the branch.
+    suggest = side ~= "old" and vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false) or nil,
+    lang = side ~= "old" and require("nemeton.syntax").of_buf(bufnr) or nil,
     on_submit = function(body)
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
-          session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
+          session.refused("could not post", err)
           return
         end
         session.notify("posted on " .. where)
@@ -279,7 +358,7 @@ function M.keep(said, position, discussion_id)
     local mr = session.current
     glab.create_draft(mr.root, mr.iid, body, position, discussion_id, function(data, err)
       if not data then
-        session.notify("could not keep: " .. tostring(err), vim.log.levels.ERROR)
+        session.refused("could not keep", err)
         return
       end
       session.notify(said)
@@ -318,7 +397,7 @@ M.publish = with_session(function(cb)
   end
   glab.publish_drafts(mr.root, mr.iid, function(ok, err)
     if not ok then
-      session.notify("could not publish: " .. tostring(err), vim.log.levels.ERROR)
+      session.refused("could not publish", err)
       return
     end
     session.notify(("published %d comment%s on !%d"):format(n, n == 1 and "" or "s", mr.iid))
@@ -376,7 +455,14 @@ M.suggest = with_session(function(first, last)
   local lines = vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false)
   require("nemeton.compose").open({
     title = ("!%d  suggest %s"):format(mr.iid, where),
+    -- Its own key, not the plain comment's on the same lines: a
+    -- suggestion and a remark about the same three lines are two
+    -- different things half-written.
+    remember = ("!%d suggest %s"):format(mr.iid, where),
     body = threads.suggestion_body(lines),
+    -- The block is already in it; the key is still bound, for the
+    -- reviewer who deletes it and wants it back.
+    suggest = lines,
     -- The code inside the fence, in the colours of the file it came
     -- out of: markdown has one colour for a fenced block whose
     -- language it does not know, and `suggestion` is GitLab's word
@@ -386,7 +472,7 @@ M.suggest = with_session(function(first, last)
     on_submit = function(body)
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
-          session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
+          session.refused("could not post", err)
           return
         end
         session.notify("suggested on " .. where)
@@ -492,7 +578,7 @@ M.note = with_session(function()
     on_submit = function(body)
       glab.create_note(mr.root, mr.iid, body, function(data, err)
         if not data then
-          session.notify("could not post: " .. tostring(err), vim.log.levels.ERROR)
+          session.refused("could not post", err)
           return
         end
         session.notify("posted")
@@ -894,6 +980,16 @@ function M.setup(opts)
   if k and k ~= "" and vim.g.nemeton_global_key ~= k then
     vim.keymap.set("n", k, M.list, { silent = true, desc = "nemeton: merge requests" })
     vim.g.nemeton_global_key = k
+  end
+  -- The other way in, unbound by default. Nothing in `plugin/` binds
+  -- this one, so there is no earlier key to take back -- and rebinding
+  -- it in a second `setup{}` is `keymap.set` over `keymap.set`, which
+  -- is what it already is.
+  local ask = config.keys.global.open
+  if ask and ask ~= "" then
+    vim.keymap.set("n", ask, function()
+      M.ask_open()
+    end, { silent = true, desc = "nemeton: open a merge request by number" })
   end
 end
 

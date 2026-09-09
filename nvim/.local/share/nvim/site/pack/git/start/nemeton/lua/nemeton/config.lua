@@ -102,6 +102,30 @@ return {
     -- bubbles alone.
     sign_span = "▎",
 
+    -- ...and the ground under those same lines, as a share of
+    -- `ground`.
+    --
+    -- What the gutter alone could not say. Every line carrying a thread
+    -- has a bubble on it, and they are all the same bubble: with three
+    -- conversations in a file, nothing on the code says which of them
+    -- is the one in the pane. The rail above says where a block starts
+    -- -- but only where there is a block, and a comment on one line has
+    -- no lines above it to put a rail on. On the anchor line itself the
+    -- bubble is drawn instead, since a sign column one cell wide draws
+    -- the higher priority alone.
+    --
+    -- So a band, on the whole of the code the conversation is about.
+    -- It is the same ground the conversation itself is drawn on next
+    -- door, which is what makes the two one block read in two windows
+    -- -- and it says it whatever the sign column is set to, and on a
+    -- thread about a single line as well.
+    --
+    -- A share rather than a number, because it is the same colour at a
+    -- different strength: this one is under *code*, which is read, and
+    -- a band there has to be findable without being in the way. `false`
+    -- for no band, and the gutter alone.
+    reading_ground = 0.6,
+
     -- ...and a comment you have written and not sent yet. A pencil
     -- rather than a third bubble: an unsent comment is not a state of
     -- the conversation, it is a state of you. "✎" without a Nerd Font.
@@ -269,6 +293,53 @@ return {
     --
     -- `false` draws the fence lines again, and the halves under them.
     suggest_box = true,
+
+    -- Whether the reactions on a note are drawn under it, and whether
+    -- they are fetched at all.
+    --
+    -- A row of pictures with a count beside each -- what the page a
+    -- comment was written on shows, and the half of a review that is
+    -- said without saying anything: three thumbs on a suggestion is
+    -- the argument being over, and nobody writes "agreed" three times.
+    -- Yours are drawn in a colour of their own, because the key that
+    -- adds one takes it back.
+    --
+    -- The names of the people who gave them are not drawn. That is a
+    -- hover on the web page and a line of usernames in here, and a
+    -- review is read for what people wrote.
+    --
+    -- `false` is one GraphQL call fewer on every refresh: the whole of
+    -- this is one request beside the discussions, and none of it is
+    -- needed to read or write a comment. See `glab.reactions`, which
+    -- fails quietly for the same reason -- an instance too old for the
+    -- field, or a token without `read_api`, is a review drawn without
+    -- pictures rather than an error after every post.
+    reactions = true,
+
+    -- ...and which of them the key offers, in the order it offers
+    -- them.
+    --
+    -- A short list on purpose, and the same argument as the emoji
+    -- names themselves: gemoji is eighteen hundred pictures and a
+    -- review is written with a dozen. A picker of eighteen hundred is
+    -- a picker nobody reaches the end of, and the reaction you want is
+    -- one of the first four every time.
+    --
+    -- Anything already on the note is offered too, whatever this says,
+    -- so a reaction somebody else gave from the web page is one you
+    -- can join or -- if it is yours -- take back.
+    reaction_names = {
+      "thumbsup",
+      "thumbsdown",
+      "tada",
+      "rocket",
+      "eyes",
+      "thinking",
+      "confused",
+      "heart",
+      "clap",
+      "white_check_mark",
+    },
 
     -- What `<C-]>` does with the thing under the cursor, in the windows
     -- that draw a conversation.
@@ -502,6 +573,25 @@ return {
     -- the window and nothing narrower.
     wrap = 80,
 
+    -- Whether the pane (|nemeton-pane-window|) wraps at all.
+    --
+    -- The floats have to: they are drawn over the code and there is
+    -- nowhere for a long line to go. The pane is a real window with a
+    -- real buffer, so a line too long for it can be scrolled to like
+    -- any other -- and off, a comment keeps the shape it was written
+    -- in. That is worth more than it sounds: a fenced block, a ruled
+    -- table and the two halves of a suggestion are all things whose
+    -- meaning is in their columns, and none of them survive being
+    -- folded at the edge of a sixty-column pane.
+    --
+    -- Off by default for the other half of it as well. A wrapped line
+    -- comes back at column zero, outside the rail that runs down the
+    -- left of the thread -- so the one part of the block that says
+    -- where it starts and stops is missing from exactly the lines that
+    -- needed it most. `true` to wrap to the pane's width (and to
+    -- `wrap` above, whichever is narrower) and accept that.
+    pane_wrap = false,
+
     -- Height cap on the peek float, in lines.
     peek_height = 20,
   },
@@ -536,6 +626,33 @@ return {
     -- invites an essay.
     height = 10,
 
+    -- Whether closing the composer with something in it keeps it, and
+    -- gives it back the next time the same comment is written.
+    --
+    -- Across restarts, which is the whole point of it: `nvim` gets
+    -- restarted between reading a merge request and finishing the
+    -- sentence about it more often than anybody would like. What is
+    -- remembered is what is in the buffer -- so a composer emptied and
+    -- closed is a comment thrown away, and that is how one is thrown
+    -- away on purpose.
+    --
+    -- This is the one thing here that writes what you typed to disk.
+    -- It is deleted three ways: when the comment is sent or kept on the
+    -- forge, when the composer is closed with nothing in it, and when
+    -- it is `remember_days` old. `false` keeps nothing, which is what
+    -- this did before there was a setting.
+    remember = true,
+
+    -- ...and how long an unfinished one is worth keeping. Anything past
+    -- this is something you walked away from a month ago. `false` never
+    -- forgets, which is a file that only grows.
+    remember_days = 30,
+
+    -- Where they are kept. `nil` is `$XDG_STATE_HOME/nemeton/
+    -- composing.json`, beside the log -- state rather than cache,
+    -- because losing it loses what somebody wrote.
+    remember_path = nil,
+
     -- Completion for the `@` in front of a name, from the people on
     -- this project. On `<C-x><C-o>` in the composer, and the list is
     -- fetched when the window opens so that the keystroke does not wait
@@ -567,6 +684,13 @@ return {
     -- have buffer-local keys in.
     global = {
       list = "<leader>ml",
+      -- ...and the other way in, for the reviewer who knows which one:
+      -- a prompt for the number, completing over what is open by
+      -- number and by title. Unbound, because the queue is the way in
+      -- that a reviewer wants nine times out of ten and two global
+      -- keys for one plugin is one too many. `:Nemeton open` is it
+      -- typed.
+      open = "<leader>mo",
     },
     -- The review keys, bound while a merge request is open and taken
     -- away again when it is closed.
@@ -592,7 +716,7 @@ return {
       -- not on. Under the same prefix as the rest of a review and not
       -- under git's, because it is a link to the merge request's own
       -- page and means nothing outside one.
-      link = "<leader>ml", -- a link to this line on the forge
+      link = "<leader>mL", -- a link to this line on the forge
       description = "<leader>md", -- the merge request itself, in a float
       -- On a key rather than one letter further in, unlike the rest of
       -- the verbs below: ending a review is not something you go to a
@@ -738,6 +862,17 @@ return {
       -- thing under the cursor", doing what it has always done -- see
       -- `comments.follow`, which is what it does it with.
       follow = "<C-]>",
+      -- A reaction on the comment under the cursor: a picker of the
+      -- names a review is actually written with, and the one you pick
+      -- toggles -- reacting again with the same emoji is how GitLab
+      -- takes one back, and it is the only gesture there is.
+      --
+      -- `+` because nothing in this window is a motion and this is the
+      -- one key here that adds something without opening a window to
+      -- write it in. The same reasoning as `+` in the queue, and the
+      -- same shape: a key that writes should not look like the letters
+      -- that read.
+      react = "+",
       refresh = "R",
       quit = "q",
       -- ...and the list of all of them, since there are now more than a
@@ -793,6 +928,27 @@ return {
       keep = "<C-s>", -- into the review, to go out with the rest of it
       post = "<C-p>", -- straight to the merge request, now
       cancel = "q",
+      -- A suggestion block over the lines the comment is about, with
+      -- them already in it -- GitLab's fence, and the button under it
+      -- that lets the author take the edit as it is written.
+      --
+      -- Because a comment turns into one halfway through writing it.
+      -- You start out saying what is wrong with a line and get as far
+      -- as "it should be" before noticing that saying it is longer
+      -- than showing it -- and until now the way through was to throw
+      -- the paragraph away, go back to the code and press `suggest`
+      -- instead. This is that key, from in here, with what you have
+      -- already written kept.
+      --
+      -- `<C-b>` because the other two ways out have taken the letters
+      -- that mean anything, and because it is one of the few control
+      -- keys that does nothing at all in insert mode -- which is the
+      -- mode you are in when the sentence turns into a diff. Bound
+      -- only where there are lines to put in the block: a comment on
+      -- the merge request as a whole is about no code, and a comment
+      -- on the old side of the diff is about code the branch does not
+      -- have to patch.
+      suggest = "<C-b>",
     },
   },
 

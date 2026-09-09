@@ -54,6 +54,13 @@ local generation = 0
 -- global, silently, and the cache went on being read.
 local project_paths = {}
 
+-- root -> whose token this is, as GitLab's own `user` object, resolved
+-- once. Which reaction on a note is yours is a question with no other
+-- answer: the forge names the person who gave each one, and nothing
+-- else in a review knows who you are. Kept beside the credentials, and
+-- forgotten with them -- another token is another person.
+local whoami = {}
+
 -- The generation at which the prompt was last answered with nothing.
 -- Several calls go out together and fail together; one refusal answers
 -- for all of them, rather than one prompt per call in flight.
@@ -109,6 +116,8 @@ function M.reset_credentials()
   -- Which project a directory belongs to is a question about the host
   -- as much as about the directory.
   project_paths = {}
+  -- ...and so is who the token belongs to.
+  whoami = {}
   -- ...and so is what the forge is and what its API will take: a
   -- different host is a different GitLab, of a different age.
   forge_version, trims_ranges = nil, false
@@ -221,6 +230,61 @@ local NOISE = {
   "^Aborting$", -- git's full stop, after it has already said why
 }
 
+--- What GitLab put inside its refusal, as a sentence.
+---
+--- A 4xx from the API is a JSON body and glab prints it whole: what
+--- reaches a notification is `{"message":{"position":["must be a valid
+--- json schema"]}}`, braces, quotes and all. Every word a person needs
+--- is in there and none of the punctuation is, and a reviewer told
+--- that in the middle of writing a comment has been handed a wire
+--- format to read.
+---
+--- Both shapes, because GitLab uses both: `message` a sentence, and
+--- `message` an object of field -> what is wrong with it, which is
+--- what a validation failure looks like. `error` is the other spelling
+--- -- OAuth's, and what the token endpoints answer with.
+---
+--- Nil for anything this does not recognise, which is left exactly as
+--- it arrived: a message this cannot read is still a message, and
+--- swallowing it would be worse than printing braces.
+local function unwrap(line)
+  if not line:match("^[{%[]") then
+    return nil
+  end
+  local ok, body = pcall(vim.json.decode, line, { luanil = { object = true, array = true } })
+  if not (ok and type(body) == "table") then
+    return nil
+  end
+
+  --- One value, flattened: a string is itself, a list is its items, and
+  --- an object is `field: what is wrong with it`.
+  local function said(v, field)
+    if type(v) == "string" or type(v) == "number" then
+      return { field and (field .. ": " .. tostring(v)) or tostring(v) }
+    end
+    if type(v) ~= "table" then
+      return {}
+    end
+    local out = {}
+    if vim.islist(v) then
+      for _, item in ipairs(v) do
+        vim.list_extend(out, said(item, field))
+      end
+      return out
+    end
+    for key, item in pairs(v) do
+      vim.list_extend(out, said(item, field and (field .. "." .. key) or key))
+    end
+    return out
+  end
+
+  local parts = said(body.message or body.error or body.error_description)
+  if #parts == 0 then
+    return nil
+  end
+  return table.concat(parts, "; ")
+end
+
 function M.reason(out)
   local lines = {}
   for line in tostring(out or ""):gmatch("[^\n]+") do
@@ -238,7 +302,7 @@ function M.reason(out)
       noise = noise or line:match(pattern) ~= nil
     end
     if not noise then
-      table.insert(lines, line)
+      table.insert(lines, unwrap(line) or line)
     end
   end
 
@@ -658,6 +722,130 @@ function M.project_path(root, cb)
     -- that will not answer is not asked once per list.
     project_paths[root] = path or false
     cb(path, err)
+  end)
+end
+
+--- Whose token this is, as GitLab's `user` object.
+---
+--- Asked once per repository and kept. The one thing it is for is
+--- telling your own reaction on a note from somebody else's, which is
+--- the difference between a key that adds one and a key that toggles
+--- it -- and a call per keypress to answer a question whose answer
+--- cannot change is a call too many.
+function M.me(root, cb)
+  local known = whoami[root]
+  if known ~= nil then
+    cb(known or nil)
+    return
+  end
+  json({ "api", "user" }, { cwd = root }, function(data, err)
+    -- `false` for "asked and got nowhere", so a forge that will not say
+    -- is not asked again on the next keypress.
+    whoami[root] = (type(data) == "table" and data.username) and data or false
+    cb(whoami[root] or nil, err)
+  end)
+end
+
+--- Every reaction on every note of a merge request, as
+--- `{ [note_id] = { { name, user }, ... } }`.
+---
+--- The second GraphQL in this plugin, and for the same kind of reason
+--- as the first. REST publishes reactions one note at a time --
+--- `/notes/:id/award_emoji` -- so the REST answer to "what has been
+--- reacted to in this review" is one request per comment, forty
+--- subprocesses to draw a row of thumbs. GraphQL hands over the whole
+--- of it beside the notes it belongs to, in one.
+---
+--- A hundred discussions and a hundred notes in each, which is the page
+--- GraphQL gives without being asked and more than a merge request
+--- anybody is reviewing in an editor has. Past that the reactions on
+--- the tail of the thread are missing, which is a row of pictures
+--- missing and not a comment missing.
+---
+--- Quietly: this is decoration. A forge too old for the field, a token
+--- without `read_api`, an instance with GraphQL turned off -- none of
+--- them is a reason to put an error on the screen after every refresh,
+--- and none of them stops a single comment being read or written. The
+--- callback gets an empty table and the review is drawn without them.
+function M.reactions(root, iid, cb)
+  M.project_path(root, function(path)
+    if not path then
+      cb({})
+      return
+    end
+    local query = (
+      '{ project(fullPath: "%s") { mergeRequest(iid: "%d") { discussions { nodes '
+      .. "{ notes { nodes { id awardEmoji { nodes { name user { username } } } } } } } } } }"
+    ):format(path, iid)
+    json({ "api", "graphql", "--raw-field", "query=" .. query }, { cwd = root }, function(data)
+      local nodes =
+        vim.tbl_get(data or {}, "data", "project", "mergeRequest", "discussions", "nodes")
+      if type(nodes) ~= "table" then
+        cb({})
+        return
+      end
+      local out = {}
+      for _, discussion in ipairs(nodes) do
+        for _, note in ipairs(vim.tbl_get(discussion, "notes", "nodes") or {}) do
+          -- GraphQL names a note `gid://gitlab/DiscussionNote/1234`;
+          -- everything else in this plugin knows it as 1234.
+          local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
+          local given = vim.tbl_get(note, "awardEmoji", "nodes") or {}
+          if id and #given > 0 then
+            local list = {}
+            for _, award in ipairs(given) do
+              table.insert(list, {
+                name = award.name,
+                user = vim.tbl_get(award, "user", "username"),
+              })
+            end
+            out[id] = list
+          end
+        end
+      end
+      cb(out)
+    end)
+  end)
+end
+
+--- Reacts to a note, and takes it back.
+---
+--- Two calls because GitLab has two: the name goes in as a query
+--- parameter on the way in, and what comes back out is named by the id
+--- of the reaction rather than by the emoji -- so taking one back means
+--- reading that note's reactions first, which `M.reactions` above does
+--- for the whole review but without the ids REST needs.
+function M.award(root, iid, note_id, name, cb)
+  json({
+    "api",
+    "--method",
+    "POST",
+    ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji?name=%s"):format(
+      iid,
+      note_id,
+      vim.uri_encode(name)
+    ),
+  }, { cwd = root }, cb)
+end
+
+--- The reactions on one note, as REST tells them -- with the ids that
+--- `M.unaward` needs and `M.reactions` does not have.
+function M.note_awards(root, iid, note_id, cb)
+  json(
+    { "api", ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji"):format(iid, note_id) },
+    { cwd = root },
+    cb
+  )
+end
+
+function M.unaward(root, iid, note_id, award_id, cb)
+  run({
+    "api",
+    "--method",
+    "DELETE",
+    ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji/%s"):format(iid, note_id, award_id),
+  }, { cwd = root }, function(ok, out, err)
+    cb(ok, vim.trim(err ~= "" and err or out))
   end)
 end
 

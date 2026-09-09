@@ -214,6 +214,46 @@ function M.attach_drafts(list, replies)
   end
 end
 
+--- Puts the reactions on the notes they were given to.
+---
+--- `given` is `{ [note_id] = { { name, user }, ... } }` -- what
+--- `glab.reactions` fetched for the whole review in one call -- and
+--- `me` is the username whose reactions are yours. In place, and safe
+--- to run again: a note keeps whatever the last refresh said and
+--- nothing accumulates, because the threads themselves are rebuilt from
+--- the forge every time.
+---
+--- Gathered by name rather than left as the list the forge sent: a row
+--- of reactions is one picture per emoji with a number beside it, and
+--- who gave which is a question asked of the row and not read off it.
+--- `mine` is the answer the key needs -- reacting twice with the same
+--- emoji is how you take a reaction back.
+function M.attach_reactions(list, given, me)
+  for _, t in ipairs(list or {}) do
+    for _, note in ipairs(t.notes or {}) do
+      local awards = given and given[note.id]
+      note.reactions = nil
+      if awards and #awards > 0 then
+        local by_name, order = {}, {}
+        for _, award in ipairs(awards) do
+          local seen = by_name[award.name]
+          if not seen then
+            seen = { name = award.name, count = 0, who = {}, mine = false }
+            by_name[award.name] = seen
+            table.insert(order, seen)
+          end
+          seen.count = seen.count + 1
+          table.insert(seen.who, award.user)
+          if me and award.user == me then
+            seen.mine = true
+          end
+        end
+        note.reactions = order
+      end
+    end
+  end
+end
+
 --- Whether anything in a thread is yours and not sent yet -- the thread
 --- itself, or a reply folded into it. What the gutter marks with a
 --- pencil: an unsent comment is a state of you rather than of the
@@ -720,9 +760,12 @@ end
 --- rather than in one colour end to end; missing, it is drawn as it
 --- always was. `nemeton.syntax` is what builds one.
 ---
---- `opts.was` -- the lines the thread was written against, when they
---- are not the lines it now sits on. Drawn above the first note; see
---- `session.was`, which is what decides that they differ.
+--- `opts.was` -- the code the thread is about, drawn above the first
+--- note. Which revision of it is the caller's to decide: the pane
+--- passes the lines as they are now and lets `session.was` override
+--- them where the thread was written against something else, and the
+--- floats -- drawn over the file, where the reader can already see it
+--- -- pass only that override.
 ---
 --- `opts.width` -- how many columns the caller has to draw into, rail
 --- included. Given, the notes are wrapped to fit; missing, they are
@@ -1057,12 +1100,14 @@ function M.render(thread, opts)
     table.insert(out, rule("bottom"))
   end
 
-  -- What the thread is *about*, when that is no longer what is on the
-  -- line it is drawn against. A comment is half of a pair and the code
-  -- is the half that moves: somebody pushes, or you edit the file while
-  -- you are reading it, and the note is still on line 42 while line 42
-  -- has come to say something else. Drawn above the first word anybody
+  -- What the thread is *about*. Drawn above the first word anybody
   -- said, because it is what they were looking at when they said it.
+  --
+  -- A comment is half of a pair, and the code is the half that moves:
+  -- somebody pushes, or you edit the file while you are reading it, and
+  -- the note is still on line 42 while line 42 has come to say
+  -- something else. Which is why the caller decides what goes here --
+  -- the lines as they are, or the lines as they were.
   --
   -- On a band of its own, and with nothing written in front of it: this
   -- is a quotation of the file, and a label saying so is a word to read
@@ -1294,6 +1339,27 @@ function M.render(thread, opts)
         end
         body(lead, prose, hl, nil, runs)
       end
+    end
+    -- ...and what people said back without saying anything, under it.
+    --
+    -- A row of pictures with a count beside each, in the order they
+    -- were first given, which is GitLab's own order and the order the
+    -- page a comment was written on shows them in. Yours are drawn in
+    -- a colour of their own: the key that adds one takes it back, so
+    -- which of them are yours is what says what the key will do.
+    --
+    -- No names. Who reacted is a hover on the web page and a line of
+    -- usernames in here -- and a review is read for what people wrote,
+    -- not for who thumbed it.
+    if config.comments.reactions and note.reactions and #note.reactions > 0 then
+      local row = { { lead, rail[2] } }
+      for n, given in ipairs(note.reactions) do
+        table.insert(row, {
+          ("%s%s %d"):format(n > 1 and "  " or "", M.emoji(":" .. given.name .. ":"), given.count),
+          given.mine and "NemetonReactionMine" or "NemetonReaction",
+        })
+      end
+      table.insert(out, row)
     end
     -- Which note each line of it belongs to, on the line rather than in
     -- it: a field beside the chunks is invisible to everything that

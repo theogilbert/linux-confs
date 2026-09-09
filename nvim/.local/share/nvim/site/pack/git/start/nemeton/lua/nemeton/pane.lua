@@ -305,12 +305,14 @@ function M.render()
     if paint and syntax.prose(bufnr, row - 1, lang) then
       paint = nil
     end
-    -- Wrapped to the pane rather than to the window the code is in:
-    -- this is a real buffer with `wrap` on, so nothing is lost at the
-    -- edge -- but a wrapped line comes back at column zero, outside the
-    -- rail, and a rail that reaches half of its own thread has stopped
-    -- being an edge.
-    local width = vim.api.nvim_win_get_width(M.win)
+    -- Wrapped to the pane rather than to the window the code is in --
+    -- where it is wrapped at all. `comments.pane_wrap` off is no width
+    -- at all: the notes come back as they were written, the window has
+    -- `wrap` off to match, and what runs past the edge is scrolled to.
+    -- A wrapped line comes back at column zero, outside the rail, and a
+    -- rail that reaches half of its own thread has stopped being an
+    -- edge.
+    local width = config.comments.pane_wrap and vim.api.nvim_win_get_width(M.win) or nil
 
     local span = 0
     for i, t in ipairs(shown) do
@@ -322,10 +324,23 @@ function M.render()
         table.insert(chunks, {})
       end
       span = math.max(span, threads.span(t))
+      -- The code the comment is about, above the first word anybody
+      -- said, whether or not it has moved since.
+      --
+      -- `session.was` answers the narrower question -- what the thread
+      -- was written against, when that is not what is under it now --
+      -- and out in the floats that is the only case worth the room.
+      -- Here it is not: the pane is read beside the file rather than
+      -- under the line, and the line is the one thing a reader in this
+      -- window cannot see without looking away from it. So the
+      -- quotation is always drawn, and `was` only decides which
+      -- revision of it: the one that was commented on, or the one
+      -- that is there now.
+      local here = replaced(threads.span(t), 0)
       local drawn = threads.render(t, {
         replaced = replaced,
         width = width,
-        was = session.was(t, replaced(threads.span(t), 0)),
+        was = session.was(t, here) or here,
         paint = paint,
       })
       for _, line in ipairs(drawn) do
@@ -362,6 +377,8 @@ function M.render()
       },
     }
   end
+
+  vim.wo[M.win].wrap = config.comments.pane_wrap and true or false
 
   local text, hls, refs = marks.shade_lines(chunks, 0, ground)
   rows, said = map, notes
@@ -506,7 +523,9 @@ function M.open()
   end)
   M.win, M.source = win, source
 
-  vim.wo[M.win].wrap = true
+  -- `wrap` is not here: it is `comments.pane_wrap`, and it is set on
+  -- every render so that a reviewer who changes their mind about it
+  -- gets the answer on the next redraw rather than on the next pane.
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true
   vim.wo[M.win].number = false
@@ -567,6 +586,16 @@ function M.open()
       "delete the comment under the cursor",
     },
     { k.follow, follow.here, "follow what is under the cursor" },
+    -- On the comment under the cursor, like the two above it: the
+    -- whole conversation is drawn here, so the reader is already
+    -- pointing at the one they mean.
+    {
+      k.react,
+      on_thread(function(thread)
+        edit.react(thread, nil, note_at())
+      end),
+      "react to the comment under the cursor",
+    },
   }
   -- The walk, from inside the pane. `]m` and `[m` are bound everywhere
   -- while a review is on, and out in the code they move the cursor,

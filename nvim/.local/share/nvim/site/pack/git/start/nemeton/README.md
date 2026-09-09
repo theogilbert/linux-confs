@@ -109,6 +109,7 @@ rest.
 | | |
 |---|---|
 | `:Nemeton open 42` | check !42 out and load its threads |
+| `:Nemeton open` | ask which, completing over what is open by number and by title |
 | `:Nemeton comments` | markers on/off |
 | `:Nemeton expand` | the conversations themselves: one at a time in a pane beside the code, or all of them under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
@@ -136,7 +137,13 @@ rest.
 
 ## Keys
 
-`<leader>ml` opens the list, from anywhere. The rest are bound while a
+`<leader>ml` opens the list, from anywhere. `:Nemeton open` is the other
+way in — it asks for a number and completes over what is open, by number
+and by title, for when you already know it is "the proxy one" and the
+number is the thing you would have to go and look up.
+`keys.global.open` puts that on a key too; it is unbound by default,
+because the queue is the way in nine times out of ten. The rest are
+bound while a
 review is on and taken away when it ends — everywhere, not only on the
 files of the repository: `]m` means "the next thing owed an answer", and
 that is asked as often from the quickfix list, the terminal the tests ran
@@ -150,7 +157,7 @@ when there is no line to be about.
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
-| `<leader>ml` | a link to this line, or to the selection, on the clipboard |
+| `<leader>mL` | a link to this line, or to the selection, on the clipboard |
 | `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
@@ -319,8 +326,8 @@ then the date, and the name of who said it only when dropping both was
 not enough.
 
 In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the code
-the thread being read is about, `r` replies, `e` edits, `d` deletes, `R`
-refetches — and `q` folds the conversations away rather than only closing
+the thread being read is about, `r` replies, `e` edits, `d` deletes, `+`
+reacts, `R` refetches — and `q` folds the conversations away rather than only closing
 the window, because while it is open the pane *is* what expanded means.
 Closing it any other way says the same thing: the mode follows the
 window. `]m` and `[m` work in there too: out in the code they move the
@@ -412,7 +419,15 @@ inside.
 Nothing is written in front of it — it is a quotation of the file, and
 the background says so without a word to read on every line. A comment is half of a pair and the code is the
 half that moves; without this the note reads as a remark about whatever
-happens to be under it now. The old lines are read out of the checkout
+happens to be under it now.
+
+The pane draws that band whether the code has moved or not, and quotes
+the lines as they now are where it has not: the floats are drawn over
+the file and you can see the line underneath them, but the pane is read
+beside it, and the line a comment is about is the one thing you cannot
+look at from in there without looking away from what you are reading.
+
+The old lines are read out of the checkout
 with `git show`, not from the forge — the commit the note was written
 against is one the repository already has — and a commit that is not
 there any more is asked about once and then left alone.
@@ -469,6 +484,17 @@ left in the pane (`comments.sign_span`, `false` to leave the gutter to
 the bubbles), in the colour of the same state, under the bubble's own
 priority so a one-cell sign column still shows the bubble.
 
+The code itself gets a band under those lines as well
+(`NemetonReading`, at `comments.reading_ground` of the strength of the
+ground a conversation is drawn on — the two are one block read in two
+windows). That is the part the gutter could not do: every line carrying
+a thread has the same bubble on it, so with three conversations in a
+file nothing out here says which is the one you are reading, and a
+thread about a single line has no line above it to put a rail on at
+all. The band says it in every case, and says it with the sign column
+turned off. `comments.reading_ground = false` leaves the gutter to do
+what it can.
+
 `comments.expand_anchor` is which window the pane is a split of:
 `"window"` splits the one the code is in, so the pane arrives beside it
 and the rest of the screen keeps the layout you built; `"editor"` puts
@@ -482,13 +508,23 @@ ordinary window afterwards, resized like any other.
 
 A comment is wrapped to the window it is drawn in, and to
 `comments.wrap` — 80 columns by default — wherever the window is wider
-than that. It has to be wrapped somewhere: a conversation under the code
-is virtual text, and virtual text takes no `wrap` and no horizontal
-scroll, so a line that runs past the right-hand edge is a line that
-cannot be read at all. The second limit is for the other end of it —
-prose set across the whole of a wide editor is prose the eye loses its
-place in. `comments.wrap = false` wraps to the window and nothing
-narrower.
+than that. The floats have to wrap: they are drawn over the code and
+there is nowhere for a long line to go. The second limit is for the
+other end of it — prose set across the whole of a wide editor is prose
+the eye loses its place in. `comments.wrap = false` wraps to the window
+and nothing narrower.
+
+The pane does not wrap unless you ask it to. `comments.pane_wrap` is
+off by default: it is a real window with a real buffer, so a line too
+long for it is a line to scroll sideways to rather than a line lost —
+and unwrapped, a comment keeps the shape it was written in. A fenced
+block, a ruled table and the two halves of a suggestion all mean what
+they mean by their columns, and none of them survive being folded at
+the edge of a sixty-column pane. The other half of it is the rail: a
+wrapped line comes back at column zero, outside it, so the one part of
+the block that says where the thread starts and stops goes missing from
+exactly the lines that needed it. `comments.pane_wrap = true` wraps to
+the pane's width and accepts both.
 
 A comment written over a selection is anchored to its last line and
 carries the rest as a line range — which is what GitLab draws as
@@ -526,7 +562,7 @@ building a position against a diff GitLab has never seen.
 There, `<leader>ma` comments on the old line — a removed line is
 anchored on the old side alone, a line the change left alone on both.
 `<leader>ms` is refused, since a suggestion patches the branch and there
-is nothing on the old side to patch, and `<leader>ml` links to that
+is nothing on the old side to patch, and `<leader>mL` links to that
 revision.
 
 ```lua
@@ -658,15 +694,66 @@ eighteen hundred of gemoji; one it does not know is left as it was
 typed, which is what a forge does with an unknown name too.
 `comments.emoji = false` leaves all of them alone.
 
+**Reactions** are the emoji people put *on* a comment rather than in
+one, and they are drawn under the note they were given to — a picture
+per emoji with a count beside it, in the order they were first given.
+Three thumbs on a suggestion is an argument being over, and nobody
+writes "agreed" three times. `+` in the pane gives one to the comment
+under the cursor, and picking an emoji you have already given takes it
+back, which is GitLab's own gesture and the only one there is; yours
+are drawn in a colour of their own so the picker and the row agree
+about what the key will do. `comments.reaction_names` is what it
+offers, plus whatever is already on the note. The whole of it is one
+GraphQL call beside the discussions — REST publishes reactions one note
+at a time, which would be a request per comment — and it fails quietly,
+because an instance too old for the field is a review drawn without
+pictures rather than an error after every post.
+`comments.reactions = false` turns it off and saves the call.
+
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
-`q` discards it, and two sigils complete — `@` the people on the project
+`<C-b>` turns it into a suggestion, `q` puts it away, and two sigils
+complete — `@` the people on the project
 and `:` the emoji GitLab draws as pictures. The menu comes up as you
 type either, `<C-x><C-o>` asks for it where it does not, and what goes in
 is `@username` and `:tada:`, sigils and all, because that is what GitLab
 turns into a notification and into a picture. Keeping is the default
 because a review is written as a whole: a comment posted the moment it
 is typed cannot be taken back after reading the next file.
+
+`<C-b>` is there because a comment turns into a suggestion halfway
+through writing it — you get as far as "it should be" and notice that
+showing it is shorter than saying it. It drops GitLab's fence in under
+what you have already written, with the lines the comment is about
+already inside it, and leaves the cursor on the first of them: a
+suggestion is an edit of what is there, and retyping four lines to
+change one word is how a reviewer decides not to suggest anything. It
+is bound only where there are lines to put in the block — not on a
+comment about the merge request as a whole, and not on the old side of
+the diff, where a suggestion would be a patch of code the branch does
+not have.
+
+`q` puts it **away**, not out: closing the composer with something in
+it keeps that something, and the next time you write the same comment —
+the same lines of the same merge request, the same thread answered — it
+comes back. Across restarts too, which is the point of it: `nvim` gets
+restarted between reading a merge request and finishing the sentence
+about it more often than anyone would like, and a comment that vanishes
+because you went to check something is a comment written twice. What is
+remembered is what is in the buffer, so emptying it and closing is how
+you throw one away; it is also forgotten once the comment is sent or
+kept on the forge, and after `compose.remember_days` (30). They live in
+`$XDG_STATE_HOME/nemeton/composing.json` at 0600 — the one thing here
+that writes what you typed to disk, and `compose.remember = false` is
+that off.
+
+A write the forge **refused** says what the forge said — its own words,
+taken out of the JSON body `glab` prints whole, so `position: must be a
+valid json schema` rather than the braces around it — and then refetches
+anyway. "It failed" and "nothing happened" are not the same thing: a
+call can land, be written down, and still come back an error, and the
+editor is then holding a picture the forge does not agree with — the
+comment you can see in `glab` is the one that is not on your screen.
 
 A **reply** is the other way round — `<C-s>` sends it, `<C-p>` keeps it
 — because a reply is half of a conversation somebody else is already

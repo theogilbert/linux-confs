@@ -120,8 +120,19 @@ A review, end to end:
 :Nemeton list           The same thing, spelled out.
 
 :Nemeton open {iid}     Check merge request {iid} out with `glab mr
-                        checkout` and load its threads. Without {iid},
-                        the list.
+                        checkout` and load its threads.
+
+                        Without {iid} it asks for one, completing over
+                        what is open -- by number and by title, since
+                        the reviewer at this prompt knows it as "the
+                        proxy one" and the number is the thing they
+                        would have to go and look up. The number is
+                        taken off the front of the answer, so a
+                        candidate accepted whole, a bare `42` and a
+                        pasted `!42` are one answer. `keys.global.open`
+                        puts it on a key; it is unbound by default,
+                        because the queue is the way in nine times out
+                        of ten.
 
 :Nemeton close          End the review: the markers and the review keys
                         go away. The branch stays checked out.
@@ -220,6 +231,8 @@ Every key here is `config.keys.*` and every one of them can be set to
 ALWAYS                                               *nemeton-mappings-global*
 
     <leader>ml      the merge request list
+                    ...and `keys.global.open`, unbound, for the number
+                    asked for instead |:Nemeton|
 
 THE REVIEW                                          *nemeton-mappings-session*
 
@@ -249,7 +262,7 @@ a checkout makes it do.
     <leader>mp      peek at the thread on this line
     <leader>ma      comment on this line, or (visual) on these lines
     <leader>ms      (visual) suggest a change to these lines
-    <leader>ml      a link to this line, or (visual) to these lines
+    <leader>mL      a link to this line, or (visual) to these lines
     <leader>md      the merge request's own window -- the one review key
                     that is not about the line under the cursor
     <leader>mq      end the review -- the markers and these keys go
@@ -503,6 +516,7 @@ enough.
     d               delete it, after asking
     x               resolve the thread, or reopen it
     <C-]>           follow what is under the cursor |nemeton-follow|
+    +               react to the comment under the cursor
     R               refetch
     q               fold the conversations away
     ]m  [m          the next thread owed an answer, and the previous
@@ -518,6 +532,13 @@ still asked.
 `x` is the one verb here that is about the thread rather than a comment
 in it: an argument is settled as a whole.
 
+`+` reacts |nemeton-reactions|, and reacting again with the same emoji
+takes it back -- which is GitLab's own gesture and the only one there
+is. It is `+` and not a letter for the same reason `+` is `+` in the
+queue: nothing in this window is a motion, and the one key here that
+adds something without opening a window to write it in should not look
+like the letters that read.
+
 `]m` and `[m` in here move the cursor of the window the pane was opened
 from -- the walk happens in the code, and your reading position stays
 in the prose.
@@ -529,14 +550,26 @@ way says the same thing.
 
                                                           *nemeton-reading*
 
-While a conversation is on the screen in there, the gutter of the code
-says which lines it was written against. The bubble marks the line a
-thread is anchored to; a comment written over a selection is about the
-lines above that too, and with the words in a window next door nothing
-else says so. Those lines carry `comments.sign_span` -- the rail the
-thread carries down its left in the pane -- in the colour of the same
-state, and under the bubble's own priority, so a sign column one cell
-wide still draws the bubble and a wider one draws both.
+While a conversation is on the screen in there, the code says which
+lines it is about -- in the gutter, and under them.
+
+The gutter first. The bubble marks the line a thread is anchored to; a
+comment written over a selection is about the lines above that too, and
+with the words in a window next door nothing else says so. Those lines
+carry `comments.sign_span` -- the rail the thread carries down its left
+in the pane -- in the colour of the same state, and under the bubble's
+own priority, so a sign column one cell wide still draws the bubble and
+a wider one draws both.
+
+...and a band under the whole of it |hl-NemetonReading|, which is what
+the gutter alone could not say. Every line carrying a thread has the
+same bubble on it, so with three conversations in a file nothing out
+here says which of them is the one you are reading. The rail says where
+a block starts -- but only where there is a block, and a comment about
+a single line has no lines above it to put a rail on, and on the anchor
+line the bubble is drawn instead. The band says it in all three cases,
+and it says it with a sign column that is off. `comments.reading_ground
+= false` leaves the gutter to do what it can.
 
 THE PIPELINE                                             *nemeton-jobs-window*
 
@@ -694,7 +727,7 @@ line it left alone is anchored on both, because it is the same line and
 the thread belongs where the reader of the branch will find it.
 `<leader>ms` is refused there -- a suggestion is a patch the author
 applies to the branch, and there is nothing on the old side to patch --
-and `<leader>ml` links to the line at that revision rather than at the
+and `<leader>mL` links to the line at that revision rather than at the
 head.
 
 Wiring up a diff view -- the example is uatis, which puts the old
@@ -719,8 +752,42 @@ fire an event, and nothing goes stale when the view redraws.
     <C-s>  or  :w   keep it for the review (send it, on a reply)
     <C-p>           post it to the merge request now (keep it, on a
                     reply)
+    <C-b>           a suggestion block over the lines this is about
     <C-x><C-o>      the people you can put an `@` in front of
-    q               discard it
+    q               close it; what is in it is here again next time
+
+`q` PUTS IT AWAY RATHER THAN THROWING IT AWAY. Closing the composer with
+something in it keeps that something, and the next time the same comment
+is written -- the same lines of the same merge request, the same thread
+answered -- it comes back. Across restarts, too, which is the point of
+it: `nvim` gets restarted between reading a merge request and finishing
+the sentence about it more often than anybody would like, and a review
+comment is prose that vanishing means writing twice.
+
+What is remembered is what is in the buffer, which is how one is thrown
+away on purpose: empty it and close it. It is forgotten three ways --
+sent or kept on the forge, closed with nothing in it, or
+`compose.remember_days` old (30 by default, because anything past that
+is a comment you walked away from a month ago). They live in
+`$XDG_STATE_HOME/nemeton/composing.json`, beside the log, at 0600.
+
+This is the one thing here that writes what you typed to disk, and
+`compose.remember = false` is that off. Nothing else is written down:
+see |nemeton-credentials| for the token, which never is, and
+|nemeton-drafts| for a comment kept for the review, which lives on the
+forge and is therefore still there on another machine.
+
+`<C-b>` is there because a comment turns into a suggestion halfway
+through writing it: you get as far as "it should be" and notice that
+showing it is shorter than saying it. It drops GitLab's fence in under
+what you have written, with the lines the comment is about already in
+it, and leaves the cursor on the first of them -- a suggestion is an
+edit of what is there, and retyping four lines to change one word is
+how a reviewer decides not to suggest anything. Bound only where there
+are lines to put in the block: not on a comment about the merge request
+as a whole, and not on the old side of the diff, where a suggestion is
+a patch of code the branch does not have. `:Nemeton suggest` is the
+same block from the other end, where the whole comment is one.
 
 MENTIONS                                                    *nemeton-mentions*
 
@@ -753,6 +820,35 @@ written with rather than the whole of gemoji. One that is not there is
 left exactly as it was typed, which is what a forge does with a name it
 does not know either.
 
+                                                          *nemeton-reactions*
+REACTIONS are the other half of that: the emoji people put *on* a
+comment rather than in one. Drawn under the note they were given to, a
+picture per emoji with a count beside it, gathered by name and in the
+order they were first given -- which is what the page the comment was
+written on shows. Three thumbs on a suggestion is an argument being
+over, and nobody writes "agreed" three times.
+
+`+` in the pane gives one, and gives it to the comment the cursor is
+standing on. Picking an emoji you have already given takes it back --
+GitLab's own gesture, and the only one there is -- so yours are drawn
+in a colour of their own |hl-NemetonReactionMine| and the picker says
+which they are. `comments.reaction_names` is what it offers, and
+anything already on the note is offered too, so a reaction somebody
+left from the web page is one you can join.
+
+The names of the people who gave them are not drawn. That is a hover on
+the web page and a line of usernames in here, and a review is read for
+what people wrote.
+
+All of it is one GraphQL call beside the discussions on every refresh.
+REST publishes reactions one note at a time, so the REST answer to
+"what has been reacted to in this review" is a request per comment --
+forty subprocesses to draw a row of thumbs. It fails quietly: an
+instance too old for the field, a token without `read_api`, GraphQL
+turned off, all of them are a review drawn without pictures rather than
+an error after every post. `comments.reactions = false` is that on
+purpose, and one call fewer.
+
                                                               *nemeton-drafts*
 KEEPING IS THE DEFAULT. A comment you write becomes a GitLab draft note:
 it is drawn on its line in its own colour, with a pencil in the gutter,
@@ -780,6 +876,22 @@ least visible to you.
 
 Draft notes are GitLab 15.10 and newer. On an older instance `<C-s>`
 fails and `<C-p>` works.
+
+                                                           *nemeton-refused*
+A WRITE THE FORGE REFUSED says what the forge said -- its own words,
+taken out of the JSON body glab prints whole, so `position: must be a
+valid json schema` rather than the braces around it -- and then asks
+the forge again.
+
+The second half is not tidiness. "It failed" and "nothing happened" are
+not the same thing: a call can land, be written down, and still come
+back an error -- a timeout after the note was created, a proxy that
+gave up on the way home, a 4xx about something GitLab did after
+creating it. The editor is then holding a picture the forge does not
+agree with, and the comment you can see in `glab` is the one that is
+not on your screen. Everything that posts refetches when it succeeds
+for the same reason; this is that reason applied to the other half, and
+it costs one call on a path that is rare.
 
                                                             *nemeton-markdown*
 A COMMENT IS MARKDOWN, and wherever one is read it is drawn as the page
@@ -1009,9 +1121,9 @@ about what is in it.
 WHEN THE CODE HAS MOVED ON. Someone pushes while you are reading, or you
 edit the file you are reviewing, and a thread is left sitting on a line
 that no longer says what it said. Wherever a conversation is drawn --
-expanded under the code, in the peek float, in the every-thread window
--- it then carries the code it was written against, above the first
-note, on a band of its own |hl-NemetonWas|. Nothing is written in front
+in the pane, in the peek float, in the every-thread window -- it then
+carries the code it was written against, above the first note, on a
+band of its own |hl-NemetonWas|. Nothing is written in front
 of it: it is a quotation of the file, the background says so, and a
 label saying it again is a word to read before every line. A thread
 written across several lines carries all of them, and the band runs the
@@ -1020,6 +1132,13 @@ on the band as well, keeping only its colour, which is what says which
 conversation the quotation is inside. In the two windows that are real
 buffers the band is as wide as the widest line of it: there is no
 editor-wide ground there to match.
+
+The pane (|nemeton-pane-window|) draws that band whether the code has
+moved or not, and quotes the lines as they now are where it has not.
+The floats are drawn over the file and the reader can see the line
+underneath them; the pane is read beside it, and the line a comment is
+about is the one thing a reader in there cannot look at without looking
+away from what they are reading.
 
 That code is read out of the checkout with `git show`, not from the
 forge: the commit the note was written against is one this repository
@@ -1083,6 +1202,7 @@ COMMENTS                                             *nemeton-config-comments*
       sign_resolved = "",   -- one that is settled
       sign_draft = "",      -- one of yours, not sent yet
       sign_span = "▎",       -- the lines the thread being read covers
+      reading_ground = 0.6,  -- ...and the band under those same lines
       virt_text = false,     -- the first line of it at end of line
       expand = "right",      -- which side the pane opens on: "right" or "bottom"
       expand_anchor = "window", -- ...a split of it, or of the editor
@@ -1115,7 +1235,10 @@ COMMENTS                                             *nemeton-config-comments*
       head_band = true,      -- a band under the head of a note as well
       heading_accent = true, -- ...leaning towards the thread's own colour
       heading = 0.06,        -- how far it leans
+      reactions = true,      -- the emoji on a note, under it
+      reaction_names = {...},-- ...and which ones `+` offers
       wrap = 80,             -- the widest a comment is drawn
+      pane_wrap = false,     -- ...and whether the pane wraps at all
       peek_height = 20,
     }
 <
@@ -1144,13 +1267,25 @@ whatever they are set to: sixty columns is most of an eighty column
 terminal, and a pane that leaves nineteen columns of code is a pane you
 open once. It is an ordinary window afterwards, resized like any other.
 
-A comment is wrapped to the window it is drawn in: these windows are
-real buffers with 'wrap' on, but a wrapped line comes back at column
-zero, outside the rail, and a rail that reaches half of its own thread
-has stopped being an edge. `wrap` is the other limit -- prose set across
-the whole of a wide editor is prose the eye loses its place in on the
-way back to the next line. Set it to `false` to wrap to the window and
-nothing narrower.
+A comment is wrapped to the window it is drawn in, and to `wrap` -- 80
+columns by default -- wherever the window is wider than that. The floats
+have to wrap: they are drawn over the code and there is nowhere for a
+long line to go. `wrap` is the other limit, for the other end of it --
+prose set across the whole of a wide editor is prose the eye loses its
+place in on the way back to the next line. Set it to `false` to wrap to
+the window and nothing narrower.
+
+The pane does not, unless you ask it to. `pane_wrap` is off by default:
+it is a real window with a real buffer, so a line too long for it is a
+line to scroll sideways to rather than a line lost -- and unwrapped, a
+comment keeps the shape it was written in. That is worth more than it
+sounds. A fenced block, a ruled table and the two halves of a suggestion
+all mean what they mean by their columns, and none of them survive being
+folded at the edge of a sixty-column pane. The other half of it is the
+rail: a wrapped line comes back at column zero, outside it, so the one
+part of the block that says where the thread starts and stops goes
+missing from exactly the lines that needed it. `pane_wrap = true` wraps
+to the pane's width and accepts both.
 
 `head_commit` puts the commit a note was written against in its head,
 after the date: eight digits, the ones GitLab itself prints. The other
@@ -1276,6 +1411,9 @@ COMPOSER                                              *nemeton-config-compose*
       mention_menu = true,    -- ...and put the menu up as you type
       emoji = true,           -- complete `:name:` from the shortcodes
       emoji_menu = true,      -- ...and put that menu up as you type
+      remember = true,        -- keep what was closed unsent
+      remember_days = 30,     -- ...for this long
+      remember_path = nil,    -- ...here; nil is beside the log
     }
 <
 `mentions` puts the people on this project -- the members of it and of
@@ -1503,6 +1641,22 @@ colour text is -- the background is carrying the verdict, and red words
 on a red band are a line you have to work at to read. Without
 'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
 as it used to be.
+
+                                                         *hl-NemetonReading*
+`NemetonReading` is the band under the lines of code the conversation
+in the pane is about |nemeton-reading|. The same ground the
+conversation itself is drawn on -- the two are one block read in two
+windows -- at `comments.reading_ground` of its strength, because this
+one is under code that is being read rather than under prose.
+
+                                                        *hl-NemetonReaction*
+                                                    *hl-NemetonReactionMine*
+`NemetonReaction` is the count beside a reaction, and
+`NemetonReactionMine` the count beside one of your own. Only the count:
+an emoji is drawn from the font's own palette whatever a highlight
+says, so the one thing left to colour is the number -- and the one
+thing worth saying with it is which of the rows you are already in,
+since `+` on one of yours takes it back.
 
                                                            *hl-NemetonReply*
                                                     *hl-NemetonReplySettled*

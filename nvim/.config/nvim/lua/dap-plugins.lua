@@ -86,6 +86,12 @@ dap.configurations.python = {
     run_cmd_cfg
 }
 
+-- Break at the raise point instead of letting the exception unwind:
+--   uncaught      -- exception reaches the top and kills the program
+--   userUnhandled -- raised in project code, only handled outside it (e.g. by pytest)
+-- Both use project scope, not justMyCode, so stepping into libraries stays available.
+dap.defaults.python.exception_breakpoints = { "uncaught", "userUnhandled" }
+
 local dapui = require('dapui')
 
 local function build_pane_layout(scope)

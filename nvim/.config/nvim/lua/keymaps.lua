@@ -292,6 +292,7 @@ vim.api.nvim_create_autocmd("FileType", {
 local grannos = require("grannos")
 vim.keymap.set("n", "<leader>bC", grannos.open_connections, { desc = "Data[b]ase - [c]onnections" })
 vim.keymap.set("n", "<leader>ba", grannos.attach, { desc = "Data[b]ase - [a]ttach" })
+vim.keymap.set("n", "<leader>bd", grannos.disconnect, { desc = "Data[b]ase - [d]isconnect" })
 vim.keymap.set("n", "<leader>bh", function() grannos.open_current_driver_help({ position = "bottom" }) end, { desc = "Data[b]ase [h]elp" })
 vim.keymap.set("n", "<leader>bx", grannos.open_explorer, { desc = "Data[b]ase - open e[x]plorer" })
 vim.keymap.set({"n", "v"}, "<leader>be", grannos.execute,        { desc = "Data[b]ase - [e]xecute" })

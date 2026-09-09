@@ -322,7 +322,9 @@ function M.open(opts)
   -- The lines the comment is about, as the block that would replace
   -- them. Bound only when the caller passed some: see `keys.compose`.
   if opts.suggest and #opts.suggest > 0 and k.suggest and k.suggest ~= "" then
-    vim.keymap.set({ "n", "i" }, k.suggest, function()
+    -- Insert mode alone: see `keys.compose`. Normal-mode `<C-b>` is
+    -- page-up, and this window has no business taking a motion.
+    vim.keymap.set("i", k.suggest, function()
       insert_block(window, buf, require("nemeton.threads").suggestion_body(opts.suggest))
     end, { buffer = buf, desc = "nemeton: suggest a change to these lines" })
   end

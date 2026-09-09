@@ -350,6 +350,27 @@ function M.candidates(prefix)
   return vim.list_extend(first, second)
 end
 
+--- The same names as rows for a prompt to complete over, for `v:lua`.
+---
+--- `name  <picture>`, and the name first: what is typed is the name, so
+--- what a candidate is *matched* on has to be at the front of it, and
+--- the picture beside it is there because nobody remembers which of
+--- `tada` and `confetti_ball` is which. Whoever asked takes the name
+--- off the front, the way every prompt in this plugin takes an answer
+--- off the front of a row.
+---
+--- Its own function rather than `M.candidates` above: that one answers
+--- a completion menu inside a comment, where the sigils are part of
+--- what gets inserted. Here there is no sigil -- a reaction is a name
+--- the forge is given, not a word in a sentence.
+function M.complete_name(lead)
+  local out = {}
+  for _, name in ipairs(M.candidates(lead)) do
+    table.insert(out, ("%s  %s"):format(name, M.by_name[name] or ""))
+  end
+  return out
+end
+
 --- Neovim's `omnifunc`, which is Vim's: asked for the start of the word
 --- first and for the matches second. See `nemeton.mentions`, which
 --- answers the other sigil the same way.

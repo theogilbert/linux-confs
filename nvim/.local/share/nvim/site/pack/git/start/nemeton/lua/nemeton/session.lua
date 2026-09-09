@@ -46,6 +46,37 @@ end
 
 M.notify = notify
 
+-- What the message line is currently saying this plugin is doing, so
+-- that a call finishing does not wipe a line a later one has since put
+-- there.
+local working = nil
+
+--- Says what is being waited for, and hands back the function that
+--- takes it away again.
+---
+--- Not `vim.notify`. A notification is a thing that *happened*: it
+--- stacks, it is a line of history, and half the plugins that replace
+--- it keep what they are given on the screen for several seconds after
+--- the thing it was about is over. This is a sentence that is true
+--- while a subprocess runs and false afterwards, which is what the
+--- message line is for.
+---
+--- Only for the places with no window to say it in themselves. The
+--- queue writes "fetching opened merge requests…" into its own buffer,
+--- and the pane and the floats do the same, because a window that is
+--- up and empty is a window that has to explain itself. A prompt and a
+--- checkout have nowhere to put that.
+function M.working(said)
+  working = said
+  vim.api.nvim_echo({ { "nemeton: " .. said, "NemetonMeta" } }, false, {})
+  return function()
+    if working == said then
+      working = nil
+      vim.api.nvim_echo({ { "" } }, false, {})
+    end
+  end
+end
+
 --- The branch HEAD is on, or nil on a detached one.
 ---
 --- Read out of `.git` rather than asked of git: it goes in the title of
@@ -469,6 +500,14 @@ function M.open(iid, opts)
 
   local mr, checked_out, failed = nil, opts.checkout == false, false
 
+  -- Something is happening, and until the branch is checked out and the
+  -- discussions are in there is nothing on the screen to say so: two
+  -- subprocesses against a forge over a network, and an editor that
+  -- looks like it ignored the key. Not when the caller has a window of
+  -- its own up -- the queue says it in itself, and this would be the
+  -- second copy of a sentence already in front of you.
+  local said = opts.on_error and function() end or M.working(("opening !%d…"):format(iid))
+
   --- Gives up, once: either half can be the one that fails, and the
   --- caller waiting to hear must not hear it twice.
   ---
@@ -481,6 +520,7 @@ function M.open(iid, opts)
       return
     end
     failed = true
+    said()
     if opts.on_error then
       opts.on_error(msg)
     else
@@ -522,6 +562,7 @@ function M.open(iid, opts)
     M.refresh_changes()
     M.refresh(function()
       local n = #(M.current.inline or {})
+      said()
       notify(
         ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
       )

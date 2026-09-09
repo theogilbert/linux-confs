@@ -104,7 +104,12 @@ function M.ask_open(opts)
     session.notify("not inside a git repository", vim.log.levels.ERROR)
     return
   end
+  -- The prompt cannot go up until the answers it completes over are
+  -- in, and that is a subprocess against a forge: without this, a key
+  -- pressed and nothing on the screen for two seconds.
+  local said = session.working("asking which merge requests are open…")
   glab.mr_list(root, nil, function(mrs, err)
+    said()
     if not mrs then
       session.notify("could not list merge requests: " .. tostring(err), vim.log.levels.ERROR)
       return
@@ -113,8 +118,13 @@ function M.ask_open(opts)
     for _, mr in ipairs(mrs) do
       table.insert(candidates, ("%d  %s"):format(mr.iid, mr.title or ""))
     end
+    -- The key that completes, in the prompt. `vim.fn.input` completes
+    -- on `<Tab>` and says nothing about it: there is no menu and no
+    -- hint, so a prompt that does not mention it is a prompt nobody
+    -- discovers it on. It is the whole reason this asks rather than
+    -- opening the queue.
     vim.ui.input({
-      prompt = "open merge request: ",
+      prompt = "open merge request (<Tab> completes): ",
       completion = "customlist,v:lua.require'nemeton'.complete_open",
     }, function(answer)
       answer = vim.trim(answer or "")

@@ -129,10 +129,15 @@ A review, end to end:
                         would have to go and look up. The number is
                         taken off the front of the answer, so a
                         candidate accepted whole, a bare `42` and a
-                        pasted `!42` are one answer. `keys.global.open`
-                        puts it on a key; it is unbound by default,
-                        because the queue is the way in nine times out
-                        of ten.
+                        pasted `!42` are one answer. `<leader>mo`
+                        (`keys.global.open`) is the same thing on a
+                        key.
+
+                        Both halves say what they are waiting for while
+                        they wait: the prompt cannot go up until the
+                        forge has said what is open, and nothing is on
+                        the screen between the number being given and
+                        the branch being checked out.
 
 :Nemeton close          End the review: the markers and the review keys
                         go away. The branch stays checked out.
@@ -231,8 +236,7 @@ Every key here is `config.keys.*` and every one of them can be set to
 ALWAYS                                               *nemeton-mappings-global*
 
     <leader>ml      the merge request list
-                    ...and `keys.global.open`, unbound, for the number
-                    asked for instead |:Nemeton|
+    <leader>mo      open one by number, asked for instead |:Nemeton|
 
 THE REVIEW                                          *nemeton-mappings-session*
 
@@ -752,7 +756,8 @@ fire an event, and nothing goes stale when the view redraws.
     <C-s>  or  :w   keep it for the review (send it, on a reply)
     <C-p>           post it to the merge request now (keep it, on a
                     reply)
-    <C-b>           a suggestion block over the lines this is about
+    <C-b>           (insert mode) a suggestion block over the lines
+                    this is about
     <C-x><C-o>      the people you can put an `@` in front of
     q               close it; what is in it is here again next time
 
@@ -788,6 +793,11 @@ are lines to put in the block: not on a comment about the merge request
 as a whole, and not on the old side of the diff, where a suggestion is
 a patch of code the branch does not have. `:Nemeton suggest` is the
 same block from the other end, where the whole comment is one.
+
+IN INSERT MODE ONLY, which is the mode you are in when the sentence
+turns into a diff. `i_CTRL-B` has done nothing in Vim for years, so
+there is nothing to take there; in normal mode it is still |CTRL-B|,
+and a window this size has no business taking a motion.
 
 MENTIONS                                                    *nemeton-mentions*
 
@@ -835,6 +845,17 @@ in a colour of their own |hl-NemetonReactionMine| and the picker says
 which they are. `comments.reaction_names` is what it offers, and
 anything already on the note is offered too, so a reaction somebody
 left from the web page is one you can join.
+
+That list is short on purpose and it is not the limit. `vim.ui.select`
+is a numbered list unless you have replaced it, and a numbered list of
+every name |nemeton-emoji| knows is a wall rather than a picker -- so
+the names you actually react with are the picker, and its last row,
+"another emoji", is a prompt that completes over all of them. `<Tab>`
+completes there, and the prompt says so: `vim.fn.input` puts up no menu
+and gives no hint, so a prompt that does not mention the key is a
+prompt nobody finds it on. The name is taken off the front of whatever
+comes back, so a candidate accepted whole, a bare `rocket` and a pasted
+`:rocket:` are one answer.
 
 The names of the people who gave them are not drawn. That is a hover on
 the web page and a line of usernames in here, and a review is read for

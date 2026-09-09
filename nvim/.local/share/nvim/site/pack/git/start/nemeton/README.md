@@ -141,9 +141,11 @@ rest.
 way in — it asks for a number and completes over what is open, by number
 and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
-`keys.global.open` puts that on a key too; it is unbound by default,
-because the queue is the way in nine times out of ten. The rest are
-bound while a
+`<leader>mo` (`keys.global.open`) is the same thing on a key. Both
+halves say what they are waiting for while they wait — the prompt
+cannot go up until the forge has said what is open, and nothing is on
+the screen between the number being given and the branch being checked
+out. The rest are bound while a
 review is on and taken away when it ends — everywhere, not only on the
 files of the repository: `]m` means "the next thing owed an answer", and
 that is asked as often from the quickfix list, the terminal the tests ran
@@ -703,7 +705,20 @@ under the cursor, and picking an emoji you have already given takes it
 back, which is GitLab's own gesture and the only one there is; yours
 are drawn in a colour of their own so the picker and the row agree
 about what the key will do. `comments.reaction_names` is what it
-offers, plus whatever is already on the note. The whole of it is one
+offers, plus whatever is already on the note.
+
+That list is short on purpose and it is not the limit.
+`vim.ui.select` is a numbered list unless you have replaced it, and a
+numbered list of all 258 names `emoji.lua` knows is a wall rather than
+a picker — so the ten you actually react with are the picker, and its
+last row, "another emoji", is a prompt that completes over the rest.
+`<Tab>` completes there, and the prompt says so: `vim.fn.input` puts up
+no menu and gives no hint, so a prompt that does not mention the key is
+a prompt nobody finds it on. The name is taken off the front of the
+answer, so a row accepted whole, a bare `rocket` and a pasted
+`:rocket:` are one answer.
+
+The whole of it is one
 GraphQL call beside the discussions — REST publishes reactions one note
 at a time, which would be a request per comment — and it fails quietly,
 because an instance too old for the field is a review drawn without
@@ -721,7 +736,8 @@ turns into a notification and into a picture. Keeping is the default
 because a review is written as a whole: a comment posted the moment it
 is typed cannot be taken back after reading the next file.
 
-`<C-b>` is there because a comment turns into a suggestion halfway
+`<C-b>` — in insert mode, which is the mode you are in when it happens
+— is there because a comment turns into a suggestion halfway
 through writing it — you get as far as "it should be" and notice that
 showing it is shorter than saying it. It drops GitLab's fence in under
 what you have already written, with the lines the comment is about

@@ -940,14 +940,18 @@ return {
       -- instead. This is that key, from in here, with what you have
       -- already written kept.
       --
-      -- `<C-b>` because the other two ways out have taken the letters
-      -- that mean anything, and because it is one of the few control
-      -- keys that does nothing at all in insert mode -- which is the
-      -- mode you are in when the sentence turns into a diff. Bound
-      -- only where there are lines to put in the block: a comment on
-      -- the merge request as a whole is about no code, and a comment
-      -- on the old side of the diff is about code the branch does not
-      -- have to patch.
+      -- `<C-b>`, and in insert mode alone. It is one of the few
+      -- control keys that does nothing at all there -- Vim dropped
+      -- `i_CTRL-B` years ago -- and insert is the mode you are in when
+      -- the sentence turns into a diff. In normal mode it is still
+      -- page-up, which is a key this window has no business taking:
+      -- the other two ways out took the control letters that mean
+      -- anything, and none of them is worth a motion.
+      --
+      -- Bound only where there are lines to put in the block: a
+      -- comment on the merge request as a whole is about no code, and
+      -- a comment on the old side of the diff is about code the branch
+      -- does not have to patch.
       suggest = "<C-b>",
     },
   },

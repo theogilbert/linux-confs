@@ -216,6 +216,12 @@ end
 --- not name a reaction with the id REST needs to delete it -- so the
 --- one note is asked over REST at the moment a reaction is taken back,
 --- which is rare and is one call.
+-- The last row of the picker below, and not a name: the list it is at
+-- the end of is short on purpose, and this is the way past it. A table
+-- rather than a string so it cannot be confused with an emoji called
+-- something unlucky.
+local MORE = {}
+
 local function react_to(thread, note, after)
   local mr = session.current
   if note.draft or thread.draft then
@@ -244,20 +250,16 @@ local function react_to(thread, note, after)
     end
   end
 
-  vim.ui.select(names, {
-    prompt = "react to " .. note.author,
-    format_item = function(name)
-      local mine = given[name] and given[name].mine
-      return ("%s  %s%s"):format(
-        threads.emoji(":" .. name .. ":"),
-        name,
-        mine and "  (yours — take it back)" or ""
-      )
-    end,
-  }, function(name)
-    if not name then
-      return
-    end
+  -- ...and the way past the list, which is short on purpose: the forge
+  -- takes any name gemoji has, this plugin can draw the 258 it knows,
+  -- and `vim.ui.select` is a numbered list for most people -- 258 rows
+  -- of one is a wall rather than a picker. So the ten are the picker
+  -- and this is the tail, on a prompt that completes over all of them.
+  table.insert(names, MORE)
+
+  --- Given, or -- where it is already yours -- taken back. One key and
+  --- one gesture, because GitLab has one.
+  local function toggle(name)
     if not (given[name] and given[name].mine) then
       glab.award(mr.root, mr.iid, note.id, name, function(data, err)
         if not data then
@@ -290,6 +292,52 @@ local function react_to(thread, note, after)
         session.refresh(after)
       end)
     end)
+  end
+
+  --- ...and the other 248, asked for by name.
+  ---
+  --- A prompt rather than a longer list, and the key that completes
+  --- named in it: `vim.fn.input` completes on `<Tab>` and says nothing
+  --- about it -- no menu, no hint -- so a prompt that does not mention
+  --- it is a prompt nobody finds it on.
+  local function ask()
+    vim.ui.input({
+      prompt = "react with (<Tab> completes): ",
+      completion = "customlist,v:lua.require'nemeton.emoji'.complete_name",
+    }, function(answer)
+      -- The name off the front of the row, so a candidate accepted
+      -- whole and a name typed over it are one answer -- and `:tada:`,
+      -- which is how it is written in a comment and so how it arrives
+      -- pasted from one.
+      local name = vim.trim(answer or ""):match("^:?([%w_+%-]+)")
+      if not name then
+        return
+      end
+      toggle(name)
+    end)
+  end
+
+  vim.ui.select(names, {
+    prompt = "react to " .. note.author,
+    format_item = function(name)
+      if name == MORE then
+        return "…  another emoji"
+      end
+      local mine = given[name] and given[name].mine
+      return ("%s  %s%s"):format(
+        threads.emoji(":" .. name .. ":"),
+        name,
+        mine and "  (yours — take it back)" or ""
+      )
+    end,
+  }, function(name)
+    if not name then
+      return
+    end
+    if name == MORE then
+      return ask()
+    end
+    toggle(name)
   end)
 end
 

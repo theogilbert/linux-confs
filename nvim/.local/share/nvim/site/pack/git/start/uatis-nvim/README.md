@@ -171,6 +171,14 @@ say. Nothing about the working tree moves it — a write, a pull, a rebase
 all leave `git diff <parent> <commit>` saying exactly what it said — so
 this review is the one thing here that never re-reads itself.
 
+`q` ends it too, and from anywhere in that tab — the list, the file you
+are reading, the file it deleted. Nothing else is ever in a tab
+`:UatisShow` opened: every window in it is this review, reading it is
+what the tab is for, and being three files deep should not mean finding
+the list again to press the key that means "done". In a tab you were
+already working in `q` stays yours — it records a macro — and `q` in the
+list means only the list.
+
 `<leader>gu` ends it and takes the tab with it. A review of your own
 branch running in another tab is left alone, even when the two are
 measured against the very same revision, which is what they are when the
@@ -179,7 +187,9 @@ to go here and say so; walking a branch a commit at a time is
 `<leader>gh`, inside a review of it. `show = { tab = false }` opens it in
 place instead, which does end whatever review that tab was holding.
 
-`q` in the list closes that window and nothing else: the review goes on,
+`q` in the list closes that window and nothing else — in a tab you
+opened yourself. (In one `:UatisShow` opened it ends the commit, above.)
+The review goes on,
 `]f` still steps it, and `<leader>gf` brings the window back to the same
 list. From the file beside it, `<leader>gf` puts the cursor in the list;
 from inside the list it puts the window away, which is the same thing `q`

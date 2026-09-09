@@ -183,6 +183,8 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
     [C  ]C          move within it
     <C-t>l          jump to the window the file is open in
     q               hide the window -- the review stays on
+                    (in a tab |:UatisShow| opened: close the commit,
+                    tab and all, from anywhere in that tab)
 <
 `g?` is the one worth remembering: the header carries it and nothing else,
 and it lists this list's keys, the ones a reviewed file binds, and the
@@ -360,6 +362,18 @@ that file holds the working tree, not the commit.
 `<leader>gA` (|:UatisShow|) is the same shape reached from outside a review --
 one commit, against its parent, in a tab of its own. Its header names the sha
 and stops: "against its parent" is the only thing it ever means.
+
+`q` ENDS ONE, from anywhere in the tab it opened -- the list, the file you
+are reading, the file it deleted. Nothing else is ever in that tab: every
+window in it is this review, reading it is what the tab is for, and a reader
+three files deep should not have to find the list again to press the key that
+means "done". The tab goes with it, since leaving an empty one behind is
+asking the reader to tidy up after a key that said "close".
+
+In a tab you were already working in, `q` is still yours -- it records a
+macro -- and `q` in the list still means only the list |uatis-mappings-pane|.
+There the review is ended with `<leader>gu`, which leaves your tab as it
+found it.
 
                                                         *uatis-commit-message*
 The header puts sha, date and author on one greyed row and the message under

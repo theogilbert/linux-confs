@@ -1144,16 +1144,35 @@ end
 --- makes a review something they cannot put down -- and `:UatisShow`
 --- opens in a tab of its own, so this is a keypress away rather than a
 --- race nobody hits.
+-- Assigned in the Lifetime section below, and named here because this
+-- is where it is first needed: what a pane lends to a buffer it does
+-- not own is decided after the comparison is on it, and the comparison
+-- is what `in_code_win` puts there.
+local lend_keys
+
 local function in_code_win(pane, win, fn)
+  --- The keys this pane lends, once whatever `fn` opened is open.
+  ---
+  --- Here rather than on `BufEnter`: a buffer is entered before the
+  --- view is drawn on it, and what is lent depends on whether it was.
+  local function lend()
+    if vim.api.nvim_win_is_valid(win) then
+      lend_keys(pane, vim.api.nvim_win_get_buf(win))
+    end
+  end
   if vim.api.nvim_get_current_tabpage() == pane.tab then
     vim.api.nvim_set_current_win(win)
-    return fn()
+    local out = fn()
+    lend()
+    return out
   end
   -- `win_call` rather than nothing at all: the file still opens, and the
   -- window it opens into is still the pane's -- `view_mod.open` reads
   -- the CURRENT buffer and window, which is what this makes true for as
   -- long as it takes.
-  return vim.api.nvim_win_call(win, fn)
+  local out = vim.api.nvim_win_call(win, fn)
+  lend()
+  return out
 end
 
 function M.goto_file(pane, idx)
@@ -1405,32 +1424,68 @@ end
 --- LIST, and the list is open -- so the keys work wherever you are and go
 --- back exactly as they were found when the pane closes.
 ---
+--- ...and `q` as well, in a tab this review opened for itself.
+---
 --- Only real file buffers: a terminal, a help page or another plugin's
 --- pane is somewhere you went for its own sake, and taking its keys would
 --- be rude.
-local function lend_keys(pane, bufnr)
+function lend_keys(pane, bufnr)
   if pane.lent[bufnr] ~= nil
     or bufnr == pane.list_buf
-    or not vim.api.nvim_buf_is_valid(bufnr)
-    or vim.bo[bufnr].buftype ~= ""
-    or view_mod.get(bufnr) ~= nil then -- the view has its own
+    or not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  -- A real file, or a buffer this review has drawn a comparison on --
+  -- which in a tab of its own is most of them: `:UatisShow` reads one
+  -- commit out of `git` rather than off disk, so the file you are
+  -- looking at there is a scratch buffer holding that commit's copy,
+  -- and the file it deleted is a scratch buffer holding nothing.
+  -- Anything else in the tab -- a terminal, a help page, another
+  -- plugin's window -- is somewhere you went for its own sake, and
+  -- taking its keys would be rude.
+  if vim.bo[bufnr].buftype ~= "" and view_mod.get(bufnr) == nil then
     return
   end
   local k = config.keys.pane
-  pane.lent[bufnr] = keys.apply(bufnr, "n", {
-    { lhs = k.file_next, rhs = function() M.step_file(pane, 1) end,
-      opts = { desc = "uatis: next changed file" } },
-    { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
-      opts = { desc = "uatis: previous changed file" } },
-    { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
-      opts = { desc = "uatis: the review one commit forward" } },
-    { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
-      opts = { desc = "uatis: the review one commit back" } },
-    -- The toggle is NOT lent. This one is a bare `C` -- affordable in
-    -- the list, which is a scratch buffer of rows, and not in somebody
-    -- else's file, where it is `c$`. `keys.view.commit_view` is the way
-    -- in from anywhere that is a file.
-  })
+  local lend = {}
+  -- The view binds the walk itself, so a buffer it has annotated is not
+  -- lent it too: two owners of one mapping, and whichever gave it back
+  -- second would put the other's back.
+  if view_mod.get(bufnr) == nil then
+    vim.list_extend(lend, {
+      { lhs = k.file_next, rhs = function() M.step_file(pane, 1) end,
+        opts = { desc = "uatis: next changed file" } },
+      { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
+        opts = { desc = "uatis: previous changed file" } },
+      { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
+        opts = { desc = "uatis: the review one commit forward" } },
+      { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
+        opts = { desc = "uatis: the review one commit back" } },
+      -- The toggle is NOT lent. This one is a bare `C` -- affordable in
+      -- the list, which is a scratch buffer of rows, and not in somebody
+      -- else's file, where it is `c$`. `keys.view.commit_view` is the way
+      -- in from anywhere that is a file.
+    })
+  end
+  -- `q` closes a tab this review opened, from anywhere in it.
+  --
+  -- Only from a tab it owns, and that is the whole of the argument. A
+  -- bare `q` in somebody's own file is `q` taken away from recording a
+  -- macro, which is not a key to borrow in a tab they were already
+  -- working in -- there `q` stays theirs and the list's own `q` puts
+  -- the list down. But `:UatisShow` opens a tab for one commit and
+  -- nothing else is ever in it: every window in it is this review,
+  -- reading it is what the tab is for, and a reader who has walked
+  -- three files deep into it should not have to find the list again to
+  -- press the key that means "done".
+  if pane.owns_tab and k.quit and k.quit ~= "" then
+    table.insert(lend, { lhs = k.quit, rhs = function() M.close(pane) end,
+      opts = { desc = "uatis: close this commit" } })
+  end
+  if #lend == 0 then
+    return
+  end
+  pane.lent[bufnr] = keys.apply(bufnr, "n", lend)
 end
 
 local function return_keys(pane)
@@ -1564,8 +1619,18 @@ local function setup_keymaps(pane)
         vim.api.nvim_set_current_win(win)
       end
     end, opts = { desc = "uatis: focus the file" } },
-    { lhs = k.quit, rhs = function() M.hide(pane) end,
-      opts = { desc = "uatis: close the changed-file list" } },
+    -- In a tab this review opened, `q` means the tab: nothing else was
+    -- ever in it, and putting the list down would leave an empty tab
+    -- and a review with nothing on the screen. Anywhere else it means
+    -- this window -- the comparison in the file beside it is still
+    -- open, and ending the review is `<leader>gu`.
+    { lhs = k.quit, rhs = function()
+      if pane.owns_tab then
+        M.close(pane)
+      else
+        M.hide(pane)
+      end
+    end, opts = { desc = "uatis: close the changed-file list" } },
     -- The key that put this window up, taking it down again. Opening
     -- focuses the list, so without this the second press of a toggle
     -- would land in the one buffer that had nothing bound to it. Routed
@@ -1688,15 +1753,13 @@ local function setup_watchers(pane)
       end
       if not view_mod.get(ev.buf) then
         -- A file this review lists is annotated on arrival, however you
-        -- arrived. It binds `]f`/`[f` itself, so it is not lent them too:
-        -- two owners of one mapping, and whichever gave it back second
-        -- would put the other's back.
-        if not follow(pane, ev.buf, vim.api.nvim_get_current_win()) then
-          -- No comparison on this buffer -- but the list is still open,
-          -- and stepping it is about the list.
-          lend_keys(pane, ev.buf)
-        end
+        -- arrived.
+        follow(pane, ev.buf, vim.api.nvim_get_current_win())
       end
+      -- Either way there are keys to lend: the walk, where the view has
+      -- not bound it itself, and `q` in a tab this review opened. What
+      -- goes to which buffer is `lend_keys`'s to decide.
+      lend_keys(pane, ev.buf)
       -- Either way the list says where you are, and a file it lists is
       -- one it lists whether or not it has just been annotated: the row
       -- is moved to for the buffer, not for the attaching.

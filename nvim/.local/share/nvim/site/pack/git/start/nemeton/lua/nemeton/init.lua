@@ -80,6 +80,16 @@ function M.complete_open(arg_lead)
   end, candidates)
 end
 
+--- The same rows, for the window that asks |nemeton-prompt|: the whole
+--- line is the word, since what is being typed is an answer and not a
+--- word in a sentence.
+function M.open_omnifunc(findstart, base)
+  if findstart == 1 then
+    return 0
+  end
+  return M.complete_open(base or "")
+end
+
 --- Which merge request to open, asked rather than typed.
 ---
 --- `:Nemeton open 42` is what you type when you know the number. This
@@ -118,14 +128,18 @@ function M.ask_open(opts)
     for _, mr in ipairs(mrs) do
       table.insert(candidates, ("%d  %s"):format(mr.iid, mr.title or ""))
     end
-    -- The key that completes, in the prompt. `vim.fn.input` completes
-    -- on `<Tab>` and says nothing about it: there is no menu and no
-    -- hint, so a prompt that does not mention it is a prompt nobody
-    -- discovers it on. It is the whole reason this asks rather than
-    -- opening the queue.
-    vim.ui.input({
-      prompt = "open merge request (<Tab> completes): ",
-      completion = "customlist,v:lua.require'nemeton'.complete_open",
+    -- A window of this plugin's own and not `vim.ui.input`
+    -- |nemeton-prompt|: the list is the whole reason this asks rather
+    -- than opening the queue, and `completion` is the half of that
+    -- hook's contract half its replacements quietly drop. Here the menu
+    -- is up before a key is pressed -- which for "which one was the
+    -- proxy one?" is the question already answered.
+    require("nemeton.prompt").open({
+      title = "open merge request",
+      omnifunc = "v:lua.require'nemeton'.open_omnifunc",
+      items = function(line)
+        return M.open_omnifunc(0, line)
+      end,
     }, function(answer)
       answer = vim.trim(answer or "")
       local iid = tonumber(answer:match("^!?(%d+)"))

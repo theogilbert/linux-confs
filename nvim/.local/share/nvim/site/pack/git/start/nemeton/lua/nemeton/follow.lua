@@ -106,13 +106,37 @@ local function forge()
   return url:match("^(https?://[^/]+)"), project
 end
 
+--- The branch a relative link is measured against.
+---
+--- `main` where there is no review open, which is only reached by a
+--- caller asking about a link it cannot have read anywhere.
+local function branch()
+  local session = require("nemeton.session")
+  return (session.current and session.current.target_branch) or "main"
+end
+
 --- Where a reference points, as a URL, or nil for one that has nowhere
 --- to point on this forge.
 ---
 --- A link written in a comment is followed as it was written, except
---- for the ones GitLab writes itself: a reference to another merge
+--- for the ones that were never a URL: a reference to another merge
 --- request on the same project is a path and not a URL, and a path
 --- opened in a browser is a file that is not there.
+---
+--- What a path is measured from is the forge's decision and not this
+--- one, and the forge measures three of them differently. A path from
+--- the root is a page on the forge and is one. An upload -- which is
+--- what GitLab writes when a file is dragged into a comment -- is
+--- served off the project rather than off the root. And a link that is
+--- relative to nothing at all is relative to the *repository*: GitLab
+--- sends a reader who clicks `doc/design.md` to that file on the
+--- branch, not to a page of that name on the forge, which is the one
+--- this used to hand over and it was always a 404.
+---
+--- Against the target branch, where GitLab would use the project's
+--- default. They are the same branch on all but a merge request
+--- stacked on another one -- and on that one, the file as the branch
+--- under review has it is the file being talked about.
 function M.href(ref)
   if not ref then
     return nil
@@ -125,7 +149,20 @@ function M.href(ref)
     if href:match("^https?://") then
       return href
     end
-    return host and (host .. (href:sub(1, 1) == "/" and href or "/" .. href)) or nil
+    -- A fragment on its own is somewhere on the page it was written on,
+    -- which is this merge request.
+    if href:sub(1, 1) == "#" then
+      local session = require("nemeton.session")
+      local page = session.current and session.current.web_url
+      return page and (page .. href) or nil
+    end
+    if href:match("^/uploads/") then
+      return project and (project .. href) or nil
+    end
+    if href:sub(1, 1) == "/" then
+      return host and (host .. href) or nil
+    end
+    return project and ("%s/-/blob/%s/%s"):format(project, branch(), href) or nil
   end
   if ref.kind == "commit" then
     return project and (project .. "/-/commit/" .. ref.text) or nil

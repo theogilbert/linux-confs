@@ -306,6 +306,20 @@ local function ground()
   end
   band("NemetonSuggestNew", "NemetonAdded")
   band("NemetonSuggestOld", "NemetonRemoved")
+
+  -- ...and the other two verdicts the quotation carries. `NemetonWas`
+  -- above is the line that is gone; a line that has been edited since
+  -- and a line that has arrived since are not the same news, and a
+  -- reader who has to work out which from the words has been told
+  -- nothing the words did not already say. The same three colours a
+  -- diff is read in everywhere else, at the weight of a band, because
+  -- that is the vocabulary already in the reader's eye.
+  --
+  -- A line that has not moved gets no band at all: the block is mostly
+  -- those, and a ground under every line of it says "this is a
+  -- quotation" at the cost of saying nothing about any one line.
+  band("NemetonWasChanged", "NemetonChanged")
+  band("NemetonWasAdded", "NemetonAdded")
 end
 
 -- The groups that are a ground rather than a colour of text: the code a
@@ -315,6 +329,8 @@ end
 -- `M.shade_lines`.
 local OWN_GROUND = {
   NemetonWas = true,
+  NemetonWasChanged = true,
+  NemetonWasAdded = true,
   NemetonSuggestNew = true,
   NemetonSuggestOld = true,
   NemetonHead = true,
@@ -548,6 +564,7 @@ function M.setup_highlights()
   -- ships that were colours of text all along.
   link("NemetonAdded", "Added")
   link("NemetonRemoved", "Removed")
+  link("NemetonChanged", "Changed")
   link("NemetonOk", "DiagnosticOk")
   link("NemetonBad", "DiagnosticError")
   link("NemetonBusy", "DiagnosticWarn")

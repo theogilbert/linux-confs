@@ -850,12 +850,48 @@ That list is short on purpose and it is not the limit. `vim.ui.select`
 is a numbered list unless you have replaced it, and a numbered list of
 every name |nemeton-emoji| knows is a wall rather than a picker -- so
 the names you actually react with are the picker, and its last row,
-"another emoji", is a prompt that completes over all of them. `<Tab>`
-completes there, and the prompt says so: `vim.fn.input` puts up no menu
-and gives no hint, so a prompt that does not mention the key is a
-prompt nobody finds it on. The name is taken off the front of whatever
-comes back, so a candidate accepted whole, a bare `rocket` and a pasted
-`:rocket:` are one answer.
+"another emoji", is a prompt that completes over all of them.
+                                                              *nemeton-prompt*
+That prompt is a window of this plugin's own and not `vim.ui.input`. It
+is the one place here that is nothing *but* completion, and `completion`
+is the half of the `input` contract that half its replacements quietly
+drop: a prompt that says "<Tab> completes" is then a prompt where <Tab>
+does nothing, a reader who typed `thu` at it gets no list and no reason,
+and there is no way to ask an implementation whether it kept the promise
+or to tell afterwards -- what comes back is a string either way.
+
+So: a one-line float with the names behind it and the menu coming up as
+it is typed, each with its picture beside it. Handed to the editor with
+`complete()` rather than typed at it with `<C-x><C-o>`: those are two
+keys that mean "complete" only in insert mode -- read anywhere else they
+are "take one off the number under the cursor" and "open a line below
+and start typing" -- and a key put into the typeahead is read whenever
+the editor gets round to it, which may be after this window has closed
+and in whatever buffer was under it. The buffer's `omnifunc` is set all
+the same, for the reader who reaches for `<C-x><C-o>` and for anyone
+with an engine to point at it. The whole list is
+up before a key is pressed, which is the answer to "like what?". `<C-n>`
+and `<C-p>` walk it, `<CR>` takes the line as it stands -- a name chosen
+out of the menu is already on the line, so there is one rule and not two
+-- and `<Esc>` dismisses it, which is a different thing from answering
+with nothing. `completeopt` is set globally where the editor cannot hold
+it for one buffer, and put back on the way out: this window is open for
+one word and closes the moment the cursor leaves it, so unlike the
+composer there is no other buffer for it to be wrong in.
+
+A name this plugin knows is the reaction; a prefix only one name answers
+is that name, since the menu said so as it was typed; and anything else
+goes to the forge as it was typed, gemoji being eighteen hundred names
+and this knowing two hundred and fifty of them. The name is taken off
+the front of whatever comes back, so a candidate chosen out of the menu,
+a bare `rocket` and a pasted `:rocket:` are one answer.
+
+None of the pictures carry U+FE0F, the variation selector that asks for
+the coloured emoji rather than the plain glyph: `heart` is drawn as the
+one-cell `❤`. With the selector Neovim counts two columns and a
+terminal drawing one leaves a cell nobody wrote, which puts the border
+of every float that sizes itself to its own text through the last
+character of a line.
 
 The names of the people who gave them are not drawn. That is a hover on
 the web page and a line of usernames in here, and a review is read for
@@ -1008,6 +1044,15 @@ Five kinds of thing, and one setting each in `comments.follow`:
     path      a link written as one  a page on this forge
     url       a link to a page       wherever it points
 
+A path is measured from wherever the forge measures it from, which is
+not one place. `/group/proj/-/issues/3` is from the root of the forge.
+`/uploads/...` -- what GitLab writes when a file is dragged into a
+comment -- is served off the project. And a link relative to nothing at
+all is relative to the *repository*: click `doc/design.md` on the page
+and GitLab takes you to that file on the target branch, not to a page of
+that name on the forge. A bare `#anchor` is somewhere on the merge
+request's own page.
+
 `true` is the default for all five. For four of them it is the quietest
 thing that is still an answer: it says what is under the cursor and puts
 the link on the clipboard. Nothing is opened and no window moves -- a
@@ -1139,33 +1184,50 @@ markdown draws the fence as a block of raw text and has nothing to say
 about what is in it.
 
                                                                *nemeton-drift*
-WHEN THE CODE HAS MOVED ON. Someone pushes while you are reading, or you
-edit the file you are reviewing, and a thread is left sitting on a line
-that no longer says what it said. Wherever a conversation is drawn --
-in the pane, in the peek float, in the every-thread window -- it then
-carries the code it was written against, above the first note, on a
-band of its own |hl-NemetonWas|. Nothing is written in front
-of it: it is a quotation of the file, the background says so, and a
-label saying it again is a word to read before every line. A thread
-written across several lines carries all of them, and the band runs the
-width of the editor under every one, from the rail out -- the rail is
-on the band as well, keeping only its colour, which is what says which
-conversation the quotation is inside. In the two windows that are real
-buffers the band is as wide as the widest line of it: there is no
-editor-wide ground there to match.
+THE CODE IT IS ABOUT. Wherever a conversation is drawn -- in the pane,
+in the peek float, in the every-thread window -- it quotes the code it
+is about above the first note: the lines it is anchored to, and
+`comments.context` lines above them. Two by default. A comment on one
+line is a comment about a line that had something before it, and the
+window where that matters most is the one read with no file open at
+all. Nothing is written in front of the quotation: it is a quotation of
+the file, and a label saying so is a word to read before every line.
+The rail runs down its left, keeping only its colour, which is what
+says which conversation the quotation is inside.
 
-The pane (|nemeton-pane-window|) draws that band whether the code has
-moved or not, and quotes the lines as they now are where it has not.
-The floats are drawn over the file and the reader can see the line
-underneath them; the pane is read beside it, and the line a comment is
-about is the one thing a reader in there cannot look at without looking
-away from what they are reading.
+What has become of each of those lines is drawn on the line, not on the
+block. A comment is half of a pair and the code is the half that moves
+-- someone pushes while you are reading, or you edit the file you are
+reviewing -- and the question a reader has is whether the thing being
+talked about is still there:
+
+  unchanged      drawn plain, which is most of them
+  edited since   a yellow band            |hl-NemetonWasChanged|
+  arrived since  a green band             |hl-NemetonWasAdded|
+  gone since     a red band               |hl-NemetonWas|, and the
+                 line quoted from the revision that still had it
+
+The three colours a diff is read in everywhere else, one line at a
+time. A band runs the width of the editor from the rail out; in the two
+windows that are real buffers it is as wide as the widest line of the
+block, there being no editor-wide ground there to match.
+
+The pane (|nemeton-pane-window|) draws the quotation whether anything
+has changed or not. The floats are drawn over the file and the reader
+can see the line underneath them; the pane is read beside it, and the
+line a comment is about is the one thing a reader in there cannot look
+at without looking away from what they are reading.
 
 That code is read out of the checkout with `git show`, not from the
 forge: the commit the note was written against is one this repository
 already has. A commit that is not here -- force-pushed away -- is asked
-about once and then left alone, and the thread is drawn as it always
-was.
+about once and then left alone, and the quotation is drawn plain, since
+there is nothing to compare it against.
+
+The same revision is the one a suggestion's red half is read out of:
+what it would replace is what it was written against, and a suggestion
+posted last week against a line edited since would otherwise draw the
+edit as the thing it takes away.
 
 Anchoring: GitLab only takes a comment on a line the change touches.
 Nemeton knows which lines those are, and says so before opening a
@@ -1223,7 +1285,7 @@ COMMENTS                                             *nemeton-config-comments*
       sign_resolved = "",   -- one that is settled
       sign_draft = "",      -- one of yours, not sent yet
       sign_span = "▎",       -- the lines the thread being read covers
-      reading_ground = 0.6,  -- ...and the band under those same lines
+      reading_ground = 2,    -- ...and the band under those same lines
       virt_text = false,     -- the first line of it at end of line
       expand = "right",      -- which side the pane opens on: "right" or "bottom"
       expand_anchor = "window", -- ...a split of it, or of the editor
@@ -1259,7 +1321,8 @@ COMMENTS                                             *nemeton-config-comments*
       reactions = true,      -- the emoji on a note, under it
       reaction_names = {...},-- ...and which ones `+` offers
       wrap = 80,             -- the widest a comment is drawn
-      pane_wrap = false,     -- ...and whether the pane wraps at all
+      pane_wrap = false,     -- ...and whether the pane wraps code too
+      context = 2,           -- lines quoted above the ones a thread is on
       peek_height = 20,
     }
 <
@@ -1296,17 +1359,19 @@ prose set across the whole of a wide editor is prose the eye loses its
 place in on the way back to the next line. Set it to `false` to wrap to
 the window and nothing narrower.
 
-The pane does not, unless you ask it to. `pane_wrap` is off by default:
-it is a real window with a real buffer, so a line too long for it is a
-line to scroll sideways to rather than a line lost -- and unwrapped, a
-comment keeps the shape it was written in. That is worth more than it
-sounds. A fenced block, a ruled table and the two halves of a suggestion
-all mean what they mean by their columns, and none of them survive being
-folded at the edge of a sixty-column pane. The other half of it is the
-rail: a wrapped line comes back at column zero, outside it, so the one
-part of the block that says where the thread starts and stops goes
-missing from exactly the lines that needed it. `pane_wrap = true` wraps
-to the pane's width and accepts both.
+In the pane the words always wrap, and `pane_wrap` is about the code.
+It is off by default: the pane is a real window with a real buffer, so
+a line too long for it is a line to scroll sideways to rather than a
+line lost -- and a fenced block, a ruled table and the two halves of a
+suggestion all mean what they mean by their columns, none of which
+survives being folded at the edge of a sixty-column pane. The other
+half of it is the rail: a wrapped line comes back at column zero,
+outside it, so the one part of the block that says where the thread
+starts and stops goes missing from exactly the lines that needed it.
+Neither argument is about prose -- nobody scrolls sideways to read
+English, and a sentence broken at a space is the same sentence -- so a
+comment is wrapped either way. `pane_wrap = true` wraps the code with
+it.
 
 `head_commit` puts the commit a note was written against in its head,
 after the date: eight digits, the ones GitLab itself prints. The other
@@ -1600,6 +1665,7 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonBusy           running, pending, not yet       DiagnosticWarn
     NemetonAdded          a line the change adds          Added
     NemetonRemoved        one it takes away               Removed
+    NemetonChanged        one it edits                    Changed
     NemetonHint           the key hints across a window   Comment
     NemetonKey            the key itself, inside a hint   Special
 
@@ -1663,12 +1729,31 @@ on a red band are a line you have to work at to read. Without
 'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
 as it used to be.
 
+                                                  *hl-NemetonWasChanged*
+                                                    *hl-NemetonWasAdded*
+`NemetonWasChanged` and `NemetonWasAdded` are the other two verdicts a
+quoted line can carry |nemeton-drift|: the line edited since the
+comment was written, and the line that has arrived since. Built the
+same way as the two halves of a suggestion, out of |hl-NemetonChanged|
+and `NemetonAdded`. A line that has not moved carries no band at
+all: the block is mostly those, and a ground under every line of it
+says "this is a quotation" at the cost of saying anything about any one
+line.
+
+                                                      *hl-NemetonChanged*
+`NemetonChanged` is the colour a changed line is drawn in, linked to
+`Changed` -- the third of the trio Neovim ships beside `Added` and
+`Removed`, and a colour of text rather than a background, for the same
+reason those two are.
+
                                                          *hl-NemetonReading*
 `NemetonReading` is the band under the lines of code the conversation
 in the pane is about |nemeton-reading|. The same ground the
 conversation itself is drawn on -- the two are one block read in two
-windows -- at `comments.reading_ground` of its strength, because this
-one is under code that is being read rather than under prose.
+windows -- at `comments.reading_ground` of its strength, which is more
+than the pane's own and not less: the band in there holds a block
+together on a window that is nothing else, and this one has to be found
+in a screenful of code that all looks like code.
 
                                                         *hl-NemetonReaction*
                                                     *hl-NemetonReactionMine*
@@ -1747,8 +1832,8 @@ carry it: the code inside a suggestion is drawn in the colours of its
 own language |nemeton-syntax|, and a keyword is the colour a keyword is
 on both halves of the diff. A background is the one part of a line that
 syntax highlighting does not use. Without 'termguicolors' there is
-nothing to mix, both fall back to |hl-NemetonAdded| and
-|hl-NemetonRemoved| as text, and the line stays on the conversation's
+nothing to mix, both fall back to `NemetonAdded` and
+`NemetonRemoved` as text, and the line stays on the conversation's
 own ground.
 
                                                             *hl-NemetonInline*

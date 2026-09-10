@@ -121,10 +121,17 @@ return {
     -- thread about a single line as well.
     --
     -- A share rather than a number, because it is the same colour at a
-    -- different strength: this one is under *code*, which is read, and
-    -- a band there has to be findable without being in the way. `false`
-    -- for no band, and the gutter alone.
-    reading_ground = 0.6,
+    -- different strength -- and *stronger* than the ground next door
+    -- rather than weaker, which is the way round it took a while to
+    -- see. The band in the pane is under prose, on a window that is
+    -- nothing but this conversation, and it has only to say "these
+    -- lines belong together". This one is a needle: it is somewhere in
+    -- a screenful of code that all looks like code, and the question it
+    -- answers -- "which line is this about?" -- is asked by a reader
+    -- who is looking for it. A share of a twentieth of the way off the
+    -- page is a band nobody finds. `false` for no band, and the gutter
+    -- alone.
+    reading_ground = 2,
 
     -- ...and a comment you have written and not sent yet. A pencil
     -- rather than a third bubble: an unsent comment is not a state of
@@ -591,6 +598,20 @@ return {
     -- needed it most. `true` to wrap to the pane's width (and to
     -- `wrap` above, whichever is narrower) and accept that.
     pane_wrap = false,
+
+    -- How many lines above the ones a thread is anchored to are quoted
+    -- with it.
+    --
+    -- A comment on one line is a comment about a line that had
+    -- something before it: the call the argument is passed to, the
+    -- `if` the branch belongs to, the name of the function all of it
+    -- is inside. Quoted on its own, that line is a string with no
+    -- sentence around it -- and the window where this matters most is
+    -- the one read with no file open at all, where there is nothing
+    -- else to look at. Two is enough to say where you are without
+    -- turning a two-line comment into a page of code. 0 for the
+    -- anchored lines and nothing else.
+    context = 2,
 
     -- Height cap on the peek float, in lines.
     peek_height = 20,

@@ -658,6 +658,17 @@ local function fit(s, width)
   return out
 end
 
+-- What a line of the quoted code is drawn on, by what has become of
+-- it. Nothing for the line that has not moved, which is most of them:
+-- a ground under every line of the block says "this is a quotation" at
+-- the cost of saying anything about any one line, and the reader's
+-- question is about one line.
+local WAS = {
+  gone = "NemetonWas",
+  changed = "NemetonWasChanged",
+  added = "NemetonWasAdded",
+}
+
 --- `text`, cut into lines no wider than `width` columns.
 ---
 --- Because a comment that runs off the right-hand edge cannot be read
@@ -760,17 +771,25 @@ end
 --- rather than in one colour end to end; missing, it is drawn as it
 --- always was. `nemeton.syntax` is what builds one.
 ---
+--- `opts.original` -- the same, as the revision the thread was written
+--- against had it, for the half of a suggestion that is what it would
+--- take away. `opts.replaced` where there is none.
+---
 --- `opts.was` -- the code the thread is about, drawn above the first
---- note. Which revision of it is the caller's to decide: the pane
---- passes the lines as they are now and lets `session.was` override
---- them where the thread was written against something else, and the
---- floats -- drawn over the file, where the reader can already see it
---- -- pass only that override.
+--- note. A list of strings, or of `{ text = ..., state = ... }` where
+--- the caller knows what has become of each line: "changed", "added",
+--- "gone", or nothing at all for the line that has not moved.
+--- `session.quoted` is what works those out.
 ---
 --- `opts.width` -- how many columns the caller has to draw into, rail
 --- included. Given, the notes are wrapped to fit; missing, they are
 --- returned as they were written, which is what the one-line-per-thread
 --- index wants.
+---
+--- `opts.wrap_code = false` -- keep the blocks whose meaning is in
+--- their columns at the width they were written, wrapping only the
+--- prose. For the caller drawing into a real window, where a line too
+--- long to fit is scrolled to rather than lost.
 function M.render(thread, opts)
   opts = opts or {}
   local out = {}
@@ -782,6 +801,19 @@ function M.render(thread, opts)
   local limit = opts.width
   if limit and config.comments.wrap then
     limit = math.min(limit, config.comments.wrap)
+  end
+  -- ...and the width a line of *code* may reach, which is not the same
+  -- question. A sentence broken at a space is the same sentence; a
+  -- fence, a ruled table and the two halves of a suggestion mean what
+  -- they mean by their columns, and folding one at the edge of a narrow
+  -- window destroys the thing being shown. So a caller with somewhere
+  -- for a long line to go -- a real window, which can be scrolled
+  -- sideways -- says `wrap_code = false` and gets the code as it was
+  -- written while the prose still fits. `false` rather than nil,
+  -- because nil is the caller that did not ask.
+  local code = limit
+  if opts.wrap_code == false then
+    code = false
   end
   -- The rail is the one part of a thread that is a colour before it is
   -- anything else -- it runs the height of the block and carries no
@@ -817,10 +849,16 @@ function M.render(thread, opts)
   --- suggestion: the language decides the colour of the words and the
   --- band decides which half of the diff they are. Without one -- every
   --- other line of a thread -- `hl` is the whole of the answer.
-  local function body(lead, text, hl, sign, runs, band)
+  --- `cap` is the width to break at, for the callers whose lines are
+  --- not prose: absent is the prose limit, and `false` is no breaking
+  --- at all.
+  local function body(lead, text, hl, sign, runs, band, cap)
     sign = sign or ""
     local pad = (" "):rep(vim.fn.strdisplaywidth(sign))
-    local room = limit and (limit - vim.fn.strdisplaywidth(lead) - #pad)
+    if cap == nil then
+      cap = limit
+    end
+    local room = cap and (cap - vim.fn.strdisplaywidth(lead) - #pad)
     -- Where in `text` the piece being drawn started. A wrapped line is
     -- pieces of the line it came from with the spaces between them
     -- gone, and the colours were worked out against the whole of it.
@@ -906,27 +944,34 @@ function M.render(thread, opts)
   --- Every line padded to the same width inside a rule, and the
   --- suggestion is a thing on the page with a shape.
   local function suggestion(lead, block)
-    local gone = opts.replaced and opts.replaced(block.above, block.below) or {}
+    -- What the suggestion would take away, as the revision it was
+    -- written against had it. The file as it is now is the fallback and
+    -- not the answer: a suggestion posted last week against a line
+    -- edited since would otherwise draw the edit as the thing it
+    -- replaces, and show a diff that never happened.
+    local gone = (opts.original and opts.original(block.above, block.below))
+      or (opts.replaced and opts.replaced(block.above, block.below))
+      or {}
     local gone_colours = opts.paint and opts.paint(gone) or {}
     local new_colours = opts.paint and opts.paint(block.lines) or {}
     if not config.comments.suggest_box then
       -- What it was before there was a box: the fence as GitLab wrote
       -- it, and the two halves under it.
-      body(lead, block.fence, "NemetonMeta")
+      body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
       for j, l in ipairs(gone) do
-        body(lead, l, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld")
+        body(lead, l, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld", code)
       end
       for j, l in ipairs(block.lines) do
-        body(lead, l, "NemetonAdded", "+ ", new_colours[j], "NemetonSuggestNew")
+        body(lead, l, "NemetonAdded", "+ ", new_colours[j], "NemetonSuggestNew", code)
       end
       if block.close then
-        body(lead, block.close, "NemetonMeta")
+        body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
       end
       return
     end
 
     -- Two columns of the box and two of the sign in front of the code.
-    local room = limit and (limit - vim.fn.strdisplaywidth(lead) - 4)
+    local room = code and (code - vim.fn.strdisplaywidth(lead) - 4)
     local rows, inner = {}, 0
     local function half(lines, colours, sign, hl, band)
       for j, l in ipairs(lines) do
@@ -1032,7 +1077,7 @@ function M.render(thread, opts)
     -- Three columns per cell that are not the cell: a rule and the
     -- space on either side of the words, plus the rule that closes the
     -- last one.
-    local room = limit and (limit - vim.fn.strdisplaywidth(lead))
+    local room = code and (code - vim.fn.strdisplaywidth(lead))
     if room then
       local total = 1
       for c = 1, columns do
@@ -1121,19 +1166,30 @@ function M.render(thread, opts)
   if opts.was and #opts.was > 0 then
     -- One space inside the band on each side: text against the edge of
     -- a colour reads as text that has been cut off.
-    local room = limit and (limit - vim.fn.strdisplaywidth(rail[1]) - 2)
+    local room = code and (code - vim.fn.strdisplaywidth(rail[1]) - 2)
     local band, widest = {}, 0
     for _, line in ipairs(opts.was) do
-      for _, piece in ipairs(wrap(line, room)) do
-        table.insert(band, piece)
+      -- A line of the quotation is its text and, where the caller
+      -- worked one out, what has happened to it since the comment was
+      -- written. A plain string is the caller that had nothing to
+      -- compare against.
+      local text = type(line) == "table" and line.text or line
+      local hl = WAS[type(line) == "table" and line.state or nil]
+      for _, piece in ipairs(wrap(text, room)) do
+        table.insert(band, { piece, hl })
         widest = math.max(widest, vim.fn.strdisplaywidth(piece))
       end
     end
-    for _, piece in ipairs(band) do
-      local pad = widest - vim.fn.strdisplaywidth(piece) + 1
+    for _, entry in ipairs(band) do
+      local piece, hl = entry[1], entry[2]
+      -- Padded to the width of the longest, so a band is a block rather
+      -- than a ragged edge -- and only where there is a band: a line
+      -- with nothing to say about it is text, and trailing spaces on
+      -- text are trailing spaces.
+      local pad = hl and (widest - vim.fn.strdisplaywidth(piece) + 1) or 0
       table.insert(out, {
         { rail[1], rail[2] },
-        { " " .. piece .. (" "):rep(pad), "NemetonWas" },
+        { " " .. piece .. (" "):rep(pad), hl or "NemetonThread" },
       })
     end
   end
@@ -1311,12 +1367,12 @@ function M.render(thread, opts)
         -- their code starts and stops. Nothing rendered inside it: code
         -- that says `:tada:` says `:tada:`, and code that says
         -- `[a](b)` says `[a](b)`.
-        body(lead, block.fence, "NemetonMeta")
+        body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
         for _, l in ipairs(block.lines) do
-          body(lead, l, body_hl)
+          body(lead, l, body_hl, nil, nil, nil, code)
         end
         if block.close then
-          body(lead, block.close, "NemetonMeta")
+          body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
         end
       elseif block.kind == "table" then
         tabled(lead, block)

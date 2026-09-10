@@ -305,14 +305,15 @@ function M.render()
     if paint and syntax.prose(bufnr, row - 1, lang) then
       paint = nil
     end
-    -- Wrapped to the pane rather than to the window the code is in --
-    -- where it is wrapped at all. `comments.pane_wrap` off is no width
-    -- at all: the notes come back as they were written, the window has
-    -- `wrap` off to match, and what runs past the edge is scrolled to.
-    -- A wrapped line comes back at column zero, outside the rail, and a
-    -- rail that reaches half of its own thread has stopped being an
-    -- edge.
-    local width = config.comments.pane_wrap and vim.api.nvim_win_get_width(M.win) or nil
+    -- Wrapped to the pane rather than to the window the code is in.
+    -- Prose always: a sentence that runs off the right-hand edge of a
+    -- sixty-column pane is a sentence read by scrolling, and nobody
+    -- scrolls sideways to read English. `comments.pane_wrap` is the
+    -- other half -- the fences, the ruled tables and the two halves of
+    -- a suggestion, whose meaning is in their columns. Off, they come
+    -- back as they were written and what runs past the edge is
+    -- scrolled to.
+    local width = vim.api.nvim_win_get_width(M.win)
 
     local span = 0
     for i, t in ipairs(shown) do
@@ -325,22 +326,24 @@ function M.render()
       end
       span = math.max(span, threads.span(t))
       -- The code the comment is about, above the first word anybody
-      -- said, whether or not it has moved since.
+      -- said, whether or not it has moved since. Always drawn here,
+      -- unlike in the floats: the pane is read beside the file rather
+      -- than under the line, and the line is the one thing a reader in
+      -- this window cannot see without looking away from it.
       --
-      -- `session.was` answers the narrower question -- what the thread
-      -- was written against, when that is not what is under it now --
-      -- and out in the floats that is the only case worth the room.
-      -- Here it is not: the pane is read beside the file rather than
-      -- under the line, and the line is the one thing a reader in this
-      -- window cannot see without looking away from it. So the
-      -- quotation is always drawn, and `was` only decides which
-      -- revision of it: the one that was commented on, or the one
-      -- that is there now.
-      local here = replaced(threads.span(t), 0)
+      -- The lines it is anchored to and the couple above them, which
+      -- is what makes a quotation of one line a sentence rather than a
+      -- fragment; `session.quoted` says what has become of each.
+      local context = config.comments.context or 0
+      local here = replaced(threads.span(t) + context, 0)
       local drawn = threads.render(t, {
         replaced = replaced,
+        original = function(above, below)
+          return session.original(t, above, below)
+        end,
         width = width,
-        was = session.was(t, here) or here,
+        wrap_code = config.comments.pane_wrap and true or false,
+        was = session.quoted(t, here, context),
         paint = paint,
       })
       for _, line in ipairs(drawn) do
@@ -378,7 +381,11 @@ function M.render()
     }
   end
 
-  vim.wo[M.win].wrap = config.comments.pane_wrap and true or false
+  -- The window never wraps: `threads.render` has already broken every
+  -- line that should be broken, and a second opinion from the window
+  -- would fold exactly the code `pane_wrap` off asked to keep whole --
+  -- back at column zero, outside the rail.
+  vim.wo[M.win].wrap = false
 
   local text, hls, refs = marks.shade_lines(chunks, 0, ground)
   rows, said = map, notes
@@ -523,9 +530,8 @@ function M.open()
   end)
   M.win, M.source = win, source
 
-  -- `wrap` is not here: it is `comments.pane_wrap`, and it is set on
-  -- every render so that a reviewer who changes their mind about it
-  -- gets the answer on the next redraw rather than on the next pane.
+  -- `wrap` is not here: the render sets it, off, every time -- the
+  -- lines arrive already broken where they should break.
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true
   vim.wo[M.win].number = false

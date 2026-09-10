@@ -136,10 +136,15 @@ local function render()
   local width = vim.api.nvim_win_is_valid(M.win or -1) and vim.api.nvim_win_get_width(M.win)
     or math.min(math.floor(vim.o.columns * 0.7), 100)
 
+  local context = config.comments.context or 0
+
   local function thread(t)
     local replaced = replaced_in(t)
     local drawn = threads.render(t, {
       replaced = replaced,
+      original = function(above, below)
+        return session.original(t, above, below)
+      end,
       width = width,
       -- By the name of the file the thread is on, which in here is all
       -- there is to go on: this window is read with no file windows
@@ -153,7 +158,7 @@ local function render()
       -- window is read with no file windows open at all, and "the code
       -- has changed since" is exactly the thing you cannot see for
       -- yourself from in here.
-      was = replaced and session.was(t, replaced(threads.span(t), 0)) or nil,
+      was = replaced and session.quoted(t, replaced(threads.span(t) + context, 0), context) or nil,
     })
     for _, line in ipairs(drawn) do
       table.insert(chunks, line)

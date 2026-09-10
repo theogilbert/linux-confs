@@ -378,28 +378,29 @@ local function blob(root, sha, path)
   return nil
 end
 
---- The code a thread was written against, when it is not the code the
---- thread is drawn on any more.
----
---- A comment is half of a pair, and the code is the half that moves:
---- someone pushes while you are reading, or you edit the file you are
---- reviewing, and the note stays on line 42 while line 42 comes to say
---- something else. The comment then reads as a remark about whatever
---- happens to be under it, which is worse than no comment at all.
----
---- `now` is what is there at this moment, read by whichever window is
---- drawing -- the buffer under the marker, the file on disk. Nil when
---- the two agree, which is nearly always, and nil when there is nothing
---- to compare: an overall comment, a thread with no position, a blob
---- that has not arrived or never will.
-function M.was(thread, now)
-  local mr = M.current
-  if not (mr and now and thread and thread.line and thread.path) then
+--- The revision a thread is read against: the head the merge request
+--- was at when the note was written, or the base for a thread on a
+--- line the change took away.
+local function revision(thread)
+  if not (thread and thread.path and thread.line) then
     return nil
   end
-  -- A thread on a deleted line is against the old side of the diff, and
-  -- the old side is the base of it.
-  local sha = thread.side == "old" and (thread.base_sha or thread.head_sha) or thread.head_sha
+  return thread.side == "old" and (thread.base_sha or thread.head_sha) or thread.head_sha
+end
+
+--- The file a thread is about as *it* saw it: `above` lines up from the
+--- line it sits on, and `below` down. Nil where the blob has not
+--- arrived or never will.
+---
+--- Which is the half a suggestion needs. What GitLab's `-` half shows
+--- is the code the suggestion would replace, and it would replace the
+--- code it was written against: read out of the buffer instead, a
+--- suggestion posted last week against a line since edited draws the
+--- edit as the thing it takes away, and the diff it shows never
+--- happened.
+function M.original(thread, above, below)
+  local mr = M.current
+  local sha = mr and revision(thread)
   if not sha then
     return nil
   end
@@ -407,11 +408,103 @@ function M.was(thread, now)
   if not lines then
     return nil
   end
-  local was = vim.list_slice(lines, thread.first_line or thread.line, thread.line)
-  if #was == 0 or table.concat(was, "\n") == table.concat(now, "\n") then
+  local out =
+    vim.list_slice(lines, math.max(thread.line - (above or 0), 1), thread.line + (below or 0))
+  return #out > 0 and out or nil
+end
+
+--- The code a thread is about, quoted, with what has happened to each
+--- line of it since.
+---
+--- A comment is half of a pair, and the code is the half that moves:
+--- someone pushes while you are reading, or you edit the file you are
+--- reviewing, and the note stays on line 42 while line 42 comes to say
+--- something else. The comment then reads as a remark about whatever
+--- happens to be under it, which is worse than no comment at all.
+---
+--- So the quotation is what is there *now*, and the verdict is on the
+--- lines rather than on the block: a line that has not moved says
+--- nothing, a line edited since is marked as changed, a line that has
+--- arrived since as added, and a line the file no longer has is drawn
+--- from the revision that had it and marked gone. Four states in the
+--- three colours a diff is already read in, one line at a time --
+--- which is the question a reader actually has ("is the thing they are
+--- talking about still here?") rather than the one a band across the
+--- whole block answered ("something under here is different").
+---
+--- `now` is what is there at this moment, read by whichever window is
+--- drawing -- the buffer under the marker, the file on disk -- over the
+--- same span, context included. Returned as it is, with no verdict on
+--- any line, where there is nothing to compare it against: an overall
+--- comment, a thread with no position, a blob that has not arrived or
+--- never will.
+function M.quoted(thread, now, context)
+  if not now or #now == 0 then
     return nil
   end
-  return was
+  local plain = {}
+  for _, line in ipairs(now) do
+    table.insert(plain, { text = line })
+  end
+  local mr = M.current
+  local sha = mr and revision(thread)
+  local lines = sha and blob(mr.root, sha, thread.path)
+  if not lines then
+    return plain
+  end
+  local span = (thread.line - (thread.first_line or thread.line)) + (context or 0)
+  local was = vim.list_slice(lines, math.max(thread.line - span, 1), thread.line)
+  if #was == 0 then
+    return plain
+  end
+
+  local out = {}
+  local a, b = 1, 1
+  --- The lines of `was` in [a, to) and of `now` in [b, to2), as the
+  --- verdict this hunk of the diff passes on them: as many pairs as
+  --- both sides have are lines that were edited, and whatever is left
+  --- over on one side alone arrived or went away.
+  local function hunk(count_a, count_b)
+    local both = math.min(count_a, count_b)
+    for _ = 1, both do
+      table.insert(out, { text = now[b], state = "changed" })
+      a, b = a + 1, b + 1
+    end
+    for _ = both + 1, count_b do
+      table.insert(out, { text = now[b], state = "added" })
+      b = b + 1
+    end
+    for _ = both + 1, count_a do
+      -- The one state whose line is not in the file any more, so it is
+      -- quoted from the revision that had it.
+      table.insert(out, { text = was[a], state = "gone" })
+      a = a + 1
+    end
+  end
+
+  local ok, hunks =
+    pcall(vim.diff, table.concat(was, "\n") .. "\n", table.concat(now, "\n") .. "\n", {
+      result_type = "indices",
+    })
+  if not (ok and hunks) then
+    return plain
+  end
+  for _, h in ipairs(hunks) do
+    -- `vim.diff` counts an insertion as starting *after* the line it
+    -- follows, so the run of untouched lines before it reaches one
+    -- further on than for a change.
+    local until_a = h[2] == 0 and h[1] + 1 or h[1]
+    while a < until_a do
+      table.insert(out, { text = now[b] })
+      a, b = a + 1, b + 1
+    end
+    hunk(h[2], h[4])
+  end
+  while b <= #now do
+    table.insert(out, { text = now[b] })
+    b = b + 1
+  end
+  return out
 end
 
 --- Every unsent comment, wherever it sits -- on a line, on the merge

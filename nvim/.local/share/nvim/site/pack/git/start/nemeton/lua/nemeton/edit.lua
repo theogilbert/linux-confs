@@ -8,7 +8,9 @@
 
 local compose = require("nemeton.compose")
 local config = require("nemeton.config")
+local emoji = require("nemeton.emoji")
 local glab = require("nemeton.glab")
+local prompt = require("nemeton.prompt")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
 
@@ -99,7 +101,7 @@ end
 
 --- Picks one note out of a thread and hands it to `fn`, asking which
 --- when there is more than one to ask about.
-local function pick(thread, prompt, fn, after)
+local function pick(thread, question, fn, after)
   if not session.current or not thread then
     session.notify("no thread here", vim.log.levels.WARN)
     return
@@ -112,7 +114,7 @@ local function pick(thread, prompt, fn, after)
     return fn(thread, notes[1], after)
   end
   vim.ui.select(notes, {
-    prompt = prompt,
+    prompt = question,
     format_item = function(note)
       return ("%s: %s"):format(
         note.author,
@@ -254,7 +256,8 @@ local function react_to(thread, note, after)
   -- takes any name gemoji has, this plugin can draw the 258 it knows,
   -- and `vim.ui.select` is a numbered list for most people -- 258 rows
   -- of one is a wall rather than a picker. So the ten are the picker
-  -- and this is the tail, on a prompt that completes over all of them.
+  -- and this is the tail, on a prompt that completes over all of them
+  -- |nemeton-prompt|.
   table.insert(names, MORE)
 
   --- Given, or -- where it is already yours -- taken back. One key and
@@ -296,22 +299,39 @@ local function react_to(thread, note, after)
 
   --- ...and the other 248, asked for by name.
   ---
-  --- A prompt rather than a longer list, and the key that completes
-  --- named in it: `vim.fn.input` completes on `<Tab>` and says nothing
-  --- about it -- no menu, no hint -- so a prompt that does not mention
-  --- it is a prompt nobody finds it on.
+  --- A prompt rather than a longer list, and this plugin's own prompt
+  --- rather than `vim.ui.input` |nemeton-prompt|: the menu is the whole
+  --- of what this window is for, and `completion` is the half of the
+  --- `input` contract that half its replacements drop. So a float with
+  --- the names behind it, coming up as they are typed and each with its
+  --- picture beside it.
+  ---
+  --- What comes back is taken at its word. A name this plugin knows is
+  --- the reaction; a prefix that only one name answers is that name,
+  --- since the reader who typed it saw the menu say so; and anything
+  --- else goes to the forge as it was typed, because gemoji is eighteen
+  --- hundred names and this knows two hundred and fifty of them.
   local function ask()
-    vim.ui.input({
-      prompt = "react with (<Tab> completes): ",
-      completion = "customlist,v:lua.require'nemeton.emoji'.complete_name",
+    prompt.open({
+      title = "react with",
+      omnifunc = "v:lua.require'nemeton.emoji'.name_omnifunc",
+      items = function(line)
+        return emoji.name_omnifunc(0, line)
+      end,
     }, function(answer)
-      -- The name off the front of the row, so a candidate accepted
-      -- whole and a name typed over it are one answer -- and `:tada:`,
-      -- which is how it is written in a comment and so how it arrives
-      -- pasted from one.
+      -- The name off the front, so a candidate chosen out of the menu
+      -- and a name typed over it are one answer -- and `:tada:`, which
+      -- is how it is written in a comment and so how it arrives pasted
+      -- from one.
       local name = vim.trim(answer or ""):match("^:?([%w_+%-]+)")
       if not name then
         return
+      end
+      if not emoji.by_name[name] then
+        local could_be = emoji.candidates(name)
+        if #could_be == 1 then
+          name = could_be[1]
+        end
       end
       toggle(name)
     end)

@@ -20,6 +20,16 @@
 -- reactions, the verdicts, the dozen things a comment points at -- and
 -- a name that is not here is left exactly as it was typed, which is
 -- what a forge does with one it does not know either.
+--
+-- None of them carry U+FE0F, the variation selector that asks for the
+-- coloured picture rather than the black-and-white glyph -- `❤️` is
+-- written here as `❤`. Not a matter of taste: with it, Neovim counts
+-- the heart as two columns and a terminal drawing it as one leaves a
+-- cell nobody wrote, so every window that sizes itself to its own text
+-- -- which is every float here -- comes out a column wrong and puts
+-- its right-hand border through the last character. The two sides only
+-- ever agree about the plain glyph. Same argument as `config.ci`, one
+-- codepoint further on.
 
 local config = require("nemeton.config")
 
@@ -44,11 +54,11 @@ M.by_name = {
   pray = "🙏",
   handshake = "🤝",
   muscle = "💪",
-  point_up = "☝️",
+  point_up = "☝",
   point_down = "👇",
   point_left = "👈",
   point_right = "👉",
-  v = "✌️",
+  v = "✌",
   crossed_fingers = "🤞",
   facepalm = "🤦",
   shrug = "🤷",
@@ -124,7 +134,7 @@ M.by_name = {
   alien = "👽",
   robot = "🤖",
 
-  heart = "❤️",
+  heart = "❤",
   broken_heart = "💔",
   two_hearts = "💕",
   sparkling_heart = "💖",
@@ -148,7 +158,7 @@ M.by_name = {
   bulb = "💡",
   wrench = "🔧",
   hammer = "🔨",
-  gear = "⚙️",
+  gear = "⚙",
   nut_and_bolt = "🔩",
   lock = "🔒",
   unlock = "🔓",
@@ -157,7 +167,7 @@ M.by_name = {
   book = "📖",
   books = "📚",
   memo = "📝",
-  pencil2 = "✏️",
+  pencil2 = "✏",
   clipboard = "📋",
   package = "📦",
   gift = "🎁",
@@ -172,16 +182,16 @@ M.by_name = {
   floppy_disk = "💾",
   iphone = "📱",
   email = "📧",
-  envelope = "✉️",
+  envelope = "✉",
   inbox_tray = "📥",
   outbox_tray = "📤",
   link = "🔗",
   paperclip = "📎",
-  scissors = "✂️",
-  wastebasket = "🗑️",
+  scissors = "✂",
+  wastebasket = "🗑",
   microscope = "🔬",
   telescope = "🔭",
-  balance_scale = "⚖️",
+  balance_scale = "⚖",
   crystal_ball = "🔮",
   dart = "🎯",
   trophy = "🏆",
@@ -214,17 +224,17 @@ M.by_name = {
   unicorn = "🦄",
 
   white_check_mark = "✅",
-  heavy_check_mark = "✔️",
+  heavy_check_mark = "✔",
   x = "❌",
-  warning = "⚠️",
+  warning = "⚠",
   no_entry = "⛔",
   no_entry_sign = "🚫",
   question = "❓",
   grey_question = "❔",
   exclamation = "❗",
-  bangbang = "‼️",
-  information_source = "ℹ️",
-  recycle = "♻️",
+  bangbang = "‼",
+  information_source = "ℹ",
+  recycle = "♻",
   construction = "🚧",
   stop_sign = "🛑",
   checkered_flag = "🏁",
@@ -232,13 +242,13 @@ M.by_name = {
   pushpin = "📌",
   round_pushpin = "📍",
   bookmark = "🔖",
-  label = "🏷️",
+  label = "🏷",
   new = "🆕",
   ok = "🆗",
-  arrow_up = "⬆️",
-  arrow_down = "⬇️",
-  arrow_left = "⬅️",
-  arrow_right = "➡️",
+  arrow_up = "⬆",
+  arrow_down = "⬇",
+  arrow_left = "⬅",
+  arrow_right = "➡",
   arrows_counterclockwise = "🔄",
   ["repeat"] = "🔁",
 
@@ -261,10 +271,10 @@ M.by_name = {
   doughnut = "🍩",
   ice_cream = "🍨",
 
-  sunny = "☀️",
-  cloud = "☁️",
+  sunny = "☀",
+  cloud = "☁",
   rainbow = "🌈",
-  snowflake = "❄️",
+  snowflake = "❄",
   snowman = "⛄",
   ocean = "🌊",
   earth_africa = "🌍",
@@ -284,7 +294,7 @@ M.by_name = {
   car = "🚗",
   bus = "🚌",
   train = "🚆",
-  airplane = "✈️",
+  airplane = "✈",
   ship = "🚢",
   bike = "🚲",
   ambulance = "🚑",
@@ -350,23 +360,28 @@ function M.candidates(prefix)
   return vim.list_extend(first, second)
 end
 
---- The same names as rows for a prompt to complete over, for `v:lua`.
+--- The same names again, for a window whose whole line is the word.
 ---
---- `name  <picture>`, and the name first: what is typed is the name, so
---- what a candidate is *matched* on has to be at the front of it, and
---- the picture beside it is there because nobody remembers which of
---- `tada` and `confetti_ball` is which. Whoever asked takes the name
---- off the front, the way every prompt in this plugin takes an answer
---- off the front of a row.
+--- A reaction is a name the forge is given, not a word in a sentence:
+--- there is no sigil in front of it, nothing else on the line, and the
+--- word therefore starts at column nought. `nemeton.prompt` is what
+--- hangs this on a buffer.
 ---
---- Its own function rather than `M.candidates` above: that one answers
---- a completion menu inside a comment, where the sigils are part of
---- what gets inserted. Here there is no sigil -- a reaction is a name
---- the forge is given, not a word in a sentence.
-function M.complete_name(lead)
+--- A leading colon is taken all the same, since `:rocket:` is how the
+--- name is written in a comment and so how it arrives pasted from one.
+function M.name_omnifunc(findstart, base)
+  if findstart == 1 then
+    return 0
+  end
   local out = {}
-  for _, name in ipairs(M.candidates(lead)) do
-    table.insert(out, ("%s  %s"):format(name, M.by_name[name] or ""))
+  for _, name in ipairs(M.candidates(base)) do
+    table.insert(out, {
+      word = name,
+      -- The character beside the name, which is the whole reason the
+      -- menu is worth putting up: nobody remembers which of `tada` and
+      -- `confetti_ball` is which.
+      menu = M.by_name[name],
+    })
   end
   return out
 end

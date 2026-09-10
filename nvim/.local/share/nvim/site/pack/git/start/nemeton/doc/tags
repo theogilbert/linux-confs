@@ -2,7 +2,9 @@
 answer	nemeton.txt	/*answer*
 are	nemeton.txt	/*are*
 beside	nemeton.txt	/*beside*
+but	nemeton.txt	/*but*
 hl-NemetonBold	nemeton.txt	/*hl-NemetonBold*
+hl-NemetonChanged	nemeton.txt	/*hl-NemetonChanged*
 hl-NemetonCode	nemeton.txt	/*hl-NemetonCode*
 hl-NemetonCommit	nemeton.txt	/*hl-NemetonCommit*
 hl-NemetonHead	nemeton.txt	/*hl-NemetonHead*
@@ -22,6 +24,8 @@ hl-NemetonStrike	nemeton.txt	/*hl-NemetonStrike*
 hl-NemetonSuggestNew	nemeton.txt	/*hl-NemetonSuggestNew*
 hl-NemetonSuggestOld	nemeton.txt	/*hl-NemetonSuggestOld*
 hl-NemetonWas	nemeton.txt	/*hl-NemetonWas*
+hl-NemetonWasAdded	nemeton.txt	/*hl-NemetonWasAdded*
+hl-NemetonWasChanged	nemeton.txt	/*hl-NemetonWasChanged*
 last	nemeton.txt	/*last*
 nemeton	nemeton.txt	/*nemeton*
 nemeton-commands	nemeton.txt	/*nemeton-commands*
@@ -64,6 +68,7 @@ nemeton-notes-window	nemeton.txt	/*nemeton-notes-window*
 nemeton-old-side	nemeton.txt	/*nemeton-old-side*
 nemeton-pane-window	nemeton.txt	/*nemeton-pane-window*
 nemeton-peek-window	nemeton.txt	/*nemeton-peek-window*
+nemeton-prompt	nemeton.txt	/*nemeton-prompt*
 nemeton-reactions	nemeton.txt	/*nemeton-reactions*
 nemeton-reading	nemeton.txt	/*nemeton-reading*
 nemeton-refused	nemeton.txt	/*nemeton-refused*

@@ -56,10 +56,14 @@ function M.show(list)
     if i > 1 then
       table.insert(lines, "")
     end
+    local context = config.comments.context or 0
     local drawn = threads.render(t, {
       replaced = replaced,
+      original = function(above, below)
+        return session.original(t, above, below)
+      end,
       width = most,
-      was = session.was(t, replaced(threads.span(t), 0)),
+      was = session.quoted(t, replaced(threads.span(t) + context, 0), context),
       paint = paint,
     })
     local text, painted = marks.shade_lines(drawn, #lines, t.resolved and "settled" or "open")

@@ -241,9 +241,9 @@ deleted since it was linked — falls back to the clipboard and says which
 of those it was.
 
 `comments.follow` is one entry per kind — `mention`, `commit`, `thread`,
-`path` (a page on this forge) and `url` (a page anywhere) — with `false`
-for nothing at all and a function of your own for anything else, called
-with what is written and where it points:
+`path` (a link written as a path) and `url` (a page anywhere) — with
+`false` for nothing at all and a function of your own for anything else,
+called with what is written and where it points:
 
 ```lua
 comments = {
@@ -262,6 +262,13 @@ comments = {
 
 `url` and `path` were one `link` until they were two; a config that
 still says `link` is read as both.
+
+A path is measured from wherever the forge measures it from, which is
+not one place: `/group/proj/-/issues/3` from the root, `/uploads/…`
+off the project, `#anchor` on the merge request's own page — and a link
+relative to nothing at all from the *repository*, since clicking
+`doc/design.md` on the page takes you to that file on the target branch
+rather than to a page of that name on the forge.
 
 What is bound out in the buffer is what acts on the line under the
 cursor. A dozen keys under one prefix is a menu nobody has learnt, so
@@ -410,29 +417,36 @@ that is four places the eye would otherwise have to find by reading. In
 the comments window the same band says where one entry ends and the next
 begins.
 
-When the line a thread sits on no longer says what it said — someone
-pushed while you were reading, or you edited the file you are reviewing
-— the thread carries the code it *was* written against, above the first
-note and on a band of its own (`NemetonWas`: your background moved
-towards the colour a line taken away is drawn in), running the width of
-the editor from the rail out — the rail is on the band too and keeps
-only its colour, which is what says which conversation the quotation is
-inside.
-Nothing is written in front of it — it is a quotation of the file, and
-the background says so without a word to read on every line. A comment is half of a pair and the code is the
-half that moves; without this the note reads as a remark about whatever
-happens to be under it now.
+Above the first note, a thread quotes the code it is about: the lines
+it is anchored to, and `comments.context` lines above them — two by
+default, because a comment on one line is a comment about a line that
+had something before it, and the window where that matters most is the
+one read with no file open at all. Nothing is written in front of the
+quotation; the rail runs down its left and keeps only its colour, which
+is what says which conversation it is inside.
 
-The pane draws that band whether the code has moved or not, and quotes
-the lines as they now are where it has not: the floats are drawn over
-the file and you can see the line underneath them, but the pane is read
-beside it, and the line a comment is about is the one thing you cannot
-look at from in there without looking away from what you are reading.
+What has happened to each of those lines since is on the line rather
+than on the block. A comment is half of a pair and the code is the half
+that moves — someone pushes while you are reading, or you edit the file
+you are reviewing — and the question a reader has is whether the thing
+being talked about is still there. So: a line that has not moved is
+drawn plain, one edited since is on a yellow band (`NemetonWasChanged`),
+one that has arrived since on a green one (`NemetonWasAdded`), and one
+the file no longer has is quoted from the revision that had it, on a
+red one (`NemetonWas`). The three colours a diff is read in everywhere
+else.
+
+The pane draws the quotation whether anything has changed or not: the
+floats are drawn over the file and you can see the line underneath
+them, but the pane is read beside it, and the line a comment is about
+is the one thing you cannot look at from in there without looking away
+from what you are reading.
 
 The old lines are read out of the checkout
 with `git show`, not from the forge — the commit the note was written
 against is one the repository already has — and a commit that is not
-there any more is asked about once and then left alone.
+there any more is asked about once and then left alone, with the
+quotation drawn plain since there is nothing to compare it to.
 
 `<leader>mx` expands the conversations into a pane, and
 `comments.expand` says which side it opens on: `"right"` or `"bottom"`.
@@ -489,7 +503,9 @@ priority so a one-cell sign column still shows the bubble.
 The code itself gets a band under those lines as well
 (`NemetonReading`, at `comments.reading_ground` of the strength of the
 ground a conversation is drawn on — the two are one block read in two
-windows). That is the part the gutter could not do: every line carrying
+windows, and this is the stronger of the two: the band in the pane has
+only to hold a block together, and this one has to be found in a
+screenful of code). That is the part the gutter could not do: every line carrying
 a thread has the same bubble on it, so with three conversations in a
 file nothing out here says which is the one you are reading, and a
 thread about a single line has no line above it to put a rail on at
@@ -516,17 +532,19 @@ other end of it — prose set across the whole of a wide editor is prose
 the eye loses its place in. `comments.wrap = false` wraps to the window
 and nothing narrower.
 
-The pane does not wrap unless you ask it to. `comments.pane_wrap` is
-off by default: it is a real window with a real buffer, so a line too
-long for it is a line to scroll sideways to rather than a line lost —
-and unwrapped, a comment keeps the shape it was written in. A fenced
-block, a ruled table and the two halves of a suggestion all mean what
-they mean by their columns, and none of them survive being folded at
-the edge of a sixty-column pane. The other half of it is the rail: a
-wrapped line comes back at column zero, outside it, so the one part of
-the block that says where the thread starts and stops goes missing from
-exactly the lines that needed it. `comments.pane_wrap = true` wraps to
-the pane's width and accepts both.
+In the pane the words always wrap; `comments.pane_wrap` is about the
+code. It is off by default: the pane is a real window with a real
+buffer, so a line too long for it is a line to scroll sideways to
+rather than a line lost — and a fenced block, a ruled table and the two
+halves of a suggestion all mean what they mean by their columns, none
+of which survives being folded at the edge of a sixty-column pane. The
+other half of it is the rail: a wrapped line comes back at column zero,
+outside it, so the one part of the block that says where the thread
+starts and stops goes missing from exactly the lines that needed it.
+Neither argument is about prose — nobody scrolls sideways to read
+English, and a sentence broken at a space is the same sentence — so a
+comment is wrapped either way. `comments.pane_wrap = true` wraps the
+code with it.
 
 A comment written over a selection is anchored to its last line and
 carries the rest as a line range — which is what GitLab draws as
@@ -712,11 +730,26 @@ That list is short on purpose and it is not the limit.
 numbered list of all 258 names `emoji.lua` knows is a wall rather than
 a picker — so the ten you actually react with are the picker, and its
 last row, "another emoji", is a prompt that completes over the rest.
-`<Tab>` completes there, and the prompt says so: `vim.fn.input` puts up
-no menu and gives no hint, so a prompt that does not mention the key is
-a prompt nobody finds it on. The name is taken off the front of the
-answer, so a row accepted whole, a bare `rocket` and a pasted
-`:rocket:` are one answer.
+
+That prompt is a window of this plugin's own rather than
+`vim.ui.input`: it is the one place here that is nothing *but*
+completion, and `completion` is the half of the `input` contract that
+half its replacements quietly drop — a prompt that says "`<Tab>`
+completes" where `<Tab>` does nothing, with no way to tell from either
+side. So it is a one-line float with the names behind it and the
+menu coming up as you type, each with its picture beside it. The
+buffer's `omnifunc` is set too, for `<C-x><C-o>` and for a completion
+engine to point at. The
+whole list is up before you press a key, which is the answer to "like
+what?"; `<C-n>` and `<C-p>` walk it, `<CR>` takes the line as it
+stands, and `<Esc>` dismisses it.
+
+A name it knows is the reaction, a prefix only one name answers is that
+name, and anything else goes to the forge as you typed it — gemoji has
+eighteen hundred names and this knows two hundred and fifty of them.
+The name is taken off the front of the answer, so a candidate chosen
+out of the menu, a bare `rocket` and a pasted `:rocket:` are one
+answer.
 
 The whole of it is one
 GraphQL call beside the discussions — REST publishes reactions one note
@@ -929,6 +962,8 @@ lua/nemeton/
   jobs.lua       what CI did, job by job
   trace.lua      what one job printed, in a tab
   compose.lua    the buffer you write a comment in
+  prompt.lua     one word asked for in a window of this plugin's own,
+                 with the menu of what it can be under it
   edit.lua       rewriting and deleting a comment already posted
   log.lua        every subprocess, into ~/.local/state, with the token
                  scrubbed out on the way
@@ -949,7 +984,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 792 checks — parsing, indexing, the gutter, the
+memory of the API docs. 955 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts

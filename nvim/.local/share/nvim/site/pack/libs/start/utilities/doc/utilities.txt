@@ -393,25 +393,40 @@ utilities.runner.send_selection_to_repl()
 ==============================================================================
 10. SCRATCH                                                *utilities-scratch*
 
-Throwaway files that persist, kept together in
-`stdpath("data") .. "/scratches/"` rather than scattered across `/tmp`.
+Throwaway files that persist, kept together under
+`stdpath("data") .. "/scratches/"` rather than scattered across `/tmp`. They
+are written by hand rather than derived, which is why they belong in the data
+directory and not in the cache or the configuration one.
+
+Every scratch has a scope, chosen when it is created:
+
+    global      listed wherever nvim was started, held in `scratches/global/`.
+    project     listed only from the working directory it was created in,
+                held in a directory of its own next to `global/`.
+
+A project directory is named `<basename>-<8 hex digits of the sha256 of the
+cwd>`: the hash keeps two projects sharing a basename apart, the basename
+keeps the store readable from a shell. Nothing is written inside the project
+itself, so a scratch never shows up in `git status`.
 
 utilities.scratch.setup()                          *utilities.scratch.setup()*
 
-    Create the scratch directory if it does not exist. Call once at
-    startup.
+    Create the global scratch directory, and move any scratch sitting
+    directly under the root -- one written before scopes existed -- into it.
+    A file whose name is already taken in `global/` is left alone and
+    reported. Call once at startup.
 
 utilities.scratch.search_scratches()    *utilities.scratch.search_scratches()*
 
-    Pick an existing scratch file with `fzf-lua`.
+    Pick a scratch with `fzf-lua`, among the global ones and those of the
+    current working directory. Entries read as `<scope>/<name>`.
 
-                                         *utilities.scratch.prompt_new_file()*
-utilities.scratch.prompt_new_file({prompt}, {previous_filename})
+utilities.scratch.prompt_new_file()      *utilities.scratch.prompt_new_file()*
 
-    Ask for a name and edit that file in the scratch directory. Both
-    arguments are optional and exist for the re-prompt: if the name is
-    already taken the prompt reappears carrying the rejected name and the
-    reason, so it can be corrected rather than retyped.
+    Ask for a scope, then for a name, and edit that file. A name may hold
+    directories of its own -- `notes/monday.md` creates them. If the name is
+    already taken in the chosen scope the prompt reappears carrying the
+    rejected name and the reason, so it can be corrected rather than retyped.
 
 ==============================================================================
 11. SEARCH                                                  *utilities-search*
@@ -520,7 +535,7 @@ utilities.window_picker.get_ordered_wins()
 16. TESTS                                                    *utilities-tests*
 
 Specs live in `tests/`, one `<module>_spec.lua` per covered module, written
-in the `describe`/`it` style. |utilities-table|, |utilities-tabs| and
-|utilities-window_picker| are covered; the rest are not.
+in the `describe`/`it` style. |utilities-scratch|, |utilities-table|,
+|utilities-tabs| and |utilities-window_picker| are covered; the rest are not.
 
 vim:tw=78:ts=8:noet:ft=help:norl:

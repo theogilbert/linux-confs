@@ -602,6 +602,46 @@ function M.drafts()
   return vim.list_extend(all, mr.draft_replies or {})
 end
 
+--- The unsent comments the forge has posted anyway: the same words,
+--- under your name, on the merge request already.
+---
+--- What a publish GitLab fell over on leaves behind. It posts each
+--- draft as a note and then deletes the draft, and a 500 between the
+--- two -- a notification, a webhook, a to-do -- leaves the note posted
+--- and the draft still there, so that the review reads as unsent and
+--- publishing it again posts every one of them twice. The words are
+--- the match: a draft is one thing you wrote, and the same thing under
+--- your name on the forge is that draft, sent. Your name where the
+--- forge has said what it is, and the words alone where it has not
+--- said -- this is only ever asked after a publish went wrong, about
+--- the drafts that publish was sending.
+function M.leftovers()
+  local mr = M.current
+  if not mr then
+    return {}
+  end
+  local posted = {}
+  for _, list in ipairs({ mr.inline or {}, mr.overview or {} }) do
+    for _, t in ipairs(list) do
+      if not t.draft then
+        for _, n in ipairs(t.notes or {}) do
+          if not n.draft and (mr.me == nil or n.author == mr.me) then
+            posted[vim.trim(n.body or "")] = true
+          end
+        end
+      end
+    end
+  end
+  local out = {}
+  for _, d in ipairs(M.drafts()) do
+    local body = d.body or (d.notes and d.notes[1] and d.notes[1].body) or ""
+    if posted[vim.trim(body)] then
+      table.insert(out, d)
+    end
+  end
+  return out
+end
+
 --- Who has approved it, and how many more it needs.
 ---
 --- Its own call and its own refresh rather than a passenger on the one
@@ -630,18 +670,41 @@ function M.refresh_approvals(cb)
   end)
 end
 
+--- Whether a change came back without its diff: what GitLab sends for
+--- a patch past its size cap, and the one kind of entry the line map
+--- can do nothing with.
+local function capped(data)
+  for _, change in ipairs(type(data) == "table" and data.changes or {}) do
+    if (change.diff or "") == "" then
+      return true
+    end
+  end
+  return false
+end
+
 --- The diffs: how big the change is, and which lines of which files it
 --- touches. One call, when the merge request opens -- the diffs are the
 --- largest thing this plugin ever asks GitLab for, so it asks once.
 ---
 --- Both facts come out of the same payload, which is why one call
 --- serves the heading and the comment-anchoring both.
+---
+--- Twice, when once was not the whole of it. GitLab leaves the diff
+--- out of a file whose patch is past its cap, and a file with no diff
+--- is a file with no line map: a comment on it goes out with the line
+--- numbers alone, which on the branch's side is a guess that happens
+--- to be right for an added line -- and a comment over several of
+--- them goes out with a range that has no line codes, which is the
+--- one shape a GitLab older than 18.6 refuses and there is nothing
+--- to send instead of. So the raw diffs are asked for, and only then:
+--- a merge request with nothing past the cap, which is most of them,
+--- costs one call as before.
 function M.refresh_changes(cb)
   local mr = M.current
   if not mr then
     return
   end
-  glab.mr_changes(mr.root, mr.iid, function(data, err)
+  local function take(data, err)
     if data and M.current == mr then
       mr.diff_stats = detail.diff_stats(data)
       mr.lines = threads.line_map(data)
@@ -650,6 +713,22 @@ function M.refresh_changes(cb)
     if cb then
       cb(data, err)
     end
+  end
+  glab.mr_changes(mr.root, mr.iid, function(data, err)
+    if not (data and M.current == mr and capped(data)) then
+      take(data, err)
+      return
+    end
+    glab.mr_changes(mr.root, mr.iid, function(raw, raw_err)
+      -- The capped answer is still an answer: a forge that will not
+      -- serve the raw diffs leaves the map as it was, holes and all.
+      if raw then
+        take(raw, nil)
+      else
+        log.note("raw diffs refused, keeping the capped ones: " .. tostring(raw_err))
+        take(data, err)
+      end
+    end, { raw = true })
   end)
 end
 

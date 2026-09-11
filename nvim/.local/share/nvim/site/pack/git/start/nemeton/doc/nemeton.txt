@@ -766,6 +766,17 @@ without them if it refuses -- once, and remembered for the session, so a
 patched instance costs one refused POST and no more. `$XDG_STATE_HOME`
 |nemeton-log| records when that happens.
 
+The line codes come out of the diff, and GitLab leaves the diff out of a
+file whose patch is past its size cap -- 100KB unless an administrator
+moved it, which a generated file or a fixture reaches easily. A merge
+request with a hole like that in its `/changes` is asked for a second
+time with `access_raw_diffs`, which is the one way GitLab serves those
+whole -- and only then, since the diffs are the largest thing this
+plugin ever fetches. Should a range still have no line codes to fall
+back on and the forge refuse the numbers, the comment is kept on the
+line it is anchored to and the range alone is lost: one line rather
+than no comment. The log says so.
+
                                                             *nemeton-old-side*
 A LINE THE CHANGE DELETED is in no buffer of the branch -- that is what
 deleted means -- so there is nowhere to put a cursor and press
@@ -990,6 +1001,15 @@ you would want to know before pressing it.
 `<C-p>` posts on the spot, for when that is what you mean. Swap
 `config.keys.compose.keep` and `config.keys.compose.post` to swap the
 two round; nothing else knows which is which.
+
+A PUBLISH GITLAB ANSWERS WITH A 500 is not a no. It posts each draft and
+then deletes it, and falling over between the two -- a notification, a
+webhook, a to-do -- leaves the comment on the merge request under your
+name and the draft still listed, so the review reads as unsent and
+publishing again would post every comment twice. nemeton reports the
+error, waits a few seconds, asks the forge again, and takes away the
+drafts whose words it finds already posted under your name -- the half
+of the publish the forge did not get to -- then says how many went.
 
                                                              *nemeton-replies*
 A REPLY IS THE OTHER WAY ROUND: `<C-s>` and `:w` send it, `<C-p>` keeps

@@ -958,8 +958,21 @@ end
 --- totals anywhere in the merge request payload, and the diff is the
 --- only place the numbers exist. Not paginated -- this is one call for
 --- one merge request, made once when it opens.
-function M.mr_changes(root, iid, cb)
-  json({ "api", ("projects/:fullpath/merge_requests/%d/changes"):format(iid) }, { cwd = root }, cb)
+---
+--- `raw` asks for the diffs GitLab would otherwise leave out. A patch
+--- past `diff_max_patch_bytes` -- 100KB unless an administrator moved
+--- it, which a generated file or a fixture reaches easily -- arrives
+--- with its `diff` empty, and nothing else in the entry says so on an
+--- older forge. `access_raw_diffs` reads them out of Gitaly instead of
+--- the stored, capped copy, whole. Asked for second and only when the
+--- first answer had a hole in it: it is the largest thing this plugin
+--- ever fetches, made larger.
+function M.mr_changes(root, iid, cb, opts)
+  local path = ("projects/:fullpath/merge_requests/%d/changes"):format(iid)
+  if opts and opts.raw then
+    path = path .. "?access_raw_diffs=true"
+  end
+  json({ "api", path }, { cwd = root }, cb)
 end
 
 --- Checks the merge request's source branch out locally.
@@ -1064,6 +1077,15 @@ local function is_schema_failure(text)
   return text ~= nil and text:match("must be a valid json schema") ~= nil
 end
 
+--- Whether a failure was the forge falling over rather than saying no:
+--- a 5xx, which is the one answer that says nothing about whether the
+--- request was carried out.
+function M.is_server_error(text)
+  text = tostring(text or "")
+  return text:match("%f[%d]5%d%d%f[%D]") ~= nil
+    or text:match("[Ii]nternal [Ss]erver [Ee]rror") ~= nil
+end
+
 --- What the forge says it is, as `{major, minor}` -- or false, for one
 --- that would not say.
 ---
@@ -1098,6 +1120,26 @@ local function older(v, want)
   return v[1] < want[1] or (v[1] == want[1] and v[2] < want[2])
 end
 
+--- `position` with no `line_range` at all: a comment on the line it
+--- is anchored to, and nothing about the ones above it. Nil where
+--- there was no range to lose.
+---
+--- The last resort, for a range whose ends carry no line code -- a
+--- file whose diff never arrived -- on a forge that will not take
+--- the numbers. Nothing anchors that range once the numbers are gone,
+--- and what is left to choose between is a comment on one line and
+--- no comment: GitLab shows the reviewer's paragraph on line 35
+--- rather than on "lines 34 to 35", which is the lesser loss by a
+--- long way.
+local function unranged(position)
+  if type(position) ~= "table" or position.line_range == nil then
+    return nil
+  end
+  local out = vim.deepcopy(position)
+  out.line_range = nil
+  return out
+end
+
 --- POSTs (or PUTs) a note carrying a `position`.
 ---
 --- Two ways of not being refused by a GitLab older than 18.6, and they
@@ -1122,12 +1164,19 @@ local function with_position(method, root, path, body, cb)
         return
       end
       local without = trimmed(body.position)
-      if not without then
-        cb(data, err)
-        return
+      if without then
+        log.note("position refused: sending it again without the line numbers in its range")
+        trims_ranges = true
+      else
+        without = unranged(body.position)
+        if not without then
+          cb(data, err)
+          return
+        end
+        log.note(
+          "position refused and its range has no line codes: sending it on its last line alone"
+        )
       end
-      log.note("position refused: sending it again without the line numbers in its range")
-      trims_ranges = true
       body.position = without
       send(method, root, path, body, cb)
     end)

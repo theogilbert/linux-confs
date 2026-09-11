@@ -599,6 +599,16 @@ comment, and only GitLab's own range label is the poorer for it. A forge
 that will not say what it is gets the whole payload and is sent it again
 without them if it refuses — once, and remembered for the session.
 
+The line codes come out of the diff, and GitLab leaves the diff out of a
+file whose patch is past its size cap — 100KB unless an administrator
+moved it, which a generated file or a fixture reaches easily. A merge
+request with a hole like that in its `/changes` is asked for a second
+time, raw, which is the one way GitLab serves those whole; only then,
+since the diffs are the largest thing nemeton ever fetches. Should a
+range still have no line codes to fall back on and the forge refuse the
+numbers, the comment is kept on the line it is anchored to and the range
+alone is lost — one line rather than no comment — and the log says so.
+
 ### A line the change deleted
 
 A deleted line is in no buffer of the branch — that's what deleted
@@ -807,6 +817,15 @@ is `@username` and `:tada:`, sigils and all, because that is what GitLab
 turns into a notification and into a picture. Keeping is the default
 because a review is written as a whole: a comment posted the moment it
 is typed cannot be taken back after reading the next file.
+
+A publish GitLab answers with a **500** is not a no. It posts each draft
+and then deletes it, and falling over between the two — a notification,
+a webhook, a to-do — leaves the comment on the merge request under your
+name and the draft still listed, so the review reads as unsent and
+publishing again would post every comment twice. nemeton reports the
+error, waits a few seconds, asks the forge again, and takes away the
+drafts whose words it finds already posted under your name — the half
+of the publish the forge did not get to — then says how many went.
 
 Whichever key you press, **the comment appears where it is going
 straight away** — a reply at the end of the thread it answers, a
@@ -1045,7 +1064,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 1000 checks — parsing, indexing, the gutter, the
+memory of the API docs. 1014 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts

@@ -464,12 +464,65 @@ M.publish = with_session(function(cb)
   glab.publish_drafts(mr.root, mr.iid, function(ok, err)
     if not ok then
       session.refused("could not publish", err)
+      -- A 500 is not a no. GitLab posts each draft and then deletes
+      -- it, and falls over between the two -- a notification, a
+      -- webhook, a to-do -- with the note posted and the draft still
+      -- there: the review reads as unsent, and publishing it again
+      -- posts every comment twice. The refresh `refused` just ran can
+      -- also have read the drafts before the forge had finished with
+      -- them at all. So it is asked again once it has had time to, and
+      -- the drafts it posted and kept are taken away here, which is
+      -- the half of the publish it did not get to.
+      if glab.is_server_error(err) then
+        vim.defer_fn(function()
+          if session.current ~= mr then
+            return
+          end
+          M.settle_publish(mr, n, cb)
+        end, 3000)
+      end
       return
     end
     session.notify(("published %d comment%s on !%d"):format(n, n == 1 and "" or "s", mr.iid))
     session.refresh(cb)
   end)
 end)
+
+--- What a publish the forge fell over on comes to: a refresh, the
+--- drafts it posted and kept deleted, and a word about how many went.
+--- `n` is how many were being sent.
+function M.settle_publish(mr, n, cb)
+  session.refresh(function()
+    if session.current ~= mr then
+      return
+    end
+    local stale = session.leftovers()
+    local function said()
+      local left = #session.drafts()
+      if left < n then
+        session.notify(
+          ("!%d took %d comment%s after all"):format(mr.iid, n - left, n - left == 1 and "" or "s")
+        )
+      end
+      if cb then
+        cb()
+      end
+    end
+    if #stale == 0 then
+      said()
+      return
+    end
+    local pending = #stale
+    for _, d in ipairs(stale) do
+      glab.delete_draft(mr.root, mr.iid, d.id, function()
+        pending = pending - 1
+        if pending == 0 and session.current == mr then
+          session.refresh(said)
+        end
+      end)
+    end
+  end)
+end
 
 --- A suggestion: a thread on the selected lines, carrying the code that
 --- would replace them.

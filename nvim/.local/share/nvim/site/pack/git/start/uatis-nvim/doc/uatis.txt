@@ -175,7 +175,7 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
     g?              every key that does anything from here, in a float
     <CR>            open the file on this row
     x               mark this row read, or unread -- a directory and all
-                    under it
+                    under it, a Visual selection as one
     K               the whole message of the commit on show
     ]f  [f          next / previous file
     za zc zo        fold this directory
@@ -233,11 +233,11 @@ gets a row and no count.
 
                                                             *uatis-list-read*
 The unit of a review is a CHUNK: one run of changed lines in a file, as `git
-diff` reports it. `]c` marks the chunk it moves away from read -- the one the
-cursor is on, or the last one above it if you scrolled on past -- and the
-last chunk of a file is marked by a `]c` with nowhere left to go. Arriving at
-a change is not having read it, and `[c` marks nothing: going back is not
-being done (`pane.auto_read`).
+diff` reports it. `]c` and `[c` mark the chunk they move away from read --
+the one the cursor is on, or the last one above it if you scrolled on past
+-- and the first and last chunks of a file are marked by a `[c` or `]c` with
+nowhere left to go. Arriving at a change is not having read it: `[c` from
+below a change lands on it and marks nothing (`pane.auto_read`).
 
 A file is read when every chunk of it is, and the row then goes green --
 status letter and churn with it, those being how you decide what to open
@@ -246,7 +246,10 @@ stepped back towards the background (`highlight.read_recede`), so a
 finished row is quieter than a count still asking to be read. `x` marks
 every chunk of the row under the cursor read, and takes them all off again
 once they all are; on a directory row it completes everything under it, and
-a directory whose every file is read is drawn read itself.
+a directory whose every file is read is drawn read itself. Over a Visual
+selection the rows are one set and one decision -- a directory and a file
+inside it both selected is that file once -- and the cursor stays where it
+was pressed.
 
 A mark is on the chunk's CONTENT, not its position, and is kept between
 sessions per repository (`pane.remember_read`). So a commit landing on the
@@ -496,7 +499,7 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       pane = {
         auto_open = true,     -- show the list when a review starts
         follow = true,        -- annotate a listed file as you arrive at it
-        auto_read = true,     -- ]c marks the chunk it moves away from read
+        auto_read = true,     -- ]c / [c mark the chunk they move away from
         remember_read = true, -- ...and the marks outlive the session
       },
       diff = {

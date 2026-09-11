@@ -7,6 +7,11 @@ local source = {}
 
 local constants = {
   max_lines = 20,
+  -- Above this many entries, cmp itself becomes the bottleneck (one Entry
+  -- object + fuzzy match per item on the main thread). Past it we narrow by
+  -- the typed prefix, then truncate and flag the result incomplete so cmp
+  -- asks again as more characters are typed.
+  max_candidates = 500,
 }
 
 ---@class cmp_path.Option
@@ -44,17 +49,18 @@ source.complete = function(self, params, callback)
   end
 
   local include_hidden = string.sub(params.context.cursor_before_line, params.offset, params.offset) == '.'
-  self:_candidates(dirname, include_hidden, option, function(err, candidates)
+  local typed = string.sub(params.context.cursor_before_line, params.offset)
+  self:_candidates(dirname, include_hidden, typed, option, function(err, candidates, incomplete)
     if err then
       return callback()
     end
-    callback(candidates)
+    callback({ items = candidates, isIncomplete = incomplete })
   end)
 end
 
 source.resolve = function(self, completion_item, callback)
   local data = completion_item.data
-  if data.stat and data.stat.type == 'file' then
+  if data.type == 'file' then
     local ok, documentation = pcall(function()
       return self:_get_documentation(data.path, constants.max_lines)
     end)
@@ -71,7 +77,7 @@ source._dirname = function(self, params, option)
     return nil
   end
 
-  local dirname = string.gsub(string.sub(params.context.cursor_before_line, s + 2), '%a*$', '') -- exclude '/'
+  local dirname = string.gsub(string.sub(params.context.cursor_before_line, s + 2), '[^/]*$', '') -- exclude '/' and the name being typed
   local prefix = string.sub(params.context.cursor_before_line, 1, s + 1) -- include '/'
 
   local buf_dirname = option.get_cwd(params)
@@ -113,32 +119,29 @@ source._dirname = function(self, params, option)
   return nil
 end
 
-source._candidates = function(_, dirname, include_hidden, option, callback)
-  local fs, err = vim.loop.fs_scandir(dirname)
-  if err then
-    return callback(err, nil)
-  end
-
+source._candidates = function(_, dirname, include_hidden, typed, option, callback)
   local items = {}
 
   local function create_item(name, fs_type)
-    if not (include_hidden or string.sub(name, 1, 1) ~= '.') then
-      return
-    end
-
     local path = dirname .. '/' .. name
-    local stat = vim.loop.fs_stat(path)
+    -- scandir already reports the type on most filesystems; only stat when
+    -- it could not (or for links, to follow them). Stat-ing every entry is
+    -- what made huge directories block the UI.
+    local stat = nil
     local lstat = nil
-    if stat then
-      fs_type = stat.type
-    elseif fs_type == 'link' then
-      -- Broken symlink
-      lstat = vim.loop.fs_lstat(dirname)
-      if not lstat then
+    if fs_type == nil or fs_type == 'link' then
+      stat = vim.loop.fs_stat(path)
+      if stat then
+        fs_type = stat.type
+      elseif fs_type == 'link' then
+        -- Broken symlink
+        lstat = vim.loop.fs_lstat(path)
+        if not lstat then
+          return
+        end
+      else
         return
       end
-    else
-      return
     end
 
     local item = {
@@ -168,18 +171,55 @@ source._candidates = function(_, dirname, include_hidden, option, callback)
     table.insert(items, item)
   end
 
-  while true do
-    local name, fs_type, e = vim.loop.fs_scandir_next(fs)
-    if e then
-      return callback(fs_type, nil)
+  -- Async form: the readdir itself runs on libuv's threadpool, so a slow
+  -- (network, huge) directory never blocks the editor.
+  vim.loop.fs_scandir(dirname, function(err, fs)
+    if err then
+      return vim.schedule(function() callback(err, nil) end)
     end
-    if not name then
-      break
-    end
-    create_item(name, fs_type)
-  end
 
-  callback(nil, items)
+    local names = {}
+    while true do
+      local name, fs_type, e = vim.loop.fs_scandir_next(fs)
+      if e then
+        return vim.schedule(function() callback(fs_type, nil) end)
+      end
+      if not name then
+        break
+      end
+      if include_hidden or string.sub(name, 1, 1) ~= '.' then
+        table.insert(names, { name, fs_type })
+      end
+    end
+
+    local incomplete = false
+    if #names > constants.max_candidates and typed ~= '' then
+      -- Too many to hand to cmp: keep only what starts with the typed text.
+      -- Fuzzy matching is lost for this directory, but cmp will re-query
+      -- on each keystroke (isIncomplete) so narrowing still works.
+      local narrowed = {}
+      for _, entry in ipairs(names) do
+        if vim.startswith(entry[1], typed) then
+          table.insert(narrowed, entry)
+        end
+      end
+      names = narrowed
+      incomplete = true
+    end
+    if #names > constants.max_candidates then
+      -- Still too many: give up on completeness rather than freeze.
+      incomplete = true
+      for i = #names, constants.max_candidates + 1, -1 do
+        names[i] = nil
+      end
+    end
+
+    for _, entry in ipairs(names) do
+      create_item(entry[1], entry[2])
+    end
+
+    vim.schedule(function() callback(nil, items, incomplete) end)
+  end)
 end
 
 source._is_slash_comment = function(_)

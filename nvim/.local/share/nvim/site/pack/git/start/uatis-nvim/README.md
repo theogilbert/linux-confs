@@ -128,6 +128,27 @@ Every directory row carries what changed beneath it — its whole subtree,
 nested directories included — in the same `+N -M` the files use. Folded
 shut, that count is the reason you would open it again.
 
+`x` in the list marks the row under the cursor **read**, and the whole
+row goes green — status letter and churn with it, those being how you
+decide what to open next and there being nothing left to decide. On a
+directory row it completes everything under it, nested directories
+included, and a directory whose every file is read goes green itself.
+`x` again takes the mark off. A file also marks itself once every change
+in it has been stepped onto with `]c`/`[c` — every one, since `]c` off
+the last change alone says nothing about the rest (`pane.auto_read`).
+A file edited after it was marked stops being read on its own — there
+is something in it nobody has seen — and is read again when the edit
+goes.
+
+Under the list, on the window's status line, is how much of the review
+is behind you: a bar, `3/5`, and a percentage. The percentage counts
+delta LOC — added *and* removed — rather than files, because `3/20` says
+nothing true about a branch whose third file is a nine-hundred-line
+generated blob. What fills it is what you have marked, not where the
+cursor is: arriving at the last file of a branch is not having read the
+branch. Being a window status line it obeys your `laststatus`;
+`list.progress = false` turns it off.
+
 The list counts the working tree, not the commits: a saved edit is in it
 straight away, an unsaved one as soon as the buffer says so, and a file
 git has never been told about is in it too — `.gitignore` decides what
@@ -292,8 +313,9 @@ true while a structural diff is still running, which is when the counts
 beside it are the last answer rather than this one. The window's own
 header says the same thing in words: `comparing…` where it would name
 the backend.
-`review()` carries `files`, the totals across them, and the file the
-list is standing on. Both return `nil` when there is nothing to say.
+`review()` carries `files`, `read` — how many of them you have marked —
+the totals across them, and the file the list is standing on. Both
+return `nil` when there is nothing to say.
 
 ## Telling another plugin what a buffer is
 
@@ -336,7 +358,10 @@ require("uatis").setup({
     auto_open = false,                -- no file list unless you ask for it
     follow = false,                   -- ...and annotate a file only when asked
   },
-  list = { width = 48 },              -- the list's width when you do open it
+  list = {
+    width = 48,                       -- its width when you do open it
+    progress = false,                 -- no progress bar under the list
+  },
   show = { tab = false },             -- :UatisShow in place, not in a new tab
   diff = { default_backend = "line" },
   keys = { view = { layout = "<leader>gv" } },

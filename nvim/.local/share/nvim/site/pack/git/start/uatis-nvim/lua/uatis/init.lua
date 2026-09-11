@@ -22,6 +22,7 @@ local git = require("uatis.git")
 local overlay = require("uatis.overlay")
 local pane = require("uatis.pane")
 local prompt = require("uatis.prompt")
+local ui = require("uatis.ui")
 local view = require("uatis.view")
 
 local M = {}
@@ -396,6 +397,18 @@ end
 ---   added, removed   across all of them
 ---   file             the one the list is standing on, if any
 ---   window           true while the list has a window up
+--- How many of a list's files the reader has marked read -- and still
+--- has, a file edited since being no longer one of them.
+local function read_count(list)
+  local n = 0
+  for _, f in ipairs(list.files or {}) do
+    if ui.is_read(list, f) then
+      n = n + 1
+    end
+  end
+  return n
+end
+
 function M.review()
   local list = pane.get()
   if not list then
@@ -407,6 +420,7 @@ function M.review()
     rev = list.rev,
     root = list.root,
     files = #(list.files or {}),
+    read = read_count(list),
     added = list.stat_added or 0,
     removed = list.stat_removed or 0,
     file = current and current.path or nil,

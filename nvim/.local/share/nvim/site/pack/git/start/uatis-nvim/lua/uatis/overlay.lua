@@ -386,6 +386,13 @@ function M.setup_highlights()
   local list_bg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg
   signal("UatisStatAdd", "DiffAdd", "UatisMeta", list_bg)
   signal("UatisStatDel", "DiffDelete", "UatisMeta", list_bg)
+  -- A file the reader has marked read, and the part of the progress bar
+  -- those files fill. Green, and the same green a `+7` is drawn in --
+  -- the list already has one colour for "there is nothing wrong here",
+  -- and a second one would be a second thing to learn. The whole row
+  -- takes it, so a finished directory folded shut is one green line.
+  vim.api.nvim_set_hl(0, "UatisRead", { link = "UatisStatAdd" })
+  vim.api.nvim_set_hl(0, "UatisProgress", { link = "UatisRead" })
   vim.api.nvim_set_hl(0, "UatisFileCur", { link = "CursorLineNr" })
   vim.api.nvim_set_hl(0, "UatisDir", { link = "Directory" })
   vim.api.nvim_set_hl(0, "UatisStatusA", { link = "DiffAdd" })

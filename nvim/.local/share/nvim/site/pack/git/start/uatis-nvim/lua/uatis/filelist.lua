@@ -43,7 +43,14 @@ function M.render(pane)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local width = config.list.width
+  -- The window's real width, not the one it was opened at: a reader who
+  -- widens the pane is asking to see the paths it was cutting off, and
+  -- `config.list.width` is only where the window STARTS. Kept on the pane
+  -- so a resize can tell whether anything it drew has moved.
+  local win = pane.list_win
+  local width = (win and vim.api.nvim_win_is_valid(win))
+    and vim.api.nvim_win_get_width(win) or config.list.width
+  pane.list_width = width
   local built = ui.build_list(pane, width)
 
   vim.bo[buf].modifiable = true
@@ -64,6 +71,17 @@ function M.render(pane)
 
   pane.list_rows = built.rows
   pane.list_dirs = built.dirs
+  -- The foot of the pane: where the current file leaves you in the
+  -- review. A window status line rather than a row of the buffer,
+  -- because that is the one place in a window that is always at the
+  -- bottom of it -- a last line scrolls away the moment the list is
+  -- taller than the window, which is exactly the review that has
+  -- progress worth reading. It is this window's own, so nothing of the
+  -- reader's is being written over and there is nothing to hand back:
+  -- the window is ours and closing it takes the setting with it.
+  if win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].statusline = config.list.progress and ui.progress(pane, width) or ""
+  end
   M.sync_cursor(pane)
 end
 

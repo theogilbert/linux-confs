@@ -51,6 +51,18 @@ function M.shown(f)
   return f.shown or f.path
 end
 
+--- Whether the reader has marked this file read AND it still is.
+---
+--- The mark records the delta LOC the file had when it was made, so a
+--- file edited afterwards quietly stops being read: there is something
+--- in it nobody has seen, and a green row saying otherwise is the one
+--- thing the mark must not say. It comes back the moment the edit is
+--- undone, which is right -- that IS the file that was read.
+function M.is_read(pane, f)
+  local was = (pane.read or {})[f.path]
+  return was ~= nil and was == (f.added or 0) + (f.removed or 0)
+end
+
 --- Truncates a path from the left, which keeps the basename -- the part
 --- that identifies the file -- when a narrow pane cannot show all of it.
 function M.truncate_path(path, width)
@@ -257,11 +269,13 @@ function M.build_list(pane, width)
   -- already knows all of its own ancestors.
   local dir_stat = {}
   for _, f in ipairs(pane.files) do
+    local read = M.is_read(pane, f)
     for _, d in ipairs(M.dirs_of(M.shown(f))) do
-      local t = dir_stat[d] or { added = 0, removed = 0, files = 0 }
+      local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0 }
       t.added = t.added + (f.added or 0)
       t.removed = t.removed + (f.removed or 0)
       t.files = t.files + 1
+      t.read = t.read + (read and 1 or 0)
       dir_stat[d] = t
     end
   end
@@ -287,6 +301,11 @@ function M.build_list(pane, width)
       -- there, each with its own count.
       local twisty = entry.collapsed and fold.closed or fold.open
       local head_prefix = " " .. indent .. twisty .. " "
+      -- A directory whose every file is read is itself read. Shut, that
+      -- is the whole of what the row has to say -- and it is what makes
+      -- folding a finished directory away worth doing.
+      local t_all = dir_stat[entry.path]
+      local dir_read = t_all ~= nil and t_all.files > 0 and t_all.read == t_all.files
       local line
       if entry.collapsed then
         local t = dir_stat[entry.path] or { added = 0, removed = 0 }
@@ -298,10 +317,14 @@ function M.build_list(pane, width)
         local head = head_prefix .. shown
           .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
         line = b:add(head .. stat)
-        b:hl(line, 0, #head, "UatisDir")
-        stat_hl(b, line, #head, t.added, t.removed)
+        if dir_read then
+          b:hl(line, 0, -1, "UatisRead")
+        else
+          b:hl(line, 0, #head, "UatisDir")
+          stat_hl(b, line, #head, t.added, t.removed)
+        end
       else
-        line = b:add(head_prefix .. entry.name .. "/", "UatisDir")
+        line = b:add(head_prefix .. entry.name .. "/", dir_read and "UatisRead" or "UatisDir")
       end
       dirs[line] = entry.path
     else
@@ -313,21 +336,92 @@ function M.build_list(pane, width)
       local head = head_prefix .. shown .. string.rep(" ", math.max(avail - #shown, 0)) .. " "
       local line = b:add(head .. stat)
       rows[line] = entry.index
-      b:hl(line, #indent + 1, #indent + 2,
-        "UatisStatus" .. (f.status:match("^[AMDR]") and f.status or "M"))
+      if M.is_read(pane, f) then
+        -- Read: the whole row in one colour, status letter and churn
+        -- included. Those two are how a reader decides what to open
+        -- next, and on a file they have already read there is nothing
+        -- left to decide -- leaving them lit would have the row arguing
+        -- with itself.
+        b:hl(line, 0, -1, "UatisRead")
+      else
+        b:hl(line, #indent + 1, #indent + 2,
+          "UatisStatus" .. (f.status:match("^[AMDR]") and f.status or "M"))
+        -- Per-file churn, coloured the same way as everywhere else: how
+        -- much a file grew or shrank is most of how you decide what to
+        -- read next.
+        if not f.binary then
+          stat_hl(b, line, #head, f.added, f.removed)
+        end
+      end
+      -- Last, so it wins the span it covers: where you are standing is
+      -- not something a colour for what you have done may take away.
       if entry.index == pane.file_idx then
         b:hl(line, #head_prefix, #head_prefix + #shown, "UatisFileCur")
-      end
-      -- Per-file churn, coloured the same way as everywhere else: how
-      -- much a file grew or shrank is most of how you decide what to
-      -- read next.
-      if not f.binary then
-        stat_hl(b, line, #head, f.added, f.removed)
       end
     end
   end
 
   return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs }
+end
+
+--- How much of the review the reader has marked read, as a status line
+--- for the window under the list.
+---
+--- Measured in delta LOC -- lines added AND lines removed, since a line
+--- taken out is as much to read as one put in -- rather than in files: a
+--- branch of twenty files whose third is a nine-hundred-line generated
+--- blob is one where `3/20` says nothing true about how much is left.
+--- The file count goes beside it anyway, because the list is a list OF
+--- files and the two answer different questions.
+---
+--- What fills it is the mark and not the cursor. Where the reader
+--- happens to be standing is already on the screen twice -- the row is
+--- drawn as current and the cursor is on it -- and it is not progress:
+--- arriving at the last file of a branch is not having read the branch,
+--- and a bar that said so would be full before any of it was done.
+---
+--- A review with no delta at all -- a rename, a mode change, a binary --
+--- has nothing to measure but its files, so it is measured on those.
+function M.progress(pane, width)
+  local n = #pane.files
+  if n == 0 then
+    return ""
+  end
+  local total = (pane.stat_added or 0) + (pane.stat_removed or 0)
+  local done, read = 0, 0
+  for _, f in ipairs(pane.files) do
+    if M.is_read(pane, f) then
+      read = read + 1
+      done = done + (f.added or 0) + (f.removed or 0)
+    end
+  end
+  local frac = total > 0 and done / total or read / n
+  local text = ("%d/%d · %d%%"):format(read, n, math.floor(frac * 100 + 0.5))
+
+  -- The bar takes what the numbers leave, and goes entirely rather than
+  -- shrinking to a handful of cells: four blocks and three dots is not a
+  -- proportion anyone can read off, and the numbers beside it are
+  -- already saying the same thing exactly.
+  local cells = width - vim.fn.strdisplaywidth(text) - 2
+  if cells < 8 then
+    return " %#UatisMeta#" .. M.escape(text)
+  end
+  local filled = math.floor(frac * cells + 0.5)
+  -- Never quite empty and never quite full while there is review on
+  -- either side of the mark. A bar that reads as done with a file still
+  -- unread is the one thing it must not say -- and the rounding says it
+  -- for any last file under half a cell of the total.
+  if frac > 0 then
+    filled = math.max(filled, 1)
+  end
+  if frac < 1 then
+    filled = math.min(filled, cells - 1)
+  end
+  return table.concat({
+    " %#UatisProgress#", string.rep("█", filled),
+    "%#UatisHint#", string.rep("░", cells - filled),
+    " %#UatisMeta#", M.escape(text),
+  })
 end
 
 --- Flattens a changed-file list into directory and file rows.

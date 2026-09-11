@@ -174,6 +174,7 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
 >
     g?              every key that does anything from here, in a float
     <CR>            open the file on this row
+    x               mark this row read -- a directory and all under it
     K               the whole message of the commit on show
     ]f  [f          next / previous file
     za zc zo        fold this directory
@@ -228,6 +229,35 @@ name of HEAD's branch when nothing has.
 
 Statuses are `A` added, `M` modified, `D` deleted, `R` renamed. A binary file
 gets a row and no count.
+
+                                                            *uatis-list-read*
+`x` in the list marks the row under the cursor read, and the whole row goes
+green -- status letter and churn with it, those being how you decide what to
+open next and there being nothing left to decide. On a directory row it
+completes everything under it, nested directories included; a directory
+whose every file is read is drawn read itself. `x` again takes the mark off
+-- a directory's too, once all of it is read.
+
+A file marks itself once every change in it has been stepped onto with `]c`
+or `[c` (`pane.auto_read`). Every one: `]c` off the last change alone says
+nothing about the rest, and a reader who came in at the last chunk has not
+read the file. Walked in either direction, and the landing `]c` makes on its
+way in from the file before counts.
+
+A file edited after you marked it stops being read on its own: there is
+something in it nobody has seen. It is read again when the edit goes. Marks
+are dropped when the comparison itself moves -- a commit put on show, a new
+base branch -- and they last as long as the review does.
+
+                                                        *uatis-list-progress*
+Under the list, on the window's status line, is how much of the review is
+behind you: a bar, the file count, and a percentage. The percentage is delta
+LOC -- lines added AND lines removed -- and not files, since `3/20` says
+nothing true about a branch whose third file is a nine-hundred-line generated
+blob. What fills it is what you have marked read, not where the cursor is:
+arriving at the last file of a branch is not having read the branch. It is a
+window status line, so it obeys `laststatus` like any other;
+`list.progress = false` turns it off.
 
                                                             *uatis-list-moves*
 git can move while Neovim is not looking. The list re-reads on `BufWritePost`
@@ -415,6 +445,8 @@ preserve.
     UatisHint           key hints
     UatisDir            a directory row
     UatisFileCur        the file the list is standing on
+    UatisRead           a file marked read, and the filled part of the bar
+    UatisProgress       the same, where you want the bar drawn differently
     UatisStatusA        added
     UatisStatusM        modified
     UatisStatusD        deleted
@@ -445,7 +477,8 @@ comment on each saying what it controls. The commonly-changed ones: >lua
 
     require("uatis").setup({
       list = {
-        width = 38,           -- columns
+        width = 38,           -- columns it opens at; resize and it redraws
+        progress = true,      -- how far through the review, under the list
       },
       base = {
         fallbacks = { "develop", "master", "main" },
@@ -454,6 +487,7 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       pane = {
         auto_open = true,     -- show the list when a review starts
         follow = true,        -- annotate a listed file as you arrive at it
+        auto_read = true,     -- a file walked change by change marks itself
       },
       diff = {
         default_backend = "struct",   -- or "line"
@@ -511,6 +545,7 @@ being reviewed: >
     base, rev           as above, for the whole review
     root                repo root
     files               how many the branch changed
+    read                how many of them you have marked read
     added, removed      across all of them
     file                the one the list is standing on, if any
     tracks_base         as above

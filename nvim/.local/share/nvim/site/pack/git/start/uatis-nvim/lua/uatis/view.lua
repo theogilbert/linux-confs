@@ -443,7 +443,43 @@ local function toggle_backend(view)
   render(view)
 end
 
---- Puts the cursor on `line` in the view's own window, centred.
+--- Marks the file read once every change in it has been stepped onto.
+---
+--- Every one, and not `]c` off the last: a reader who came in at the
+--- last chunk and pressed `]c` once has seen one change of the file,
+--- and the rest of it is exactly what the mark would then be claiming
+--- on their behalf. `visited` is the anchors a chunk motion has put the
+--- cursor on -- `]c`, `[c`, and the landing `]c` makes on its way in
+--- from the file before -- checked against the anchors as they now are,
+--- so a visit to a row an edit has since moved does not count.
+---
+--- Silent: the row going green in the list is the whole of what there
+--- is to say. Pressed ON rather than toggled, so walking a file twice
+--- does not unread it. Needs the list, which is what holds the marks,
+--- and reads one if there is none yet the way `]f` does -- without
+--- putting a window up.
+local function read_if_walked(view)
+  if not config.pane.auto_read then
+    return
+  end
+  for _, a in ipairs(view.anchors or {}) do
+    if not (view.visited or {})[a] then
+      return
+    end
+  end
+  local pane = require("uatis.pane")
+  local function mark(list)
+    pane.toggle_read_path(list, view.relpath, true)
+  end
+  local list = pane.get()
+  if list and (list.renders or 0) > 0 then
+    return mark(list)
+  end
+  pane.list({ on_ready = mark })
+end
+
+--- Puts the cursor on `line` in the view's own window, centred -- and
+--- counts it as a change stepped onto, which is the only way here.
 local function jump(view, line)
   local win = view.win
   if not win or not vim.api.nvim_win_is_valid(win) then
@@ -453,6 +489,9 @@ local function jump(view, line)
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! zz")
   end)
+  view.visited = view.visited or {}
+  view.visited[line] = true
+  read_if_walked(view)
 end
 
 --- The end of a file, when `]c` was asking for the next change.
@@ -541,6 +580,11 @@ local function step_hunk(view, dir)
     end
   end
   if not target then
+    -- A file with nothing to step onto has had all of it stepped onto:
+    -- `]c` in a binary, or a rename with no content change, is done.
+    if dir > 0 then
+      read_if_walked(view)
+    end
     return spill(view, dir)
   end
   jump(view, target)

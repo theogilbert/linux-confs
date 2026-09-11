@@ -10,10 +10,14 @@
 
 return {
   list = {
-    -- Width of the changed-file window, in columns.
+    -- Width of the changed-file window, in columns, when it opens. The
+    -- rows follow the window from there, so resizing it redraws them.
     width = 38,
     -- The characters drawn at the head of an open and a shut directory row.
     fold = { open = "▾", closed = "▸" },
+    -- Show how far through the review the current file is, on the status
+    -- line under the list. Obeys `laststatus` like any other window's.
+    progress = true,
   },
 
   base = {
@@ -51,6 +55,10 @@ return {
       file_prev = "[f",
       -- Open the file on the current row.
       select = "<CR>",
+      -- Mark the file on the current row read, or a directory row and
+      -- everything under it. A bare letter, so it is bound in the list
+      -- only.
+      mark_read = "x",
       -- Re-read the list from git.
       refresh = "R",
       -- Jump to the window the file is open in.
@@ -118,6 +126,8 @@ return {
     -- `]c` off the last chunk of a file steps into the next file in the
     -- list and lands on its first change.
     chunk_spill = true,
+    -- ...and marks the file it is leaving read.
+    auto_read = true,
   },
 
   show = {

@@ -324,7 +324,15 @@ local function refresh(pane, keep_path)
       if not pane.commit then
         pane.src = src_of(pane)
       end
-      rebuild(pane, keep_path)
+      -- Which file the row stays on is asked HERE, and not when the read
+      -- was requested. Two git subprocesses is long enough to press
+      -- `<CR>` in, and a path captured beforehand put the row back on the
+      -- file the reader had just left -- taking `]f`, `[f` and `]c`'s
+      -- spill into the next file with it, since all three step from the
+      -- row. `keep_path` is what to fall back to when there is no current
+      -- file to ask about, which is a list being read for the first time.
+      local cur = (pane.files or {})[pane.file_idx or 0]
+      rebuild(pane, cur and cur.path or keep_path)
       if pane.list_buf then
         filelist.render(pane)
       end
@@ -433,6 +441,7 @@ local function keys_of(pane)
 
   add(k.select, "open the file on this row")
   add(k.file_next .. " " .. k.file_prev, "next / previous changed file")
+  add(k.mark_read, "mark this row read -- a directory and all under it")
   add(k.fold, "fold this directory")
   add(k.fold_close .. " " .. k.fold_open, "shut it / open it")
   add(k.fold_close_all .. " " .. k.fold_open_all, "fold everything / open everything")
@@ -672,6 +681,12 @@ local function show(pane, idx, keep_path)
     pane.target, pane.src = pane.tree_ref, "working tree"
   end
   pane.hint = hint_for(pane)
+  -- What was read was read of a different comparison. The marks record
+  -- the delta LOC a file had, so most of them would lapse on their own
+  -- against a commit's own diff -- but a file one commit left exactly as
+  -- big as the branch did would come back green having never been seen
+  -- that way, and a mark that is right by coincidence is worse than none.
+  pane.read = {}
   view_mod.close_all(pane.root, was, pane.standalone)
 
   pane.on_ready = function(p)
@@ -871,8 +886,9 @@ end
 function M.refresh(pane, keep_path)
   pane = pane or M.get()
   if pane then
-    local cur = pane.files[pane.file_idx]
-    refresh(pane, keep_path or (cur and cur.path) or nil)
+    -- No current file to pass: `refresh` asks which one that is when the
+    -- read lands, which is the only moment the answer is still true.
+    refresh(pane, keep_path)
   end
 end
 
@@ -923,6 +939,9 @@ function M.repoint(root, label, sha)
       and (pane.tree_ref ~= label or pane.tree_rev ~= sha) then
       local cur = pane.files[pane.file_idx]
       pane.tree_ref, pane.tree_rev = label, sha
+      -- ...and the same for the marks: a new base is a new comparison,
+      -- and what was read was read of the old one.
+      pane.read = {}
       -- Which commits there are is a fact about the two revisions, and
       -- one of them has just moved: the walk is re-read on the next
       -- step, and a commit on show is let go rather than left pointing
@@ -1034,6 +1053,80 @@ local function redraw_at(pane, path)
       pcall(vim.api.nvim_win_set_cursor, win, { line, 0 })
       return
     end
+  end
+end
+
+-- ------------------------------------------------------------------
+-- Read and unread
+-- ------------------------------------------------------------------
+
+--- Marks files read, or takes the mark off. `on` nil decides for itself.
+---
+--- What is stored is the delta LOC each file had at the time, so that a
+--- file edited afterwards stops counting as read: see `ui.is_read`.
+---
+--- One rule for one file and for a whole directory: anything under it
+--- still unread means the press COMPLETES it, and only a directory that
+--- is entirely read is taken back. A directory that flipped file by file
+--- would need two presses to finish a row half done.
+local function set_read(pane, files, on)
+  if #files == 0 then
+    return
+  end
+  if on == nil then
+    on = false
+    for _, f in ipairs(files) do
+      if not ui.is_read(pane, f) then
+        on = true
+        break
+      end
+    end
+  end
+  -- Only where it changes something: the automatic mark asks on every
+  -- chunk motion once a file is walked, and a list redrawn per `]c` for
+  -- a row that is already green would be work for nothing.
+  local moved = false
+  for _, f in ipairs(files) do
+    local value = on and ((f.added or 0) + (f.removed or 0)) or nil
+    if pane.read[f.path] ~= value then
+      pane.read[f.path] = value
+      moved = true
+    end
+  end
+  if moved and pane.list_buf then
+    filelist.render(pane)
+  end
+  return on
+end
+
+--- The file at `idx` in the list.
+function M.toggle_read(pane, idx, on)
+  local f = pane.files[idx]
+  if f then
+    return set_read(pane, { f }, on)
+  end
+end
+
+--- A directory row, and everything under it -- which is what a directory
+--- row stands for everywhere else in this list.
+function M.toggle_read_dir(pane, dir, on)
+  if not dir then
+    return
+  end
+  local files = {}
+  for _, f in ipairs(pane.files) do
+    if under(dir, ui.shown(f)) then
+      table.insert(files, f)
+    end
+  end
+  return set_read(pane, files, on)
+end
+
+--- ...and from the file itself, which knows its path and not its row.
+function M.toggle_read_path(pane, relpath, on)
+  local f = patch.find(pane.files, relpath)
+  if f then
+    return set_read(pane, { f }, on)
   end
 end
 
@@ -1576,6 +1669,15 @@ local function setup_keymaps(pane)
         set_fold(pane, (pane.list_dirs or {})[line])
       end
     end, opts = { desc = "uatis: open file under cursor" } },
+    { lhs = k.mark_read, rhs = function()
+      local line = vim.api.nvim_win_get_cursor(0)[1]
+      local idx = (pane.list_rows or {})[line]
+      if idx then
+        M.toggle_read(pane, idx)
+      else
+        M.toggle_read_dir(pane, (pane.list_dirs or {})[line])
+      end
+    end, opts = { desc = "uatis: mark the row under the cursor read" } },
     { lhs = k.fold, rhs = function()
       set_fold(pane, fold_target(pane))
     end, opts = { desc = "uatis: fold the directory under the cursor" } },
@@ -1655,6 +1757,29 @@ local function setup_watchers(pane)
           end
         end)
       end
+    end,
+  })
+
+  -- A pane made wider has room for paths it was cutting off, and one made
+  -- narrower is drawing rows past its own edge. Neither is a question for
+  -- git -- the list has not changed, only how much of each row fits -- so
+  -- this redraws and nothing more.
+  --
+  -- On the drawn width rather than on `v:event.windows`: a `:vertical
+  -- resize` anywhere in the tab can move this window, `VimResized` moves
+  -- it with no window event at all, and the one thing that decides
+  -- whether a redraw would show anything different is whether the width
+  -- it was drawn at still holds.
+  vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+    group = pane.augroup,
+    callback = function()
+      local win = pane.list_win
+      if panes[pane.tab] ~= pane
+        or not (win and vim.api.nvim_win_is_valid(win))
+        or vim.api.nvim_win_get_width(win) == pane.list_width then
+        return
+      end
+      filelist.render(pane)
     end,
   })
 
@@ -1837,10 +1962,20 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     files = {},
     file_idx = 1,
     list_rows = {},
+    -- The width the rows were last drawn at, so a resize can tell whether
+    -- redrawing them would show anything different.
+    list_width = nil,
     -- Directory rows folded shut, by full path. The reader's, and kept
     -- across every redraw -- a fold that reopened whenever the list was
     -- re-read would be gone the first time you moved.
     collapsed = {},
+    -- Files the reader has marked read, by repo-relative path. The VALUE
+    -- is the delta LOC the file had when it was marked, and a row counts
+    -- as read only while that still holds: a file edited after you read
+    -- it has something in it you have not seen, and saying otherwise is
+    -- the one thing the mark must not do. Keyed on the real path, so a
+    -- change of subtree carries the marks with it.
+    read = {},
     list_dirs = {},
     -- Buffers this pane has lent `]f`/`[f` to, with whatever was mapped
     -- there before, to be handed back when it closes.

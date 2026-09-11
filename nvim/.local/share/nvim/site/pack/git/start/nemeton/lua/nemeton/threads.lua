@@ -214,6 +214,103 @@ function M.attach_drafts(list, replies)
   end
 end
 
+--- Puts the comments that are on their way to the forge where they are
+--- going, so that a reviewer sees what they just wrote where they wrote
+--- it rather than half a second later.
+---
+--- Three shapes, because there are three things you can be in the
+--- middle of sending. A rewrite is a note that is already drawn, so it
+--- gets the new words and a mark saying they have not landed. A reply
+--- is a note the thread has not got yet, so it is added to the end of
+--- it. A new comment is a thread nobody has, so it is a whole one --
+--- inline where it carries a position and on the merge request where it
+--- does not.
+---
+--- In place, and safe to run again: a refresh rebuilds the threads from
+--- the forge and this puts back whatever is still in flight, and
+--- between refreshes it is asked again for each new one. Nothing
+--- accumulates, because a comment already drawn is recognised by the id
+--- it was given here and left alone.
+function M.attach_sending(inline, overview, list)
+  if not (list and #list > 0) then
+    return
+  end
+  local by_id, by_note = {}, {}
+  for _, from in ipairs({ inline or {}, overview or {} }) do
+    for _, t in ipairs(from) do
+      by_id[t.id] = t
+      for _, n in ipairs(t.notes or {}) do
+        by_note[n.id] = n
+      end
+    end
+  end
+  for _, one in ipairs(list) do
+    if one.note_id and by_note[one.note_id] then
+      -- The words as they will read, and the mark that says they are
+      -- not what the forge has yet.
+      local note = by_note[one.note_id]
+      note.body, note.sending = one.body, true
+    elseif one.discussion_id and by_id[one.discussion_id] and not by_note[one.id] then
+      table.insert(by_id[one.discussion_id].notes, {
+        id = one.id,
+        author = one.author,
+        body = one.body,
+        sending = true,
+      })
+    elseif not (one.note_id or one.discussion_id) and not by_id[one.id] then
+      local place = one.position and anchor(one.position)
+      local t = {
+        id = one.id,
+        sending = true,
+        notes = { { id = one.id, author = one.author, body = one.body, sending = true } },
+        -- Nothing on the forge to resolve or to answer, and nothing
+        -- here pretending otherwise.
+        resolvable = false,
+        resolved = false,
+        individual_note = false,
+        path = place and place.path,
+        line = place and place.line,
+        first_line = place and place.first,
+        side = place and place.side,
+        head_sha = one.position and one.position.head_sha,
+        base_sha = one.position and one.position.base_sha,
+      }
+      table.insert(t.line and inline or overview, t)
+    end
+  end
+end
+
+--- ...and takes one back off, for the ending where the forge refused
+--- it. The threads are only rebuilt by a refresh, and a refusal is the
+--- one ending that does not run one.
+---
+--- A rewrite cannot be undone here -- the words it put on the note are
+--- the only copy of what the author typed, and the refresh that follows
+--- the next fetch is what restores them -- so it keeps them and loses
+--- only the mark.
+function M.detach_sending(inline, overview, one)
+  if not one then
+    return
+  end
+  for _, from in ipairs({ inline or {}, overview or {} }) do
+    for i = #from, 1, -1 do
+      local t = from[i]
+      if t.id == one.id and t.sending then
+        table.remove(from, i)
+      else
+        for j = #(t.notes or {}), 1, -1 do
+          local note = t.notes[j]
+          if note.id == one.id and note.sending then
+            table.remove(t.notes, j)
+          elseif one.note_id and note.id == one.note_id then
+            note.sending = nil
+          end
+        end
+      end
+    end
+  end
+end
+
 --- Puts the reactions on the notes they were given to.
 ---
 --- `given` is `{ [note_id] = { { name, user }, ... } }` -- what
@@ -1273,6 +1370,16 @@ function M.render(thread, opts)
       { i > 1 and (rail[1] .. mark) or lead, on_band(rail[2]) },
       { note.author, on_band("NemetonAuthor") },
     }
+    -- ...and, on a comment that is on its way to the forge, that it is.
+    -- The one thing in a head that is about this second rather than
+    -- about when something was said: it is here between the keypress
+    -- and the answer, and then the refresh takes it away. Never spared
+    -- on a narrow window, because a mark that is dropped exactly when
+    -- there is least room is a mark that is missing when it is being
+    -- looked for.
+    if note.sending and config.comments.sending then
+      table.insert(head, { " · " .. config.comments.sending, on_band("NemetonSending") })
+    end
     -- Which pieces of it can be spared, in the order they can be, for a
     -- window too narrow to hold the whole line. A head cannot wrap --
     -- it is a name, a date and a state, and a date on a line of its own

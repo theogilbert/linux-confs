@@ -19,6 +19,7 @@ hl-NemetonReactionMine	nemeton.txt	/*hl-NemetonReactionMine*
 hl-NemetonReading	nemeton.txt	/*hl-NemetonReading*
 hl-NemetonReply	nemeton.txt	/*hl-NemetonReply*
 hl-NemetonReplySettled	nemeton.txt	/*hl-NemetonReplySettled*
+hl-NemetonSending	nemeton.txt	/*hl-NemetonSending*
 hl-NemetonSettled	nemeton.txt	/*hl-NemetonSettled*
 hl-NemetonStrike	nemeton.txt	/*hl-NemetonStrike*
 hl-NemetonSuggestNew	nemeton.txt	/*hl-NemetonSuggestNew*
@@ -66,6 +67,7 @@ nemeton-markdown	nemeton.txt	/*nemeton-markdown*
 nemeton-mentions	nemeton.txt	/*nemeton-mentions*
 nemeton-notes-window	nemeton.txt	/*nemeton-notes-window*
 nemeton-old-side	nemeton.txt	/*nemeton-old-side*
+nemeton-open	nemeton.txt	/*nemeton-open*
 nemeton-pane-window	nemeton.txt	/*nemeton-pane-window*
 nemeton-peek-window	nemeton.txt	/*nemeton-peek-window*
 nemeton-prompt	nemeton.txt	/*nemeton-prompt*
@@ -74,6 +76,8 @@ nemeton-reading	nemeton.txt	/*nemeton-reading*
 nemeton-refused	nemeton.txt	/*nemeton-refused*
 nemeton-replies	nemeton.txt	/*nemeton-replies*
 nemeton-requirements	nemeton.txt	/*nemeton-requirements*
+nemeton-seen	nemeton.txt	/*nemeton-seen*
+nemeton-sending	nemeton.txt	/*nemeton-sending*
 nemeton-suggest-box	nemeton.txt	/*nemeton-suggest-box*
 nemeton-syntax	nemeton.txt	/*nemeton-syntax*
 nemeton-tracking	nemeton.txt	/*nemeton-tracking*

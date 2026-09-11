@@ -133,11 +133,11 @@ A review, end to end:
                         (`keys.global.open`) is the same thing on a
                         key.
 
-                        Both halves say what they are waiting for while
-                        they wait: the prompt cannot go up until the
-                        forge has said what is open, and nothing is on
-                        the screen between the number being given and
-                        the branch being checked out.
+                        The prompt is up on the keypress and not on the
+                        answer |nemeton-open|. What the checkout is
+                        waiting for is said while it waits, since
+                        nothing else is on the screen between the number
+                        being given and the branch being there.
 
 :Nemeton close          End the review: the markers and the review keys
                         go away. The branch stays checked out.
@@ -147,8 +147,10 @@ A review, end to end:
 
 :Nemeton expand         The conversations themselves: one at a time in
                         a pane beside the code, on the side
-                        `comments.expand` says. Again to fold them back
-                        to gutter markers. |nemeton-pane-window|
+                        `comments.expand` says. Again on the same one to
+                        fold them back to gutter markers, or on another
+                        to read that one instead.
+                        |nemeton-pane-window|
 
 :Nemeton peek           The thread under the cursor, in a float that
                         closes on the next cursor movement.
@@ -262,7 +264,8 @@ takes `]m` and `[m` for its method motions. Only a buffer-local mapping
 wins that, and the file is loaded again every time it is re-read, which
 a checkout makes it do.
 
-    <leader>mx      expand the conversations -- the pane beside the code
+    <leader>mx      expand the conversations -- the pane beside the code,
+                    and, with it open, switch it to the one under the cursor
     <leader>mp      peek at the thread on this line
     <leader>ma      comment on this line, or (visual) on these lines
     <leader>ms      (visual) suggest a change to these lines
@@ -409,6 +412,37 @@ the list gives up rows from the bottom, and only when it has none left
 to give does the pair come up the screen. `list.preview_height` is the
 most the pane will take. |nemeton-config-list|
 
+                                                                *nemeton-open*
+`:Nemeton open` with no number asks for one, and the prompt is on the
+screen before the forge has been asked.
+
+It used to be the other way round. The list is the whole reason the
+prompt exists -- you know it as "the proxy one" and the number is the
+thing you would have to go and look up -- so it waited for `glab` to
+say what was open before it could be typed into at all. A subprocess
+and a round trip is a second on a good day, and a key that does nothing
+for a second is not the quick way past the queue it was meant to be.
+
+                                                                *nemeton-seen*
+So what the forge last said is written down, one entry per repository,
+under `$XDG_STATE_HOME/nemeton/merge-requests.json` --
+`list.remember_path` to put it elsewhere, `list.remember = false` to
+write nothing and wait for the forge as before. A number and a title per
+merge request and nothing else: it is a cache, it can be deleted at any
+moment without anybody noticing, and the smallest one that answers the
+question is the one that stays true longest.
+
+The prompt comes up on that, immediately, and the fetch goes out behind
+it. When it lands the list under the menu is replaced and the file is
+written again -- so the answer is never more than one press out of date,
+and never in the way of the press. The queue writes it too, since the
+first page of what is open is the same list.
+
+Nothing here is believed. It is what was open the last time anybody
+looked; a number typed over the top of it is opened whether or not this
+file has ever heard of it, and a forge that will not answer leaves the
+menu saying what it said yesterday and says so.
+
 THE MERGE REQUEST                                      *nemeton-detail-window*
 
 `<leader>md`, or `:Nemeton description`. What it is for, and the state
@@ -492,6 +526,16 @@ answered the cursor would spend that walk showing everything except the
 thing being read. So it holds still, and the comment stays on the screen
 while the code under it moves.
 
+...which leaves "the one I am on" needing a key of its own, and that key
+is `<leader>mx` again. Pressed with the pane open and the cursor inside
+a conversation that is not the one in it, it switches to that one rather
+than folding the pane away. Inside is enough: a comment written over a
+selection is anchored to the last of its lines and only that line
+carries a marker, but every line under the band |nemeton-reading| is
+inside the conversation. Pressed on the conversation already being read,
+on a line inside none, or from within the pane itself, it is the toggle
+it has always been.
+
 One pane, not one per window. It is a place to read, like the quickfix
 window, and a screen with a pane against every split is a screen with no
 code left on it.
@@ -551,6 +595,32 @@ in the prose.
 "expanded" means, so closing it folds the conversations away rather than
 leaving the session saying they are open. Closing the window any other
 way says the same thing.
+
+                                                          *nemeton-sending*
+
+WHILE IT IS ON ITS WAY. Posting a comment is a keypress and then a round
+trip: the composer closes, `glab` goes off to the forge, and half a
+second later the refresh brings the comment back. Half a second of
+nothing is long enough to wonder whether the key worked.
+
+So the comment is drawn where it is going straight away -- a reply at
+the end of the thread it answers, a rewrite as the new words on the note
+it rewrites, a new comment as a thread of its own on its line -- with
+`comments.sending` on the head of it |hl-NemetonSending|. "sending…" by
+default; `false` draws the comment with nothing to mark it.
+
+It is not a comment that exists. Until the forge answers there is no id
+to reply to, resolve, rewrite, delete or react to, so every key that
+would do one of those says so and does nothing: the answer is a
+second's wait. It is not counted among the unsent either -- a draft is
+a comment you decided not to send yet, and this is one that is going.
+
+The mark goes when the forge answers. Taken away by the refresh that
+follows, rather than by the answer itself, because that refresh is what
+puts the real comment there: dropped any earlier the comment would
+vanish for the length of a fetch and come back. A forge that refused it
+takes it off at once, since a refusal is the one ending with no refresh
+after it, and says what was wrong in GitLab's own words.
 
                                                           *nemeton-reading*
 
@@ -851,6 +921,7 @@ is a numbered list unless you have replaced it, and a numbered list of
 every name |nemeton-emoji| knows is a wall rather than a picker -- so
 the names you actually react with are the picker, and its last row,
 "another emoji", is a prompt that completes over all of them.
+
                                                               *nemeton-prompt*
 That prompt is a window of this plugin's own and not `vim.ui.input`. It
 is the one place here that is nothing *but* completion, and `completion`
@@ -1255,6 +1326,8 @@ LIST                                                     *nemeton-config-list*
       concurrency = 6,        -- how many per-row calls at once
       stats = true,           -- does each row say how much it changes
       preview_height = 14,    -- rows of the pane under the list
+      remember = true,        -- write down what is open, for the prompt
+      remember_path = nil,    -- nil: $XDG_STATE_HOME/nemeton/merge-requests.json
     }
 <
 `ci`, `approvals` and `drafts` cost one API call each per row: GitLab's
@@ -1323,6 +1396,7 @@ COMMENTS                                             *nemeton-config-comments*
       wrap = 80,             -- the widest a comment is drawn
       pane_wrap = false,     -- ...and whether the pane wraps code too
       context = 2,           -- lines quoted above the ones a thread is on
+      sending = "sending…",  -- what a comment on its way to the forge says
       peek_height = 20,
     }
 <
@@ -1663,6 +1737,8 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonOk             passed, approved, enough        DiagnosticOk
     NemetonBad            failed                          DiagnosticError
     NemetonBusy           running, pending, not yet       DiagnosticWarn
+    NemetonSending        a comment on its way to the     DiagnosticWarn
+                          forge |nemeton-sending|
     NemetonAdded          a line the change adds          Added
     NemetonRemoved        one it takes away               Removed
     NemetonChanged        one it edits                    Changed
@@ -1754,6 +1830,13 @@ windows -- at `comments.reading_ground` of its strength, which is more
 than the pane's own and not less: the band in there holds a block
 together on a window that is nothing else, and this one has to be found
 in a screenful of code that all looks like code.
+
+                                                        *hl-NemetonSending*
+`NemetonSending` is `comments.sending` on the head of a comment that is
+on its way to the forge |nemeton-sending|. `DiagnosticWarn`, which is
+the colour a job that has not finished is drawn in (`NemetonBusy`):
+the same fact about a different thing, which is that this is happening
+and the answer is to wait.
 
                                                         *hl-NemetonReaction*
                                                     *hl-NemetonReactionMine*

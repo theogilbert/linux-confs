@@ -16,12 +16,32 @@ local threads = require("nemeton.threads")
 
 local M = {}
 
+--- Whether the thing a key was pressed on is still on its way to the
+--- forge, said out loud.
+---
+--- A comment drawn while it is being posted |nemeton-sending| is a
+--- comment the forge has never heard of: there is no id to reply to,
+--- resolve, rewrite, delete or react to, and a call built out of the
+--- one this plugin invented would come back a 404 with a confusing
+--- message on it. The answer is a second's wait, so that is what it
+--- says.
+local function in_flight(thread, note)
+  if not ((note and note.sending) or (thread and thread.sending)) then
+    return false
+  end
+  session.notify("that comment is still on its way to the forge", vim.log.levels.WARN)
+  return true
+end
+
 --- `after` is what the window this was pressed in does with itself
 --- once the forge has been asked again: the comments window stays open
 --- over the list it just changed, and a list that still has the note
 --- in it is a window that has to be refetched by hand to be believed.
 local function rewrite(thread, note, after)
   local mr = session.current
+  if in_flight(thread, note) then
+    return
+  end
   compose.open({
     title = ("!%d  edit %s"):format(
       mr.iid,
@@ -34,12 +54,19 @@ local function rewrite(thread, note, after)
         session.notify("unchanged")
         return
       end
+      -- The new words on the note straight away, marked as not yet the
+      -- forge's: a rewrite is a round trip, and a comment that goes on
+      -- saying the old thing for half a second is a keypress you cannot
+      -- tell worked.
+      local sent = session.sending({ body = body, note_id = note.id, author = note.author })
       local function done(data, err)
         if not data then
+          sent(false)
           session.refused("could not edit", err)
           return
         end
         session.notify("edited")
+        sent(true)
         session.refresh(after)
       end
       -- An unsent comment lives at its own endpoint until it is sent --
@@ -75,6 +102,9 @@ end
 
 local function remove(thread, note, after)
   local mr = session.current
+  if in_flight(thread, note) then
+    return
+  end
   local first = vim.split(threads.drawn(note.body), "\n", { plain = true })[1] or ""
   M.confirm(
     ("Delete %s: %s"):format(
@@ -101,12 +131,21 @@ end
 
 --- Picks one note out of a thread and hands it to `fn`, asking which
 --- when there is more than one to ask about.
+---
+--- The ones still on their way are not among them: there is nothing on
+--- the forge to act on yet, and a list that offers one is a list with a
+--- wrong answer in it.
 local function pick(thread, question, fn, after)
   if not session.current or not thread then
     session.notify("no thread here", vim.log.levels.WARN)
     return
   end
-  local notes = thread.notes or {}
+  if in_flight(thread, nil) then
+    return
+  end
+  local notes = vim.tbl_filter(function(note)
+    return not note.sending
+  end, thread.notes or {})
   if #notes == 0 then
     return
   end
@@ -144,6 +183,9 @@ function M.reply(thread)
     session.notify("no thread here", vim.log.levels.WARN)
     return
   end
+  if in_flight(thread, nil) then
+    return
+  end
   if thread.draft then
     session.notify("that comment has not been sent yet — edit it instead", vim.log.levels.WARN)
     return
@@ -157,22 +199,28 @@ function M.reply(thread)
     remember = ("!%d reply %s"):format(mr.iid, thread.id),
     default = "post",
     on_draft = function(body)
+      local sent = session.sending({ body = body, discussion_id = thread.id })
       glab.create_draft(mr.root, mr.iid, body, nil, thread.id, function(data, err)
         if not data then
+          sent(false)
           session.refused("could not keep", err)
           return
         end
         session.notify("kept a reply to " .. to)
+        sent(true)
         session.refresh()
       end)
     end,
     on_submit = function(body)
+      local sent = session.sending({ body = body, discussion_id = thread.id })
       glab.reply(mr.root, mr.iid, thread.id, body, function(data, err)
         if not data then
+          sent(false)
           session.refused("could not reply", err)
           return
         end
         session.notify("replied")
+        sent(true)
         session.refresh()
       end)
     end,
@@ -188,6 +236,9 @@ function M.resolve(thread)
   local mr = session.current
   if not mr or not thread then
     session.notify("no thread here", vim.log.levels.WARN)
+    return
+  end
+  if in_flight(thread, nil) then
     return
   end
   if not thread.resolvable then
@@ -226,6 +277,9 @@ local MORE = {}
 
 local function react_to(thread, note, after)
   local mr = session.current
+  if in_flight(thread, note) then
+    return
+  end
   if note.draft or thread.draft then
     session.notify(
       "that comment has not been sent yet — nothing to react to",

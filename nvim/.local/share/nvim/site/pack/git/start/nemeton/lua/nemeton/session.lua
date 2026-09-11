@@ -241,6 +241,18 @@ end
 --- Re-reads the discussions and redraws. Called after posting anything,
 --- because the forge is the source of truth and a locally invented note
 --- is a note with no id to reply to.
+--- The gutter's index, rebuilt out of what has been fetched and what
+--- is on its way.
+---
+--- Its own function because two callers need it: the refresh, which has
+--- just replaced every table under it, and `M.sending`, which has put
+--- one more comment into them between refreshes.
+local function index(mr)
+  threads.attach_sending(mr.inline, mr.overview, mr.sending)
+  local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
+  mr.by_file = threads.index(all)
+end
+
 function M.refresh(cb)
   if not M.current then
     return
@@ -266,8 +278,14 @@ function M.refresh(cb)
     -- have been reacted to by.
     threads.attach_reactions(mr.inline, mr.reactions, mr.me)
     threads.attach_reactions(mr.overview, mr.reactions, mr.me)
-    local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
-    mr.by_file = threads.index(all)
+    -- ...and whatever is still in flight, which the refresh that
+    -- carries it home is the one to take away: a comment that vanished
+    -- for the length of a round trip and then came back is a comment
+    -- that flickered.
+    mr.sending = vim.tbl_filter(function(one)
+      return not one.landed
+    end, mr.sending or {})
+    index(mr)
     M.redraw_all()
     if cb then
       cb(ok)
@@ -507,6 +525,70 @@ function M.quoted(thread, now, context)
   return out
 end
 
+--- Says that a comment is on its way to the forge, and hands back the
+--- function that says it has arrived.
+---
+--- A comment posted from the composer used to be a keypress and then
+--- nothing: the window closed, a round trip happened, and half a second
+--- later the refresh brought the comment back from the forge. Half a
+--- second is long enough to wonder whether the key worked.
+---
+--- So it is drawn where it is going, straight away, with `sending` on
+--- the head of it |nemeton-sending|. Not as a comment that exists --
+--- it does not, and until the forge says otherwise it has no id to
+--- reply to, resolve, rewrite or delete, which is why every key that
+--- would do one of those refuses while this is on it. It is a comment
+--- that has been asked for.
+---
+--- `what` is where it is going and what it says:
+---
+---   `body`          the words
+---   `author`        who wrote it, which is you
+---   `note_id`       the note being rewritten, for an edit
+---   `discussion_id` the thread being answered, for a reply
+---   `position`      the lines it is anchored to, for a new thread
+---
+--- The function it returns is called with whether the forge took it.
+--- `true` leaves the comment on the screen and lets the refresh that
+--- follows take it off, since that refresh is what puts the real one
+--- there; `false` takes it off now, because nothing else is going to.
+function M.sending(what)
+  local mr = M.current
+  if not mr or not what or not what.body then
+    return function() end
+  end
+  local one = vim.tbl_extend("keep", { id = "sending:" .. tostring(vim.uv.hrtime()) }, what)
+  -- Under your own name where this plugin has been told it -- the
+  -- reactions ask, and the answer is kept -- so that the note does not
+  -- change who wrote it the moment it lands. "you" where nothing has
+  -- asked, which is what an unsent draft is drawn as.
+  one.author = one.author or mr.me or "you"
+  table.insert(mr.sending, one)
+  index(mr)
+  M.redraw_all()
+  return function(ok)
+    if M.current ~= mr then
+      return
+    end
+    if ok then
+      -- Kept until the refresh, which is where the real one comes from.
+      one.landed = true
+      return
+    end
+    for i, other in ipairs(mr.sending) do
+      if other == one then
+        table.remove(mr.sending, i)
+        break
+      end
+    end
+    -- The threads still carry it: they are only rebuilt by a refresh,
+    -- and a refusal is the one ending that does not run one.
+    threads.detach_sending(mr.inline, mr.overview, one)
+    index(mr)
+    M.redraw_all()
+  end
+end
+
 --- Every unsent comment, wherever it sits -- on a line, on the merge
 --- request, or inside somebody's thread as an answer you have not sent.
 --- Counted rather than read: this is what `publish` sends and what the
@@ -647,6 +729,11 @@ function M.open(iid, opts)
       -- other, counted apart, and gone from here the moment they are
       -- published.
       drafts = {},
+      -- ...and the ones that are neither written nor arrived: on their
+      -- way to the forge this second. Drawn where they are going, with
+      -- the head of each saying so, and taken off again by the refresh
+      -- that brings back the real one. See `M.sending`.
+      sending = {},
       draft_overview = {},
       draft_replies = {},
       mode = "signs",
@@ -949,13 +1036,29 @@ end
 
 --- The conversations themselves rather than only a mark in the gutter:
 --- in a pane beside the code, on the side `comments.expand` says.
+---
+--- ...and, with the pane already open and the cursor standing inside a
+--- conversation that is not the one in it, the key that means "show me
+--- the conversations" means that one. The pane holds still while the
+--- cursor wanders -- which is the whole of why it is pleasant to read
+--- beside -- so there has to be a way of saying "this one now", and
+--- the key that is already in the hand for it is the one that opened
+--- the pane. Closing it and opening it again on the comment you were
+--- already standing on is two keypresses for something asked once.
+---
+--- Pressed anywhere else -- on the conversation already being read, on
+--- a line with none, inside the pane itself -- it is the toggle it has
+--- always been.
 function M.toggle_expanded()
   if not M.current then
     notify("no merge request open", vim.log.levels.WARN)
     return
   end
-  M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"
   local pane = require("nemeton.pane")
+  if M.current.mode == "expanded" and pane.switch() then
+    return M.current.mode
+  end
+  M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"
   if M.current.mode == "expanded" then
     pane.open()
   else

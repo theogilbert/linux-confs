@@ -73,6 +73,25 @@ return {
     -- bottom, so that its top edge -- and the row you were reading --
     -- does not move.
     preview_height = 14,
+
+    -- Whether the merge requests open on a project are written down, so
+    -- that the prompt `:Nemeton open` puts up can be typed into before
+    -- the forge has answered |nemeton-open|.
+    --
+    -- That prompt exists because it is faster than opening the queue,
+    -- and it completes over a list only the forge has -- so without
+    -- this it waited on a subprocess and a round trip before it could
+    -- be typed into at all, which is the one thing it was supposed not
+    -- to do. What is kept is a number and a title per merge request and
+    -- nothing else, and it is replaced by the fetch it is shown
+    -- alongside. `false` to write nothing and wait for the forge.
+    remember = true,
+
+    -- ...and where. Nil is `$XDG_STATE_HOME/nemeton/merge-requests.json`
+    -- -- beside the log and beside what the composer kept, because one
+    -- directory per plugin is easier to find and easier to delete than
+    -- two.
+    remember_path = nil,
   },
 
   comments = {
@@ -612,6 +631,19 @@ return {
     -- turning a two-line comment into a page of code. 0 for the
     -- anchored lines and nothing else.
     context = 2,
+
+    -- What the head of a comment says while it is on its way to the
+    -- forge |nemeton-sending|.
+    --
+    -- Posting is a keypress and then a round trip, and half a second of
+    -- nothing is long enough to wonder whether the key worked. So the
+    -- comment is drawn where it is going straight away and this is what
+    -- says it is not there yet -- gone the moment the forge answers and
+    -- the refresh brings back the real one. A word rather than a glyph:
+    -- it is on the screen for a second, and a spinner nobody has time
+    -- to identify says less than the thing it stands for. `false` to
+    -- draw the comment with nothing to mark it.
+    sending = "sending…",
 
     -- Height cap on the peek float, in lines.
     peek_height = 20,

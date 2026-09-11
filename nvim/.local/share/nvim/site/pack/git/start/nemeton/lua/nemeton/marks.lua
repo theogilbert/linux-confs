@@ -568,6 +568,9 @@ function M.setup_highlights()
   link("NemetonOk", "DiagnosticOk")
   link("NemetonBad", "DiagnosticError")
   link("NemetonBusy", "DiagnosticWarn")
+  -- The same colour as a job that has not finished, because it is the
+  -- same fact about a different thing: this is happening, wait.
+  link("NemetonSending", "DiagnosticWarn")
   -- The colour ordinary text is -- and only the colour. This linked to
   -- Normal, and Normal carries a background as well: the editor's own.
   -- A group that carries it paints the *file's* background wherever it

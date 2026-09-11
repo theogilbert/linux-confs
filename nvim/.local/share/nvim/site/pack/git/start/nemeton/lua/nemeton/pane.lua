@@ -169,6 +169,45 @@ local function visible(list)
   end, list or {})
 end
 
+--- ...and the same question asked of the whole of a conversation
+--- rather than of the line it hangs from.
+---
+--- A comment written over a selection is about several lines and
+--- anchored to the last of them, which is the only one carrying a
+--- marker. Standing three lines up you are plainly inside that
+--- conversation -- it is the one shaded under the cursor -- and a key
+--- that says "this one" should mean it.
+---
+--- The anchor first, since a line carrying a marker is not ambiguous.
+--- Then the nearest anchor at or below the cursor, because two
+--- selections can overlap and the one whose last line is closest is
+--- the one the cursor is most plainly inside.
+local function covers(bufnr, row)
+  local here = line_at(bufnr, row)
+  if here then
+    return here
+  end
+  local by_line = session.by_line(bufnr)
+  if not by_line then
+    return nil
+  end
+  local where = moved(bufnr)
+  local best, at = nil, nil
+  for line, list in pairs(by_line) do
+    local span = 0
+    for _, t in ipairs(visible(list)) do
+      span = math.max(span, threads.span(t))
+    end
+    local anchor = where[line] or line
+    if span > 0 and row >= anchor - span and row <= anchor then
+      if not best or anchor < best then
+        best, at = anchor, line
+      end
+    end
+  end
+  return at
+end
+
 --- A winbar out of `pieces` -- `{ text, highlight }`, in order --
 --- with `%` in anything written by a person escaped, since a path can
 --- carry one and a winbar reads it as a field.
@@ -411,10 +450,43 @@ function M.show(win)
     return false
   end
   local bufnr = vim.api.nvim_win_get_buf(win)
-  local line = line_at(bufnr, vim.api.nvim_win_get_cursor(win)[1])
+  local line = covers(bufnr, vim.api.nvim_win_get_cursor(win)[1])
   if not line then
     return false
   end
+  M.at = { buf = bufnr, line = line }
+  M.render()
+  return true
+end
+
+--- Switches the pane to the conversation the cursor is standing in,
+--- and says whether it did.
+---
+--- False where there is nothing to switch to: the pane is shut, the
+--- cursor is in the pane rather than in the code, the line it is on is
+--- inside no conversation, or the conversation it is inside is the one
+--- already being read. The key that opens the pane reads that last
+--- answer as "you meant close it", which is what it used to mean
+--- always -- and closing the pane to go and open it again on the
+--- comment you were already standing on is two keypresses for
+--- something you asked for once.
+function M.switch()
+  if not valid() then
+    return false
+  end
+  local win = vim.api.nvim_get_current_win()
+  if win == M.win then
+    return false
+  end
+  local bufnr = vim.api.nvim_win_get_buf(win)
+  if not session.relpath(bufnr) then
+    return false
+  end
+  local line = covers(bufnr, vim.api.nvim_win_get_cursor(win)[1])
+  if not line or (M.at and M.at.buf == bufnr and M.at.line == line) then
+    return false
+  end
+  M.source = win
   M.at = { buf = bufnr, line = line }
   M.render()
   return true

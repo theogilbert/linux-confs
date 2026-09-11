@@ -121,16 +121,24 @@ end
 --- composer's: "post" for a reply, because an answer kept back is
 --- invisible to the person waiting for it and invisible in the thread
 --- it answers until the whole review goes out.
-local function write(title, send, keep, default)
+--- `into` is the thread a reply goes into, where this is one: it is
+--- what says where the comment is drawn while it is on its way, and a
+--- new comment on the merge request has none.
+local function write(title, send, keep, default, into)
   local mr = session.current
   M.close()
-  local function landed(said)
+  --- What the forge answering means, either way -- and `sent` is the
+  --- comment drawn in this window while it is on its way there, taken
+  --- off by the refresh that brings back the real one.
+  local function landed(said, sent)
     return function(data, err)
       if not data then
+        sent(false)
         session.refused("could not post", err)
         return
       end
       session.notify(said .. " !" .. mr.iid)
+      sent(true)
       session.refresh(function()
         M.open()
       end)
@@ -140,14 +148,16 @@ local function write(title, send, keep, default)
     title = title,
     default = default,
     on_submit = function(body)
-      send(mr, body, landed("posted on"))
+      local sent = session.sending({ body = body, discussion_id = into })
+      send(mr, body, landed("posted on", sent))
     end,
     -- Only where there is something to keep it as. A comment posted on
     -- its own and a thread people can answer are different things on
     -- GitLab and a draft is neither until it is published, so those two
     -- keys still say what they mean and go out when pressed.
     on_draft = keep and function(body)
-      keep(mr, body, landed("kept for"))
+      local sent = session.sending({ body = body, discussion_id = into })
+      keep(mr, body, landed("kept for", sent))
     end or nil,
   })
 end
@@ -232,7 +242,8 @@ function M.reply()
     function(m, body, cb)
       glab.create_draft(m.root, m.iid, body, nil, thread.id, cb)
     end,
-    "post"
+    "post",
+    thread.id
   )
 end
 

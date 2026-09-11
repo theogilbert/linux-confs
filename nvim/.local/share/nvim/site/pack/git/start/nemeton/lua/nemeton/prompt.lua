@@ -38,6 +38,10 @@ local back = nil
 -- dismissed. Held here rather than in a closure so that `M.close` can
 -- be the one place both endings go through.
 local answered = nil
+-- The one that puts the menu up, kept so that a caller whose list has
+-- changed since the window opened can ask for it again. See
+-- `M.refresh`.
+local menu = nil
 
 --- Puts `completeopt` back, closes the window, and hands the cursor to
 --- wherever it came from.
@@ -60,7 +64,7 @@ local function shut()
     held = nil
   end
   local w, b = M.win, M.buf
-  M.win, M.buf = nil, nil
+  M.win, M.buf, menu = nil, nil, nil
   if w and vim.api.nvim_win_is_valid(w) then
     pcall(vim.api.nvim_win_close, w, true)
   end
@@ -97,6 +101,22 @@ function M.accept()
     vim.schedule(function()
       said(text)
     end)
+  end
+end
+
+--- Puts the menu up again, for a caller whose candidates have changed
+--- since the window opened.
+---
+--- Which is what a prompt shown before its list has arrived needs: it
+--- comes up on whatever was written down last time |nemeton-open|, the
+--- forge answers a moment later, and the menu under the cursor should
+--- then be the answer rather than the memory. Nothing happens if the
+--- prompt has been dismissed, if the reader has left it, or if they are
+--- already walking the list -- moving what is under somebody's cursor
+--- is worse than a menu one keystroke out of date.
+function M.refresh()
+  if menu then
+    menu(true)
   end
 end
 
@@ -181,14 +201,22 @@ function M.open(opts, cb)
     --- buffer was under it. Nothing is fed here at all: the list is
     --- handed straight to the editor, and if this is not the moment for
     --- one then nothing happens.
-    local function menu()
-      if
-        not M.win
-        or vim.api.nvim_get_current_win() ~= M.win
-        or vim.fn.pumvisible() == 1
-        or not vim.fn.mode():find("i")
-      then
+    --- `again` is the caller that has more to offer than it had when
+    --- the menu went up -- a list that has just arrived from a forge --
+    --- and is the one case worth interrupting a menu already on the
+    --- screen for. Never while something in it has been chosen: a list
+    --- replaced under a reader walking through it moves what was under
+    --- their cursor, which is worse than an answer they have to ask for
+    --- again.
+    menu = function(again)
+      if not M.win or vim.api.nvim_get_current_win() ~= M.win or not vim.fn.mode():find("i") then
         return
+      end
+      if vim.fn.pumvisible() == 1 then
+        local chosen = (vim.fn.complete_info({ "selected" }) or {}).selected or -1
+        if not again or chosen >= 0 then
+          return
+        end
       end
       local items = opts.items(vim.api.nvim_get_current_line()) or {}
       if #items > 0 then
@@ -199,7 +227,9 @@ function M.open(opts, cb)
     vim.api.nvim_create_autocmd("TextChangedI", {
       buffer = M.buf,
       desc = "nemeton: what the word being typed can turn into",
-      callback = menu,
+      callback = function()
+        menu(false)
+      end,
     })
     -- ...and the whole list before a key is pressed at all, which is the
     -- answer to "like what?" and half the reason this window exists.
@@ -212,7 +242,9 @@ function M.open(opts, cb)
         once = true,
         desc = "nemeton: the whole list, before a key is pressed",
         callback = function()
-          vim.schedule(menu)
+          vim.schedule(function()
+            menu(false)
+          end)
         end,
       })
     end

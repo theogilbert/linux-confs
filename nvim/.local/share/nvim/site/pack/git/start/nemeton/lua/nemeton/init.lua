@@ -90,6 +90,15 @@ function M.open_omnifunc(findstart, base)
   return M.complete_open(base or "")
 end
 
+--- The rows the prompt completes over, out of whole merge requests.
+local function rows_of(mrs)
+  local out = {}
+  for _, mr in ipairs(mrs or {}) do
+    table.insert(out, ("%d  %s"):format(mr.iid, mr.title or ""))
+  end
+  return out
+end
+
 --- Which merge request to open, asked rather than typed.
 ---
 --- `:Nemeton open 42` is what you type when you know the number. This
@@ -104,9 +113,14 @@ end
 --- the same answer. `!7` too, which is how the forge writes one and so
 --- how it arrives pasted from somewhere else.
 ---
---- Fetched before the prompt goes up rather than behind it: the prompt
---- holds the loop, and a list that arrives while it is holding is a
---- list that arrives after the question has been answered.
+--- The window opens before the forge is asked, not after |nemeton-open|.
+--- It used to be the other way round -- the list is what the prompt is
+--- for, so it waited for one -- and the result was a key that did
+--- nothing for a second or five while a subprocess talked to a server,
+--- which is the long way round this exists to avoid. So it comes up on
+--- what was open last time |nemeton-seen|, immediately, and the fetch
+--- that goes out behind it replaces the list under the menu when it
+--- lands.
 function M.ask_open(opts)
   ready()
   local root = session.root()
@@ -114,43 +128,56 @@ function M.ask_open(opts)
     session.notify("not inside a git repository", vim.log.levels.ERROR)
     return
   end
-  -- The prompt cannot go up until the answers it completes over are
-  -- in, and that is a subprocess against a forge: without this, a key
-  -- pressed and nothing on the screen for two seconds.
-  local said = session.working("asking which merge requests are open…")
-  glab.mr_list(root, nil, function(mrs, err)
-    said()
-    if not mrs then
-      session.notify("could not list merge requests: " .. tostring(err), vim.log.levels.ERROR)
+  local seen = require("nemeton.seen")
+  local prompt = require("nemeton.prompt")
+  -- What was written down last time, which is the list until the forge
+  -- says otherwise -- and nothing at all on a repository this plugin
+  -- has never opened, where the prompt is still a prompt and the number
+  -- can still be typed.
+  candidates = rows_of(seen.get(root))
+  local warm = #candidates
+
+  -- A window of this plugin's own and not `vim.ui.input`
+  -- |nemeton-prompt|: the list is the whole reason this asks rather
+  -- than opening the queue, and `completion` is the half of that hook's
+  -- contract half its replacements quietly drop. Here the menu is up
+  -- before a key is pressed -- which for "which one was the proxy one?"
+  -- is the question already answered.
+  prompt.open({
+    title = "open merge request",
+    omnifunc = "v:lua.require'nemeton'.open_omnifunc",
+    items = function(line)
+      return M.open_omnifunc(0, line)
+    end,
+  }, function(answer)
+    answer = vim.trim(answer or "")
+    local iid = tonumber(answer:match("^!?(%d+)"))
+    if not iid then
+      if answer ~= "" then
+        session.notify("no merge request number in " .. answer, vim.log.levels.WARN)
+      end
       return
     end
-    candidates = {}
-    for _, mr in ipairs(mrs) do
-      table.insert(candidates, ("%d  %s"):format(mr.iid, mr.title or ""))
+    M.open(iid, opts)
+  end)
+
+  glab.mr_list(root, nil, function(mrs, err)
+    if not mrs then
+      -- Loud where there was nothing to offer, because then the prompt
+      -- is a prompt with no list behind it and the reader should know
+      -- why. Quiet where there was: the menu is answering, it is only
+      -- answering out of yesterday.
+      session.notify(
+        "could not list merge requests: " .. tostring(err),
+        warm > 0 and vim.log.levels.WARN or vim.log.levels.ERROR
+      )
+      return
     end
-    -- A window of this plugin's own and not `vim.ui.input`
-    -- |nemeton-prompt|: the list is the whole reason this asks rather
-    -- than opening the queue, and `completion` is the half of that
-    -- hook's contract half its replacements quietly drop. Here the menu
-    -- is up before a key is pressed -- which for "which one was the
-    -- proxy one?" is the question already answered.
-    require("nemeton.prompt").open({
-      title = "open merge request",
-      omnifunc = "v:lua.require'nemeton'.open_omnifunc",
-      items = function(line)
-        return M.open_omnifunc(0, line)
-      end,
-    }, function(answer)
-      answer = vim.trim(answer or "")
-      local iid = tonumber(answer:match("^!?(%d+)"))
-      if not iid then
-        if answer ~= "" then
-          session.notify("no merge request number in " .. answer, vim.log.levels.WARN)
-        end
-        return
-      end
-      M.open(iid, opts)
-    end)
+    candidates = rows_of(mrs)
+    seen.set(root, mrs)
+    -- ...and under the menu, where the prompt is still open on the list
+    -- this replaces.
+    prompt.refresh()
   end)
 end
 
@@ -361,12 +388,18 @@ M.comment = with_session(function(first, last)
     suggest = side ~= "old" and vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false) or nil,
     lang = side ~= "old" and require("nemeton.syntax").of_buf(bufnr) or nil,
     on_submit = function(body)
+      -- Drawn on its line before the forge has it, with the head of it
+      -- saying so: posting is a round trip, and half a second of
+      -- nothing is half a second of wondering whether the key worked.
+      local sent = session.sending({ body = body, position = position })
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
+          sent(false)
           session.refused("could not post", err)
           return
         end
         session.notify("posted on " .. where)
+        sent(true)
         session.refresh()
       end)
     end,
@@ -380,12 +413,21 @@ end)
 function M.keep(said, position, discussion_id)
   return function(body)
     local mr = session.current
+    -- Kept is a round trip like posted is: the draft lives on the forge
+    -- until the review goes out, so it is on its way there too.
+    local sent = session.sending({
+      body = body,
+      position = position,
+      discussion_id = discussion_id,
+    })
     glab.create_draft(mr.root, mr.iid, body, position, discussion_id, function(data, err)
       if not data then
+        sent(false)
         session.refused("could not keep", err)
         return
       end
       session.notify(said)
+      sent(true)
       session.refresh()
     end)
   end
@@ -494,12 +536,15 @@ M.suggest = with_session(function(first, last)
     lang = require("nemeton.syntax").of_buf(bufnr),
     on_draft = M.keep("kept for " .. where, position),
     on_submit = function(body)
+      local sent = session.sending({ body = body, position = position })
       glab.create_discussion(mr.root, mr.iid, body, position, function(data, err)
         if not data then
+          sent(false)
           session.refused("could not post", err)
           return
         end
         session.notify("suggested on " .. where)
+        sent(true)
         session.refresh()
       end)
     end,

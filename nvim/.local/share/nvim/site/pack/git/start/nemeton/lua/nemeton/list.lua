@@ -972,6 +972,11 @@ function M.open()
       set_message("could not list merge requests: " .. tostring(err), "NemetonBad")
       return
     end
+    -- ...and written down where this is the list the prompt completes
+    -- over, so that the next `:Nemeton open` comes up on it |nemeton-open|.
+    if listing() == "opened" then
+      require("nemeton.seen").set(root, mrs)
+    end
     if #mrs == 0 then
       set_message(("no %s merge requests"):format(listing()))
       return

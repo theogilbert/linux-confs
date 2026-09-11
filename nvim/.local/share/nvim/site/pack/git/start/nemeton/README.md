@@ -141,11 +141,28 @@ rest.
 way in — it asks for a number and completes over what is open, by number
 and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
-`<leader>mo` (`keys.global.open`) is the same thing on a key. Both
-halves say what they are waiting for while they wait — the prompt
-cannot go up until the forge has said what is open, and nothing is on
-the screen between the number being given and the branch being checked
-out. The rest are bound while a
+`<leader>mo` (`keys.global.open`) is the same thing on a key.
+
+**That prompt is up on the keypress, not on the answer.** The list is
+the whole reason it exists, so it used to wait for `glab` to say what
+was open before it could be typed into at all — a subprocess and a
+round trip, a second on a good day, which is not the quick way past the
+queue it was meant to be. So what the forge last said is written down,
+one entry per repository, and the prompt comes up on that immediately
+while the fetch goes out behind it; when the fetch lands the list under
+the menu is replaced and the file is written again. A number and a
+title per merge request and nothing else — it is a cache, and the
+smallest one that answers the question stays true longest. It lives in
+`$XDG_STATE_HOME/nemeton/merge-requests.json` (`list.remember_path`),
+and `list.remember = false` writes nothing and waits for the forge as
+before. Nothing in it is believed: a number typed over the top of it is
+opened whether or not the file has heard of it, and a forge that will
+not answer leaves the menu saying what it said yesterday and says so.
+The checkout still says what it is waiting for while it waits, since
+nothing else is on the screen between the number being given and the
+branch being there.
+
+The rest are bound while a
 review is on and taken away when it ends — everywhere, not only on the
 files of the repository: `]m` means "the next thing owed an answer", and
 that is asked as often from the quickfix list, the terminal the tests ran
@@ -155,7 +172,7 @@ when there is no line to be about.
 
 | | |
 |---|---|
-| `<leader>mx` | expand the conversations: the pane beside the code |
+| `<leader>mx` | expand the conversations: the pane beside the code, and with it open the one under the cursor |
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
@@ -474,6 +491,17 @@ the file if there is none there, and `<CR>` on a thread from the
 every-thread window, the comments window or the quickfix list puts that
 one in it.
 
+**`<leader>mx` is the third way**, and it is the one for "this one
+now". Pressed with the pane already open and the cursor standing inside
+a conversation that is not the one in it, it switches to that one
+instead of folding the pane away — because the pane holding still is
+what makes it pleasant to read beside, and something has to be able to
+say "the one I am on". Standing inside is enough: a comment written
+over a selection is anchored to the last of its lines and only that one
+carries a marker, but every line under the band is inside it. Pressed
+on the conversation already being read, on a line inside none, or from
+inside the pane itself, it is the toggle it has always been.
+
 It is also where the review is answered: `r` replies, `x` resolves the
 thread or reopens it, `e` edits the comment the cursor is on, `d`
 deletes it after asking, `<CR>` goes to the code it is about and `q`
@@ -769,6 +797,24 @@ turns into a notification and into a picture. Keeping is the default
 because a review is written as a whole: a comment posted the moment it
 is typed cannot be taken back after reading the next file.
 
+Whichever key you press, **the comment appears where it is going
+straight away** — a reply at the end of the thread it answers, a
+rewrite as the new words on the note it rewrites, a new comment as a
+thread of its own on its line — with `sending…` on the head of it
+(`comments.sending`, `false` for nothing; `NemetonSending` is its
+colour). Posting is a keypress and then a round trip, and half a second
+of nothing is half a second of wondering whether the key worked.
+
+It is not a comment that exists, though. Until the forge answers there
+is no id to reply to, resolve, rewrite, delete or react to, so every key
+that would do one of those says so and does nothing — the answer is a
+second's wait — and it is not counted among the unsent, because a draft
+is a comment you decided not to send and this is one that is going. The
+mark goes when the refresh brings the real comment back, rather than
+when the forge answers, since dropping it any earlier would make the
+comment vanish for the length of a fetch and reappear. A forge that
+refuses it takes it off at once and says why.
+
 `<C-b>` — in insert mode, which is the mode you are in when it happens
 — is there because a comment turns into a suggestion halfway
 through writing it — you get as far as "it should be" and notice that
@@ -962,6 +1008,8 @@ lua/nemeton/
   jobs.lua       what CI did, job by job
   trace.lua      what one job printed, in a tab
   compose.lua    the buffer you write a comment in
+  seen.lua       what the forge last said was open here, so the prompt
+                 that asks which merge request is up on the keypress
   prompt.lua     one word asked for in a window of this plugin's own,
                  with the menu of what it can be under it
   edit.lua       rewriting and deleting a comment already posted
@@ -984,7 +1032,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 955 checks — parsing, indexing, the gutter, the
+memory of the API docs. 994 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts

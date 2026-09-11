@@ -4,11 +4,35 @@ local H = {}
 local M = {}
 
 ---Root of the scratch store. Scratch files are hand-written content, not a
----cache and not configuration, so they live under the XDG data dir.
+---cache and not configuration. They live under the XDG state dir rather than
+---the data dir because the latter is the versioned plugin store, and scratch
+---files must stay out of that repository.
 ---
 ---@return string
 function H.root()
-    return vim.fs.joinpath(vim.fn.stdpath("data"), "scratches")
+    return vim.fs.joinpath(vim.fn.stdpath("state"), "scratches")
+end
+
+---Scratches used to live under the data dir. Move the whole store over,
+---keeping it untouched if a store already exists at the new location.
+function H.migrate_from_data_dir()
+    local old_root = vim.fs.joinpath(vim.fn.stdpath("data"), "scratches")
+    if vim.fn.isdirectory(old_root) == 0 then
+        return
+    end
+    if vim.fn.isdirectory(H.root()) == 1 then
+        vim.notify(
+            ("Old scratch store %s kept: %s already exists"):format(old_root, H.root()),
+            vim.log.levels.WARN
+        )
+        return
+    end
+
+    vim.fn.mkdir(vim.fs.dirname(H.root()), "p")
+    local ok, err = os.rename(old_root, H.root())
+    if not ok then
+        vim.notify(("Could not move scratch store %s to %s: %s"):format(old_root, H.root(), err), vim.log.levels.ERROR)
+    end
 end
 
 ---Directory holding the scratches reachable from anywhere.
@@ -52,6 +76,7 @@ function H.migrate_unscoped_scratches()
 end
 
 function M.setup()
+    H.migrate_from_data_dir()
     vim.fn.mkdir(H.global_dir(), "p")
     H.migrate_unscoped_scratches()
 end

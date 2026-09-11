@@ -2,10 +2,12 @@ describe("scratch", function()
     local scratch = require("utilities.scratch")
     local fzf = require("fzf-lua")
 
-    -- The scratch store hangs off stdpath("data"): moving XDG_DATA_HOME keeps
-    -- every test out of the real one.
+    -- The scratch store hangs off stdpath("state"): moving XDG_STATE_HOME
+    -- keeps every test out of the real one. XDG_DATA_HOME is moved as well,
+    -- or setup() would migrate the real legacy store into the temporary one.
+    local original_state_home = vim.env.XDG_STATE_HOME
     local original_data_home = vim.env.XDG_DATA_HOME
-    local scratches
+    local scratches, legacy_scratches
 
     local original_select, original_input, original_notify
     local prompts, notifications
@@ -67,13 +69,17 @@ describe("scratch", function()
         vim.notify = function(msg)
             table.insert(notifications, msg)
         end
+        vim.env.XDG_STATE_HOME = vim.fn.tempname()
         vim.env.XDG_DATA_HOME = vim.fn.tempname()
-        scratches = vim.env.XDG_DATA_HOME .. "/nvim/scratches"
+        scratches = vim.env.XDG_STATE_HOME .. "/nvim/scratches"
+        legacy_scratches = vim.env.XDG_DATA_HOME .. "/nvim/scratches"
         vim.fn.mkdir(scratches, "p")
     end)
 
     after_each(function()
+        vim.fn.delete(vim.env.XDG_STATE_HOME, "rf")
         vim.fn.delete(vim.env.XDG_DATA_HOME, "rf")
+        vim.env.XDG_STATE_HOME = original_state_home
         vim.env.XDG_DATA_HOME = original_data_home
         vim.ui.select, vim.ui.input = original_select, original_input
         vim.notify = original_notify
@@ -185,6 +191,29 @@ describe("scratch", function()
 
         assert.are.same({ "global" }, vim.fn.readfile(scratches .. "/global/dup.md"))
         assert.are.same({ "unscoped" }, vim.fn.readfile(scratches .. "/dup.md"))
+        assert.are.equal(1, #notifications)
+        assert.is_truthy(notifications[1]:match("already exists"))
+    end)
+
+    it("moves the store from the data dir to the state dir", function()
+        vim.fn.delete(scratches, "rf")
+        write(legacy_scratches .. "/global/old.md", "moved")
+
+        scratch.setup()
+
+        assert.are.same({ "moved" }, vim.fn.readfile(scratches .. "/global/old.md"))
+        assert.are.equal(0, vim.fn.isdirectory(legacy_scratches))
+        assert.are.same({}, notifications)
+    end)
+
+    it("keeps a legacy store when the state dir already holds one", function()
+        write(scratches .. "/global/new.md", "state")
+        write(legacy_scratches .. "/global/old.md", "data")
+
+        scratch.setup()
+
+        assert.are.same({ "state" }, vim.fn.readfile(scratches .. "/global/new.md"))
+        assert.are.same({ "data" }, vim.fn.readfile(legacy_scratches .. "/global/old.md"))
         assert.are.equal(1, #notifications)
         assert.is_truthy(notifications[1]:match("already exists"))
     end)

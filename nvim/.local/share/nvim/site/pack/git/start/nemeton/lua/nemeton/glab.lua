@@ -158,7 +158,8 @@ local function spawn(args, opts, cb)
   end
   -- Logged before the call rather than after it, so a call that hangs is
   -- in the file too. `done` closes the entry with the exit code.
-  local done = log.exec(cmd, { cwd = opts.cwd, env = e, stdin = opts.stdin })
+  local done =
+    log.exec(cmd, { cwd = opts.cwd, env = e, stdin = opts.stdin, position = opts.position })
   vim.system(cmd, {
     text = true,
     cwd = opts.cwd,
@@ -990,6 +991,9 @@ local function send(method, root, path, body, cb, opts)
   if body then
     vim.list_extend(args, { "--header", "Content-Type: application/json", "--input", "-" })
     run_opts.stdin = vim.json.encode(body)
+    -- ...and the position on its own, for the log: the one part of the
+    -- body the forge can refuse without naming what it refused.
+    run_opts.position = body.position
   end
   table.insert(args, path)
   json(args, run_opts, cb)

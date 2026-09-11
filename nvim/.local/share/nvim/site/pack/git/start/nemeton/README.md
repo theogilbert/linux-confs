@@ -971,7 +971,9 @@ to answer and which one it was is the question it must not. Arguments and
 the first line of a failure's stderr are scrubbed on the way in as well,
 against the day something puts a `glpat-…` somewhere it does not belong.
 What you write in a comment does not go in either: a POST is logged as
-`stdin=301B`.
+`stdin=301B` — and, beside it, the `position` the comment is anchored by,
+whole: a path, line numbers and shas, which is the one part of the body
+GitLab can refuse without naming what it refused.
 
 ```lua
 log = {
@@ -1043,7 +1045,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 999 checks — parsing, indexing, the gutter, the
+memory of the API docs. 1000 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts

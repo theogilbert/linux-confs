@@ -2048,7 +2048,10 @@ presence -- `GITLAB_TOKEN=<set>` -- because whether a token was exported
 is the question the log has to answer and which one it was is the
 question it must not. Arguments and the first line of a failure's stderr
 are scrubbed on the way in. What you write in a comment does not go in
-either: a POST is logged as `stdin=301B`.
+either: a POST is logged as `stdin=301B` -- and, beside it, the
+`position` the comment is anchored by, whole: a path, line numbers and
+shas, which is the one part of the body GitLab can refuse without naming
+what it refused.
 
 One rotation, at `log.max_bytes`: past it the file becomes
 `nemeton.log.old` and a fresh one starts, so two files bound the disk.

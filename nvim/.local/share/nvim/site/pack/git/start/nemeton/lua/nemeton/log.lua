@@ -241,6 +241,12 @@ end
 ---
 --- `stdin` is logged as a byte count. What a comment says is between the
 --- reviewer and the merge request.
+---
+--- `position` is logged whole. It is the one part of a comment's body
+--- the forge argues about -- `position: ["must be a valid json
+--- schema"]` names no field, and the line that provoked it was the
+--- byte count above and nothing else -- and it holds a path, six
+--- numbers and three shas, none of which is what anybody wrote.
 function M.exec(cmd, opts)
   if not config.log.enabled or disabled then
     return function() end
@@ -260,6 +266,12 @@ function M.exec(cmd, opts)
   end
   if type(opts.stdin) == "string" then
     parts[#parts + 1] = ("stdin=%dB"):format(#opts.stdin)
+  end
+  if type(opts.position) == "table" then
+    local ok, shape = pcall(vim.json.encode, opts.position)
+    if ok then
+      parts[#parts + 1] = "position=" .. redact(shape)
+    end
   end
   append(table.concat(parts, "  "))
 

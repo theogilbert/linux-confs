@@ -315,19 +315,41 @@ local function ground()
   -- diff is read in everywhere else, at the weight of a band, because
   -- that is the vocabulary already in the reader's eye.
   --
-  -- A line that has not moved gets no band at all: the block is mostly
-  -- those, and a ground under every line of it says "this is a
-  -- quotation" at the cost of saying nothing about any one line.
   band("NemetonWasChanged", "NemetonChanged")
   band("NemetonWasAdded", "NemetonAdded")
+
+  -- ...and the band under the lines that have not moved, which is most
+  -- of them. It used to be nothing, so that a verdict on one line was
+  -- the only band in the block -- and the block was then code drawn on
+  -- the ground the prose is on, in the colour the prose is in, told
+  -- from the comment under it by being indented like code. Two lines
+  -- of context and a one-line comment read as three lines of somebody
+  -- writing oddly. A ground of its own says "this is the file, not the
+  -- conversation" before a word of it is read, and the three verdicts
+  -- still say what they said, on the line they say it about, because a
+  -- line carrying one is drawn on that instead.
+  --
+  -- A step further off the page than the conversation and leaning
+  -- nowhere the conversation does not: a quotation is a different kind
+  -- of thing on the same panel, not a different state of it. Towards
+  -- the colour a code span is drawn in where the grounds lean by kind,
+  -- since that is what a code span and this have in common.
+  local quote = config.comments.quote_ground
+  if quote == false then
+    vim.api.nvim_set_hl(0, "NemetonQuote", { link = "Normal", default = true })
+  else
+    tint("NemetonQuote", "NemetonCode", quote or 3)
+  end
 end
 
 -- The groups that are a ground rather than a colour of text: the code a
--- thread was written against, and the two halves of a suggestion. Each
+-- thread was written against, line by line, and the two halves of a
+-- suggestion. Each
 -- is a band inside the block rather than text on it, and a line
 -- carrying one is drawn on it instead of on the conversation's -- see
 -- `M.shade_lines`.
 local OWN_GROUND = {
+  NemetonQuote = true,
   NemetonWas = true,
   NemetonWasChanged = true,
   NemetonWasAdded = true,

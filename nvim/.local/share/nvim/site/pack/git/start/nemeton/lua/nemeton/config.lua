@@ -552,6 +552,20 @@ return {
     -- when it has just finished the line above.
     reply_ground = 2.4,
 
+    -- ...and how far the ground under the code a thread is *about*
+    -- stands off, on the same scale |nemeton-drift|.
+    --
+    -- Code drawn on the ground the prose is on, in the colour the
+    -- prose is in, is told from the comment under it by being indented
+    -- like code -- and two lines of context over a one-line comment
+    -- read as three lines of somebody writing oddly. A band says "this
+    -- is the file" before a word of it is read. Further off than an
+    -- answer, because the two are never side by side and the quotation
+    -- is the one thing in the block that is not prose. `false` for the
+    -- conversation's own ground under it, where what has become of
+    -- each line is the only band the block carries.
+    quote_ground = 3,
+
     -- Which colour the ground under a conversation leans towards.
     accent = "Normal",
 

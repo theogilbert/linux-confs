@@ -756,15 +756,16 @@ local function fit(s, width)
 end
 
 -- What a line of the quoted code is drawn on, by what has become of
--- it. Nothing for the line that has not moved, which is most of them:
--- a ground under every line of the block says "this is a quotation" at
--- the cost of saying anything about any one line, and the reader's
--- question is about one line.
+-- it. The quotation's own ground for the line that has not moved,
+-- which is most of them, and one of the three colours a diff is read
+-- in for a line that has: the verdict is on the line and not on the
+-- block, because the reader's question is about one line.
 local WAS = {
   gone = "NemetonWas",
   changed = "NemetonWasChanged",
   added = "NemetonWasAdded",
 }
+local QUOTE = "NemetonQuote"
 
 --- `text`, cut into lines no wider than `width` columns.
 ---
@@ -862,11 +863,12 @@ end
 --- window, where there is no file to read -- it is drawn as the block
 --- of new lines alone.
 ---
---- `opts.paint(lines)` -- the suggested code, coloured: chunks per
---- line, concatenating back to the line they came from. Given, a
---- suggestion is drawn in the colours of the language it is written in
---- rather than in one colour end to end; missing, it is drawn as it
---- always was. `nemeton.syntax` is what builds one.
+--- `opts.paint(lines)` -- code, coloured: chunks per line,
+--- concatenating back to the line they came from. Given, a suggestion
+--- and the code the thread is about are drawn in the colours of the
+--- language they are written in rather than in one colour end to end;
+--- missing, they are drawn as they always were. `nemeton.syntax` is
+--- what builds one.
 ---
 --- `opts.original` -- the same, as the revision the thread was written
 --- against had it, for the half of a suggestion that is what it would
@@ -1260,34 +1262,48 @@ function M.render(thread, opts)
   -- block rather than a ragged edge -- the same trick the ground under
   -- the whole conversation plays, at the width of what is on it rather
   -- than of the editor.
+  --
+  -- And in the colours of its language, with the same painter the
+  -- suggestion under it gets: it is the same code, out of the same
+  -- file, and code drawn in one colour end to end next to a suggestion
+  -- drawn in its own is a before and an after that do not look like
+  -- the same language. Painted whole rather than a line at a time, for
+  -- the reason a suggestion is -- a string that opens on one line and
+  -- closes on the next parses as neither of them on its own.
   if opts.was and #opts.was > 0 then
     -- One space inside the band on each side: text against the edge of
     -- a colour reads as text that has been cut off.
     local room = code and (code - vim.fn.strdisplaywidth(rail[1]) - 2)
+    -- A line of the quotation is its text and, where the caller worked
+    -- one out, what has happened to it since the comment was written.
+    -- A plain string is the caller that had nothing to compare against.
+    local texts, states = {}, {}
+    for i, line in ipairs(opts.was) do
+      texts[i] = type(line) == "table" and line.text or line
+      states[i] = type(line) == "table" and line.state or nil
+    end
+    local colours = opts.paint and opts.paint(texts) or {}
     local band, widest = {}, 0
-    for _, line in ipairs(opts.was) do
-      -- A line of the quotation is its text and, where the caller
-      -- worked one out, what has happened to it since the comment was
-      -- written. A plain string is the caller that had nothing to
-      -- compare against.
-      local text = type(line) == "table" and line.text or line
-      local hl = WAS[type(line) == "table" and line.state or nil]
-      for _, piece in ipairs(wrap(text, room)) do
-        table.insert(band, { piece, hl })
-        widest = math.max(widest, vim.fn.strdisplaywidth(piece))
+    for i, text in ipairs(texts) do
+      local hl = WAS[states[i]] or QUOTE
+      for _, piece in ipairs(pieces(text, colours[i], room)) do
+        piece.band = hl
+        table.insert(band, piece)
+        widest = math.max(widest, vim.fn.strdisplaywidth(piece.text))
       end
     end
-    for _, entry in ipairs(band) do
-      local piece, hl = entry[1], entry[2]
-      -- Padded to the width of the longest, so a band is a block rather
-      -- than a ragged edge -- and only where there is a band: a line
-      -- with nothing to say about it is text, and trailing spaces on
-      -- text are trailing spaces.
-      local pad = hl and (widest - vim.fn.strdisplaywidth(piece) + 1) or 0
-      table.insert(out, {
-        { rail[1], rail[2] },
-        { " " .. piece .. (" "):rep(pad), hl or "NemetonThread" },
-      })
+    for _, piece in ipairs(band) do
+      local line = { { rail[1], rail[2] }, { " ", piece.band } }
+      for _, run in ipairs(piece.runs or { { piece.text } }) do
+        -- The language's colour on the line's band, or the band alone
+        -- for what the language had no colour for -- which on a line
+        -- that has not moved is text in the colour text is, and on one
+        -- that has is the colour of the verdict.
+        table.insert(line, { run[1], run[2] and { piece.band, run[2] } or piece.band })
+      end
+      local pad = widest - vim.fn.strdisplaywidth(piece.text) + 1
+      table.insert(line, { (" "):rep(pad), piece.band })
+      table.insert(out, line)
     end
   end
 

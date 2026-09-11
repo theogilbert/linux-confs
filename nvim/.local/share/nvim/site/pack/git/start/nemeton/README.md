@@ -447,11 +447,22 @@ than on the block. A comment is half of a pair and the code is the half
 that moves — someone pushes while you are reading, or you edit the file
 you are reviewing — and the question a reader has is whether the thing
 being talked about is still there. So: a line that has not moved is
-drawn plain, one edited since is on a yellow band (`NemetonWasChanged`),
-one that has arrived since on a green one (`NemetonWasAdded`), and one
-the file no longer has is quoted from the revision that had it, on a
-red one (`NemetonWas`). The three colours a diff is read in everywhere
-else.
+on the quotation's own band (`NemetonQuote`), one edited since is on a
+yellow one (`NemetonWasChanged`), one that has arrived since on a green
+one (`NemetonWasAdded`), and one the file no longer has is quoted from
+the revision that had it, on a red one (`NemetonWas`). The three
+colours a diff is read in everywhere else.
+
+The quotation is drawn in the colours of its language, the way a
+suggestion is: it is the same code out of the same file, and a before
+drawn in one colour over an after drawn in its own do not look like the
+same language. On a band of its own rather than on the conversation's,
+because code drawn where the prose is drawn, in the colour the prose is
+in, is told from the comment under it only by being indented like code
+— and two lines of context over a one-line comment read as three lines
+of somebody writing oddly. The band is the page's own background
+`comments.quote_ground` (3) times as far off as the conversation's
+ground; `false` takes it away.
 
 The pane draws the quotation whether anything has changed or not: the
 floats are drawn over the file and you can see the line underneath
@@ -1032,7 +1043,7 @@ lua/nemeton/
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 994 checks — parsing, indexing, the gutter, the
+memory of the API docs. 999 checks — parsing, indexing, the gutter, the
 toggles, `]m`/`[m`, that a thread follows its line through an edit, the
 two POST payloads, the list, that the host and token reach glab, that a
 token function is read once rather than per call, that a 401 prompts
@@ -1042,7 +1053,7 @@ either the token or what a comment said.
 Colour is the one thing here a test cannot settle, because every number
 in `comments` means something different against every colourscheme. Open
 a merge request and `:luafile dev/dial.lua` for a float that turns the
-knobs — `accent`, `ground`, `reply_ground`, `head_band`,
+knobs — `accent`, `ground`, `reply_ground`, `quote_ground`, `head_band`,
 `heading_accent`, `heading` —
 with the comments window redrawing behind it on every keypress, and `p`
 to print a `setup{}` block for whatever you stopped on. It is not on the

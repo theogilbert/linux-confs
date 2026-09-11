@@ -1214,10 +1214,11 @@ halves under them.
 
                                                               *nemeton-syntax*
 The code in it is drawn in the colours of the language the file is in --
-on both halves of the diff, and in the composer while it is being
-written. A suggestion is the one part of a comment that is not prose,
-and in one colour end to end it is the only code on the screen the
-editor has not helped you read.
+on both halves of the diff, in the composer while it is being written,
+and in the code a thread is quoted with |nemeton-drift|. A suggestion
+is the one part of a comment that is not prose, and in one colour end
+to end it is the only code on the screen the editor has not helped you
+read.
 
 Which half a line is then has to be said some other way, because a
 keyword is the colour a keyword is on both of them: each half is drawn
@@ -1272,7 +1273,8 @@ block. A comment is half of a pair and the code is the half that moves
 reviewing -- and the question a reader has is whether the thing being
 talked about is still there:
 
-  unchanged      drawn plain, which is most of them
+  unchanged      the quotation's own band |hl-NemetonQuote|, which is
+                 most of them
   edited since   a yellow band            |hl-NemetonWasChanged|
   arrived since  a green band             |hl-NemetonWasAdded|
   gone since     a red band               |hl-NemetonWas|, and the
@@ -1282,6 +1284,16 @@ The three colours a diff is read in everywhere else, one line at a
 time. A band runs the width of the editor from the rail out; in the two
 windows that are real buffers it is as wide as the widest line of the
 block, there being no editor-wide ground there to match.
+
+The quotation is drawn in the colours of its language, the way a
+suggestion is |nemeton-syntax|: it is the same code out of the same
+file, and a before drawn in one colour over an after drawn in its own
+do not look like the same language. On its band and not on the
+conversation's, because code drawn where the prose is drawn, in the
+colour the prose is in, is told from the comment under it only by being
+indented like code -- and two lines of context over a one-line comment
+read as three lines of somebody writing oddly. `comments.quote_ground`
+is how far off the band stands, and `false` takes it away.
 
 The pane (|nemeton-pane-window|) draws the quotation whether anything
 has changed or not. The floats are drawn over the file and the reader
@@ -1388,6 +1400,7 @@ COMMENTS                                             *nemeton-config-comments*
       ground = 0.15,         -- how far the band under one stands off
       accent = "DiagnosticHint",  -- which colour it leans towards
       reply_ground = 1.7,    -- how far further off an answer stands
+      quote_ground = 3,      -- ...and the code a thread is about
       head_band = true,      -- a band under the head of a note as well
       heading_accent = true, -- ...leaning towards the thread's own colour
       heading = 0.06,        -- how far it leans
@@ -1515,6 +1528,13 @@ than the note it answers; 1 leaves it flush, where the indent and the
 arrow are the whole of what says so -- and both of those are two
 characters at the head of a line, which is where the eye is not when it
 has just finished the line above. See |hl-NemetonReply|.
+
+`quote_ground` is the same for the code a thread is about, quoted above
+it |nemeton-drift|. Further off than an answer, because the two are
+never side by side and the quotation is the one thing in the block that
+is not prose. `false` for the conversation's own ground under it, where
+what has become of each line is the only band the block carries. See
+|hl-NemetonQuote|.
 
 `head_band` puts the head of each note on a band as well. Backgrounds
 are the one signal in these windows that cannot be stacked -- a thread
@@ -1739,6 +1759,8 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonBusy           running, pending, not yet       DiagnosticWarn
     NemetonSending        a comment on its way to the     DiagnosticWarn
                           forge |nemeton-sending|
+    NemetonQuote          the code a thread is about      the ground, a
+                                                          step further off
     NemetonAdded          a line the change adds          Added
     NemetonRemoved        one it takes away               Removed
     NemetonChanged        one it edits                    Changed
@@ -1794,6 +1816,17 @@ inside a link, the language's own inside a suggestion.
 the one piece of a comment that quotes something rather than says it,
 and `String` is the colour an editor already draws quoted text in.
 |nemeton-config-comments|
+
+                                                             *hl-NemetonQuote*
+`NemetonQuote` is the band the code a thread is about is quoted on
+|nemeton-drift|. The page's own background a step further off than the
+conversation is, `comments.quote_ground` times `comments.ground`, and
+leaning nowhere the conversation does not: a quotation is a different
+kind of thing on the same panel, not a different state of it. Where the
+grounds lean by kind it leans towards |hl-NemetonCode|, since a code
+span and this are the same thing at two sizes. Without true colour it
+is `CursorLine`, as every ground here is. A line of the quotation that
+has changed since is drawn on one of the three below instead.
 
                                                                *hl-NemetonWas*
 `NemetonWas` is the band the code a thread was written against is drawn

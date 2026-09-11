@@ -240,8 +240,8 @@ nowhere left to go. Arriving at a change is not having read it: `[c` from
 below a change lands on it and marks nothing (`pane.auto_read`).
 
 A file is read when every chunk of it is, and the row then goes green --
-status letter and churn with it, those being how you decide what to open
-next and there being nothing left to decide. The green is the `+N` green
+status letter and name; the `+N -M` keeps its own colours, being a fact
+about the file and a column to read down. The green is the `+N` green
 stepped back towards the background (`highlight.read_recede`), so a
 finished row is quieter than a count still asking to be read. `x` marks
 every chunk of the row under the cursor read, and takes them all off again

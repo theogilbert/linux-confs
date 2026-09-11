@@ -133,9 +133,9 @@ The unit of a review is a **chunk** — one run of changed lines, as
 from read (the first and last of a file too, by a press with nowhere
 left to go); arriving at a change is not having read it. A file is
 read when every chunk of it is, and the row goes green — status letter
-and churn with it, those being how you decide what to open next — in a
-green stepped back from the `+N` one, so a finished row is quieter than
-a count still asking to be read. `x` in the list marks every chunk of
+and name; the `+N -M` keeps its own colours, being a column to read
+down — in a green stepped back from the `+N` one, so a finished row is
+quieter than a count still asking to be read. `x` in the list marks every chunk of
 the row under the cursor, and takes them all off again once they all
 are; on a directory row it completes everything under it, and over a
 Visual selection the rows are one set and one decision.

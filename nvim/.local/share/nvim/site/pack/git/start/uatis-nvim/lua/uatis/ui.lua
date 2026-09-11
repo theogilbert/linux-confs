@@ -307,12 +307,8 @@ function M.build_list(pane, width)
         local head = head_prefix .. shown
           .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
         line = b:add(head .. stat)
-        if dir_read then
-          b:hl(line, 0, -1, "UatisRead")
-        else
-          b:hl(line, 0, #head, "UatisDir")
-          stat_hl(b, line, #head, t.added, t.removed)
-        end
+        b:hl(line, 0, #head, dir_read and "UatisRead" or "UatisDir")
+        stat_hl(b, line, #head, t.added, t.removed)
       else
         line = b:add(head_prefix .. entry.name .. "/", dir_read and "UatisRead" or "UatisDir")
       end
@@ -327,21 +323,20 @@ function M.build_list(pane, width)
       local line = b:add(head .. stat)
       rows[line] = entry.index
       if read.is_read(pane, f) then
-        -- Read: the whole row in one colour, status letter and churn
-        -- included. Those two are how a reader decides what to open
-        -- next, and on a file they have already read there is nothing
-        -- left to decide -- leaving them lit would have the row arguing
-        -- with itself.
-        b:hl(line, 0, -1, "UatisRead")
+        -- Read: status letter and name in one colour. The letter is how
+        -- a reader decides what to open next, and on a file they have
+        -- read there is nothing left to decide.
+        b:hl(line, 0, #head, "UatisRead")
       else
         b:hl(line, #indent + 1, #indent + 2,
           "UatisStatus" .. (f.status:match("^[AMDR]") and f.status or "M"))
-        -- Per-file churn, coloured the same way as everywhere else: how
-        -- much a file grew or shrank is most of how you decide what to
-        -- read next.
-        if not f.binary then
-          stat_hl(b, line, #head, f.added, f.removed)
-        end
+      end
+      -- Per-file churn, coloured the same way as everywhere else, read
+      -- or not: how much a file grew or shrank is a fact about the
+      -- file, and a column of counts that went green whenever a row did
+      -- would be a column the eye could no longer read down.
+      if not f.binary then
+        stat_hl(b, line, #head, f.added, f.removed)
       end
       -- Last, so it wins the span it covers: where you are standing is
       -- not something a colour for what you have done may take away.

@@ -126,8 +126,8 @@ return {
     -- `]c` off the last chunk of a file steps into the next file in the
     -- list and lands on its first change.
     chunk_spill = true,
-    -- ...and `]c` marks the chunk it moves away from read -- the last
-    -- one of a file too, by a `]c` with nowhere left to go.
+    -- ...and `]c` / `[c` mark the chunk they move away from read -- the
+    -- first and last of a file too, by a press with nowhere left to go.
     auto_read = true,
     -- Where the read marks are kept between sessions. `true` for
     -- `stdpath("state")/uatis/read.json`, a string for that path,

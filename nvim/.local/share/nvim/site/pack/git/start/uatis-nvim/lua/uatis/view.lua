@@ -443,12 +443,16 @@ local function toggle_backend(view)
   render(view)
 end
 
---- `]c` marks the chunk it is leaving read: the one the cursor is on,
---- or the last one above it if the reader scrolled on past. Leaving is
---- the moment -- arriving at a change is not having read it, and a
---- chunk is not done until the reader moves off it, which is also why
---- the last chunk of a file is marked by a `]c` that has nowhere to go.
---- `[c` marks nothing: going back is not being done.
+--- A chunk motion marks the chunk it is leaving read: the one the
+--- cursor is on, or the last one above it if the reader scrolled on
+--- past. Leaving is the moment -- arriving at a change is not having
+--- read it, and a chunk is not done until the reader moves off it,
+--- which is also why the first and last chunks of a file are marked by
+--- a `[c` or `]c` that has nowhere to go. Either direction: a reader
+--- who steps back off a chunk has read it as surely as one who steps
+--- on. What is not marked is the chunk being ARRIVED at, which is what
+--- `[c` from below the last change does -- the target inside it is what
+--- says so, in `pane.read_chunks_at`.
 ---
 --- Silent: the row going green in the list is the whole of what there
 --- is to say. Which git chunks those rows are is the list's question
@@ -577,9 +581,7 @@ local function step_hunk(view, dir)
       end
     end
   end
-  if dir > 0 then
-    leave_chunk(view, cur, target)
-  end
+  leave_chunk(view, cur, target)
   if not target then
     return spill(view, dir)
   end

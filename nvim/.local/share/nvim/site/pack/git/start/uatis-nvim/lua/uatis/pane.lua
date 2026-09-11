@@ -453,7 +453,7 @@ local function keys_of(pane)
 
   add(k.select, "open the file on this row")
   add(k.file_next .. " " .. k.file_prev, "next / previous changed file")
-  add(k.mark_read, "mark this row read -- a directory and all under it")
+  add(k.mark_read, "mark this row read -- a directory and all under it, a selection as one")
   add(k.fold, "fold this directory")
   add(k.fold_close .. " " .. k.fold_open, "shut it / open it")
   add(k.fold_close_all .. " " .. k.fold_open_all, "fold everything / open everything")
@@ -1064,13 +1064,24 @@ end
 -- ------------------------------------------------------------------
 
 --- Writes the marks for `files` back and redraws, where `moved`.
+---
+--- With the list's cursor left where it is. A redraw ends by putting it
+--- on the current file, which is right for every redraw a file arrival
+--- causes and wrong here: `x` on a row three below it, and the reader is
+--- standing on that row, about to press `j` to the next -- and no row
+--- has moved, so the line it was on is the line it is on.
 local function settle(pane, files, moved)
   if not moved then
     return
   end
   read.save(pane.root, pane.read, files)
   if pane.list_buf then
+    local win = pane.list_win
+    local at = win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_cursor(win)
     filelist.render(pane)
+    if at then
+      pcall(vim.api.nvim_win_set_cursor, win, at)
+    end
   end
 end
 
@@ -1123,6 +1134,36 @@ function M.toggle_read_dir(pane, dir, on)
   for _, f in ipairs(pane.files) do
     if under(dir, ui.shown(f)) then
       table.insert(files, f)
+    end
+  end
+  return set_read(pane, files, on)
+end
+
+--- The rows `first..last` of the list, as one set: every file row in
+--- the range and everything under every directory row in it, each file
+--- once however many rows name it -- a directory and a file inside it
+--- both selected is that file, not that file twice, flipped back to
+--- where it started. Decided as one, by the same rule as a single row:
+--- anything in the set still unread means the press completes it.
+function M.toggle_read_rows(pane, first, last, on)
+  local files, seen = {}, {}
+  local function take(f)
+    if not seen[f.path] then
+      seen[f.path] = true
+      table.insert(files, f)
+    end
+  end
+  for line = first, last do
+    local idx = (pane.list_rows or {})[line]
+    local dir = (pane.list_dirs or {})[line]
+    if idx and pane.files[idx] then
+      take(pane.files[idx])
+    elseif dir then
+      for _, f in ipairs(pane.files) do
+        if under(dir, ui.shown(f)) then
+          take(f)
+        end
+      end
     end
   end
   return set_read(pane, files, on)
@@ -1765,6 +1806,17 @@ local function setup_keymaps(pane)
     -- what the key means lives in one place.
     { lhs = k.files, rhs = function() M.toggle() end,
       opts = { desc = "uatis: close the changed-file list" } },
+  })
+  -- ...and over a selection. The range is read while Visual mode is
+  -- still on -- `v` is the other end of it -- and the mode is left
+  -- afterwards, as any key that acts on a selection does.
+  keys.apply(pane.list_buf, "x", {
+    { lhs = k.mark_read, rhs = function()
+      local a = vim.fn.getpos("v")[2]
+      local b = vim.fn.getpos(".")[2]
+      vim.cmd([[execute "normal! \<Esc>"]])
+      M.toggle_read_rows(pane, math.min(a, b), math.max(a, b))
+    end, opts = { desc = "uatis: mark the selected rows read" } },
   })
 end
 

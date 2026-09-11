@@ -1,3 +1,4 @@
+:SectionsJump	sections.txt	/*:SectionsJump*
 sections	sections.txt	/*sections*
 sections-api	sections.txt	/*sections-api*
 sections-config-icons	sections.txt	/*sections-config-icons*
@@ -20,6 +21,9 @@ sections-python	sections.txt	/*sections-python*
 sections-queries	sections.txt	/*sections-queries*
 sections-requirements	sections.txt	/*sections-requirements*
 sections-usage	sections.txt	/*sections-usage*
+sections.complete({arglead})	sections.txt	/*sections.complete({arglead})*
+sections.focus()	sections.txt	/*sections.focus()*
+sections.jump({name})	sections.txt	/*sections.jump({name})*
 sections.nvim	sections.txt	/*sections.nvim*
 sections.setup({config})	sections.txt	/*sections.setup({config})*
 sections.toggle()	sections.txt	/*sections.toggle()*

@@ -109,6 +109,15 @@ Open/close the sections panel:~
 >
     :lua require("sections").toggle()
 <
+The panel opens directly to the left of the current window.
+
+Jump to a section by name (the panel does not need to be open):~
+>
+    :SectionsJump [name]
+    :lua require("sections").jump([name])
+<
+With no name, it is asked for on the command line with <Tab> completion
+over the current buffer's sections. See |sections.jump()|.
 
 The sections panel will display all parsed sections from the current buffer.
 Sections are automatically refreshed when:
@@ -175,6 +184,38 @@ Of course, a Tree-sitter parser also needs to be available for this language.
 
 *sections.toggle()*
     Toggle the sections panel open or closed for the current tab.
+
+*sections.focus()*
+    Move the cursor into the sections panel.
+
+*sections.jump({name})*                                          *:SectionsJump*
+    Move the cursor to a section of the current buffer, recording the jump
+    in the |jumplist|. The panel does not need to be open.
+
+    Parameters:~
+        {name} (string|nil) The section name. Nested sections are qualified
+        with their ancestors' names, e.g. "Class.method". Resolution tries,
+        in order: exact qualified name, bare name (last component), then
+        case-insensitive substring; the name must be unambiguous within the
+        first tier that matches.
+        When nil or empty, the name is asked for with |input()| and native
+        <Tab> completion over the buffer's sections (see
+        |sections.complete()|).
+
+    `:SectionsJump [name]` is the command equivalent, with the same
+    completion.
+
+*sections.complete({arglead})*
+    Command-line completer over the current buffer's sections, usable as a
+    `customlist` function (|:command-completion-customlist|), e.g. >
+        completion = "customlist,v:lua.require'sections'.complete"
+<
+    Parameters:~
+        {arglead} (string) The text typed so far
+
+    Returns:~
+        (string[]) Qualified section names containing {arglead},
+        case-insensitively, in buffer order.
 
 ================================================================================
 9. TREE-SITTER QUERIES                                       *sections-queries*

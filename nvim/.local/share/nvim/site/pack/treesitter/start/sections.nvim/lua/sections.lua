@@ -249,6 +249,7 @@ M.toggle = function()
         local watched_win = vim.api.nvim_get_current_win()
         init_tab_info(watched_win, watched_buf)
         pane.open({
+            win = watched_win,
             width = cfg.width,
             keymaps = {
                 [cfg.keymaps.select_section] = select_section,
@@ -273,11 +274,126 @@ M.focus = function()
     vim.api.nvim_set_current_win(pane_win)
 end
 
+--- Flattens a sections tree into `{ name, position }` entries in buffer
+--- order. Nested sections are qualified with their ancestors' names
+--- ("Class.method") so that same-named sections stay distinguishable.
+local function flatten_sections(sections, prefix, out)
+    for _, section in ipairs(sections) do
+        local qualified = prefix .. section.name
+        table.insert(out, { name = qualified, position = section.position })
+        flatten_sections(section.children, qualified .. ".", out)
+    end
+    return out
+end
+
+local function get_jump_targets(buf)
+    local sections, err = parser.parse_sections(buf)
+    if err ~= nil then
+        return nil, err
+    end
+    return flatten_sections(sections, "", {})
+end
+
+--- Resolves `name` against the targets, from strictest to loosest:
+--- exact qualified name, then bare name (last component), then
+--- case-insensitive substring. The first tier with any match wins.
+--- @return table|nil target, table|nil ambiguous Every target of the winning tier when it holds more than one
+local function find_target(targets, name)
+    local needle = name:lower()
+    local tiers = { {}, {}, {} }
+
+    for _, target in ipairs(targets) do
+        if target.name == name then
+            table.insert(tiers[1], target)
+        elseif vim.endswith(target.name, "." .. name) then
+            table.insert(tiers[2], target)
+        elseif target.name:lower():find(needle, 1, true) then
+            table.insert(tiers[3], target)
+        end
+    end
+
+    for _, tier in ipairs(tiers) do
+        if #tier == 1 then
+            return tier[1], nil
+        elseif #tier > 1 then
+            return nil, tier
+        end
+    end
+
+    return nil, nil
+end
+
+--- Command-line completion over the current buffer's sections. Usable as a
+--- `customlist` completer (see |:command-completion-customlist|), e.g.
+--- `completion = "customlist,v:lua.require'sections'.complete"`.
+--- @param arglead string The text typed so far
+--- @return string[] names Qualified section names containing `arglead`, case-insensitively, in buffer order
+M.complete = function(arglead)
+    local targets = get_jump_targets(vim.api.nvim_get_current_buf())
+    if targets == nil then
+        return {}
+    end
+
+    local needle = (arglead or ""):lower()
+    local names = {}
+    for _, target in ipairs(targets) do
+        if target.name:lower():find(needle, 1, true) then
+            table.insert(names, target.name)
+        end
+    end
+    return names
+end
+
+--- Moves the cursor to a section of the current buffer. The pane does not
+--- need to be open.
+--- @param name string|nil Section name, qualified ("Class.method") or not.
+---   When nil or empty, it is asked for on the command line with |input()|,
+---   with native completion over the buffer's sections.
+M.jump = function(name)
+    if name == nil or name == "" then
+        name = vim.fn.input({
+            prompt = "Section: ",
+            completion = "customlist,v:lua.require'sections'.complete",
+            cancelreturn = "",
+        })
+        if name == "" then
+            return
+        end
+    end
+
+    local targets, err = get_jump_targets(vim.api.nvim_get_current_buf())
+    if err ~= nil then
+        vim.notify("Cannot jump to section: " .. err, vim.log.levels.ERROR)
+        return
+    end
+
+    local target, ambiguous = find_target(targets, name)
+    if target == nil then
+        if ambiguous ~= nil then
+            local names = vim.tbl_map(function(t)
+                return t.name
+            end, ambiguous)
+            vim.notify("Ambiguous section '" .. name .. "': " .. table.concat(names, ", "), vim.log.levels.WARN)
+        else
+            vim.notify("No section named '" .. name .. "'", vim.log.levels.WARN)
+        end
+        return
+    end
+
+    -- Record the jump so that <C-o> comes back.
+    vim.cmd("normal! m'")
+    vim.api.nvim_win_set_cursor(0, target.position)
+end
+
 M.setup = function(config_)
     config.init(config_)
     setup_autocommands()
     pane.setup()
     hl.setup()
+
+    vim.api.nvim_create_user_command("SectionsJump", function(cmd)
+        M.jump(cmd.args)
+    end, { nargs = "?", complete = M.complete, desc = "Jump to a section of the current buffer" })
 end
 
 return M

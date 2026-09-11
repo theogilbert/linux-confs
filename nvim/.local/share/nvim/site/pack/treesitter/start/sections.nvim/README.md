@@ -42,6 +42,16 @@ Or create a keymap:
 vim.keymap.set("n", "<leader>s", function() require("sections").toggle() end, { desc = "Toggle sections" })
 ```
 
+Jump to a section by name, without opening the panel. With no argument, the
+name is asked for on the command line with `<Tab>` completion over the
+buffer's sections:
+```lua
+require("sections").jump()            -- prompt, e.g. "Section: Foo.ru<Tab>"
+require("sections").jump("Foo.run")   -- qualified name
+require("sections").jump("run")       -- bare name, if unambiguous
+```
+The `:SectionsJump [name]` command does the same.
+
 ## Configuration
 
 ```lua

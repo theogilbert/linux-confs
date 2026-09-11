@@ -128,10 +128,12 @@ M.open = function(opts)
 
     local width = opts.width or 50
 
+    -- Split the watched window itself (rather than the whole tab, win = -1)
+    -- so the pane sits directly to its left.
     local winid = vim.api.nvim_open_win(
         bufid,
         false,
-        { vertical = true, split = "left", win = -1, width = width, style = "minimal" }
+        { vertical = true, split = "left", win = opts.win or 0, width = width, style = "minimal" }
     )
     vim.wo[winid].wrap = false
     vim.api.nvim_set_option_value("cursorline", true, { win = winid })

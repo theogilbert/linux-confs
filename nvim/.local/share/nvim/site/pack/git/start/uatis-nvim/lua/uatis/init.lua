@@ -22,7 +22,7 @@ local git = require("uatis.git")
 local overlay = require("uatis.overlay")
 local pane = require("uatis.pane")
 local prompt = require("uatis.prompt")
-local ui = require("uatis.ui")
+local read = require("uatis.read")
 local view = require("uatis.view")
 
 local M = {}
@@ -402,7 +402,7 @@ end
 local function read_count(list)
   local n = 0
   for _, f in ipairs(list.files or {}) do
-    if ui.is_read(list, f) then
+    if read.is_read(list, f) then
       n = n + 1
     end
   end

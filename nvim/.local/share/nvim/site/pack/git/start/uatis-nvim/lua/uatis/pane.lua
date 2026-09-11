@@ -16,6 +16,7 @@ local config = require("uatis.config")
 local git = require("uatis.git")
 local patch = require("uatis.patch")
 local filelist = require("uatis.filelist")
+local read = require("uatis.read")
 local ui = require("uatis.ui")
 local view_mod = require("uatis.view")
 local base = require("uatis.base")
@@ -162,6 +163,7 @@ local function compose(pane)
         hunks = {},
       })
       if row then
+        row.chunks = read.chunks(row)
         table.insert(files, row)
         by_path[row.path] = row
       end
@@ -206,6 +208,10 @@ local function untracked_row(root, path)
     return row
   end
   row.added = #lines
+  -- Every line of it being the change, the file itself is what a mark
+  -- on it is about.
+  row.fp = vim.fn.sha256(table.concat(lines, "\n"))
+  row.chunks = read.chunks(row)
   return row
 end
 
@@ -294,7 +300,7 @@ end
 local function refresh(pane, keep_path)
   pane.gen = (pane.gen or 0) + 1
   local gen = pane.gen
-  local function read(cb)
+  local function fetch(cb)
     if pane.commit then
       -- The commit against its parent, which is what `pane.rev` is while
       -- one is on show. A range, not a comparison with the working tree:
@@ -305,11 +311,17 @@ local function refresh(pane, keep_path)
     end
   end
 
-  read(function(text, err)
+  fetch(function(text, err)
     if panes[pane.tab] ~= pane or pane.gen ~= gen then
       return
     end
     pane.tracked = patch.parse(text or "")
+    -- Each change's identity, taken once here rather than on every
+    -- recompose: the list is rebuilt per keystroke that moves a count,
+    -- and what git said does not change until git is asked again.
+    for _, f in ipairs(pane.tracked) do
+      f.chunks = read.chunks(f)
+    end
     -- An empty list is the one failure this pane cannot show: it is also
     -- what "nothing changed" looks like. Said once per pane, because a
     -- write re-reads the list and a broken read stays broken.
@@ -681,12 +693,6 @@ local function show(pane, idx, keep_path)
     pane.target, pane.src = pane.tree_ref, "working tree"
   end
   pane.hint = hint_for(pane)
-  -- What was read was read of a different comparison. The marks record
-  -- the delta LOC a file had, so most of them would lapse on their own
-  -- against a commit's own diff -- but a file one commit left exactly as
-  -- big as the branch did would come back green having never been seen
-  -- that way, and a mark that is right by coincidence is worse than none.
-  pane.read = {}
   view_mod.close_all(pane.root, was, pane.standalone)
 
   pane.on_ready = function(p)
@@ -939,9 +945,6 @@ function M.repoint(root, label, sha)
       and (pane.tree_ref ~= label or pane.tree_rev ~= sha) then
       local cur = pane.files[pane.file_idx]
       pane.tree_ref, pane.tree_rev = label, sha
-      -- ...and the same for the marks: a new base is a new comparison,
-      -- and what was read was read of the old one.
-      pane.read = {}
       -- Which commits there are is a fact about the two revisions, and
       -- one of them has just moved: the walk is re-read on the next
       -- step, and a commit on show is let go rather than left pointing
@@ -1060,15 +1063,25 @@ end
 -- Read and unread
 -- ------------------------------------------------------------------
 
---- Marks files read, or takes the mark off. `on` nil decides for itself.
----
---- What is stored is the delta LOC each file had at the time, so that a
---- file edited afterwards stops counting as read: see `ui.is_read`.
+--- Writes the marks for `files` back and redraws, where `moved`.
+local function settle(pane, files, moved)
+  if not moved then
+    return
+  end
+  read.save(pane.root, pane.read, files)
+  if pane.list_buf then
+    filelist.render(pane)
+  end
+end
+
+--- Marks every chunk of `files` read, or takes the marks off. `on` nil
+--- decides for itself.
 ---
 --- One rule for one file and for a whole directory: anything under it
---- still unread means the press COMPLETES it, and only a directory that
---- is entirely read is taken back. A directory that flipped file by file
---- would need two presses to finish a row half done.
+--- still unread means the press COMPLETES it, and only what is entirely
+--- read is taken back. A directory that flipped file by file would need
+--- two presses to finish a row half done -- and so would a file with
+--- one chunk of three still to go.
 local function set_read(pane, files, on)
   if #files == 0 then
     return
@@ -1076,26 +1089,19 @@ local function set_read(pane, files, on)
   if on == nil then
     on = false
     for _, f in ipairs(files) do
-      if not ui.is_read(pane, f) then
+      if not read.is_read(pane, f) then
         on = true
         break
       end
     end
   end
-  -- Only where it changes something: the automatic mark asks on every
-  -- chunk motion once a file is walked, and a list redrawn per `]c` for
-  -- a row that is already green would be work for nothing.
   local moved = false
   for _, f in ipairs(files) do
-    local value = on and ((f.added or 0) + (f.removed or 0)) or nil
-    if pane.read[f.path] ~= value then
-      pane.read[f.path] = value
+    if read.mark(pane, f, f.chunks or read.chunks(f), on) then
       moved = true
     end
   end
-  if moved and pane.list_buf then
-    filelist.render(pane)
-  end
+  settle(pane, files, moved)
   return on
 end
 
@@ -1122,12 +1128,31 @@ function M.toggle_read_dir(pane, dir, on)
   return set_read(pane, files, on)
 end
 
---- ...and from the file itself, which knows its path and not its row.
-function M.toggle_read_path(pane, relpath, on)
+--- The chunks of `relpath` a `]c` has just moved away from: those whose
+--- rows meet `lo..hi`, the rows of the change the cursor was on, and do
+--- not hold `target`, the row it is going to.
+---
+--- Positions, because that is the only language the buffer and git
+--- share. The view's changes are its own backend's -- difftastic's
+--- nodes, which can span several of git's runs of changed lines -- so
+--- leaving one may leave several, and a chunk the next stop is still
+--- inside is not left. Rows in a buffer edited and not written have
+--- drifted from git's; the chunk they land on is marked, and a write
+--- re-reads the list, where a chunk the edit touched has a new
+--- fingerprint and no mark.
+function M.read_chunks_at(pane, relpath, lo, hi, target)
   local f = patch.find(pane.files, relpath)
-  if f then
-    return set_read(pane, { f }, on)
+  if not f then
+    return
   end
+  local left = {}
+  for _, c in ipairs(f.chunks or read.chunks(f)) do
+    local s, e = c.start, c.start + math.max(c.count, 1) - 1
+    if s <= hi and e >= lo and not (target and target >= s and target <= e) then
+      table.insert(left, c)
+    end
+  end
+  settle(pane, { f }, read.mark(pane, f, left, true))
 end
 
 --- Folds one directory row shut, opens it, or toggles it -- `shut` true,
@@ -1969,13 +1994,12 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     -- across every redraw -- a fold that reopened whenever the list was
     -- re-read would be gone the first time you moved.
     collapsed = {},
-    -- Files the reader has marked read, by repo-relative path. The VALUE
-    -- is the delta LOC the file had when it was marked, and a row counts
-    -- as read only while that still holds: a file edited after you read
-    -- it has something in it you have not seen, and saying otherwise is
-    -- the one thing the mark must not do. Keyed on the real path, so a
-    -- change of subtree carries the marks with it.
-    read = {},
+    -- Files the reader has marked read, by repo-relative path, from
+    -- the last session on this repository. The VALUE is a fingerprint
+    -- of the change that was read -- see `read.lua` -- and a row counts
+    -- as read only while its change still has it. Keyed on the real
+    -- path, so a change of subtree carries the marks with it.
+    read = read.load(root),
     list_dirs = {},
     -- Buffers this pane has lent `]f`/`[f` to, with whatever was mapped
     -- there before, to be handed back when it closes.

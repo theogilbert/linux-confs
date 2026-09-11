@@ -128,26 +128,34 @@ Every directory row carries what changed beneath it — its whole subtree,
 nested directories included — in the same `+N -M` the files use. Folded
 shut, that count is the reason you would open it again.
 
-`x` in the list marks the row under the cursor **read**, and the whole
-row goes green — status letter and churn with it, those being how you
-decide what to open next and there being nothing left to decide. On a
-directory row it completes everything under it, nested directories
-included, and a directory whose every file is read goes green itself.
-`x` again takes the mark off. A file also marks itself once every change
-in it has been stepped onto with `]c`/`[c` — every one, since `]c` off
-the last change alone says nothing about the rest (`pane.auto_read`).
-A file edited after it was marked stops being read on its own — there
-is something in it nobody has seen — and is read again when the edit
-goes.
+The unit of a review is a **chunk** — one run of changed lines, as
+`git diff` reports it. `]c` marks the chunk it moves *away* from read
+(the last one of a file too, by a `]c` with nowhere left to go); arriving
+at a change is not having read it, and `[c` marks nothing. A file is
+read when every chunk of it is, and the row goes green — status letter
+and churn with it, those being how you decide what to open next — in a
+green stepped back from the `+N` one, so a finished row is quieter than
+a count still asking to be read. `x` in the list marks every chunk of
+the row under the cursor, and takes them all off again once they all
+are; on a directory row it completes everything under it.
+
+A mark is on the chunk's content, not its position, and is kept between
+sessions per repository. So a commit landing on the branch resets the
+chunks it touched and none of the others; the fork point moving resets a
+chunk only where its own lines moved; a chunk edited after it was read
+stops being read when the edit is written, and is read again when it is
+undone. `pane.auto_read`, `pane.remember_read` and
+`highlight.read_recede` are the knobs.
 
 Under the list, on the window's status line, is how much of the review
 is behind you: a bar, `3/5`, and a percentage. The percentage counts
-delta LOC — added *and* removed — rather than files, because `3/20` says
-nothing true about a branch whose third file is a nine-hundred-line
-generated blob. What fills it is what you have marked, not where the
-cursor is: arriving at the last file of a branch is not having read the
-branch. Being a window status line it obeys your `laststatus`;
-`list.progress = false` turns it off.
+delta LOC — added *and* removed — over the chunks that are read, rather
+than files, because `3/20` says nothing true about a branch whose third
+file is a nine-hundred-line generated blob; the `3/5` is files read
+entirely. What fills it is the marks, not where the cursor is: arriving
+at the last file of a branch is not having read the branch. Being a
+window status line it obeys your `laststatus`; `list.progress = false`
+turns it off.
 
 The list counts the working tree, not the commits: a saved edit is in it
 straight away, an unsaved one as soon as the buffer says so, and a file

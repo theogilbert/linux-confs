@@ -174,7 +174,8 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
 >
     g?              every key that does anything from here, in a float
     <CR>            open the file on this row
-    x               mark this row read -- a directory and all under it
+    x               mark this row read, or unread -- a directory and all
+                    under it
     K               the whole message of the commit on show
     ]f  [f          next / previous file
     za zc zo        fold this directory
@@ -231,33 +232,41 @@ Statuses are `A` added, `M` modified, `D` deleted, `R` renamed. A binary file
 gets a row and no count.
 
                                                             *uatis-list-read*
-`x` in the list marks the row under the cursor read, and the whole row goes
-green -- status letter and churn with it, those being how you decide what to
-open next and there being nothing left to decide. On a directory row it
-completes everything under it, nested directories included; a directory
-whose every file is read is drawn read itself. `x` again takes the mark off
--- a directory's too, once all of it is read.
+The unit of a review is a CHUNK: one run of changed lines in a file, as `git
+diff` reports it. `]c` marks the chunk it moves away from read -- the one the
+cursor is on, or the last one above it if you scrolled on past -- and the
+last chunk of a file is marked by a `]c` with nowhere left to go. Arriving at
+a change is not having read it, and `[c` marks nothing: going back is not
+being done (`pane.auto_read`).
 
-A file marks itself once every change in it has been stepped onto with `]c`
-or `[c` (`pane.auto_read`). Every one: `]c` off the last change alone says
-nothing about the rest, and a reader who came in at the last chunk has not
-read the file. Walked in either direction, and the landing `]c` makes on its
-way in from the file before counts.
+A file is read when every chunk of it is, and the row then goes green --
+status letter and churn with it, those being how you decide what to open
+next and there being nothing left to decide. The green is the `+N` green
+stepped back towards the background (`highlight.read_recede`), so a
+finished row is quieter than a count still asking to be read. `x` marks
+every chunk of the row under the cursor read, and takes them all off again
+once they all are; on a directory row it completes everything under it, and
+a directory whose every file is read is drawn read itself.
 
-A file edited after you marked it stops being read on its own: there is
-something in it nobody has seen. It is read again when the edit goes. Marks
-are dropped when the comparison itself moves -- a commit put on show, a new
-base branch -- and they last as long as the review does.
+A mark is on the chunk's CONTENT, not its position, and is kept between
+sessions per repository (`pane.remember_read`). So a commit landing on the
+branch resets the chunks it touched and none of the others; the fork point
+moving resets a chunk only where its own lines moved with it; a chunk edited
+after it was read stops being read when the edit is written, and is read
+again when it is undone and written. A change read in the branch is read in
+the commit that made it, where the two are the same bytes.
 
                                                         *uatis-list-progress*
 Under the list, on the window's status line, is how much of the review is
 behind you: a bar, the file count, and a percentage. The percentage is delta
-LOC -- lines added AND lines removed -- and not files, since `3/20` says
-nothing true about a branch whose third file is a nine-hundred-line generated
-blob. What fills it is what you have marked read, not where the cursor is:
-arriving at the last file of a branch is not having read the branch. It is a
-window status line, so it obeys `laststatus` like any other;
-`list.progress = false` turns it off.
+LOC -- lines added AND lines removed -- over the chunks that are read, and
+not files, since `3/20` says nothing true about a branch whose third file is
+a nine-hundred-line generated blob. The count beside it is files read
+entirely, which is what the rows draw green; the bar can be well along with
+that still at zero. What fills it is the marks, not the cursor: arriving at
+the last file of a branch is not having read the branch. It is a window
+status line, so it obeys `laststatus` like any other; `list.progress =
+false` turns it off.
 
                                                             *uatis-list-moves*
 git can move while Neovim is not looking. The list re-reads on `BufWritePost`
@@ -445,7 +454,7 @@ preserve.
     UatisHint           key hints
     UatisDir            a directory row
     UatisFileCur        the file the list is standing on
-    UatisRead           a file marked read, and the filled part of the bar
+    UatisRead           a file read, and the filled part of the bar
     UatisProgress       the same, where you want the bar drawn differently
     UatisStatusA        added
     UatisStatusM        modified
@@ -487,7 +496,8 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       pane = {
         auto_open = true,     -- show the list when a review starts
         follow = true,        -- annotate a listed file as you arrive at it
-        auto_read = true,     -- a file walked change by change marks itself
+        auto_read = true,     -- ]c marks the chunk it moves away from read
+        remember_read = true, -- ...and the marks outlive the session
       },
       diff = {
         default_backend = "struct",   -- or "line"

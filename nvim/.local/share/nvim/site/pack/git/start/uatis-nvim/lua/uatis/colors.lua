@@ -61,6 +61,8 @@ local ROWS = {
   { key = "signal_saturation", swatch = "UatisPlus" },
   { key = "signal_lightness", swatch = "UatisPlus", note = "on a dark bar" },
   { key = "signal_lightness_dark", swatch = "UatisMinus", note = "...and on a light one" },
+  { head = "a file that is read" },
+  { key = "read_recede", swatch = "UatisRead", step = 0.05 },
 }
 
 -- The colours a reader can name outright instead of deriving. Not

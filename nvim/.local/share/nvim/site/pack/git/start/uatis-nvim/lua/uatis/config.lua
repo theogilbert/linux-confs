@@ -126,8 +126,13 @@ return {
     -- `]c` off the last chunk of a file steps into the next file in the
     -- list and lands on its first change.
     chunk_spill = true,
-    -- ...and marks the file it is leaving read.
+    -- ...and `]c` marks the chunk it moves away from read -- the last
+    -- one of a file too, by a `]c` with nowhere left to go.
     auto_read = true,
+    -- Where the read marks are kept between sessions. `true` for
+    -- `stdpath("state")/uatis/read.json`, a string for that path,
+    -- `false` to forget them with the session.
+    remember_read = true,
   },
 
   show = {
@@ -239,6 +244,10 @@ return {
     signal_saturation = 0.75,
     signal_lightness = 0.55,      -- on a dark bar
     signal_lightness_dark = 0.55, -- ...and on a light one
+
+    -- How far a read row steps back from the `+N` green towards the
+    -- list's background: 0 is that green, 1 is gone.
+    read_recede = 0.4,
   },
 
   syntax = {

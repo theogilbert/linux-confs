@@ -132,7 +132,14 @@ end
 --- plausibly, on a machine that has it) replaces the output wholesale;
 --- `color.ui = always` wraps every line in escapes; `diff.noprefix` and
 --- `diff.mnemonicPrefix` rename the `a/`/`b/` the header is found by.
-local DIFF_FLAGS = { "--no-ext-diff", "--no-color", "--no-textconv",
+---
+--- No context, because the hunks are the review's CHUNKS -- what a mark
+--- is on, what the bar counts, what a `]c` leaves. With context, two
+--- changes six lines apart are one hunk to git and two stops to the
+--- reader, a chunk's fingerprint moves when a line beside it does, and
+--- the reader's own `diff.context` decides how coarse all of that is.
+--- Without it a hunk is a run of changed lines and nothing else.
+local DIFF_FLAGS = { "--no-ext-diff", "--no-color", "--no-textconv", "--unified=0",
   "--src-prefix=a/", "--dst-prefix=b/" }
 
 local function diff(root, revs, cb)

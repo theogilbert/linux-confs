@@ -6,6 +6,8 @@
 -- one line, with nowhere for anything that does not fit to go. In the
 -- pane it is real buffer text and wraps to the width it has.
 
+local read = require("uatis.read")
+
 local M = {}
 
 --- Escapes text destined for a statusline/winbar expression. A bare `%`
@@ -49,18 +51,6 @@ end
 --- the repository has not been scoped.
 function M.shown(f)
   return f.shown or f.path
-end
-
---- Whether the reader has marked this file read AND it still is.
----
---- The mark records the delta LOC the file had when it was made, so a
---- file edited afterwards quietly stops being read: there is something
---- in it nobody has seen, and a green row saying otherwise is the one
---- thing the mark must not say. It comes back the moment the edit is
---- undone, which is right -- that IS the file that was read.
-function M.is_read(pane, f)
-  local was = (pane.read or {})[f.path]
-  return was ~= nil and was == (f.added or 0) + (f.removed or 0)
 end
 
 --- Truncates a path from the left, which keeps the basename -- the part
@@ -269,7 +259,7 @@ function M.build_list(pane, width)
   -- already knows all of its own ancestors.
   local dir_stat = {}
   for _, f in ipairs(pane.files) do
-    local read = M.is_read(pane, f)
+    local read = read.is_read(pane, f)
     for _, d in ipairs(M.dirs_of(M.shown(f))) do
       local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0 }
       t.added = t.added + (f.added or 0)
@@ -336,7 +326,7 @@ function M.build_list(pane, width)
       local head = head_prefix .. shown .. string.rep(" ", math.max(avail - #shown, 0)) .. " "
       local line = b:add(head .. stat)
       rows[line] = entry.index
-      if M.is_read(pane, f) then
+      if read.is_read(pane, f) then
         -- Read: the whole row in one colour, status letter and churn
         -- included. Those two are how a reader decides what to open
         -- next, and on a file they have already read there is nothing
@@ -374,11 +364,14 @@ end
 --- The file count goes beside it anyway, because the list is a list OF
 --- files and the two answer different questions.
 ---
---- What fills it is the mark and not the cursor. Where the reader
+--- What fills it is the marks and not the cursor. Where the reader
 --- happens to be standing is already on the screen twice -- the row is
 --- drawn as current and the cursor is on it -- and it is not progress:
 --- arriving at the last file of a branch is not having read the branch,
---- and a bar that said so would be full before any of it was done.
+--- and a bar that said so would be full before any of it was done. The
+--- file count beside it is files read ENTIRELY, which is what the rows
+--- draw green; the bar can be well along with that still at zero, and
+--- that is a true thing to say about a review of large files.
 ---
 --- A review with no delta at all -- a rename, a mode change, a binary --
 --- has nothing to measure but its files, so it is measured on those.
@@ -387,16 +380,26 @@ function M.progress(pane, width)
   if n == 0 then
     return ""
   end
-  local total = (pane.stat_added or 0) + (pane.stat_removed or 0)
-  local done, read = 0, 0
+  -- Counted chunk by chunk, since that is what a mark is on: a file of
+  -- three chunks with two of them read is two-thirds of its delta
+  -- behind the reader, whatever the row beside it says.
+  local total, done, files = 0, 0, 0
   for _, f in ipairs(pane.files) do
-    if M.is_read(pane, f) then
-      read = read + 1
-      done = done + (f.added or 0) + (f.removed or 0)
+    local all = true
+    for _, c in ipairs(f.chunks or read.chunks(f)) do
+      total = total + c.added + c.removed
+      if read.chunk_read(pane, f, c) then
+        done = done + c.added + c.removed
+      else
+        all = false
+      end
+    end
+    if all then
+      files = files + 1
     end
   end
-  local frac = total > 0 and done / total or read / n
-  local text = ("%d/%d · %d%%"):format(read, n, math.floor(frac * 100 + 0.5))
+  local frac = total > 0 and done / total or files / n
+  local text = ("%d/%d · %d%%"):format(files, n, math.floor(frac * 100 + 0.5))
 
   -- The bar takes what the numbers leave, and goes entirely rather than
   -- shrinking to a handful of cells: four blocks and three dots is not a

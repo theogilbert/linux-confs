@@ -23,36 +23,24 @@ vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 
 vim.keymap.set("n", "K", function()
     local buf = vim.api.nvim_get_current_buf()
-    local diagnostics = vim.diagnostic.get(buf, { lnum = vim.api.nvim_win_get_cursor(0)[1] - 1 })
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local lnum, col = cursor[1] - 1, cursor[2]
+    -- Only diagnostics whose range covers the cursor position
+    local diagnostics = vim.tbl_filter(function(d)
+        local end_lnum, end_col = d.end_lnum or d.lnum, d.end_col or (d.col + 1)
+        local after_start = lnum > d.lnum or (lnum == d.lnum and col >= d.col)
+        local before_end = lnum < end_lnum or (lnum == end_lnum and col < end_col)
+        return after_start and before_end
+    end, vim.diagnostic.get(buf))
 
     if vim.tbl_isempty(diagnostics) then
-        -- No diagnostics, just show hover
         vim.lsp.buf.hover({ focusable = false })
     else
-        -- Capture LSP hover text
-        local clients = vim.lsp.get_clients({ bufnr = buf })
-        local encoding = clients[1] and clients[1].offset_encoding or "utf-16"
-        vim.lsp.buf_request(buf, "textDocument/hover", vim.lsp.util.make_position_params(0, encoding), function(_, result)
-            -- Show both hover and diagnostics in one window
-            local contents = {}
-
-            if result and result.contents then
-                local value = type(result.contents) == 'string' and result.contents
-                    or result.contents.value or ''
-                vim.list_extend(contents, vim.split(value, '\n', { trimempty = true }))
-            end
-
-            -- Add a separator
-            table.insert(contents, " ")
-
-            -- Add diagnostics
-            for _, diag in ipairs(diagnostics) do
-                table.insert(contents, " " .. diag.message) -- Add a warning icon (nerdfont required)
-            end
-
-            -- Show everything in a floating window
-            vim.lsp.util.open_floating_preview(contents, "markdown", { border = "rounded" })
-        end)
+        local contents = {}
+        for _, diag in ipairs(diagnostics) do
+            table.insert(contents, " " .. diag.message) -- warning icon (nerdfont required)
+        end
+        vim.lsp.util.open_floating_preview(contents, "markdown", { border = "rounded" })
     end
 end, { silent = true })
 

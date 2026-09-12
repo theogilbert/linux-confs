@@ -99,8 +99,10 @@ monorepo is not one review; naming a directory makes it one. The list then
 counts only what is under it, the review only follows you into files under it,
 and every path is drawn relative to it.
 
-Both are chosen in one panel, `<leader>gB`, and both are remembered per
-repository between sessions (`base.remember`).
+Both are chosen in one panel, `<leader>gB`: `<CR>` on a row asks that row's
+question, `<C-s>` applies both answers at once, `q` or `<Esc>` closes it
+with nothing changed. Both are remembered per repository between sessions
+(`base.remember`).
 
 ==============================================================================
 5. COMMANDS                                                   *uatis-commands*

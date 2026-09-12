@@ -179,10 +179,9 @@ function M.setup_highlights()
 
   tint("UatisAdd", "DiffAdd", add_l)
   -- ...including the old revision opened in a window of its own, where
-  -- the band marks which lines this branch removed. Background only, and
-  -- no strikethrough: everything in that buffer is the old side, so
-  -- striking it through would say nothing while making the code harder
-  -- to read -- and reading it is what that window is for.
+  -- the band marks which lines this branch removed. Background only:
+  -- everything in that buffer is the old side, and reading it is what
+  -- that window is for.
   -- ...whose colour is worked out below, since some schemes leave
   -- `DiffDelete` without a background for it to come from.
 
@@ -222,16 +221,19 @@ function M.setup_highlights()
     and { bg = add_dim }
     or { link = "DiffAdd" })
 
-  -- Over virtual text. Strikethrough on top of DiffDelete is what makes a
-  -- virtual line read as "this is gone" rather than "here is another line
-  -- of code".
-  derive("UatisDelete", "DiffDelete", { strikethrough = true })
+  -- Over virtual text. The `-` in the gutter and the red band are what
+  -- make a virtual line read as "this is gone" rather than "here is
+  -- another line of code". It was struck through as well, and the line
+  -- through every removed character made the old code -- which the
+  -- reader is being asked to compare against -- the hardest text on the
+  -- screen to read, for a statement the band was already making.
+  derive("UatisDelete", "DiffDelete", {})
 
   -- The same, minus the foreground, for a before-image whose own syntax
   -- colours are known (see `syntax.lua`). DiffDelete's foreground would
   -- flatten every removed line to one colour -- which is what the new
   -- side deliberately avoids -- so where there are real groups to put
-  -- underneath, only the background and the strikethrough come from here.
+  -- underneath, only the background comes from here.
   local del = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
 
   -- Which colour the removed side is, at all.
@@ -287,13 +289,13 @@ function M.setup_highlights()
     and { bg = del_dim }
     or { link = "DiffDelete" })
   vim.api.nvim_set_hl(0, "UatisDeleteBg", del_band
-    and { bg = del_band, strikethrough = true }
+    and { bg = del_band }
     or { link = "UatisDelete" })
   vim.api.nvim_set_hl(0, "UatisSign", { link = "DiffDelete" })
 
   -- The part of a before-image that did NOT go away. Present for
   -- context, so it steps back towards the editor's background the same
-  -- way `UatisDeleteBandDim` does, and keeps the strikethrough.
+  -- way `UatisDeleteBandDim` does.
   --
   -- A BACKGROUND, like every other statement this plugin makes over
   -- code. It was a grey `Comment` foreground, which is the one thing the
@@ -310,8 +312,8 @@ function M.setup_highlights()
   -- background to step back from.
   local comment = vim.api.nvim_get_hl(0, { name = "Comment", link = false })
   vim.api.nvim_set_hl(0, "UatisDeleteDim", del_dim
-    and { bg = del_dim, strikethrough = true }
-    or { fg = comment.fg, strikethrough = true })
+    and { bg = del_dim }
+    or { fg = comment.fg })
 
   -- The blank rows that keep a side-by-side layout lined up. Nothing is
   -- there, and the group says so: this is the same colour Neovim uses for
@@ -1145,6 +1147,50 @@ M.paint_row = paint_row
 --- deletion, `start_b` is the line AFTER WHICH content was removed, and 0
 --- means "before everything". For a replacement, `start_b` is the first
 --- changed line, and the removed text belongs directly above it.
+--- The last old row of the multi-row atom that opens at `from`, or nil
+--- where `from` opens no such thing.
+---
+--- difftastic reports a docstring, a comment block or any other
+--- multi-line atom row by row, and the rows have a shape: every row but
+--- the last runs to the end of its line, and every row but the first
+--- starts at column 0 -- indentation included, since inside a string the
+--- indentation is content. A row that starts after its indentation is a
+--- new atom. Blank rows carry nothing and are read through, so a
+--- paragraph break does not end the docstring it is inside.
+---
+--- Only `string` and `comment`: the atoms difftastic reports as prose,
+--- and the only ones that span rows.
+local function atom_tail(del_marked, old_lines, from, upto)
+  local function edges(row)
+    local lo, hi, kind = nil, nil, nil
+    for _, sp in ipairs(del_marked[row] or {}) do
+      lo = math.min(lo or sp.col_start, sp.col_start)
+      hi = math.max(hi or sp.col_end, sp.col_end)
+      kind = kind or sp.atom
+    end
+    return lo, hi, kind
+  end
+  local _, hi, kind = edges(from)
+  if not hi or (kind ~= "string" and kind ~= "comment") then
+    return nil
+  end
+  local tail, prev_hi, prev = from, hi, from
+  for row = from + 1, upto do
+    local text = old_lines[row]
+    if text == nil then
+      break
+    end
+    if text ~= "" then
+      local lo, this_hi, this_kind = edges(row)
+      if lo ~= 0 or this_kind ~= kind or prev_hi ~= #(old_lines[prev] or "") then
+        break
+      end
+      tail, prev, prev_hi = row, row, this_hi
+    end
+  end
+  return tail > from and tail or nil
+end
+
 local function delete_anchor(hunk, line_count)
   if hunk.count_b > 0 then
     return math.max(hunk.start_b - 1, 0), true
@@ -1558,10 +1604,25 @@ function M.render(bufnr, win, result, old_lines, opts)
     -- green, so the old code appeared nowhere at all and its replacement
     -- claimed to be new. Rows no hunk claims are the ones that read as
     -- unchanged code, and those are what moving into looks like.
+    --
+    -- Not every unchanged row, though. Where the backend paired the
+    -- rows, a row it matched with an old row OUTSIDE this hunk was
+    -- there before the edit -- it answers to its own old self, and the
+    -- hunk's content cannot have moved onto it. Two tests four rows
+    -- apart both opened on `Widget(name="a", width=2.0, height=3.0)`;
+    -- the first changed its `3.0` and lost its before-image, because
+    -- every token of the row it used to be was found on the second,
+    -- which nobody touched. What moving into looks like is a row the
+    -- backend could not pair, or paired with one of the hunk's own.
+    local a_first, a_last = hunk.start_a, hunk.start_a + hunk.count_a - 1
+    local function stood_before(row)
+      local old_row = result.pairs and result.pairs[row + 1]
+      return old_row ~= nil and (old_row < a_first or old_row > a_last)
+    end
     local window = {}
     for row = first, last do
       local owner = claimed_by[row]
-      if owner == nil or owner == hidx then
+      if (owner == nil or owner == hidx) and not stood_before(row) then
         table.insert(window, line_text(row))
       end
     end
@@ -1643,6 +1704,44 @@ function M.render(bufnr, win, result, old_lines, opts)
           table.insert(dels[d.line], d)
         end
         pair = { adds = adds, dels = dels }
+      end
+    end
+    -- ...except for a row the backend paired with one old row of this
+    -- hunk that is still on it, whole. The block comparison can match a
+    -- character against any old row, and a docstring folded from five
+    -- rows to one -- `"""A test about scale widget.` gaining its closing
+    -- `"""` -- found those three characters on the old closing row and
+    -- reported nothing new on the line: drawn, a pale row with nothing
+    -- lit, which reads as a change the reader cannot find. difftastic
+    -- said which old row the new one is a version of, and where that
+    -- row is on the new one in one piece the comparison to make is the
+    -- one between the two of them: everything new on the row is then
+    -- new against the line it used to be, and everything stepped back
+    -- is that line, not text lifted from a row above or below it.
+    --
+    -- Only where nothing was lost. A partner the per-row comparison
+    -- finds removals on may be a positional pairing across a reflowed
+    -- paragraph, where the block's answer -- which sees the words that
+    -- survived the reflow -- is the better one. `refit_new` says which
+    -- rows were re-measured, since the objection `collapsed` raises to
+    -- the step-back -- pale text scavenged from another row -- cannot
+    -- apply to a row measured against one line.
+    local refit_new = {}
+    if pair and not inline and result.pairs and hunk.count_a > 1 then
+      for i = 1, hunk.count_b do
+        local old_row = result.pairs[hunk.start_b + i - 1]
+        local j = old_row and (old_row - hunk.start_a + 1)
+        if j and j >= 1 and j <= hunk.count_a then
+          local r = diff.inline_diff(olds[j], news[i])
+          if #r.dels == 0 and #r.adds > 0 then
+            pair.adds[i] = {}
+            for _, a in ipairs(r.adds) do
+              table.insert(pair.adds[i], vim.tbl_extend("force", a, { line = i }))
+            end
+            pair.dels[j] = {}
+            refit_new[i] = true
+          end
+        end
       end
     end
     emphasis = pair and pair.adds or nil
@@ -1804,7 +1903,12 @@ function M.render(bufnr, win, result, old_lines, opts)
             -- row, since a row with none lost nothing only because
             -- there was never anything for it to lose.
             local about = { collapsed = hunk.count_a > hunk.count_b }
-            if pair and pair.dels and result.pairs and result.pairs[row + 1] then
+            if refit_new[i + 1] then
+              -- Measured against its own old row, which is on it whole:
+              -- nothing here was lifted from another row, and nothing
+              -- was lost. See `refit_new` above.
+              about = { collapsed = false, lost = false }
+            elseif pair and pair.dels and result.pairs and result.pairs[row + 1] then
               local went = pair.dels[i + 1]
               about.lost = went ~= nil and #went > 0
             end
@@ -1976,8 +2080,29 @@ function M.render(bufnr, win, result, old_lines, opts)
         end
       end
     end
+    --
+    -- ...and `content_survives` compares TOKENS, so a row that lost only
+    -- whitespace is a row it cannot see anything leave. Right for the
+    -- moves it exists to excuse, where whitespace changing is the move.
+    -- Wrong for a row paired with its own old self that went nowhere: a
+    -- comment with the space taken off its end is a change difftastic
+    -- reports and the character comparison finds, and nothing arrived
+    -- on the row to be lit -- so it was drawn as a dim band with no
+    -- before-image, changed for a reason the reader could not see,
+    -- while side by side had the space in red on the left all along.
+    -- Where the sides correspond row for row, a row that lost something
+    -- and gained nothing has only the before-image to show it in.
+    local lost_only = false
+    if inline then
+      for i = 1, hunk.count_a do
+        if #(inline.dels[i] or {}) > 0 and #(inline.adds[i] or {}) == 0 then
+          lost_only = true
+          break
+        end
+      end
+    end
     local pure_insertion = nothing_removed
-      or (content_survives and (inline ~= nil or result.precise))
+      or (content_survives and not lost_only and (inline ~= nil or result.precise))
 
     -- Whether that alignment is a correspondence at all, or an order.
     --
@@ -2170,7 +2295,39 @@ function M.render(bufnr, win, result, old_lines, opts)
       end
       local kept = vim.tbl_count(intact)
       if kept * 2 <= hunk.count_a then
-        intact = {}
+        -- ...unless the rows are about to be drawn one above their own
+        -- partner anyway. The majority test protects a passage -- a
+        -- block drawn in one piece, where a hole is a bracket left
+        -- open. Rows spread each above the line it became are no
+        -- passage: there is a line of the new file between every two
+        -- of them already, and an identical pair among them says
+        -- nothing except that the line is there twice. A lone untouched
+        -- row between two changed ones is swallowed into the hunk so
+        -- that a wrap reads as one edit (`absorbs` in diff.lua), and
+        -- where the hunk did not pair up line for line it came out
+        -- drawn pale red above itself and dim green on itself --
+        -- removed and added back at once, the reading `realign` and
+        -- `carried` both exist to undo, reached by a third route.
+        --
+        -- Only the rows anchored on their own identical line, not the
+        -- `moved_to` ones: those are on screen somewhere else, and
+        -- somewhere else is not directly below.
+        local own, rest = {}, 0
+        for i = 0, hunk.count_a - 1 do
+          if not intact[hunk.start_a + i] and not carried[i + 1] then
+            rest = rest + 1
+          end
+        end
+        if aligned and not collapsed[hidx] and rest <= config.diff.line.spread_max then
+          for old_row in pairs(intact) do
+            local at = result.anchor[old_row]
+            if at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
+              and line_text(at - 1) == old_lines[old_row] then
+              own[old_row] = true
+            end
+          end
+        end
+        intact = own
       end
 
       -- The rows to draw. Normally the hunk's own; where the removal
@@ -2215,6 +2372,48 @@ function M.render(bufnr, win, result, old_lines, opts)
         end
       end
       spread = spread <= config.diff.line.spread_max
+
+      -- A block whose first rows are one atom that the first new row is
+      -- a version of.
+      --
+      -- The block is one passage above the hunk, old together, new
+      -- together. But a docstring folded from five rows to one, with
+      -- the two code rows under it taken out too, is not one passage
+      -- that became another: the docstring became the new docstring,
+      -- and the code rows simply went from where they were, which was
+      -- under it. Drawn as one block above the new row, the reader is
+      -- shown the old code above the docstring it used to follow, and
+      -- has to work out that half the block is the row below it and the
+      -- other half is not.
+      --
+      -- So where the block opens with a multi-row atom whose first row
+      -- the backend paired with the hunk's first new row -- and the two
+      -- resemble each other, which is what says the pairing is a
+      -- correspondence and not the order the token walk fell into --
+      -- the atom's rows go above that new row as one block, and the
+      -- rows after it go where the alignment puts them: above the next
+      -- new row there is one for, which is below the new atom. Two
+      -- blocks, not a row-by-row spread, so the old code still reads as
+      -- code; and split only at the atom's own edge, where the backend
+      -- has said what the rows on each side of it were.
+      local head_tail, rest_row, rest_above = nil, nil, nil
+      if not spread and not span and hunk.count_b > 0 and result.pairs
+        and result.pairs[hunk.start_b] == from
+        and resembles(old_lines[from] or "", line_text(hunk.start_b - 1)) then
+        local tail = atom_tail(del_marked, old_lines, from, upto)
+        if tail and tail < upto then
+          head_tail = tail
+          local at = result.anchor and result.anchor[tail + 1]
+          if at and at > hunk.start_b and at <= hunk.start_b + hunk.count_b then
+            rest_row, rest_above = at - 1, true
+          elseif hunk.start_b + hunk.count_b - 1 < line_count then
+            rest_row, rest_above = hunk.start_b + hunk.count_b - 1, true
+          else
+            rest_row, rest_above = math.max(line_count - 1, 0), false
+          end
+        end
+      end
+      local head = {}
 
       for old_row = from, upto do
         local i = old_row - hunk.start_a
@@ -2343,8 +2542,19 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- lines keeps its closing bracket, and greying that one row
           -- of four says the passage came apart rather than that it
           -- moved.
+          --
+          -- The first row of a head block is that comparison. The
+          -- block is above this row BECAUSE its first row is the one
+          -- the row became (`atom_tail` above), so that row is directly
+          -- above its own new version with nothing between them, and
+          -- pale there says the one true thing: this row stayed, the
+          -- rows under it went. The side window already draws it so
+          -- from the same `del_fine`. Only the first row -- the rest
+          -- of the block is still the passage.
+          local own_row = (spread and not span)
+            or (head_tail ~= nil and old_row == from)
           if (not dels or #dels == 0) and del_fine[old_row]
-            and #del_fine[old_row] == 0 and spread and not span then
+            and #del_fine[old_row] == 0 and own_row then
             survived = true
           end
           local runs = syn and syn[old_row]
@@ -2420,6 +2630,8 @@ function M.render(bufnr, win, result, old_lines, opts)
             local anchor = math.min(at - 1, math.max(line_count - 1, 0))
             answered[anchor] = true
             add_before(anchor, true, { chunks })
+          elseif head_tail and old_row <= head_tail then
+            table.insert(head, chunks)
           else
             table.insert(virt, chunks)
           end
@@ -2429,6 +2641,14 @@ function M.render(bufnr, win, result, old_lines, opts)
       local row, above = delete_anchor(hunk, line_count)
       if span then
         row, above = math.max(hunk.start_b - 1, 0), true
+      end
+      if #head > 0 then
+        answered[row] = true
+        add_before(row, true, head)
+        -- The rest were not what this row became; they are what went
+        -- from under it. Not `answered`, since that would dim the row
+        -- they are drawn above as the row's replacement.
+        row, above = rest_row, rest_above
       end
       if #virt > 0 then
         if above and hunk.count_b > 0 then

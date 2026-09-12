@@ -966,6 +966,14 @@ function M.attach(bufnr, win, root, relpath, opts)
       if not vim.api.nvim_win_is_valid(win) then
         return
       end
+      -- ...or still there and showing something else. The reader moved
+      -- on before git answered, and a view drawn now goes on a buffer no
+      -- window holds: its winbar lands over the file that took its
+      -- place, and with no window to leave, nothing ever closes it. When
+      -- the buffer is next shown, the list will annotate it afresh.
+      if vim.api.nvim_win_get_buf(win) ~= bufnr then
+        return
+      end
 
       -- Re-running over a buffer that already has a view re-points it
       -- rather than stacking a second one: the mappings, the winbar and

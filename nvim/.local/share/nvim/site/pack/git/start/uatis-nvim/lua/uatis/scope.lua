@@ -15,9 +15,13 @@
 -- a row.
 --
 -- So the panel holds pending answers and nothing else knows about them
--- until `q`. Each row opens the picker or the prompt that row's question
--- already had -- `base.ask` and `base.ask_dir`, which are those same
--- questions with the deciding taken out.
+-- until `<C-s>`. Each row opens the picker or the prompt that row's
+-- question already had -- `base.ask` and `base.ask_dir`, which are those
+-- same questions with the deciding taken out. `q` closes it the way it
+-- closes every other float here: without doing anything. A panel where
+-- the key that dismisses it is the key that commits it is one that
+-- applies a half-considered pair on the reflex that puts other floats
+-- away.
 --
 -- A float in its own module, like `colors.lua`, for the same reason: it
 -- owns keys and a window, and `base.lua` is where the answers live
@@ -38,7 +42,7 @@ local ROWS = {
 
 --- The keys, written out. A panel with two rows and no verbs on it is a
 --- panel nobody presses anything in.
-local HINT = "   <CR> change · q save · <Esc> discard"
+local HINT = "   <CR> change · <C-s> save · q discard"
 
 --- What the row's answer looks like written down.
 ---
@@ -262,12 +266,13 @@ function M.open(opts)
       vim.wo[panel.win].wrap = false
 
       local keys = {
-        q = save,
+        ["<C-s>"] = save,
         ["<CR>"] = edit,
         j = function() move(1) end,
         k = function() move(-1) end,
         ["<Down>"] = function() move(1) end,
         ["<Up>"] = function() move(-1) end,
+        q = M.close,
         ["<Esc>"] = M.close,
         ["<C-c>"] = M.close,
       }

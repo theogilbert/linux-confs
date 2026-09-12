@@ -231,7 +231,7 @@ file buffer while the list is open, so you can walk the branch without
 going back to the pane; they are given back when it closes.
 
 **In place**, what the branch removed is drawn as virtual lines around
-your code, in the language's own colours, struck through. **Side by side**
+your code, in the language's own colours, on a red band. **Side by side**
 puts the revision in a window to the left instead: a real buffer, so it
 searches and yanks, with the two halves padded so a line and the line it
 replaced sit on the same screen row, and the cursor and scroll kept in

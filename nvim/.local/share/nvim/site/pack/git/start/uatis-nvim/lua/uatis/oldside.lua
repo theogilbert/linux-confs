@@ -419,10 +419,9 @@ end
 --- Bands the lines this branch removed, and -- side by side -- pads both
 --- windows so the two sides line up row for row.
 ---
---- The band is background only, and no strikethrough: everything in this
---- buffer is the old side, so struck-through text would say nothing while
---- making every line harder to read -- and this is the window you came to
---- in order to READ the old code. The red says which of it is gone.
+--- The band is background only: everything in this buffer is the old
+--- side, and this is the window you came to in order to READ the old
+--- code. The red says which of it is gone.
 function M.refresh(view)
   local old = view.old
   if not (old and vim.api.nvim_buf_is_valid(old.buf)) then
@@ -590,21 +589,38 @@ end
 -- Lifetime
 -- ------------------------------------------------------------------
 
-function M.close(view)
+--- Forgets the old side and takes back what it put in YOUR buffer and
+--- window: the fillers that lined it up with the old window, and the
+--- wrapping it turned off. Returns what was forgotten.
+---
+--- Split from `close` because the old window can go without us --
+--- `:tabclose` takes both windows at once -- and this half is the one
+--- that matters then. The fillers are extmarks in the buffer you are
+--- editing, which stays loaded after its windows are gone, so a file
+--- reopened later came back with blank rows between its lines: the
+--- `WinClosed` handler had dropped `view.old` so no sync would reach
+--- for a window that was gone, and the view's own close, a tick later,
+--- found no old side left to clean up after.
+local function let_go(view)
   local old = view.old
   view.old = nil
   if not old then
-    return
+    return nil
   end
   owners[old.buf] = nil
-  -- The fillers live in the buffer you are editing, so they have to go
-  -- when the window they were lining up with does -- and so does the
-  -- wrapping this turned off.
   if vim.api.nvim_buf_is_valid(view.bufnr) then
     vim.api.nvim_buf_clear_namespace(view.bufnr, M.ns, 0, -1)
   end
   if old.wrap ~= nil and view.win and vim.api.nvim_win_is_valid(view.win) then
     vim.wo[view.win].wrap = old.wrap
+  end
+  return old
+end
+
+function M.close(view)
+  local old = let_go(view)
+  if not old then
+    return
   end
   if old.win and vim.api.nvim_win_is_valid(old.win) then
     -- Never the last window: closing it would take the editor down with
@@ -834,15 +850,15 @@ function M.open(view, opts)
     M.sync(view, row)
 
     -- The window may be closed by anything -- `:only`, `:q`, a layout
-    -- plugin -- and the view has to notice, or the next press would
-    -- re-sync a window that is gone.
+    -- plugin, the tab going -- and the view has to notice, or the next
+    -- press would re-sync a window that is gone. Everything the layout
+    -- put in your own buffer and window goes with it: see `let_go`.
     vim.api.nvim_create_autocmd("WinClosed", {
       pattern = tostring(win),
       once = true,
       callback = function()
         if view.old and view.old.win == win then
-          owners[view.old.buf] = nil
-          view.old = nil
+          let_go(view)
         end
       end,
     })

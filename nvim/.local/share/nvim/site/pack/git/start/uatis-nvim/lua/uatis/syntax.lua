@@ -160,7 +160,7 @@ end
 --- chunk the syntax group it fell in plus `overlay_hl` on top. Text no
 --- capture claimed keeps `overlay_hl` alone.
 ---
---- The overlay group goes LAST so its background and its strikethrough
+--- The overlay group goes LAST so its background
 --- win over anything the colourscheme put on the syntax group, while the
 --- foreground the syntax group carries -- which is the whole point --
 --- comes through untouched.

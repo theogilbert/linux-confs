@@ -54,6 +54,15 @@ is the wrong reading: one line went, one line arrived, and the untouched line
 between them ends up inside the hunk's old range — where the before-image draws
 it in red, directly above the identical green row it never left.
 
+Between two rows that do have both sides the row is swallowed, and where the
+hunk then fails to pair up line for line — a row added under the second change
+— neither `carried` nor `intact` excuses it (see §4), and it came out pale red
+above itself with a dim band on itself: removed and added back at once, by a
+third route. `intact` now keeps a row anchored on its own identical line
+whenever the rows are going to be drawn one above their partner: the majority
+test there protects a passage, and rows spread each above the line they became
+are no passage.
+
 ---
 
 ## 2. Deciding which rows get marked at all
@@ -152,6 +161,23 @@ reflowed across three lines has honestly lost a bracket and two commas —
 dimming four lines to point at four punctuation marks is not a comparison
 anyone can use.
 
+### `refit_new` — `overlay.lua`
+
+The emphasis is a block comparison, old rows against new, so that a
+docstring gaining a line still gets an answer. But a block can match a
+character against *any* old row: a docstring folded from five rows to one,
+gaining its closing `"""`, found those three characters on the old closing
+row and reported nothing new on the line — a pale row with nothing lit,
+which reads as a change the reader cannot find.
+
+Where difft paired the new row with one old row of the same hunk, and that
+old row is on the new one whole, the row is measured against that row
+instead. Only where nothing was lost: a partner the per-row comparison finds
+removals on may be a positional pairing across a reflowed paragraph, where
+the block's answer — which sees the words that survived the reflow — is the
+better one. A row re-measured this way is not `collapsed` for the gate below:
+nothing on it can have been lifted from another row.
+
 ### `narrowed_atoms` — `overlay.lua`
 
 Whether the step-back is offered at all. Four gates, in order:
@@ -221,6 +247,26 @@ No before-image where nothing was actually removed. Moving code is not
 deleting it, and a full red copy of a line still visible below reads as a much
 bigger change than happened. This is why a pure insertion into a line shows no
 red row: the dimmed half **is** the before-image, drawn in place.
+
+It compares tokens, and whitespace is not one — right for the moves it
+excuses, where whitespace changing *is* the move. But a comment with the space
+taken off its end is a change difft reports, and nothing arrived on the row to
+be lit: it came out as a dim band with no before-image, changed for a reason
+the reader could not see, while side by side had the space in red on the left.
+So where the two sides correspond row for row, a row that lost something and
+gained nothing overrules the survival test: the before-image is the only place
+that loss can be shown.
+
+It is asked against a window of rows around the hunk, not the hunk alone,
+because a wrap can come back as a deletion here and an insertion three rows
+down. Two kinds of row are left out of that window: rows another hunk claims
+(it is painting them as added, so they cannot also be where this code went),
+and — where the backend paired the rows — rows it matched with an old row
+*outside* this hunk. Those stood there before the edit and answer to their
+own old selves. Two tests four rows apart both opened on
+`Widget(name="a", width=2.0, height=3.0)`; the first changed its `3.0` and
+lost its before-image, because every token of the row it used to be was found
+on the second, which nobody touched.
 
 ### `collapsed_span` — `overlay.lua`
 
@@ -301,6 +347,29 @@ they go into one block above the hunk — old together, new together.
 
 Counted over the rows that actually get drawn, so a long hunk most of whose old
 rows are already on screen still spreads the few that are not.
+
+### `atom_tail` — the block split at an atom's edge — `overlay.lua`
+
+A block is one passage above the hunk, old together, new together. But a
+docstring folded from five rows to one, with the two code rows under it taken
+out too, is not one passage that became another: the docstring became the new
+docstring, and the code rows went from where they were, which was under it.
+As one block the old code sat above the docstring it used to follow.
+
+Where the block opens with a multi-row atom (`string` or `comment`; every row
+but the last runs to its line's end, every row but the first starts at column
+0, blank rows read through) whose first row difft paired with the hunk's first
+new row, and the two resemble each other, the atom's rows go above that new
+row as one block and the rest go where the alignment puts them — above the
+next new row there is one for, which is below the new atom. Two blocks, not a
+row-by-row spread, and split only at the atom's own edge. The second block is
+not `answered`: those rows are not what the row they hang above became.
+
+The first row of the first block is the exception to "no step-back inside a
+block" (above): the block is where it is *because* that row is the one the
+new row became, so it sits directly above its own new version, and an empty
+`del_fine` steps it back — this row stayed, the rows under it went. The rest
+of the block is still the passage, and stays one colour.
 
 ### `UatisAddDim` on a row with a red row above it — `overlay.lua`
 

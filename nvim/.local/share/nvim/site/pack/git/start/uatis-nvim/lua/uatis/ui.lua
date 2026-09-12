@@ -378,15 +378,22 @@ function M.progress(pane, width)
   -- Counted chunk by chunk, since that is what a mark is on: a file of
   -- three chunks with two of them read is two-thirds of its delta
   -- behind the reader, whatever the row beside it says.
+  -- A chunk set aside -- one the backend drawing the file reported
+  -- nothing for -- is out of the total as well as out of the done:
+  -- counted as read it would move the bar on the file being OPENED,
+  -- and counted as unread it would hold the bar short of a review
+  -- whose every row is green.
   local total, done, files = 0, 0, 0
   for _, f in ipairs(pane.files) do
     local all = true
     for _, c in ipairs(f.chunks or read.chunks(f)) do
-      total = total + c.added + c.removed
-      if read.chunk_read(pane, f, c) then
-        done = done + c.added + c.removed
-      else
-        all = false
+      if not read.is_hidden(pane, f, c) then
+        total = total + c.added + c.removed
+        if read.chunk_read(pane, f, c) then
+          done = done + c.added + c.removed
+        else
+          all = false
+        end
       end
     end
     if all then
@@ -627,32 +634,73 @@ local function view_winbar_text(view, width)
     -- word-precise and nothing more. Worth saying, because the answer
     -- looks like a line diff and the reader would otherwise be left
     -- wondering what happened to the structural one.
-    add("structural · no parser", "UatisMeta")
+    --
+    -- And WHY, where it had a parser and put it down: `no parser` on a
+    -- `.py` file reads as "difftastic cannot do Python", when the file
+    -- was too changed for its graph limit, or would not parse just now
+    -- -- each of which the reader can do something about.
+    if view.fallback then
+      add("structural · text fallback (" .. view.fallback .. ")", "UatisMeta")
+    else
+      add("structural · no parser", "UatisMeta")
+    end
+  elseif view.pieces then
+    -- difftastic would not take the file whole and was asked about it
+    -- in pieces (`regions.lua`). Said, since a function moved between
+    -- two pieces reads as removed and added, which the whole would not
+    -- have said.
+    add(("structural · in %d pieces"):format(view.pieces), "UatisMeta")
   else
     add(view.backend == "line" and "line" or "structural", "UatisMeta")
   end
   if view.dropped and view.dropped > 0 then
     add(string.format("%d cosmetic hidden", view.dropped), "UatisMeta")
   end
-
-  local k = require("uatis.config").keys.view
-  local hints = {
-    k.hunk_next .. "/" .. k.hunk_prev .. " chunk",
-    k.file_next .. "/" .. k.file_prev .. " file",
-    k.diff_mode .. " " .. (view.backend == "line" and "structural" or "line"),
-    k.layout .. " " .. (view.layout == "side" and "in place" or "side by side"),
-    k.files .. " files",
-  }
-  -- How to get out, which is not always a key of the view's own: its own
-  -- is off by default, because `<leader>gu` toggles the review off from
-  -- anywhere including from in here. Name whichever one is actually
-  -- bound rather than the one that happens to live in this table.
-  local out = k.quit or require("uatis.config").keys.global.toggle_diff
-  if out then
-    table.insert(hints, out .. " close")
+  -- How much of this file is behind the reader, in the unit a mark is
+  -- on: chunks, `read/all`. The list's own status line says it for the
+  -- branch; this is the same question asked of the file under the
+  -- cursor, which is the one the reader is deciding whether they are
+  -- done with. Counted from the list, since the list is where the marks
+  -- live -- and only from a list measuring the same thing as this
+  -- window, or the chunks counted are not the chunks drawn.
+  local chunks = M.read_chunks(view)
+  if chunks then
+    add(("%d/%d read"):format(chunks.done, chunks.total), "UatisMeta")
   end
 
-  return compose(left, hints, width)
+  -- No key hints. They were here -- `]c/[c chunk  ]f/[f file  ...` --
+  -- and were the wrong half of the bar: the identity is read on every
+  -- glance, the keys once, and a row of them spent most of the width
+  -- teaching what `g?` in the list already teaches on demand.
+  return compose(left, {}, width)
+end
+
+--- The stops `]c` makes in `view`'s file that are behind the reader,
+--- and how many there are: `{ done, total }`, or nil where no list
+--- measures this file against this revision, or there is nothing to
+--- step.
+---
+--- Counted in the view's hunks and not in git's chunks, though the
+--- marks are on the chunks. The two are not the same unit: a lone
+--- unchanged row between two changes is one node to difftastic and two
+--- chunks to git, so a file with one stop in it read `0/2`, and one
+--- press took it to `2/2`. The reader steps stops, so the count is of
+--- stops -- see `read.stops_read` for what makes one read.
+function M.read_chunks(view)
+  local pane = require("uatis.pane")
+  local read = require("uatis.read")
+  local patch = require("uatis.patch")
+  local tab = view.win and vim.api.nvim_win_is_valid(view.win)
+    and vim.api.nvim_win_get_tabpage(view.win) or nil
+  local p = pane.get(tab)
+  if not p or p.root ~= view.root or p.rev ~= view.rev then
+    return nil
+  end
+  local f = patch.find(p.files, view.relpath)
+  if not f then
+    return nil
+  end
+  return read.stops_read(p, f, require("uatis.view").stops(view))
 end
 
 M.view_winbar_text = view_winbar_text

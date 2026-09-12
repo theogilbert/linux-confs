@@ -180,6 +180,8 @@ local function render(view)
       -- header for the same reason, and because a reader who is not told
       -- reads a line-shaped answer as the structural one.
       view.prose = result.prose
+      view.fallback = result.fallback
+      view.pieces = result.pieces
       -- Kept for the old-revision window: it is the text this render was
       -- measured against, and the hunks are what tell it which line
       -- answers to which. Held on the view rather than fetched again so
@@ -259,6 +261,10 @@ local function render(view)
       if moved or view.renders == 1 then
         require("uatis.pane").recount(view)
       end
+      -- ...and which chunks it drew nothing for, on every render: the
+      -- counts can stand still while the backend's reading of the file
+      -- changes under them -- a toggle to line mode, for one.
+      require("uatis.pane").set_aside(view)
       vim.cmd("redrawstatus")
     end)
   end)
@@ -458,24 +464,45 @@ end
 --- is to say. Which git chunks those rows are is the list's question
 --- (`pane.read_chunks_at`), so a list is read if there is none yet, the
 --- way `]f` reads one -- without putting a window up.
+--- The stops `]c` makes in this view, as the list needs them: where
+--- each stands on the new side, and a key made of its content -- old
+--- rows and new -- so that a stop left before an edit above it shifted
+--- every row is still the stop that was left.
+function M.stops(view)
+  local out = {}
+  local old_lines = vim.split(view.old_text or "", "\n", { plain = true })
+  for _, h in ipairs(view.hunks or {}) do
+    local lo = h.start_b
+    local hi = lo + math.max(h.count_b, 1) - 1
+    local text = {}
+    for i = 0, h.count_a - 1 do
+      table.insert(text, old_lines[h.start_a + i] or "")
+    end
+    table.insert(text, "\0")
+    local news = vim.api.nvim_buf_get_lines(view.bufnr, math.max(lo - 1, 0),
+      math.max(lo - 1, 0) + h.count_b, false)
+    vim.list_extend(text, news)
+    table.insert(out, { lo = lo, hi = hi, key = vim.fn.sha256(table.concat(text, "\n")) })
+  end
+  return out
+end
+
 local function leave_chunk(view, cur, target)
   if not config.pane.auto_read then
     return
   end
-  local left
-  for _, h in ipairs(view.hunks or {}) do
-    if h.start_b <= cur then
-      left = h
+  local stops, idx = M.stops(view), nil
+  for i, s in ipairs(stops) do
+    if s.lo <= cur then
+      idx = i
     end
   end
-  if not left then
+  if not idx then
     return
   end
-  local lo = left.start_b
-  local hi = lo + math.max(left.count_b, 1) - 1
   local pane = require("uatis.pane")
   local function mark(list)
-    pane.read_chunks_at(list, view.relpath, lo, hi, target)
+    pane.leave_stop(list, view.relpath, stops, idx, target)
   end
   local list = pane.get()
   if list and (list.renders or 0) > 0 then

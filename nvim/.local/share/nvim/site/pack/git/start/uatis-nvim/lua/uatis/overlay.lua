@@ -227,13 +227,8 @@ function M.setup_highlights()
   -- through every removed character made the old code -- which the
   -- reader is being asked to compare against -- the hardest text on the
   -- screen to read, for a statement the band was already making.
-  derive("UatisDelete", "DiffDelete", {})
-
-  -- The same, minus the foreground, for a before-image whose own syntax
-  -- colours are known (see `syntax.lua`). DiffDelete's foreground would
-  -- flatten every removed line to one colour -- which is what the new
-  -- side deliberately avoids -- so where there are real groups to put
-  -- underneath, only the background comes from here.
+  -- Defined below, once the band colour is known: it is DiffDelete's
+  -- foreground over THAT, not DiffDelete as written.
   local del = vim.api.nvim_get_hl(0, { name = "DiffDelete", link = false })
 
   -- Which colour the removed side is, at all.
@@ -288,6 +283,19 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, "UatisDeleteBandDim", del_dim
     and { bg = del_dim }
     or { link = "DiffDelete" })
+  -- A removed row with no syntax colours of its own: DiffDelete's
+  -- foreground for the text, over the band. Not DiffDelete's own
+  -- background -- that is what the dim below IS, the scheme's colour
+  -- for a removed line with the band being that colour pushed further.
+  -- Copied as written, a row that went and a row that survived had the
+  -- same ground under them and only the text told them apart, and a
+  -- removed blank line, having no text, read as one that survived.
+  derive("UatisDelete", "DiffDelete", del_band and { bg = del_band } or {})
+  -- The same, minus the foreground, for a before-image whose own syntax
+  -- colours are known (see `syntax.lua`). DiffDelete's foreground would
+  -- flatten every removed line to one colour -- which is what the new
+  -- side deliberately avoids -- so where there are real groups to put
+  -- underneath, only the background comes from here.
   vim.api.nvim_set_hl(0, "UatisDeleteBg", del_band
     and { bg = del_band }
     or { link = "UatisDelete" })
@@ -1660,6 +1668,12 @@ function M.render(bufnr, win, result, old_lines, opts)
     if hunk.count_a > 0 and diff.lines_correspond(olds, news) then
       local r = diff.block_diff(olds, news)
       if r then
+        -- The sides correspond row for row, so each row's indentation
+        -- has a row to be measured against -- which `block_diff` does
+        -- not do on its own (see `clip_indent` there).
+        for i = 1, #news do
+          diff.add_indent(r, olds[i], news[i], i, i)
+        end
         inline = { adds = {}, dels = {} }
         for _, a in ipairs(r.adds) do
           inline.adds[a.line] = inline.adds[a.line] or {}
@@ -1689,6 +1703,17 @@ function M.render(bufnr, win, result, old_lines, opts)
     if not pair and result.precise and hunk.count_a > 0 and hunk.count_b > 0 then
       local r = diff.block_diff(olds, news)
       if r then
+        -- ...and here the pairing is the backend's, where it gave one
+        -- inside the hunk.
+        if result.pairs then
+          for i = 1, hunk.count_b do
+            local old_row = result.pairs[hunk.start_b + i - 1]
+            local j = old_row and (old_row - hunk.start_a + 1)
+            if j and j >= 1 and j <= hunk.count_a then
+              diff.add_indent(r, olds[j], news[i], j, i)
+            end
+          end
+        end
         local adds, dels = {}, {}
         for _, a in ipairs(r.adds) do
           adds[a.line] = adds[a.line] or {}
@@ -2233,6 +2258,20 @@ function M.render(bufnr, win, result, old_lines, opts)
         -- The old revision's own window draws from the same answer, or
         -- the two layouts disagree about one edit: see `oldside.refresh`.
         del_fine[old_row] = refit[old_row]
+        -- ...and the new row's indentation, measured against the row it
+        -- was re-matched to. The marks on the new side were drawn from
+        -- a pairing that had no row for this one, so the columns it
+        -- gained at its front -- a row pulled right under a `try:` --
+        -- are the one thing left unsaid about it. See `clip_indent` in
+        -- diff.lua for why nothing else says it.
+        local d = diff.indent_delta(old_lines[old_row], line_text(at - 1))
+        if d and d.gained and at - 1 < line_count then
+          vim.api.nvim_buf_set_extmark(bufnr, M.ns, at - 1, d.gained[1], {
+            end_col = d.gained[2],
+            hl_group = "UatisAdd",
+            priority = 100,
+          })
+        end
       end
     end
 

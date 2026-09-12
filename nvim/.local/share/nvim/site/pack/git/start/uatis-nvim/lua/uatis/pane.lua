@@ -292,6 +292,36 @@ function M.recount(view)
   end
 end
 
+--- Told by a view which of its file's chunks the backend drew nothing
+--- for. Every list measuring what the view measures sets them aside,
+--- and redraws where that changed a row's colour or the bar.
+function M.set_aside(view)
+  for _, pane in pairs(panes) do
+    if pane.root == view.root and pane.rev == view.rev then
+      local f = patch.find(pane.files, view.relpath)
+      if f then
+        local now = read.hidden(f, view.hunks)
+        pane.hidden = pane.hidden or {}
+        local was = pane.hidden[view.relpath] or {}
+        local same = vim.tbl_count(was) == vim.tbl_count(now)
+        for fp in pairs(now) do
+          if not was[fp] then
+            same = false
+            break
+          end
+        end
+        pane.hidden[view.relpath] = next(now) ~= nil and now or nil
+        if not same then
+          if pane.list_buf then
+            filelist.render(pane)
+          end
+          vim.cmd("redrawstatus!")
+        end
+      end
+    end
+  end
+end
+
 --- Re-reads what git has to say and redraws.
 ---
 --- `git diff <fork point>` with no second revision, so it counts the
@@ -1083,6 +1113,10 @@ local function settle(pane, files, moved)
       pcall(vim.api.nvim_win_set_cursor, win, at)
     end
   end
+  -- Every window, not the current one: the file whose count just moved
+  -- is the one `x` in the list was pressed for, and its header is in
+  -- the window next door.
+  vim.cmd("redrawstatus!")
 end
 
 --- Marks every chunk of `files` read, or takes the marks off. `on` nil
@@ -1110,6 +1144,11 @@ local function set_read(pane, files, on)
   for _, f in ipairs(files) do
     if read.mark(pane, f, f.chunks or read.chunks(f), on) then
       moved = true
+    end
+    -- Taken off, the stops left on the way to the mark go with it, or
+    -- the header would go on counting them read over an unread row.
+    if not on and pane.left then
+      pane.left[f.path] = nil
     end
   end
   settle(pane, files, moved)
@@ -1169,31 +1208,27 @@ function M.toggle_read_rows(pane, first, last, on)
   return set_read(pane, files, on)
 end
 
---- The chunks of `relpath` a `]c` has just moved away from: those whose
---- rows meet `lo..hi`, the rows of the change the cursor was on, and do
---- not hold `target`, the row it is going to.
+--- A `]c` has just moved away from stop `idx` of `stops` in `relpath`,
+--- towards row `target` (nil at the end of the file). The stop is
+--- recorded as left, and the chunks it stands on are marked once every
+--- stop on them has been: see `read.leave`.
 ---
 --- Positions, because that is the only language the buffer and git
---- share. The view's changes are its own backend's -- difftastic's
---- nodes, which can span several of git's runs of changed lines -- so
---- leaving one may leave several, and a chunk the next stop is still
---- inside is not left. Rows in a buffer edited and not written have
---- drifted from git's; the chunk they land on is marked, and a write
---- re-reads the list, where a chunk the edit touched has a new
---- fingerprint and no mark.
-function M.read_chunks_at(pane, relpath, lo, hi, target)
+--- share. Rows in a buffer edited and not written have drifted from
+--- git's; the chunk they land on is marked, and a write re-reads the
+--- list, where a chunk the edit touched has a new fingerprint and no
+--- mark. The header counts stops left as well as chunks marked, so it
+--- is redrawn even where no mark moved.
+function M.leave_stop(pane, relpath, stops, idx, target)
   local f = patch.find(pane.files, relpath)
   if not f then
     return
   end
-  local left = {}
-  for _, c in ipairs(f.chunks or read.chunks(f)) do
-    local s, e = c.start, c.start + math.max(c.count, 1) - 1
-    if s <= hi and e >= lo and not (target and target >= s and target <= e) then
-      table.insert(left, c)
-    end
-  end
-  settle(pane, { f }, read.mark(pane, f, left, true))
+  pane.left = pane.left or {}
+  pane.left[relpath] = pane.left[relpath] or {}
+  local chunks = read.leave(pane.left[relpath], stops, idx, f, target)
+  settle(pane, { f }, read.mark(pane, f, chunks, true))
+  vim.cmd("redrawstatus!")
 end
 
 --- Folds one directory row shut, opens it, or toggles it -- `shut` true,

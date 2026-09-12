@@ -502,6 +502,26 @@ end
 --- main loop. `inline_block_limit` is where that stops being free, and
 --- past it there is no comparison at all -- the caller falls back to
 --- whole-line highlighting, which is what a hunk that size reads as.
+--- Takes the leading whitespace of each line out of `spans`, in place.
+local function clip_indent(spans, lines)
+  local kept = {}
+  for _, sp in ipairs(spans) do
+    local indent = #((lines[sp.line] or ""):match("^%s*"))
+    if sp.col_start < indent then
+      sp.col_start = math.min(indent, sp.col_end)
+    end
+    if sp.col_end > sp.col_start then
+      table.insert(kept, sp)
+    end
+  end
+  for i = #spans, 1, -1 do
+    spans[i] = nil
+  end
+  for i, sp in ipairs(kept) do
+    spans[i] = sp
+  end
+end
+
 function M.block_diff(old_lines, new_lines)
   local adds, dels = {}, {}
 
@@ -549,7 +569,42 @@ function M.block_diff(old_lines, new_lines)
     end
   end
 
+  -- Nothing about leading whitespace. Indentation is a token here like
+  -- any other, and a token diff matches by content and not by row: an
+  -- eight-space indent on old row one paired with the eight spaces on
+  -- new row one, a row that had never been there, and the eight spaces
+  -- on new row two -- the row it had actually become -- came back as
+  -- added, on a row whose indent had not moved. A row reindented under
+  -- a `try:` had its whole twelve-space token lit, not the four columns
+  -- it gained. Whether a row's indentation changed is a question about
+  -- that row and the row it was a version of, and this comparison does
+  -- not know which that is; `indent_delta` answers it where a caller
+  -- does.
+  clip_indent(adds, new_lines)
+  clip_indent(dels, old_lines)
+
   return { adds = adds, dels = dels }
+end
+
+--- The columns a row's indentation changed by, against the row it was
+--- a version of: `{ gained = { from, to } }` on the new row, or
+--- `{ lost = { from, to } }` on the old one, or nil where the two are
+--- indented alike or either is blank. The one claim about leading
+--- whitespace worth drawing, and the one `block_diff` leaves to a
+--- caller that knows the pairing -- which is the same claim
+--- `indent_marks` in overlay.lua makes for a row outside any hunk.
+function M.indent_delta(was, now)
+  if was == nil or now == nil or was:match("^%s*$") or now:match("^%s*$") then
+    return nil
+  end
+  local before = #was:match("^[ \t]*")
+  local after = #now:match("^[ \t]*")
+  if after > before then
+    return { gained = { before, after } }
+  elseif before > after then
+    return { lost = { after, before } }
+  end
+  return nil
 end
 
 --- Whether two blocks of lines correspond line for line, closely enough
@@ -678,8 +733,25 @@ end
 --- Single-line convenience wrapper, for callers and tests that only ever
 --- compare one line against one line.
 function M.inline_diff(old_line, new_line)
-  local r = M.block_diff({ old_line }, { new_line })
-  return r or { adds = {}, dels = {} }
+  local r = M.block_diff({ old_line }, { new_line }) or { adds = {}, dels = {} }
+  -- One line against one line is a pairing, so the indentation's answer
+  -- is known here.
+  M.add_indent(r, old_line, new_line, 1, 1)
+  return r
+end
+
+--- Adds the indentation `now` gained or `was` lost to `r`, a
+--- `block_diff` answer, as a span on new line `i` or old line `j`.
+function M.add_indent(r, was, now, j, i)
+  local d = M.indent_delta(was, now)
+  if not d then
+    return
+  end
+  if d.gained then
+    table.insert(r.adds, { line = i, col_start = d.gained[1], col_end = d.gained[2] })
+  else
+    table.insert(r.dels, { line = j, col_start = d.lost[1], col_end = d.lost[2] })
+  end
 end
 
 -- Character-level spans for the even case only. A 1:1 line replacement can
@@ -727,8 +799,6 @@ end
 -- difftastic's JSON output is gated behind this even though it is not in
 -- the visible --help option list; it only shows up in the error message
 -- when omitted.
-local DIFFT_ENV = { DFT_UNSTABLE = "yes" }
-
 local difft_cache = {}
 
 local function write_temp(text, ext)
@@ -1120,28 +1190,52 @@ local function textual(language)
   return type(language) == "string" and language:match("^Text") ~= nil
 end
 
-local function struct_compute(old_text, new_text, opts, cb)
-  if vim.fn.executable(config.diff.struct.bin) ~= 1 then
-    return no_difft(old_text, new_text, opts, cb)
+--- Why, where difftastic had a parser and did not use it. The reason
+--- rides in `language` -- `Text (exceeded DFT_GRAPH_LIMIT)`, `Text (3
+--- Python parse errors, exceeded DFT_PARSE_ERROR_LIMIT)` -- and is worth
+--- keeping: "no parser" is what a reader takes from a text answer on a
+--- `.py` file, and the truth is that the file was too changed, or would
+--- not parse just now, each of which they can do something about. nil
+--- where there was no parser to begin with.
+function M.fallback_of(language)
+  if not textual(language) then
+    return nil
   end
-
-  local ck = table.concat({ old_text, new_text, opts.path or "" }, "\1")
-  if difft_cache[ck] then
-    cb(difft_cache[ck])
-    return
+  local limit = language:match("exceeded DFT_([%u_]+)_LIMIT")
+  if limit == "GRAPH" then
+    return "graph limit"
+  elseif limit == "PARSE_ERROR" then
+    return "parse errors"
+  elseif limit == "BYTE" then
+    return "byte limit"
   end
+  return nil
+end
 
-  -- difftastic reads paths, not stdin, and detects the language from the
-  -- extension, so both sides are written out with the real extension.
-  local ext = (opts.path or ""):match("%.([%w_]+)$") or ""
+--- The environment difftastic runs under: JSON output, and whichever of
+--- its limits the reader raised.
+local function difft_env()
+  local env = { DFT_UNSTABLE = "yes" }
+  if config.diff.struct.graph_limit then
+    env.DFT_GRAPH_LIMIT = tostring(config.diff.struct.graph_limit)
+  end
+  if config.diff.struct.parse_error_limit then
+    env.DFT_PARSE_ERROR_LIMIT = tostring(config.diff.struct.parse_error_limit)
+  end
+  return env
+end
+
+--- One difftastic run over two texts, written out with `ext` so it picks
+--- its parser. `cb(data)` with the decoded answer, or `cb(nil)` where
+--- there was none to decode.
+local function run_difft(old_text, new_text, ext, cb)
   local old_file = write_temp(old_text, ext)
   local new_file = write_temp(new_text, ext)
   if not old_file or not new_file then
     if old_file then os.remove(old_file) end
     if new_file then os.remove(new_file) end
-    return no_difft(old_text, new_text, opts, cb)
+    return cb(nil)
   end
-
   vim.system(
     -- No --ignore-comments. difftastic can drop comment changes and once
     -- did here, on the reasoning that structural mode is about code. It is
@@ -1151,13 +1245,13 @@ local function struct_compute(old_text, new_text, opts, cb)
     -- unchanged. Structural mode hides how code was *formatted*, not what
     -- was *said*.
     { config.diff.struct.bin, "--display", "json", old_file, new_file },
-    { text = true, env = DIFFT_ENV },
+    { text = true, env = difft_env() },
     function(res)
       os.remove(old_file)
       os.remove(new_file)
       vim.schedule(function()
         if res.code ~= 0 or not res.stdout or res.stdout == "" then
-          return no_difft(old_text, new_text, opts, cb)
+          return cb(nil)
         end
         -- luanil matters: without it a JSON null inside an array -- every
         -- gap in aligned_lines -- decodes to the vim.NIL sentinel rather
@@ -1167,42 +1261,154 @@ local function struct_compute(old_text, new_text, opts, cb)
           luanil = { object = true, array = true },
         })
         if not ok or type(data) ~= "table" then
-          return no_difft(old_text, new_text, opts, cb)
+          return cb(nil)
         end
-        local result
-        if data.status == "created" or data.status == "deleted" then
-          -- One side is empty, and difftastic says so at file level and
-          -- stops: no chunks, no aligned lines, nothing to align them
-          -- against. The hunks are then not a matter of opinion -- every
-          -- line of the side that exists -- and `precise = false` says
-          -- what is true, that there is no token detail to be had here.
-          local hunks = line_hunks(old_text, new_text)
-          result = { hunks = hunks, spans = {}, dropped = 0,
-            engine = "difftastic", precise = false,
-            prose = textual(data.language) }
-        elseif data.status == "unchanged" then
-          -- An unchanged response omits chunks and aligned_lines entirely
-          -- rather than sending empty arrays. Reaching here with texts
-          -- that genuinely differ means the whole change was comments or
-          -- formatting.
-          local differ = old_text ~= new_text
-          result = { hunks = {}, spans = {}, dropped = differ and 1 or 0,
-            engine = "difftastic", precise = true,
-            prose = textual(data.language) }
-        else
-          local hunks, spans, pairs_of, anchor_of = from_json(data,
-            vim.split(old_text, "\n", { plain = true }),
-            vim.split(new_text, "\n", { plain = true }))
-          result = { hunks = hunks, spans = spans, dropped = 0,
-            pairs = pairs_of, anchor = anchor_of,
-            engine = "difftastic", precise = true,
-            prose = textual(data.language) }
-        end
-        difft_cache[ck] = result
-        cb(result)
+        cb(data)
       end)
     end
   )
+end
+
+--- Files difftastic has given up on whole, by path: cut first next time.
+local cut_first = {}
+
+--- The file in pieces, where difftastic would not take it whole: see
+--- `regions.lua`. `cb(data)` with one answer stitched from the pieces'
+--- own, or `cb(nil)` where the file cannot be cut -- no tree-sitter
+--- parser for it -- or a piece got no answer.
+local function in_pieces(old_text, new_text, opts, ext, cb)
+  local regions = require("uatis.regions")
+  local lang = require("uatis.syntax").lang_of(vim.filetype.match({ filename = opts.path }))
+  if not lang then
+    return cb(nil)
+  end
+  local old_lines = vim.split(old_text, "\n", { plain = true })
+  local new_lines = vim.split(new_text, "\n", { plain = true })
+  local units_a = regions.units(old_text, lang)
+  local units_b = regions.units(new_text, lang)
+  if not units_a or not units_b then
+    return cb(nil)
+  end
+  local pieces = regions.pieces(line_hunks(old_text, new_text), units_a, units_b,
+    #old_lines, #new_lines)
+  if #pieces == 0 then
+    return cb(nil)
+  end
+  local pending, failed = 0, false
+  local function one_done()
+    pending = pending - 1
+    if pending == 0 then
+      if failed then
+        return cb(nil)
+      end
+      local data = regions.stitch(pieces, old_lines, new_lines)
+      data.pieces = #pieces
+      cb(data)
+    end
+  end
+  for _, p in ipairs(pieces) do
+    if p.hi_a >= p.lo_a and p.hi_b >= p.lo_b then
+      pending = pending + 1
+    end
+  end
+  if pending == 0 then
+    local data = regions.stitch(pieces, old_lines, new_lines)
+    data.pieces = #pieces
+    return cb(data)
+  end
+  for _, p in ipairs(pieces) do
+    if p.hi_a >= p.lo_a and p.hi_b >= p.lo_b then
+      run_difft(table.concat(old_lines, "\n", p.lo_a + 1, p.hi_a + 1),
+        table.concat(new_lines, "\n", p.lo_b + 1, p.hi_b + 1), ext, function(data)
+          if not data then
+            failed = true
+          else
+            p.data = data
+          end
+          one_done()
+        end)
+    end
+  end
+end
+
+local function struct_compute(old_text, new_text, opts, cb)
+  if vim.fn.executable(config.diff.struct.bin) ~= 1 then
+    return no_difft(old_text, new_text, opts, cb)
+  end
+
+  local ck = table.concat({ old_text, new_text, opts.path or "",
+    tostring(config.diff.struct.graph_limit), tostring(config.diff.struct.parse_error_limit) }, "\1")
+  if difft_cache[ck] then
+    cb(difft_cache[ck])
+    return
+  end
+
+  -- difftastic reads paths, not stdin, and detects the language from the
+  -- extension, so both sides are written out with the real extension.
+  local ext = (opts.path or ""):match("%.([%w_]+)$") or ""
+
+  local function finish(data)
+    local result
+    if data.status == "created" or data.status == "deleted" then
+      -- One side is empty, and difftastic says so at file level and
+      -- stops: no chunks, no aligned lines, nothing to align them
+      -- against. The hunks are then not a matter of opinion -- every
+      -- line of the side that exists -- and `precise = false` says
+      -- what is true, that there is no token detail to be had here.
+      local hunks = line_hunks(old_text, new_text)
+      result = { hunks = hunks, spans = {}, dropped = 0,
+        engine = "difftastic", precise = false,
+        prose = textual(data.language), fallback = M.fallback_of(data.language) }
+    elseif data.status == "unchanged" then
+      -- An unchanged response omits chunks and aligned_lines entirely
+      -- rather than sending empty arrays. Reaching here with texts
+      -- that genuinely differ means the whole change was comments or
+      -- formatting.
+      local differ = old_text ~= new_text
+      result = { hunks = {}, spans = {}, dropped = differ and 1 or 0,
+        engine = "difftastic", precise = true,
+        prose = textual(data.language), fallback = M.fallback_of(data.language) }
+    else
+      local hunks, spans, pairs_of, anchor_of = from_json(data,
+        vim.split(old_text, "\n", { plain = true }),
+        vim.split(new_text, "\n", { plain = true }))
+      result = { hunks = hunks, spans = spans, dropped = 0,
+        pairs = pairs_of, anchor = anchor_of,
+        engine = "difftastic", precise = true,
+        prose = textual(data.language), fallback = M.fallback_of(data.language),
+        pieces = data.pieces }
+    end
+    difft_cache[ck] = result
+    cb(result)
+  end
+
+  -- Whole first, pieces as the rescue -- unless this file has needed
+  -- the rescue before, in which case the whole is three seconds spent
+  -- finding that out again, per keystroke while it is being edited.
+  local function whole()
+    run_difft(old_text, new_text, ext, function(data)
+      if not data then
+        return no_difft(old_text, new_text, opts, cb)
+      end
+      if M.fallback_of(data.language) == "graph limit" and opts.path then
+        cut_first[opts.path] = true
+        return in_pieces(old_text, new_text, opts, ext, function(stitched)
+          finish(stitched or data)
+        end)
+      end
+      finish(data)
+    end)
+  end
+  if opts.path and cut_first[opts.path] then
+    return in_pieces(old_text, new_text, opts, ext, function(stitched)
+      if stitched then
+        return finish(stitched)
+      end
+      cut_first[opts.path] = nil
+      whole()
+    end)
+  end
+  whole()
 end
 
 local BACKENDS = { line = line_compute, struct = struct_compute }

@@ -21,6 +21,18 @@
 -- Kept between sessions, per repository, in `state` beside the base
 -- choice: a review is rarely finished in one sitting, and the marks are
 -- exactly the part of it that git cannot give back.
+--
+-- One unit, whichever backend drew the file. Structural mode draws
+-- nothing for a chunk that is only formatting -- a block reindented, a
+-- reflow -- and `]c` never stops there; so a file read stop by stop in
+-- structural mode still had a chunk nobody could mark, and the row
+-- stayed unread. Those chunks are not a second kind of mark: they are
+-- set aside (`pane.hidden`, from the view that drew the file) for as
+-- long as that is how the file is drawn, and the file is read when
+-- every chunk that is NOT set aside is. Switch the file to line mode
+-- and they are drawn, and count, and are unread. In memory only:
+-- which chunks a backend hides is a fact about the backend and the
+-- file, and is known again the moment the file is opened.
 
 local config = require("uatis.config")
 
@@ -66,6 +78,118 @@ function M.chunks(f)
   return out
 end
 
+--- The chunks of `f` that overlap new-side rows `lo..hi` -- the git
+--- chunks a view hunk stands on. difftastic's hunks and git's do not
+--- line up one to one: a lone unchanged row between two changes is one
+--- node to difftastic and two chunks to git, so a stop `]c` makes can
+--- cover several marks, and the count has to be taken in the same unit
+--- the stop is.
+function M.covering(f, lo, hi)
+  local out = {}
+  for _, c in ipairs(f.chunks or M.chunks(f)) do
+    local s, e = c.start, c.start + math.max(c.count, 1) - 1
+    if s <= hi and e >= lo then
+      table.insert(out, c)
+    end
+  end
+  return out
+end
+
+--- The chunks of `f` no hunk in `hunks` stands on: what the backend
+--- that produced `hunks` drew nothing for. A set of fingerprints.
+function M.hidden(f, hunks)
+  local out = {}
+  for _, c in ipairs(f.chunks or M.chunks(f)) do
+    local s, e = c.start, c.start + math.max(c.count, 1) - 1
+    local covered = false
+    for _, h in ipairs(hunks or {}) do
+      local lo = h.start_b
+      local hi = lo + math.max(h.count_b, 1) - 1
+      if s <= hi and e >= lo then
+        covered = true
+        break
+      end
+    end
+    if not covered then
+      out[M.fingerprint(c)] = true
+    end
+  end
+  return out
+end
+
+--- The chunks of `f` that leaving stop `idx` of `stops` marks read,
+--- given `left` -- the stops of this file already left, by key -- and
+--- `target`, the row the cursor is going to. Records the stop in
+--- `left` on the way, unless the target is still inside it.
+---
+--- A stop is the view's hunk; the mark is on git's chunk; and one git
+--- chunk can carry several stops -- a hundred added lines is one chunk
+--- to git and, to a backend that found blank rows inside it, five
+--- stops. Marked on the first of them left, the chunk took the other
+--- four with it: the header jumped by five on one press and stood
+--- still on the next four. So a chunk is marked only once EVERY stop
+--- on it has been left. Which stops have been left is a fact about the
+--- session, held in memory and keyed by the stop's content; the mark,
+--- which is what lasts, is still the chunk's.
+function M.leave(left, stops, idx, f, target)
+  local s = stops[idx]
+  if not s then
+    return {}
+  end
+  if not (target and target >= s.lo and target <= s.hi) then
+    left[s.key] = true
+  end
+  local out = {}
+  for _, c in ipairs(M.covering(f, s.lo, s.hi)) do
+    local cs, ce = c.start, c.start + math.max(c.count, 1) - 1
+    if not (target and target >= cs and target <= ce) then
+      local all = true
+      for _, o in ipairs(stops) do
+        if o.lo <= ce and o.hi >= cs and not left[o.key] then
+          all = false
+          break
+        end
+      end
+      if all then
+        table.insert(out, c)
+      end
+    end
+  end
+  return out
+end
+
+--- How many of `stops` are behind the reader, and how many there are:
+--- `{ done, total }`, or nil with nothing to step. A stop is read when
+--- it has been left this session, or when every chunk it stands on is
+--- marked -- which is what `x` in the list does, and what a mark kept
+--- from the last session says.
+function M.stops_read(pane, f, stops)
+  local left = (pane.left or {})[f.path] or {}
+  local done, total = 0, 0
+  for _, s in ipairs(stops or {}) do
+    total = total + 1
+    local all = left[s.key] == true
+    if not all then
+      all = true
+      for _, c in ipairs(M.covering(f, s.lo, s.hi)) do
+        if not M.chunk_read(pane, f, c) then
+          all = false
+          break
+        end
+      end
+    end
+    if all then
+      done = done + 1
+    end
+  end
+  -- Nothing to step is nothing to count: `0/0 read` on a file the
+  -- backend found no change in says less than saying nothing.
+  if total == 0 then
+    return nil
+  end
+  return { done = done, total = total }
+end
+
 --- The key a chunk is marked under.
 function M.fingerprint(c)
   return c.fp .. ":" .. c.added .. ":" .. c.removed
@@ -77,10 +201,18 @@ function M.chunk_read(pane, f, c)
   return set ~= nil and set[M.fingerprint(c)] == true
 end
 
+--- Whether this chunk of `f` is set aside: the backend drawing the file
+--- reported nothing for it, so there is nothing in it to read.
+function M.is_hidden(pane, f, c)
+  local set = (pane.hidden or {})[f.path]
+  return set ~= nil and set[M.fingerprint(c)] == true
+end
+
 --- Whether every chunk of `f` is read -- which is what a read FILE is.
+--- A chunk set aside is not one to wait for.
 function M.is_read(pane, f)
   for _, c in ipairs(f.chunks or M.chunks(f)) do
-    if not M.chunk_read(pane, f, c) then
+    if not M.chunk_read(pane, f, c) and not M.is_hidden(pane, f, c) then
       return false
     end
   end

@@ -108,6 +108,23 @@ throughout reports no hunks at all; one reindented throughout *and* edited once
 would otherwise light up every row and bury the edit under the reformat.
 `diff.indent_marks` turns it off.
 
+### `clip_indent` / `indent_delta` — `diff.lua`
+
+The block comparison (`block_diff`) says nothing about leading whitespace.
+Indentation was a token in it like any other, and a token diff matches by
+content and not by row: an eight-space indent on old row one paired with the
+eight spaces on new row one — a row that had never been there — and the row
+it had really become came back with its unchanged indent lit, while a row
+pulled right under a `try:` had its whole twelve-space token marked rather
+than the four columns it gained.
+
+Whether a row's indentation changed is a question about that row and the row
+it was a version of. Where that pairing is known — positional in a 1:1 hunk,
+difft's `pairs` inside a structural hunk, `fitted` for a row re-matched for
+its before-image, or `inline_diff` of one line against one — the columns it
+gained go on the new row and the columns it lost on the old, and only those.
+The same claim the rule above makes for a row outside any hunk.
+
 ### `joined` — `overlay.lua`
 
 Two marked words with a space between them are drawn as one mark. difft

@@ -149,6 +149,11 @@ return {
       -- The difftastic executable. Missing, every view is a line diff
       -- and the winbar says so.
       bin = "difft",
+      -- difftastic's own ceilings, passed through as DFT_GRAPH_LIMIT and
+      -- DFT_PARSE_ERROR_LIMIT; past either it compares words instead
+      -- and the winbar says which. nil leaves difftastic's defaults.
+      graph_limit = nil,
+      parse_error_limit = nil,
     },
 
     -- `vim.diff` and the intra-line comparison built on it. None of this
@@ -225,8 +230,8 @@ return {
 
     -- The step-back: the half of a changed prose atom that is not the
     -- edit. Saturation cap, then how far it sits from the background.
-    dim_saturation = 0.10,
-    dim_lightness = 0.07,
+    dim_saturation = 0,
+    dim_lightness = 0,
     -- ...or that colour named outright, as `0xrrggbb`.
     add_dim_bg = nil,
 

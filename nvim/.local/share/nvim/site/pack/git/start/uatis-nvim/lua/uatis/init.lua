@@ -62,6 +62,43 @@ local function follow_up()
   end
 end
 
+--- Opens the list from a buffer with nothing to annotate -- and, from
+--- the empty buffer nvim started in, walks straight into the first file
+--- it names.
+---
+--- A terminal, a help page, another plugin's pane: somewhere the reader
+--- went for its own sake, so the list goes up beside it and takes the
+--- cursor, and which file to open is their call. The buffer nvim opens
+--- on when started with no file is not that. Nobody is there for it, it
+--- holds nothing, and a reader who starts nvim in a repository and
+--- presses the key wants to read the branch -- which begins at its first
+--- file, the same place `]f` from the top of the list would take them,
+--- one press later. So the list is read, and the first file opens in
+--- the window the empty buffer was in, with the list beside it, exactly
+--- as a review begun from a file lands.
+---
+--- Unnamed AND unmodified: a buffer typed into is one someone is using,
+--- whatever it is called.
+local function blank(bufnr)
+  return vim.api.nvim_buf_get_name(bufnr) == "" and vim.bo[bufnr].buftype == ""
+    and not vim.bo[bufnr].modified
+end
+
+local function open_list(opts)
+  local bufnr = vim.api.nvim_get_current_buf()
+  if not blank(bufnr) then
+    return pane.open(opts)
+  end
+  return pane.open(vim.tbl_extend("force", opts or {}, {
+    focus = false,
+    on_ready = function(p)
+      if pane.get(p.tab) == p and #p.files > 0 then
+        pane.goto_file(p, 1)
+      end
+    end,
+  }))
+end
+
 --- Annotates the current buffer against `ref`, or against the base branch
 --- when none is given -- which is the answer to "what have I changed", and
 --- what you want often enough that typing a ref for it is a tax.
@@ -78,7 +115,7 @@ function M.run(opts)
   -- buffer nvim started in -- but the question is still a good one, and
   -- the file list answers it. Pick a file from it and you are in a view.
   if not view.can_open() then
-    return pane.open({ resolve = view.ref_resolver(args[1]) })
+    return open_list({ resolve = view.ref_resolver(args[1]) })
   end
   view.open(args[1], { on_open = follow_up })
 end
@@ -180,7 +217,7 @@ function M.toggle_diff()
       pane.close(list)
       return false
     end
-    pane.open()
+    open_list()
     return true
   end
   -- A review already running takes this file in at ITS revision, rather

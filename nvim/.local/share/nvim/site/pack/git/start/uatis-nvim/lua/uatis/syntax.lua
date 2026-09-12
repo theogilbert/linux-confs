@@ -69,6 +69,8 @@ local function lang_of(filetype)
   return lang
 end
 
+M.lang_of = lang_of
+
 --- Highlight spans for `rows` (1-based line numbers) of `text`, or nil
 --- when the text cannot be parsed -- no parser for the filetype, or a
 --- file big enough that parsing it costs more than the colour is worth.

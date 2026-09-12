@@ -74,6 +74,12 @@ While it is running, every file the branch changed is annotated as you arrive
 at it -- through the list, through `gd`, through a picker, however you got
 there. `<leader>gu` turns all of it off in one press.
 
+It does not have to begin in a file. From a buffer with nothing to annotate
+-- a terminal, a help page -- `<leader>gu` opens the list beside it and puts
+the cursor there, and which file to open is yours to pick. From the empty
+buffer nvim starts in, it goes one step further and opens the first file the
+list names in that window, with the list beside it.
+
 ==============================================================================
 4. WHAT IS COMPARED                                         *uatis-comparison*
 
@@ -273,6 +279,23 @@ the last file of a branch is not having read the branch. It is a window
 status line, so it obeys `laststatus` like any other; `list.progress =
 false` turns it off.
 
+The same question asked of one file is on that file's own header, counted
+in the stops `]c` makes: `1/3 read` is one of its three. Every `]c` off a
+stop counts one, whatever git makes of it: structural mode can read two of
+git's chunks as one stop, and a hundred added lines can be one chunk to git
+and five stops to the backend. The mark that lasts between sessions is the
+chunk's, and a chunk shared by several stops is marked once the last of
+them is left -- so a chunk half stepped through is whole again next session.
+The header names the file, the revision, the counts and the backend, and no
+keys -- `g?` in the list is where those are.
+
+A chunk the backend draws nothing for -- a reindent, a reflow, which
+structural mode reads as no change -- is set aside rather than waited for:
+while the file is drawn that way, the row goes green without it and the bar
+leaves it out. Switch the file to line mode and it is a change again, and
+unread. Which chunks are set aside is known from the view that drew the
+file, so a file not yet opened this session is measured on every chunk.
+
                                                             *uatis-list-moves*
 git can move while Neovim is not looking. The list re-reads on `BufWritePost`
 and on `BufReadPost` of a file it already knew; on `FocusGained`, `TermLeave`
@@ -321,6 +344,23 @@ that picks out the words inside a changed line.
 Structural mode never fails loudly. If difftastic is missing, errors, or has
 no parser for the file, the view degrades to the line backend and says so in
 the winbar. `status().degraded` reports it too.
+
+difftastic also puts a parser DOWN: past its graph limit (a large file mostly
+rewritten) or its parse-error limit (a file that will not parse just now) it
+compares words instead, and the winbar says `text fallback (graph limit)` or
+`(parse errors)` rather than `no parser`. `diff.struct.graph_limit` and
+`diff.struct.parse_error_limit` raise those ceilings, at difftastic's own
+cost: a diff that hit the graph limit at the default can take ten seconds
+and more to compute with it raised, once per change to the file.
+
+Before that, a file difftastic gave up on whole is read IN PIECES: cut where
+tree-sitter says one top-level thing ends and the next begins -- a class, a
+function, an import block -- each piece asked about on its own and the
+answers sewn back together on the rows the line diff already matched. The
+winbar says `structural · in 3 pieces`. The one thing pieces cannot see is a
+function moved from one piece to another, which reads as removed and added.
+It needs a tree-sitter parser for the filetype; without one the text
+fallback stands.
 
 ==============================================================================
 10. HOW A CHANGE IS DRAWN                                        *uatis-marks*
@@ -506,7 +546,11 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       },
       diff = {
         default_backend = "struct",   -- or "line"
-        struct = { bin = "difft" },
+        struct = {
+          bin = "difft",
+          graph_limit = nil,          -- difftastic's ceilings, see
+          parse_error_limit = nil,    -- |uatis-degraded|
+        },
       },
       keys = {
         global = {

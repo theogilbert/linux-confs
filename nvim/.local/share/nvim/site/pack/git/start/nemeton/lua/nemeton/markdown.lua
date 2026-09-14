@@ -163,9 +163,14 @@ end
 -- first would leave a lone asterisk in the middle of somebody's
 -- sentence.
 --
--- `~~` and not `~`: a single tilde is a label reference on GitLab --
--- `~bug`, `~"needs work"` -- and the front of a path in half the
--- comments that mention one.
+-- A single `~` as well as two, because that is what the forge does:
+-- GitLab draws `~was~` struck through, one tilde or two. A label
+-- reference -- `~bug`, `~"needs work"` -- and the front of a path are
+-- single tildes too, and stay what they are for the reason a lone `*`
+-- does: an opener is followed by something and a closer follows
+-- something, and the second tilde in `~bug and ~"needs work"` follows a
+-- space. Asked of the forge rather than guessed, since the page is
+-- what is being read.
 local EMPHASIS = {
   { "***", { "NemetonBold", "NemetonItalic" } },
   { "___", { "NemetonBold", "NemetonItalic" } },
@@ -174,6 +179,7 @@ local EMPHASIS = {
   { "~~", { "NemetonStrike" } },
   { "*", { "NemetonItalic" } },
   { "_", { "NemetonItalic" } },
+  { "~", { "NemetonStrike" } },
 }
 
 --- Whether a marker made of underscores is a marker at all.

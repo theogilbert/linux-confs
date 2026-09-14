@@ -262,6 +262,113 @@ function M.painter(lang)
   end
 end
 
+--- Lines of a file, coloured as the file colours them: `rows` is a
+--- list of 1-based line numbers of `source` -- a buffer number or the
+--- file's lines -- and the answer is runs per entry, as `M.paint`
+--- gives them.
+---
+--- Out of the file's own tree rather than out of the lines on their
+--- own. What `M.paint` is given is cut out of its context, and a
+--- docstring cut out of its context is a keyword here and a call
+--- there; a line quoted from a file that is open next door has all of
+--- its context still, and the tree already parsed for it says what
+--- every byte is. This is how the code a thread is *about* is painted,
+--- since that code is never anywhere but in the file.
+function M.paint_rows(source, rows, lang)
+  if not (config.comments.syntax and lang) or #rows == 0 then
+    return nil
+  end
+  local first, last = math.huge, 0
+  for _, row in ipairs(rows) do
+    first, last = math.min(first, row), math.max(last, row)
+  end
+  local ok, out = pcall(function()
+    local tree = tree_of(source, lang)
+    local query = vim.treesitter.query.get(lang, "highlights")
+    if not (tree and query) then
+      return nil
+    end
+    local function text_of(row)
+      if type(source) == "number" then
+        return (vim.api.nvim_buf_get_lines(source, row - 1, row, false) or {})[1] or ""
+      end
+      return source[row] or ""
+    end
+    local at = {}
+    for _, row in ipairs(rows) do
+      at[row] = {}
+    end
+    local src = type(source) == "number" and source or table.concat(source, "\n")
+    for id, node in query:iter_captures(tree:root(), src, first - 1, last) do
+      local name = query.captures[id]
+      if not NOT_A_COLOUR[name] then
+        local hl = ("@%s.%s"):format(name, lang)
+        local first_row, first_col, last_row, last_col = node:range()
+        for row = math.max(first_row, first - 1), math.min(last_row, last - 1) do
+          if at[row + 1] then
+            local text = text_of(row + 1)
+            local from = row == first_row and first_col or 0
+            local to = math.min(row == last_row and last_col or #text, #text)
+            for byte = from, to - 1 do
+              at[row + 1][byte] = hl
+            end
+          end
+        end
+      end
+    end
+    local runs_of = {}
+    for i, row in ipairs(rows) do
+      local line, runs, cursor = text_of(row), {}, 0
+      while cursor < #line do
+        local hl = at[row][cursor]
+        local stop = cursor + 1
+        while stop < #line and at[row][stop] == hl do
+          stop = stop + 1
+        end
+        table.insert(runs, { line:sub(cursor + 1, stop), hl })
+        cursor = stop
+      end
+      runs_of[i] = runs
+    end
+    return runs_of
+  end)
+  return ok and out or nil
+end
+
+--- The painter for the code a thread is about, out of the file it is
+--- in: `source` as `M.paint_rows` takes it. Handed the quotation as
+--- `session.quoted` shapes it, and paints the lines that are still in
+--- the file from the file, and the ones that have gone -- which are in
+--- no file -- on their own, as a suggestion is.
+function M.painter_of(source, lang)
+  if not (config.comments.syntax and lang and source) then
+    return nil
+  end
+  return function(was)
+    local rows, there, gone, texts = {}, {}, {}, {}
+    for i, line in ipairs(was) do
+      local row = type(line) == "table" and line.line or nil
+      if row then
+        table.insert(rows, row)
+        table.insert(there, i)
+      else
+        table.insert(gone, i)
+        table.insert(texts, type(line) == "table" and line.text or line)
+      end
+    end
+    local out = {}
+    local in_file = M.paint_rows(source, rows, lang) or {}
+    for k, i in ipairs(there) do
+      out[i] = in_file[k]
+    end
+    local alone = #texts > 0 and M.paint(texts, lang) or {}
+    for k, i in ipairs(gone) do
+      out[i] = alone[k]
+    end
+    return out
+  end
+end
+
 --- The same colours, in the buffer a suggestion is being written in.
 ---
 --- The composer is a markdown buffer, and markdown has one colour for a

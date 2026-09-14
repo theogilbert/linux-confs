@@ -466,7 +466,7 @@ THE COMMENTS                                            *nemeton-notes-window*
 the merge request, in one place: the ones on code, by file and line,
 then the ones that are about no line at all.
 
-    <CR>            go to the code this comment is about
+    <CR>            read it: beside its code, or in the pane
     r               reply to it
     a               write a comment on the merge request
     t               write one people can reply to
@@ -477,9 +477,14 @@ then the ones that are about no line at all.
     q               close
 
 The same keys as the every-thread window below, because it is the same
-threads read at a different depth. `<CR>` on a comment that is about no
-line -- one on the merge request itself -- says so and leaves the window
-where it is, rather than closing it to go nowhere.
+threads read at a different depth. `<CR>` on a thread that is about a
+line goes to that line, with the pane on the thread. On one that is
+about no line -- a comment on the merge request itself -- it opens the
+pane on that thread instead, and puts the cursor there: this window is
+one line per conversation and closes to let the composer in, and a
+reply written to a thread you cannot see is a reply to what you
+remember of it. The pane is a split, stays up beside the composer, and
+has the same keys to answer with |nemeton-pane-window|.
 
 An index rather than a transcript. Each thread is its opening note and
 nothing else, on two lines: who wrote it and when, and what they said.
@@ -518,6 +523,21 @@ through what the review is owed anyway -- and they are the only thing
 that changes what is in there. `<CR>` on a thread in the every-thread
 window, the comments window or the quickfix list puts that one in it.
 
+...and a conversation on the merge request itself, which is on no line
+the walk could reach: `<CR>` on one in the comments window opens the
+pane on it, headed `on the merge request` where the file and line would
+be, with nothing to quote and nothing marked in any gutter but the
+whole of the thread to read and the same keys to answer it. The pane
+turns back to the code at the next `]m`. The mode goes with it: opened
+this way, the pane is what expanded means until `<leader>mx` folds it
+away.
+
+The walk opens it, too. `]m` with the pane shut opens it on the thread
+it lands on, and so does arriving at a thread from a list or down a
+link: arriving at a conversation is asking to read it, and a gutter
+marker answers only that there is one. The mode goes with the pane, as
+it does whenever the pane is opened.
+
 Not the cursor. Reading a comment and reading the code it is about are
 the same activity: you go to the line it names, then to the function
 that line calls, then back through three files -- and half of that is
@@ -525,6 +545,21 @@ standing on lines other people have commented on too. A pane that
 answered the cursor would spend that walk showing everything except the
 thing being read. So it holds still, and the comment stays on the screen
 while the code under it moves.
+
+The review moving on closes it. The pane is the conversations of the
+file being read, beside it; when the window beside it holds the next
+file of the change, what it was reading is about code that is no longer
+there, and it goes, mode and all. But the file changing is not that on
+its own -- a jump to a definition in the next file over and `<C-o>`
+back is reading the comment, one step longer, and from in here the two
+look the same. What tells them apart is whatever draws the diff and
+walks its files -- `]f`, `]c` off the last hunk -- so that plugin says
+so, with a |User| autocommand named in `comments.file_walk`, and this
+one listens. Neither needs the other installed: one fires an event with
+no idea who is listening, the other is handed a name. uatis fires
+`UatisFile`; nothing is set by default, and the pane then closes only
+on `q`, `<leader>mx`, or its window going. A thread on the merge
+request itself is about no file and stays put either way.
 
 ...which leaves "the one I am on" needing a key of its own, and that key
 is `<leader>mx` again. Pressed with the pane open and the cursor inside
@@ -633,7 +668,15 @@ with the words in a window next door nothing else says so. Those lines
 carry `comments.sign_span` -- the rail the thread carries down its left
 in the pane -- in the colour of the same state, and under the bubble's
 own priority, so a sign column one cell wide still draws the bubble and
-a wider one draws both.
+a wider one draws both. The anchor line is the other way about: it
+carries `comments.sign_reading` over its bubble, "" -- "▸" without a
+Nerd Font -- because "this is the line being read" is what a reader of
+the pane comes back to the code to find, and a bubble there says only
+what every other bubble in the file says. `false` keeps the bubble.
+Where 'number' is on, the line numbers of the whole span take the
+thread's colour as well: a number is what a line is found by, and one
+in the colour of the conversation is found from across the screen.
+`comments.reading_number = false` for the numbers as they were.
 
 ...and a band under the whole of it |hl-NemetonReading|, which is what
 the gutter alone could not say. Every line carrying a thread has the
@@ -814,6 +857,16 @@ the thread belongs where the reader of the branch will find it.
 applies to the branch, and there is nothing on the old side to patch --
 and `<leader>mL` links to the line at that revision rather than at the
 head.
+
+Where such a thread is drawn afterwards is the branch's business, since
+the branch is the only thing on the screen: the marker goes on the line
+just above the gap the removal left -- the last line still there before
+what was taken out, at whatever number that has *now* rather than the
+number the deleted line had -- with nothing shaded, because no line of
+the branch is the code it is about. That code is quoted in the pane
+from the base, every line of it marked as gone, under the lines the
+buffer still has above it. Until the diff has arrived there is nothing
+to place it by, and for that round trip it sits on its old number.
 
 Wiring up a diff view -- the example is uatis, which puts the old
 revision in a window of its own: >lua
@@ -1068,10 +1121,11 @@ six take their colour from `NemetonHeading`. `comments.headings = false`
 leaves them.
 
 EMPHASIS is drawn as emphasis: `**must**` in bold, `*maybe*` and
-`_perhaps_` in italic, `***both***` as both, `~~was~~` struck through.
-These are the marks a reviewer reaches for to say which word of a
-sentence carries it, and read as the asterisks they were typed with they
-say it about the punctuation instead. `NemetonBold`, `NemetonItalic` and
+`_perhaps_` in italic, `***both***` as both, `~~was~~` struck through
+-- and `~was~` too, one tilde, because the forge draws it so. These are
+the marks a reviewer reaches for to say which word of a sentence
+carries it, and read as the asterisks they were typed with they say it
+about the punctuation instead. `NemetonBold`, `NemetonItalic` and
 `NemetonStrike` carry no colour of their own -- a bold word in a settled
 thread is dim and bold, and a bold link is still blue and underlined.
 An underscore inside a word emphasises nothing, so `snake_case_name` is
@@ -1282,10 +1336,20 @@ is about above the first note: the lines it is anchored to, and
 `comments.context` lines above them. Two by default. A comment on one
 line is a comment about a line that had something before it, and the
 window where that matters most is the one read with no file open at
-all. Nothing is written in front of the quotation: it is a quotation of
-the file, and a label saying so is a word to read before every line.
+all. Each line carries its line number, in a column of its own inside
+the band: the quotation is read to find the code out on the file, and
+a number is what a file is found by. A line the branch has removed is
+under no number and gets none. `comments.quote_numbers = false` for the
+code alone. Nothing else is written in front of it: it is a quotation
+of the file, and a label saying so is a word to read before every line.
 The rail runs down its left, keeping only its colour, which is what
-says which conversation the quotation is inside.
+says which conversation the quotation is inside. A rule closes it --
+`comments.quote_rule`, "─" -- between the file and the first thing
+anybody said about it: the band says "this is the file", the rule says
+where the file stops. Across the whole window in the pane and the
+every-thread window, a seam from edge to edge, and the width of the
+band in the peek float, which is sized to what is in it. `false` for
+the two bands to meet.
 
 What has become of each of those lines is drawn on the line, not on the
 block. A comment is half of a pair and the code is the half that moves
@@ -1308,7 +1372,10 @@ block, there being no editor-wide ground there to match.
 The quotation is drawn in the colours of its language, the way a
 suggestion is |nemeton-syntax|: it is the same code out of the same
 file, and a before drawn in one colour over an after drawn in its own
-do not look like the same language. On its band and not on the
+do not look like the same language. Out of the file's own tree rather
+than parsed on its own -- a quotation is not cut out of anything -- so
+a docstring is coloured as a docstring, where a suggestion inside one
+is left plain. On its band and not on the
 conversation's, because code drawn where the prose is drawn, in the
 colour the prose is in, is told from the comment under it only by being
 indented like code -- and two lines of context over a one-line comment
@@ -1319,7 +1386,11 @@ The pane (|nemeton-pane-window|) draws the quotation whether anything
 has changed or not. The floats are drawn over the file and the reader
 can see the line underneath them; the pane is read beside it, and the
 line a comment is about is the one thing a reader in there cannot look
-at without looking away from what they are reading.
+at without looking away from what they are reading. Once per place
+rather than once per thread: two conversations on one line are two
+conversations about one piece of code, and the second copy between them
+was the same lines read twice. The widest of them says how far up it
+reaches.
 
 That code is read out of the checkout with `git show`, not from the
 forge: the commit the note was written against is one this repository
@@ -1391,9 +1462,12 @@ COMMENTS                                             *nemeton-config-comments*
       sign_draft = "",      -- one of yours, not sent yet
       sign_span = "▎",       -- the lines the thread being read covers
       reading_ground = 2,    -- ...and the band under those same lines
+      sign_reading = "",    -- ...and what stands on the line it is anchored to
+      reading_number = true, -- ...and whether their numbers take its colour
       virt_text = false,     -- the first line of it at end of line
       expand = "right",      -- which side the pane opens on: "right" or "bottom"
       expand_anchor = "window", -- ...a split of it, or of the editor
+      file_walk = false,     -- the User event that means "next file"
       pane_width = 60,       -- where a pane on the right opens
       pane_height = 15,      -- ...and one along the bottom
       head_commit = true,    -- the commit a note was written against
@@ -1421,6 +1495,8 @@ COMMENTS                                             *nemeton-config-comments*
       accent = "DiagnosticHint",  -- which colour it leans towards
       reply_ground = 1.7,    -- how far further off an answer stands
       quote_ground = 3,      -- ...and the code a thread is about
+      quote_numbers = true,  -- ...under its line numbers
+      quote_rule = "─",      -- ...and ruled off from the first note
       head_band = true,      -- a band under the head of a note as well
       heading_accent = true, -- ...leaning towards the thread's own colour
       heading = 0.06,        -- how far it leans
@@ -1433,11 +1509,11 @@ COMMENTS                                             *nemeton-config-comments*
       peek_height = 20,
     }
 <
-The three signs are Nerd Font glyphs; without one they render as a box.
-"●", "○" and "✎" are the pair-and-a-half to fall back to. `rail` and
-`sign_span` fall back to "│". `sign_span` is drawn only while a thread
-is being read in the pane (|nemeton-reading|); `false` leaves the gutter
-to the bubbles alone.
+The four signs are Nerd Font glyphs; without one they render as a box.
+"●", "○", "✎" and "▸" are what to fall back to. `rail` and `sign_span`
+fall back to "│". `sign_span` and `sign_reading` are drawn only while a
+thread is being read in the pane (|nemeton-reading|); `false` leaves the
+gutter to the bubbles alone.
 
 `expand` is which side of the code the pane opens on
 (|nemeton-pane-window|): "right" or "bottom". A comment drawn under the
@@ -1457,6 +1533,11 @@ bottom, where the quickfix window already opens. `pane_width` and
 whatever they are set to: sixty columns is most of an eighty column
 terminal, and a pane that leaves nineteen columns of code is a pane you
 open once. It is an ordinary window afterwards, resized like any other.
+
+`file_walk` is the |User| autocommand pattern that means "the review
+has moved on to another file", fired by whatever draws the diff and
+walks its files; the pane closes on it |nemeton-pane-window|. uatis
+fires "UatisFile". `false`, the default, listens for nothing.
 
 A comment is wrapped to the window it is drawn in, and to `wrap` -- 80
 columns by default -- wherever the window is wider than that. The floats
@@ -1554,7 +1635,9 @@ it |nemeton-drift|. Further off than an answer, because the two are
 never side by side and the quotation is the one thing in the block that
 is not prose. `false` for the conversation's own ground under it, where
 what has become of each line is the only band the block carries. See
-|hl-NemetonQuote|.
+|hl-NemetonQuote|. `quote_numbers` puts each line's number in front of
+it, and `quote_rule` is what is ruled under the block; `false` takes
+either away.
 
 `head_band` puts the head of each note on a band as well. Backgrounds
 are the one signal in these windows that cannot be stacked -- a thread
@@ -2085,9 +2168,10 @@ One rotation, at `log.max_bytes`: past it the file becomes
     more than waiting.
   - The diff. You review the branch as it stands, in ordinary
     buffers. Seeing the change itself is another plugin's job.
-  - Threads on the old side. Fetched and indexed with `side = "old"`,
-    but there is no old side on the screen to draw them against, so
-    they are drawn on the new line number.
+  - Threads on the old side. There is no old side on the screen to
+    draw them against, so they are drawn on the branch beside the gap
+    their line left |nemeton-old-side|; the deleted code itself is
+    only ever seen quoted.
   - Line drift. If somebody pushes while you are reviewing, the local
     HEAD stops being the revision the threads were written against.
     Nemeton says so once, on checkout, and otherwise draws the threads

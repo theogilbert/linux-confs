@@ -782,30 +782,43 @@ end
 --- up the gutter out here, in the colour of the same state, so the two
 --- are the same edge of the same block.
 ---
---- Under the thread's own marker rather than over it: on the anchored
---- line both are in the gutter, a sign column one cell wide draws the
---- higher priority alone, and between "there is a conversation here"
---- and "and it starts three lines up" the first is the one to keep. A
---- wider one (`signcolumn=auto:2`) draws both.
+--- Under the thread's own marker rather than over it: on the lines
+--- above the anchor both can be in the gutter, a sign column one cell
+--- wide draws the higher priority alone, and between "there is a
+--- conversation here" and "and the one being read reaches this far"
+--- the first is the one to keep. A wider one (`signcolumn=auto:2`)
+--- draws both. The anchor line is the other way about: `sign_reading`
+--- stands over its bubble, because "this is the line being read" is
+--- what a reader of the pane comes back to the code to find.
 function M.current(bufnr, from, to, hl)
   M.clear_current()
   local glyph = config.comments.sign_span
+  local pointer = config.comments.sign_reading
   local ground_it = config.comments.reading_ground ~= false
-  if (not ground_it and (not glyph or glyph == "")) or not vim.api.nvim_buf_is_valid(bufnr) then
+  local number_it = config.comments.reading_number ~= false
+  local function drawable(g)
+    return g and g ~= "" and g or nil
+  end
+  glyph, pointer = drawable(glyph), drawable(pointer)
+  if not (ground_it or number_it or glyph or pointer) or not vim.api.nvim_buf_is_valid(bufnr) then
     return 0
   end
+  hl = hl or "NemetonSignOpen"
   local last = vim.api.nvim_buf_line_count(bufnr)
   local drawn = 0
   for row = math.max(from, 1), math.min(to, last) do
+    local anchor = row == to and pointer
+    local sign = anchor or glyph
     vim.api.nvim_buf_set_extmark(bufnr, M.reading_ns, row - 1, 0, {
-      sign_text = (glyph and glyph ~= "") and glyph or nil,
-      sign_hl_group = (glyph and glyph ~= "") and (hl or "NemetonSignOpen") or nil,
-      -- ...and the band the gutter cannot draw: the anchor line keeps
-      -- its bubble, a thread about one line has no line above it to put
-      -- a rail on, and a sign column can be off altogether. The ground
-      -- says it in all three.
+      sign_text = sign,
+      sign_hl_group = sign and hl or nil,
+      -- ...and the band the gutter cannot draw: a thread about one line
+      -- has no line above it to put a rail on, and a sign column can
+      -- be off altogether. The ground says it in both, and the number
+      -- says it where the gutter is numbers.
       line_hl_group = ground_it and "NemetonReading" or nil,
-      priority = 15,
+      number_hl_group = number_it and hl or nil,
+      priority = anchor and 25 or 15,
     })
     drawn = drawn + 1
   end

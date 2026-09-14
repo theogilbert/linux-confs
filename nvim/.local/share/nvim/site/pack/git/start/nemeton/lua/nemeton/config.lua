@@ -152,6 +152,25 @@ return {
     -- alone.
     reading_ground = 2,
 
+    -- ...and what stands on the anchor line itself while the thread is
+    -- being read, in place of its bubble.
+    --
+    -- The band and the rail say which lines; this says which line,
+    -- and says it in the one cell on the screen a reader looking for
+    -- "where is this comment" looks first. A bubble there said only
+    -- that a conversation exists, which every other bubble in the file
+    -- says too, and the band under it is the same lift the cursor line
+    -- has. Over the bubble in priority, so a one-cell sign column
+    -- draws this one; `false` keeps the bubble. "▸" without a Nerd
+    -- Font.
+    sign_reading = "", -- nf-fa-caret_right
+
+    -- ...and whether the line numbers of those same lines take the
+    -- thread's colour, where 'number' is on. A number is what a line
+    -- is found by, and one in the colour of the conversation is found
+    -- from across the screen. `false` for the numbers as they were.
+    reading_number = true,
+
     -- ...and a comment you have written and not sent yet. A pencil
     -- rather than a third bubble: an unsent comment is not a state of
     -- the conversation, it is a state of you. "✎" without a Nerd Font.
@@ -173,6 +192,22 @@ return {
     -- naming the line each conversation is on and by moving with you.
     -- The gutter says which lines carry one.
     expand = "right",
+
+    -- The `User` autocommand that means "the review has moved on to
+    -- another file", and closes the pane.
+    --
+    -- The pane is the conversations of the file beside it, and when
+    -- that file is the next one in the change, the conversation it was
+    -- reading is about code no longer on the screen. But the file
+    -- changing is not that: a jump to a definition in the next file
+    -- over and `<C-o>` back is reading the comment, one step longer,
+    -- and from in here the two look the same. What tells them apart
+    -- is whatever draws the diff and walks its files -- `]f`, `]c`
+    -- off the last hunk -- so that plugin says so, with a `User` event
+    -- named here, and this one listens. Neither needs the other
+    -- installed. uatis fires "UatisFile"; nothing by default, and the
+    -- pane then closes only on `q`, `<leader>mx`, or the window going.
+    file_walk = false,
 
     -- ...and which window that pane is a split of.
     --
@@ -566,6 +601,20 @@ return {
     -- each line is the only band the block carries.
     quote_ground = 3,
 
+    -- Whether each line of that quotation carries its line number, in
+    -- a column of its own inside the band.
+    --
+    -- The quotation is read to find the code out on the file, and a
+    -- number is what a file is found by -- `:20`, or the eye running
+    -- down the gutter. A line the branch has removed is under no
+    -- number and gets none. `false` for the code alone.
+    quote_numbers = true,
+
+    -- ...and what is ruled under it, between the file and the first
+    -- word said about it. The band says "this is the file"; the rule
+    -- says where the file stops. `false` for the two bands to meet.
+    quote_rule = "─",
+
     -- Which colour the ground under a conversation leans towards.
     accent = "Normal",
 
@@ -863,7 +912,7 @@ return {
     -- is the same threads read at a different depth: <CR> is the way
     -- *into* the code and `r` answers where you are sitting.
     notes = {
-      code = "<CR>", -- go to the line this comment is about
+      code = "<CR>", -- read it: beside its code, or in the pane for one on no line
       reply = "r",
       add = "a", -- a comment on the merge request, posted on its own
       thread = "t", -- one people can reply to

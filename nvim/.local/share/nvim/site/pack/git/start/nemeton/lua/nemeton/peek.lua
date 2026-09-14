@@ -49,6 +49,9 @@ function M.show(list)
   local syntax = require("nemeton.syntax")
   local lang = syntax.of_buf(bufnr)
   local paint = not syntax.prose(bufnr, row, lang) and syntax.painter(lang) or nil
+  -- ...and the code the thread is about, out of the file's own tree,
+  -- where a docstring is a docstring.
+  local paint_was = syntax.painter_of(bufnr, lang)
 
   local lines, hls = {}, {}
   local width = 0
@@ -63,8 +66,9 @@ function M.show(list)
         return session.original(t, above, below)
       end,
       width = most,
-      was = session.quoted(t, replaced(threads.span(t) + context, 0), context),
+      was = session.quoted(t, replaced(threads.span(t) + context, 0), context, row + 1),
       paint = paint,
+      paint_was = paint_was,
     })
     local text, painted = marks.shade_lines(drawn, #lines, t.resolved and "settled" or "open")
     vim.list_extend(lines, text)

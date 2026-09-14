@@ -295,7 +295,7 @@ function M.open(focus)
   -- thread under the cursor, then the two that write a new one, then
   -- the housekeeping.
   vim.wo[M.win].winbar = require("nemeton.detail").hint({
-    { k.code, "code" },
+    { k.code, "read" },
     { k.reply, "reply" },
     { k.add, "comment" },
     { k.thread, "thread" },
@@ -319,15 +319,26 @@ function M.open(focus)
       end,
       "close",
     },
-    -- The window closes only once the thread turns out to have
-    -- somewhere to go: half of what is listed here is on no line, and
-    -- pressing this on one of those is a fair thing to do.
+    -- Into the code for a thread on a line, and into the pane for one
+    -- on none: this window is one line per conversation, and half of
+    -- what it lists has no code to be read beside -- so that is read
+    -- where the ones on code are, with the same keys to answer it,
+    -- and in a window that stays up while the composer is open.
     {
       k.code,
       function()
-        session.goto_thread(thread_at(), M.close)
+        local thread = thread_at()
+        if not thread then
+          return
+        end
+        if thread.path and thread.line then
+          session.goto_thread(thread, M.close)
+          return
+        end
+        M.close()
+        require("nemeton.pane").read(thread)
       end,
-      "go to the code this is about",
+      "read this, beside the code or in the pane",
     },
     {
       k.add,

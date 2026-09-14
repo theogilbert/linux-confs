@@ -250,6 +250,10 @@ end
 local function index(mr)
   threads.attach_sending(mr.inline, mr.overview, mr.sending)
   local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
+  -- The threads on lines the change took away, put where the branch
+  -- has a row for them -- once the diff has said where that is, which
+  -- is the third caller: the map lands on its own round trip.
+  threads.place(all, mr.lines)
   mr.by_file = threads.index(all)
 end
 
@@ -285,6 +289,7 @@ function M.refresh(cb)
     mr.sending = vim.tbl_filter(function(one)
       return not one.landed
     end, mr.sending or {})
+    mr.fetched = true
     index(mr)
     M.redraw_all()
     if cb then
@@ -406,6 +411,18 @@ local function revision(thread)
   return thread.side == "old" and (thread.base_sha or thread.head_sha) or thread.head_sha
 end
 
+--- Where in that revision the thread's code is: the file's name there
+--- and the first and last line of it. On the branch's side those are
+--- the thread's own; on the old side the thread sits on the row of the
+--- branch its line was taken out of, and the code it is about is at
+--- the number it had in the base, under the name it had there.
+local function about(thread)
+  if thread.side == "old" and thread.old_line then
+    return thread.old_path or thread.path, thread.old_first or thread.old_line, thread.old_line
+  end
+  return thread.path, thread.first_line or thread.line, thread.line
+end
+
 --- The file a thread is about as *it* saw it: `above` lines up from the
 --- line it sits on, and `below` down. Nil where the blob has not
 --- arrived or never will.
@@ -422,12 +439,12 @@ function M.original(thread, above, below)
   if not sha then
     return nil
   end
-  local lines = blob(mr.root, sha, thread.path)
+  local path, _, last = about(thread)
+  local lines = blob(mr.root, sha, path)
   if not lines then
     return nil
   end
-  local out =
-    vim.list_slice(lines, math.max(thread.line - (above or 0), 1), thread.line + (below or 0))
+  local out = vim.list_slice(lines, math.max(last - (above or 0), 1), last + (below or 0))
   return #out > 0 and out or nil
 end
 
@@ -452,26 +469,38 @@ end
 ---
 --- `now` is what is there at this moment, read by whichever window is
 --- drawing -- the buffer under the marker, the file on disk -- over the
---- same span, context included. Returned as it is, with no verdict on
+--- same span, context included. For a thread on a removed line that
+--- span is the marker's row and the context above it, and the rows
+--- above the gap are the context the deleted lines had: the diff pairs
+--- them off and what is left over of the base is drawn gone, which is
+--- the one way the deleted code is ever seen. Returned as it is, with no verdict on
 --- any line, where there is nothing to compare it against: an overall
 --- comment, a thread with no position, a blob that has not arrived or
 --- never will.
-function M.quoted(thread, now, context)
+---
+--- `row` is where the last line of `now` is in the file, and every line
+--- that is still in the file is handed back with its `line` counted
+--- from it -- the number a reader of the quotation finds it under out
+--- on the code. A line that has gone has no number: it is under none.
+function M.quoted(thread, now, context, row)
   if not now or #now == 0 then
     return nil
   end
+  local function line_of(b)
+    return row and (row - #now + b) or nil
+  end
   local plain = {}
-  for _, line in ipairs(now) do
-    table.insert(plain, { text = line })
+  for b, line in ipairs(now) do
+    table.insert(plain, { text = line, line = line_of(b) })
   end
   local mr = M.current
   local sha = mr and revision(thread)
-  local lines = sha and blob(mr.root, sha, thread.path)
+  local path, first, last = about(thread)
+  local lines = sha and blob(mr.root, sha, path)
   if not lines then
     return plain
   end
-  local span = (thread.line - (thread.first_line or thread.line)) + (context or 0)
-  local was = vim.list_slice(lines, math.max(thread.line - span, 1), thread.line)
+  local was = vim.list_slice(lines, math.max(first - (context or 0), 1), last)
   if #was == 0 then
     return plain
   end
@@ -485,11 +514,11 @@ function M.quoted(thread, now, context)
   local function hunk(count_a, count_b)
     local both = math.min(count_a, count_b)
     for _ = 1, both do
-      table.insert(out, { text = now[b], state = "changed" })
+      table.insert(out, { text = now[b], state = "changed", line = line_of(b) })
       a, b = a + 1, b + 1
     end
     for _ = both + 1, count_b do
-      table.insert(out, { text = now[b], state = "added" })
+      table.insert(out, { text = now[b], state = "added", line = line_of(b) })
       b = b + 1
     end
     for _ = both + 1, count_a do
@@ -513,13 +542,13 @@ function M.quoted(thread, now, context)
     -- further on than for a change.
     local until_a = h[2] == 0 and h[1] + 1 or h[1]
     while a < until_a do
-      table.insert(out, { text = now[b] })
+      table.insert(out, { text = now[b], line = line_of(b) })
       a, b = a + 1, b + 1
     end
     hunk(h[2], h[4])
   end
   while b <= #now do
-    table.insert(out, { text = now[b] })
+    table.insert(out, { text = now[b], line = line_of(b) })
     b = b + 1
   end
   return out
@@ -587,6 +616,25 @@ function M.sending(what)
     index(mr)
     M.redraw_all()
   end
+end
+
+--- The conversation on the merge request itself with this id, sent
+--- or not, as the refresh last left it. By id rather than by table
+--- because a refresh replaces every table: what a window holds on to
+--- across one is the name of a thread, not the thread.
+function M.overall(id)
+  local mr = M.current
+  if not (mr and id) then
+    return nil
+  end
+  for _, list in ipairs({ mr.overview or {}, mr.draft_overview or {} }) do
+    for _, t in ipairs(list) do
+      if t.id == id then
+        return t
+      end
+    end
+  end
+  return nil
 end
 
 --- Every unsent comment, wherever it sits -- on a line, on the merge
@@ -708,6 +756,13 @@ function M.refresh_changes(cb)
     if data and M.current == mr then
       mr.diff_stats = detail.diff_stats(data)
       mr.lines = threads.line_map(data)
+      -- The threads on removed lines can now be put where those lines
+      -- went. Only once a refresh has been through: before that the
+      -- index is half of one, and drawing it would draw the threads
+      -- without the drafts for the length of a round trip.
+      if mr.fetched then
+        index(mr)
+      end
       M.redraw_all()
     end
     if cb then
@@ -804,6 +859,9 @@ function M.open(iid, opts)
       by_file = {},
       inline = {},
       overview = {},
+      -- Whether a refresh has been through once: before that the
+      -- threads are half fetched, and nothing else should index them.
+      fetched = false,
       -- The comments you have written and not sent: drawn like any
       -- other, counted apart, and gone from here the moment they are
       -- published.
@@ -898,6 +956,22 @@ function M.thread_of(id)
   return nil
 end
 
+--- Shows the pane the thread the cursor has just been put on, opening
+--- it when it is shut. Arriving at a conversation -- by `]m`, from a
+--- list, down a link -- is asking to read it, and a gutter marker
+--- answers only that there is one. The mode goes with the pane, as it
+--- does everywhere the pane is opened.
+local function read_here()
+  local pane = require("nemeton.pane")
+  if pane.is_open() then
+    pane.show(vim.api.nvim_get_current_win())
+    return
+  end
+  M.current.mode = "expanded"
+  pane.open()
+  M.redraw_all()
+end
+
 --- To the code a thread is about, from whatever window is showing it.
 ---
 --- `before` runs once the thread turns out to have somewhere to go and
@@ -936,7 +1010,7 @@ function M.goto_thread(thread, before)
   vim.api.nvim_win_set_cursor(0, { math.min(thread.line, last), 0 })
   -- Going to a thread is asking to be shown it, whichever window asked
   -- -- the every-thread window, the comments window, the quickfix list.
-  require("nemeton.pane").show(vim.api.nvim_get_current_win())
+  read_here()
   return true
 end
 
@@ -1270,8 +1344,8 @@ function M.jump(dir)
   vim.api.nvim_win_set_cursor(0, { math.min(target.line, last), 0 })
   -- The walk is what the pane reads: it holds still while the cursor
   -- wanders through the code, and moves when the reviewer says "the
-  -- next thing owed an answer".
-  require("nemeton.pane").show(vim.api.nvim_get_current_win())
+  -- next thing owed an answer" -- and opens on that, if it was shut.
+  read_here()
   return target.line
 end
 

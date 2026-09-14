@@ -46,9 +46,11 @@ M.buf = nil
 M.source = nil
 
 -- What the pane is showing: the buffer the conversation is in, and the
--- line of `by_file` it is indexed under. Not the threads themselves --
--- a refresh replaces every table in the session, and the pane has to
--- come back drawing what the forge now says about the same place.
+-- line of `by_file` it is indexed under -- or, for a conversation on
+-- the merge request itself, `thread`, the id of it. Not the threads
+-- themselves: a refresh replaces every table in the session, and the
+-- pane has to come back drawing what the forge now says about the
+-- same place.
 M.at = nil
 
 -- Pane row (1-based) -> the thread drawn there, and the note of it, for
@@ -60,6 +62,22 @@ local said = {}
 
 local function valid()
   return M.win and vim.api.nvim_win_is_valid(M.win)
+end
+
+function M.is_open()
+  return valid() and true or false
+end
+
+--- Puts the pane away and the mode with it: the pane is what expanded
+--- means while it is on, and a session that still said "expanded"
+--- after it had gone would close nothing on the next `<leader>mx` and
+--- open it on the one after.
+local function fold()
+  M.close()
+  if session.current and session.current.mode == "expanded" then
+    session.current.mode = "signs"
+    session.redraw_all()
+  end
 end
 
 --- Out of the pane, into the window the code is being read in.
@@ -247,7 +265,10 @@ end
 --- exists -- then how much of it there is, and last the head of the
 --- path, which goes as `…app.lua:3`, because the end of a path is the
 --- half that says which file it is.
-local function header(list, path, row, width)
+---
+--- `place` is where it sits, as words: the file and line for a thread
+--- on code, and what it is on instead for one that is on none.
+local function header(list, place, width)
   local first = list[1]
   local unsent = threads.unsent(first)
   local glyph, hl = config.comments.sign_open, "NemetonSignOpen"
@@ -269,7 +290,6 @@ local function header(list, path, row, width)
     table.insert(much, ("+%d"):format(notes - #list))
   end
 
-  local place = ("%s:%d"):format(path, row)
   local left = { { " " .. glyph .. " ", hl }, { place, "NemetonPath" } }
   if #much > 0 then
     table.insert(left, { "  " .. table.concat(much, " · "), "NemetonMeta" })
@@ -314,18 +334,37 @@ function M.render()
     return
   end
   local at = M.at
-  local bufnr = at and vim.api.nvim_buf_is_valid(at.buf) and at.buf or nil
+  local bufnr = at and at.buf and vim.api.nvim_buf_is_valid(at.buf) and at.buf or nil
   local path = bufnr and session.relpath(bufnr) or nil
   local by_line = path and session.current.by_file[path] or nil
   local shown = visible(by_line and by_line[at.line])
+  local overall = at and at.thread and session.overall(at.thread) or nil
 
   local chunks, map, notes, ground = {}, {}, {}, {}
   local head = bar({ { " nothing being read ", "NemetonMeta" } })
-  if #shown > 0 then
+  if overall then
+    -- A conversation on the merge request as a whole: no line to quote
+    -- and no gutter to mark, but the same window to read and answer it
+    -- in -- which is the point. The comments window lists these, one
+    -- line each, and closes to let the composer in; a reply written to
+    -- a thread you cannot see is a reply to what you remember of it.
+    marks.clear_current()
+    head = header({ overall }, "on the merge request", vim.api.nvim_win_get_width(M.win))
+    local drawn = threads.render(overall, {
+      width = vim.api.nvim_win_get_width(M.win),
+      wrap_code = config.comments.pane_wrap and true or false,
+    })
+    for _, line in ipairs(drawn) do
+      table.insert(chunks, line)
+      map[#chunks] = overall
+      notes[#chunks] = line.note
+      ground[#chunks] = overall.resolved and "settled" or "open"
+    end
+  elseif #shown > 0 then
     -- Where the line has got to since the markers were drawn, which is
     -- what the comment is now about.
     local row = moved(bufnr)[at.line] or math.min(at.line, vim.api.nvim_buf_line_count(bufnr))
-    head = header(shown, path, row, vim.api.nvim_win_get_width(M.win))
+    head = header(shown, ("%s:%d"):format(path, row), vim.api.nvim_win_get_width(M.win))
     local function replaced(above, below)
       return vim.api.nvim_buf_get_lines(bufnr, math.max(row - 1 - above, 0), row + below, false)
     end
@@ -344,6 +383,10 @@ function M.render()
     if paint and syntax.prose(bufnr, row - 1, lang) then
       paint = nil
     end
+    -- The quotation is not cut out of anything: it is the file, and
+    -- the file's own tree colours it -- inside a docstring as well,
+    -- which is where the painter above has to give up.
+    local paint_was = syntax.painter_of(bufnr, lang)
     -- Wrapped to the pane rather than to the window the code is in.
     -- Prose always: a sentence that runs off the right-hand edge of a
     -- sixty-column pane is a sentence read by scrolling, and nobody
@@ -354,7 +397,28 @@ function M.render()
     -- scrolled to.
     local width = vim.api.nvim_win_get_width(M.win)
 
-    local span = 0
+    -- The code the comments are about, above the first word anybody
+    -- said, whether or not it has moved since. Always drawn here,
+    -- unlike in the floats: the pane is read beside the file rather
+    -- than under the line, and the line is the one thing a reader in
+    -- this window cannot see without looking away from it.
+    --
+    -- Once for the place rather than once per thread. Two
+    -- conversations on one line are two conversations about one piece
+    -- of code, and the second copy of it between them was the same
+    -- lines read twice to find out they were the same. The widest of
+    -- them says how far up it reaches -- the lines it is anchored to
+    -- and the couple above them, which is what makes a quotation of
+    -- one line a sentence rather than a fragment; `session.quoted`
+    -- says what has become of each.
+    local span, widest = 0, shown[1]
+    for _, t in ipairs(shown) do
+      if threads.span(t) > span then
+        span, widest = threads.span(t), t
+      end
+    end
+    local context = config.comments.context or 0
+    local was = session.quoted(widest, replaced(span + context, 0), context, row)
     for i, t in ipairs(shown) do
       -- A blank line between two conversations on one line of code, and
       -- nothing but a blank line: it is the one place the rail stops
@@ -363,27 +427,17 @@ function M.render()
       if i > 1 then
         table.insert(chunks, {})
       end
-      span = math.max(span, threads.span(t))
-      -- The code the comment is about, above the first word anybody
-      -- said, whether or not it has moved since. Always drawn here,
-      -- unlike in the floats: the pane is read beside the file rather
-      -- than under the line, and the line is the one thing a reader in
-      -- this window cannot see without looking away from it.
-      --
-      -- The lines it is anchored to and the couple above them, which
-      -- is what makes a quotation of one line a sentence rather than a
-      -- fragment; `session.quoted` says what has become of each.
-      local context = config.comments.context or 0
-      local here = replaced(threads.span(t) + context, 0)
       local drawn = threads.render(t, {
         replaced = replaced,
         original = function(above, below)
           return session.original(t, above, below)
         end,
         width = width,
+        edge = true,
         wrap_code = config.comments.pane_wrap and true or false,
-        was = session.quoted(t, here, context),
+        was = i == 1 and was or nil,
         paint = paint,
+        paint_was = paint_was,
       })
       for _, line in ipairs(drawn) do
         table.insert(chunks, line)
@@ -505,6 +559,11 @@ end
 ---
 --- So the conversation changes when you say so, and `]m` and `[m` are
 --- how you say so.
+---
+--- Nor the file changing, on its own. A jump to a definition in the
+--- next file over and `<C-o>` back is the same walk one step longer,
+--- and a pane that closed on it would close on half of what reading a
+--- comment is.
 function M.follow()
   if not valid() then
     return
@@ -520,6 +579,30 @@ function M.follow()
     return
   end
   M.source = win
+end
+
+--- What does close it is the *review* moving on to another file, and
+--- that is not a thing this plugin can see: `]f` to the next changed
+--- file and `]c` off the last hunk of this one belong to whatever is
+--- showing the diff, and from in here they look exactly like the jump
+--- to a definition above. So the plugin that walks the files says so
+--- -- a `User` autocommand, named in `comments.file_walk` -- and this
+--- listens. Neither has to know the other is installed: one fires an
+--- event with no idea who is listening, and the other is handed a name.
+---
+--- Folded only when the file beside the pane really is another one: a
+--- walk that lands on the file already being read has moved nothing.
+--- A thread on the merge request itself is about no file and stays.
+local function moved_on()
+  if not (valid() and M.at and M.at.buf) then
+    return
+  end
+  local win = M.source and vim.api.nvim_win_is_valid(M.source) and M.source
+    or vim.api.nvim_get_current_win()
+  local showing = vim.api.nvim_win_get_buf(win)
+  if showing ~= M.at.buf and session.relpath(showing) then
+    fold()
+  end
 end
 
 function M.close()
@@ -568,7 +651,9 @@ local function next_in_file(win)
   return { buf = bufnr, line = lines[1] }
 end
 
-function M.open()
+--- Opens the pane, on `at` where one is given -- see `M.at` for the
+--- shape -- and otherwise on whatever the cursor is standing in.
+function M.open(at)
   if not session.current then
     return nil
   end
@@ -730,6 +815,14 @@ function M.open()
     group = group,
     callback = M.follow,
   })
+  local walk = config.comments.file_walk
+  if walk and walk ~= "" then
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = walk,
+      callback = moved_on,
+    })
+  end
   -- Closed by hand -- `:q` in it, or the window it was split from going
   -- away with it. The mode follows the window: the conversations are
   -- not expanded any more, whatever the session last recorded.
@@ -738,26 +831,58 @@ function M.open()
     pattern = tostring(M.win),
     callback = function()
       M.win = nil
-      M.close()
-      if session.current and session.current.mode == "expanded" then
-        session.current.mode = "signs"
-        session.redraw_all()
-      end
+      fold()
     end,
   })
 
-  -- What it opens on: the thread under the cursor, and otherwise the
-  -- next one in this file. A pane that opens empty because the cursor
-  -- happened to be on line 1 is a pane whose first keypress is `]m`,
-  -- and that is a keypress the plugin can make for itself.
-  if not M.show(source) then
-    local at = next_in_file(source)
-    if at then
-      M.at = at
-    end
+  -- What it opens on: what it was asked for, else the thread under the
+  -- cursor, and otherwise the next one in this file. A pane that opens
+  -- empty because the cursor happened to be on line 1 is a pane whose
+  -- first keypress is `]m`, and that is a keypress the plugin can make
+  -- for itself.
+  if at then
+    M.at = at
+    M.render()
+  elseif not M.show(source) then
+    M.at = next_in_file(source)
     M.render()
   end
   return M.win
+end
+
+--- Reads `thread` in the pane, and puts the cursor there.
+---
+--- For a conversation that is on no line, which is the one kind the
+--- walk never reaches and the code never shows: the comments window
+--- lists it, and this is what its enter key does with one. The pane
+--- is opened if it is not, and the mode goes with it -- it is the same
+--- pane, and the key that folds the conversations away folds this one
+--- too.
+---
+--- Into the pane rather than back to the code, unlike everything else
+--- that shows something in here: there is no code to go back to, and
+--- the keys that answer the thread are on the pane.
+function M.read(thread)
+  local mr = session.current
+  if not (mr and thread) then
+    return
+  end
+  if thread.path and thread.line then
+    session.goto_thread(thread)
+    return
+  end
+  local at = { thread = thread.id }
+  if valid() then
+    M.at = at
+    M.render()
+  else
+    mr.mode = "expanded"
+    M.open(at)
+    session.redraw_all()
+  end
+  if valid() then
+    vim.api.nvim_set_current_win(M.win)
+  end
 end
 
 --- What can be done in here, in a float over it.

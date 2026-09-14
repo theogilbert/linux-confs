@@ -24,6 +24,15 @@ end
 --- the reviewer has checked out and is looking at; a thread against a
 --- deleted line has only an old side, and is kept with `side = "old"` so
 --- the caller can say so rather than silently dropping it.
+---
+--- `path` and `line` are always the branch's: the file that is open
+--- and the row the marker goes on. An old-side thread starts out on
+--- its old number, which is the only one a position carries, and
+--- `M.place` moves it to where the change took that line out once the
+--- diff has said where that is. The old number and the old name stay
+--- on it as `old_line`, `old_first` and `old_path`, because they are
+--- the coordinates of the code it is about -- which is read out of the
+--- base, not out of the buffer.
 local function anchor(position)
   if not position or position.position_type ~= "text" then
     return nil
@@ -46,11 +55,15 @@ local function anchor(position)
     }
   end
   if old_line then
+    local old_first = (range.start and range.start.old_line) or old_line
     return {
-      path = position.old_path or position.new_path,
+      path = position.new_path or position.old_path,
       line = old_line,
-      first = (range.start and range.start.old_line) or old_line,
+      first = old_first,
       side = "old",
+      old_line = old_line,
+      old_first = old_first,
+      old_path = position.old_path or position.new_path,
     }
   end
   -- A file-level comment: a position, but no line on either side.
@@ -109,6 +122,9 @@ local function thread_of(discussion)
     line = place and place.line,
     first_line = place and place.first,
     side = place and place.side,
+    old_line = place and place.old_line,
+    old_first = place and place.old_first,
+    old_path = place and place.old_path,
     -- The shas the thread was written against. Kept because a reply is
     -- fine without them but a *comparison* -- "is this thread still
     -- pointing at the code it was written about" -- needs them. The
@@ -180,6 +196,9 @@ function M.parse_drafts(drafts)
       line = place and place.line,
       first_line = place and place.first,
       side = place and place.side,
+      old_line = place and place.old_line,
+      old_first = place and place.old_first,
+      old_path = place and place.old_path,
       head_sha = d.position and d.position.head_sha,
       base_sha = d.position and d.position.base_sha,
     }
@@ -272,6 +291,9 @@ function M.attach_sending(inline, overview, list)
         line = place and place.line,
         first_line = place and place.first,
         side = place and place.side,
+        old_line = place and place.old_line,
+        old_first = place and place.old_first,
+        old_path = place and place.old_path,
         head_sha = one.position and one.position.head_sha,
         base_sha = one.position and one.position.base_sha,
       }
@@ -365,6 +387,52 @@ function M.unsent(thread)
     end
   end
   return false
+end
+
+--- Puts every old-side thread on the row of the branch that its line
+--- was taken out of, which is the one place a buffer of the branch can
+--- carry it.
+---
+--- A deleted line is in no buffer of the branch, and until the diff
+--- has arrived the thread sits on its old number as if that were a row
+--- of the new file -- which is a line of unrelated code, or nothing,
+--- as soon as anything above it moved. `map` is `M.line_map`'s, and
+--- `gone` in it says which new line each removed one went missing in
+--- front of: the thread goes on the line above that, the last line
+--- still there before the gap, so that a quotation of the rows above
+--- the marker is the context the deleted lines had. Clamped to the
+--- first line for a deletion at the top of the file, where there is
+--- nothing above the gap to sit on.
+---
+--- The span is nothing, on purpose: no line of the branch is the code
+--- this thread is about. The code it is about is `old_first` to
+--- `old_line` of the base, which `session.quoted` reads from there.
+---
+--- In place, and safe to run again: it starts from the old number each
+--- time, and a map that does not reach the line leaves the thread
+--- where it was.
+function M.place(inline, map)
+  if not map then
+    return
+  end
+  for _, t in ipairs(inline or {}) do
+    if t.side == "old" and t.old_line then
+      local file = map[t.path]
+      if not file and t.old_path then
+        for _, one in pairs(map) do
+          if one.old_path == t.old_path then
+            file = one
+            break
+          end
+        end
+      end
+      local at = file and file.gone and file.gone[t.old_line]
+      if at then
+        t.line = math.max(at - 1, 1)
+        t.first_line = t.line
+      end
+    end
+  end
 end
 
 --- by_file[path][line] = { thread, ... }, in the order they were opened.
@@ -875,15 +943,26 @@ end
 --- take away. `opts.replaced` where there is none.
 ---
 --- `opts.was` -- the code the thread is about, drawn above the first
---- note. A list of strings, or of `{ text = ..., state = ... }` where
---- the caller knows what has become of each line: "changed", "added",
---- "gone", or nothing at all for the line that has not moved.
+--- note. A list of strings, or of `{ text = ..., state = ..., line = ... }`
+--- where the caller knows what has become of each line -- "changed",
+--- "added", "gone", or nothing at all for the line that has not moved
+--- -- and which line of the file it is now, drawn in front of it.
 --- `session.quoted` is what works those out.
+---
+--- `opts.paint_was(was)` -- the painter for that quotation, handed the
+--- list whole, for the caller that can colour it better than
+--- `opts.paint` can: out of the file it is quoted from, where a
+--- docstring is a docstring. `opts.paint` where there is none.
 ---
 --- `opts.width` -- how many columns the caller has to draw into, rail
 --- included. Given, the notes are wrapped to fit; missing, they are
 --- returned as they were written, which is what the one-line-per-thread
 --- index wants.
+---
+--- `opts.edge = true` -- `opts.width` is a window's own width rather
+--- than the most a window sized to its contents may grow to, so what
+--- is ruled across the block -- the rule under the quotation -- runs
+--- to the window's edge rather than to the band's.
 ---
 --- `opts.wrap_code = false` -- keep the blocks whose meaning is in
 --- their columns at the width they were written, wrapping only the
@@ -1275,25 +1354,48 @@ function M.render(thread, opts)
     -- a colour reads as text that has been cut off.
     local room = code and (code - vim.fn.strdisplaywidth(rail[1]) - 2)
     -- A line of the quotation is its text and, where the caller worked
-    -- one out, what has happened to it since the comment was written.
-    -- A plain string is the caller that had nothing to compare against.
-    local texts, states = {}, {}
+    -- them out, what has happened to it since the comment was written
+    -- and which line of the file it is now. A plain string is the
+    -- caller that had nothing to compare against.
+    local texts, states, numbers = {}, {}, {}
+    local digits = 0
     for i, line in ipairs(opts.was) do
       texts[i] = type(line) == "table" and line.text or line
       states[i] = type(line) == "table" and line.state or nil
+      numbers[i] = type(line) == "table" and line.line or nil
+      if numbers[i] and config.comments.quote_numbers ~= false then
+        digits = math.max(digits, #tostring(numbers[i]))
+      end
     end
-    local colours = opts.paint and opts.paint(texts) or {}
+    -- The line numbers, in a column of their own inside the band. The
+    -- quotation is read to find the code out on the file, and a number
+    -- is what the file is found by; a line that has gone is under no
+    -- number, and a line wrapped in here is one line out there. Only
+    -- where a caller knew them -- the every-thread window read with no
+    -- file open has nothing to count from.
+    local gutter = digits > 0 and (digits + 1) or 0
+    if room then
+      room = room - gutter
+    end
+    local colours = (opts.paint_was and opts.paint_was(opts.was))
+      or (opts.paint and opts.paint(texts))
+      or {}
     local band, widest = {}, 0
     for i, text in ipairs(texts) do
       local hl = WAS[states[i]] or QUOTE
-      for _, piece in ipairs(pieces(text, colours[i], room)) do
+      for j, piece in ipairs(pieces(text, colours[i], room)) do
         piece.band = hl
+        piece.number = j == 1 and numbers[i] or nil
         table.insert(band, piece)
         widest = math.max(widest, vim.fn.strdisplaywidth(piece.text))
       end
     end
     for _, piece in ipairs(band) do
       local line = { { rail[1], rail[2] }, { " ", piece.band } }
+      if gutter > 0 then
+        local n = piece.number and tostring(piece.number) or ""
+        table.insert(line, { (" "):rep(digits - #n) .. n .. " ", { piece.band, "LineNr" } })
+      end
       for _, run in ipairs(piece.runs or { { piece.text } }) do
         -- The language's colour on the line's band, or the band alone
         -- for what the language had no colour for -- which on a line
@@ -1304,6 +1406,24 @@ function M.render(thread, opts)
       local pad = widest - vim.fn.strdisplaywidth(piece.text) + 1
       table.insert(line, { (" "):rep(pad), piece.band })
       table.insert(out, line)
+    end
+    -- A rule under the band, between the file and the first thing
+    -- anybody said about it. The band already says "this is the file";
+    -- the rule says where the file stops, which on a quotation that
+    -- ends in a line of code and a note that opens with a name on a
+    -- band of its own was two colours meeting with nothing to say
+    -- which side was which. Across the whole window where there is
+    -- one -- a seam is drawn from edge to edge, and one as wide as the
+    -- longest line of code above it stops wherever that line did --
+    -- and the width of the band where the window is sized to what is
+    -- in it and a rule to the edge would be what sized it.
+    local rule = config.comments.quote_rule
+    if rule and rule ~= "" then
+      local across = widest + gutter + 2
+      if opts.edge and opts.width then
+        across = math.max(opts.width - vim.fn.strdisplaywidth(rail[1]), across)
+      end
+      table.insert(out, { { rail[1], rail[2] }, { rule:rep(across), "NemetonMeta" } })
     end
   end
 

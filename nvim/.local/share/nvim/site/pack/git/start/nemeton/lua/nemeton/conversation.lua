@@ -121,6 +121,14 @@ local function render()
     return paint
   end
 
+  --- The painter for the code a thread is about, out of the file's
+  --- own lines rather than out of the quotation alone -- a docstring
+  --- quoted on its own parses as anything but one.
+  local function quote_in(t)
+    local all = t.path and file_lines(t.path)
+    return all and syntax.painter_of(all, syntax.of_path(t.path)) or nil
+  end
+
   local function heading(text)
     if #chunks > 0 then
       table.insert(chunks, {})
@@ -146,6 +154,7 @@ local function render()
         return session.original(t, above, below)
       end,
       width = width,
+      edge = true,
       -- By the name of the file the thread is on, which in here is all
       -- there is to go on: this window is read with no file windows
       -- open, and a buffer whose filetype could be asked for may not
@@ -153,12 +162,14 @@ local function render()
       -- docstring, so the file's own lines answer that -- the ones
       -- `replaced` is reading anyway.
       paint = code_in(t),
+      paint_was = quote_in(t),
       -- Read out of the buffer where the file is open and off the disk
       -- where it is not, which is what `replaced` already does: this
       -- window is read with no file windows open at all, and "the code
       -- has changed since" is exactly the thing you cannot see for
       -- yourself from in here.
-      was = replaced and session.quoted(t, replaced(threads.span(t) + context, 0), context) or nil,
+      was = replaced and session.quoted(t, replaced(threads.span(t) + context, 0), context, t.line)
+        or nil,
     })
     for _, line in ipairs(drawn) do
       table.insert(chunks, line)

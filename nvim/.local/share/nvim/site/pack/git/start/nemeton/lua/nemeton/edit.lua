@@ -190,6 +190,16 @@ function M.reply(thread)
     session.notify("that comment has not been sent yet — edit it instead", vim.log.levels.WARN)
     return
   end
+  -- GitLab's Comment button and its Start thread are two different
+  -- things for good: a note posted on its own has no discussion to
+  -- answer into, and the API refuses the reply rather than making one.
+  if thread.individual_note then
+    session.notify(
+      "GitLab does not take replies to a comment posted on its own — start a thread on the merge request instead",
+      vim.log.levels.WARN
+    )
+    return
+  end
   local to = thread.notes[1].author
   compose.open({
     title = ("!%d  reply to %s"):format(mr.iid, to),

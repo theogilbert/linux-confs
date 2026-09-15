@@ -188,4 +188,15 @@ require("nvim-dap-virtual-text").setup({
     virt_text_pos = 'eol'
 })
 
+-- On session end the plugin clears its extmarks but keeps the pending
+-- exception/stop-reason state, which then gets redrawn at the next session's
+-- first stop. Reset it the same way a `continue` does.
+local function forget_stop_reason()
+    -- Slash form on purpose: the plugin requires it that way, and a dotted
+    -- require would load a second module instance with its own state.
+    require("nvim-dap-virtual-text/virtual_text")._on_continue({ clear_on_continue = true })
+end
+dap.listeners.after.event_terminated["forget_stop_reason"] = forget_stop_reason
+dap.listeners.after.event_exited["forget_stop_reason"] = forget_stop_reason
+
 return M

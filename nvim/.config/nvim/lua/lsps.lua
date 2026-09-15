@@ -4,10 +4,21 @@ local lsp_sort = require("utilities.lsp_sort")
 lsp_sort.sort_workspace_symbols()
 lsp_sort.deprioritize_test_references()
 
+-- Diagnostics colour the line number instead of placing a sign, so they never
+-- compete with gitsigns for the single-width sign column.
+local severity = vim.diagnostic.severity
 vim.diagnostic.config({
 	virtual_text = false,
 	underline = true,
-	signs = true,
+	signs = {
+		text = { [severity.ERROR] = "", [severity.WARN] = "", [severity.INFO] = "", [severity.HINT] = "" },
+		numhl = {
+			[severity.ERROR] = "DiagnosticSignError",
+			[severity.WARN] = "DiagnosticSignWarn",
+			[severity.INFO] = "DiagnosticSignInfo",
+			[severity.HINT] = "DiagnosticSignHint",
+		},
+	},
 })
 
 local cursorHoverGroup = vim.api.nvim_create_augroup("CursorHover", {})

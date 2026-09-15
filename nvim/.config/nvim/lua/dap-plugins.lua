@@ -9,6 +9,29 @@ dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, 
     end, 50)
 end
 
+-- On an exception stop, nvim-dap requests exceptionInfo and turns the answer
+-- into a diagnostic on the stopped line (readable with K); nvim-dap-virtual-text
+-- renders it at eol. Both consume the response after this `before` listener,
+-- so strip debugpy's noisy "(note: ... paused at: <frame>)" suffix here.
+dap.listeners.before.exceptionInfo["strip_note"] = function(_, _, response)
+    local details = response and response.details
+    if details and details.typeName then
+        details.typeName = details.typeName:gsub("%s+%(note:.*%)$", "")
+    end
+end
+
+-- The eol virtual text is easy to miss (or truncated on long lines), so also
+-- announce the exception in the message area.
+dap.listeners.after.exceptionInfo["notify"] = function(_, err, response)
+    if err or not response then
+        return
+    end
+    local details = response.details or {}
+    local name = details.typeName or response.exceptionId or "Exception"
+    local msg = details.message or response.description
+    vim.notify(msg and (name .. ": " .. msg) or name, vim.log.levels.ERROR)
+end
+
 vim.fn.sign_define('DapBreakpoint', {text='🛑', texthl='', linehl='', numhl=''})
 vim.fn.sign_define('DapBreakpointCondition', {text='🟡', texthl='', linehl='', numhl=''})
 vim.fn.sign_define('DapStopped', {text='', texthl='', linehl='debugPC', numhl=''})

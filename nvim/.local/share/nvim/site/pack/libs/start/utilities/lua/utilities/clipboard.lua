@@ -170,4 +170,25 @@ function M.rotate()
     )
 end
 
+---Register M.osc52_yank() yanks into.  Not `"`, `+` or `*`, so the text
+---never goes through the provider currently in effect.
+local OSC52_REG = "o"
+
+---Send lines to the terminal over OSC 52, whatever the current backend.
+---
+---@param lines string[]
+function M.osc52_send(lines)
+    require("vim.ui.clipboard.osc52").copy("+")(lines)
+end
+
+---One-off copy of the visual selection over OSC 52, leaving the backend
+---alone.  For a visual-mode keymap.
+function M.osc52_yank()
+    vim.cmd(('normal! "%sy'):format(OSC52_REG))
+
+    local lines = vim.fn.getreg(OSC52_REG, 1, true)
+    M.osc52_send(lines)
+    vim.notify(("OSC 52: %d line%s copied"):format(#lines, #lines == 1 and "" or "s"), vim.log.levels.INFO)
+end
+
 return M

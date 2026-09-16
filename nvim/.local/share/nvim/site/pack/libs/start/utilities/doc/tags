@@ -51,6 +51,8 @@ utilities.buffer.focus_filetype()	utilities.txt	/*utilities.buffer.focus_filetyp
 utilities.buffer.get_selection()	utilities.txt	/*utilities.buffer.get_selection()*
 utilities.buffer.is_in_visual_mode()	utilities.txt	/*utilities.buffer.is_in_visual_mode()*
 utilities.clipboard.backend	utilities.txt	/*utilities.clipboard.backend*
+utilities.clipboard.osc52_send()	utilities.txt	/*utilities.clipboard.osc52_send()*
+utilities.clipboard.osc52_yank()	utilities.txt	/*utilities.clipboard.osc52_yank()*
 utilities.clipboard.provider_name()	utilities.txt	/*utilities.clipboard.provider_name()*
 utilities.clipboard.rotate()	utilities.txt	/*utilities.clipboard.rotate()*
 utilities.clipboard.setup()	utilities.txt	/*utilities.clipboard.setup()*

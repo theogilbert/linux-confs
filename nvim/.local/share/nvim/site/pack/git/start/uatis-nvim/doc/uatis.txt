@@ -306,7 +306,9 @@ itself. Views pinned with `:Uatis <rev>` keep their revision.
 ==============================================================================
 8. LAYOUTS                                                     *uatis-layouts*
 
-`<leader>go` switches between them. Both draw the same comparison.
+`<leader>go` switches between them. Both draw the same comparison. The
+choice is the review's: the next file `]f` or `]c` opens comes up in the
+layout you last switched to, and a new review starts inline again.
 
 INLINE (the default) ~
 

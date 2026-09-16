@@ -1044,6 +1044,10 @@ local function pinned(pane, file)
     -- its old side up by path and would otherwise find nothing under the
     -- new name and call the whole file added.
     old_path = file.old_path,
+    -- Where the old side goes, as the reader last chose it in this
+    -- review: `]f` closes one view and opens another, and the second
+    -- should come up the way the first was left.
+    layout = pane.layout,
   }
 end
 
@@ -1455,7 +1459,16 @@ function M.goto_file(pane, idx)
 
   in_code_win(pane, win, function()
     vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
-    view_mod.open(pane.ref, pinned(pane, f))
+    -- Usually annotated already: `follow` took the buffer in on
+    -- `BufEnter`, at this revision. Opening it again would diff it a
+    -- second time for nothing -- and a git call later, land on whatever
+    -- the window holds by then, which after a quick `]f` and the key
+    -- that ends the review is a view of a review that is over.
+    local v = view_mod.get(vim.api.nvim_get_current_buf())
+    if not (v and v.root == pane.root and v.rev == pane.rev
+      and (v.standalone == true) == (pane.standalone == true)) then
+      view_mod.open(pane.ref, pinned(pane, f))
+    end
   end)
 end
 
@@ -2105,6 +2118,11 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     -- surprise as one that re-pointed itself.
     scope = base.dir(root),
     hint = "",
+    -- The layout the reader last switched a file of this review to,
+    -- which every file opened from here after it takes -- or nil for
+    -- the default, until someone switches. Set by `view.lua`, and gone
+    -- with the review.
+    layout = nil,
     code_win = vim.api.nvim_get_current_win(),
     -- Whether the tab goes when the review does. True only for the one
     -- this module opened for itself -- `:UatisShow` in a tab of its own

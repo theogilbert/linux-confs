@@ -236,7 +236,9 @@ puts the revision in a window to the left instead: a real buffer, so it
 searches and yanks, with the two halves padded so a line and the line it
 replaced sit on the same screen row, and the cursor and scroll kept in
 step. Each window names what it shows — `main · 16859ad` on the left,
-`working tree · on feature` on the right.
+`working tree · on feature` on the right. The layout is the review's, not
+the file's: the next file `]f` opens comes up the way you left the last
+one, and ending the review forgets the choice.
 
 A file the branch **deleted** opens too: the revision on the left, nothing
 opposite it.

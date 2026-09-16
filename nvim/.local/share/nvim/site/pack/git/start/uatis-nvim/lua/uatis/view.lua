@@ -440,8 +440,24 @@ local function set_layout(view, layout)
   render(view)
 end
 
+--- ...and a choice made in one file is the review's, not the file's.
+--- `]f` closes this view and opens the next as a new one, and a reader
+--- who put the old revision beside the first file wants it beside the
+--- second too, not the default back every time the list moves on. The
+--- list is what outlives the view, so the choice is kept on it -- and
+--- goes when the review does, since the next review starts at the
+--- default like anything else. A view with no list in its tab keeps
+--- the choice to itself.
+local function choose_layout(view, layout)
+  set_layout(view, layout)
+  local list = require("uatis.pane").get()
+  if list then
+    list.layout = layout
+  end
+end
+
 local function toggle_layout(view)
-  set_layout(view, view.layout == "side" and "inline" or "side")
+  choose_layout(view, view.layout == "side" and "inline" or "side")
 end
 
 local function toggle_backend(view)
@@ -1052,7 +1068,9 @@ function M.attach(bufnr, win, root, relpath, opts)
         -- wandered off the revision you named would be a different tool.
         tracks_base = opts.tracks_base or false,
         backend = config.diff.default_backend,
-        layout = "inline",
+        -- Where the old side is drawn, from the review where a file is
+        -- opened out of one: see `choose_layout`.
+        layout = opts.layout or "inline",
         added = 0,
         removed = 0,
         dropped = 0,
@@ -1075,6 +1093,11 @@ function M.attach(bufnr, win, root, relpath, opts)
       setup_keymaps(view)
       setup_watchers(view)
       vim.wo[win].winbar = ui.VIEW_WINBAR
+      -- The old window before the first render, which draws it: opened
+      -- side by side, a file must not come up inline and then move.
+      if view.layout == "side" then
+        oldside.open(view)
+      end
       render(view)
       -- Anything that needs the view to EXIST goes here, not on the line
       -- after the call: opening one is two git subprocesses deep, so a

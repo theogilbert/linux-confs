@@ -1230,10 +1230,26 @@ another merge request, one in a thread resolved while resolved threads
 are not drawn |nemeton-config-comments|, or one deleted since somebody
 linked it falls back to the clipboard and says which of those it was.
 
+A LINK TO A FILE OF THIS REPOSITORY is the other exception, for the
+same reason: the file is on the disk, and a key that copied a URL to
+it would be a key pressed on the way to `:edit`. The forge's own
+permalink -- `…/-/blob/<ref>/src/app.lua#L12`, or `#L12-14` for a span
+-- opens the file with the cursor on the line, and a bare
+`[the check](src/app.lua#L12)` is the same file once it is on the
+branch. Where the ref stops and the path starts is not something the
+URL says, so it is read off the checkout: the first spelling that is a
+file here is the file, and a link to a file the checkout has not got
+is a page on the forge, as it always was. The line is as the link says
+it, against whatever the link was written against: a permalink to a
+sha behind the branch can be a line off, the way a thread written
+against last week's push can.
+
 `false` does nothing. A function is yours, and is called with two
-arguments -- what is written, and where it points -- and a `thread` with
-a third: the thread itself, or nil for one this review has not got
-open. >lua
+arguments -- what is written, and where it points -- a `thread` with a
+third: the thread itself, or nil for one this review has not got open
+-- and a `path` or `url` with a fourth: the file of this repository it
+names, as `{ path, line, last }`, or nil for a link to anything
+else. >lua
 
     comments = {
       follow = {

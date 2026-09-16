@@ -260,10 +260,24 @@ merge request, one resolved while resolved threads are hidden, one
 deleted since it was linked — falls back to the clipboard and says which
 of those it was.
 
+**A link to a file of this repository is the other exception**, for the
+same reason: the file is on the disk, and a key that copied a URL to it
+would be a key pressed on the way to `:edit`. The forge's own permalink
+— `…/-/blob/<ref>/src/app.lua#L12`, or `#L12-14` for a span — opens the
+file with the cursor on the line, and a bare `[the check](src/app.lua#L12)`
+is the same file once it is on the branch. Where the ref stops and the
+path starts is read off the checkout, since the URL does not say; a link
+to a file the checkout has not got is a page on the forge, as it always
+was. The line is as the link says it: a permalink to a sha behind the
+branch can be a line off, the way a thread written against last week's
+push can.
+
 `comments.follow` is one entry per kind — `mention`, `commit`, `thread`,
 `path` (a link written as a path) and `url` (a page anywhere) — with
 `false` for nothing at all and a function of your own for anything else,
-called with what is written and where it points:
+called with what is written and where it points (a `thread` gets the
+thread as a third argument, and a `path` or `url` the file of this
+repository it names as a fourth, `{ path, line, last }` or nil):
 
 ```lua
 comments = {

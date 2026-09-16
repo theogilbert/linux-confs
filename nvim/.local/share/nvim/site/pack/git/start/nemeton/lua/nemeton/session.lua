@@ -987,6 +987,22 @@ function M.goto_thread(thread, before)
     notify("that comment is about no line — it is on the merge request itself")
     return false
   end
+  M.goto_file(thread.path, thread.line, before)
+  -- Going to a thread is asking to be shown it, whichever window asked
+  -- -- the every-thread window, the comments window, the quickfix list.
+  read_here()
+  return true
+end
+
+--- To a file of the repository, `path` relative to its root, with the
+--- cursor on `line` -- or left where the buffer had it, for a link to
+--- the file and not to a line of it. `before` is as `goto_thread` has
+--- it, and runs first.
+---
+--- The trip `goto_thread` makes before it asks to be shown the thread,
+--- on its own: a link in a comment to a line of this repository is the
+--- same trip with nothing at the end of it but the line.
+function M.goto_file(path, line, before)
   if before then
     before()
   end
@@ -994,8 +1010,8 @@ function M.goto_thread(thread, before)
   -- `:edit` on the file you are looking at reloads it, and reloading a
   -- file somebody is halfway through changing is either a refusal or a
   -- loss. Reviewing means editing the code you are reading.
-  local path = M.current.root .. "/" .. thread.path
-  local bufnr = vim.fn.bufnr(path)
+  local full = M.current.root .. "/" .. path
+  local bufnr = vim.fn.bufnr(full)
   if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
     local showing = vim.fn.win_findbuf(bufnr)
     if #showing > 0 then
@@ -1004,13 +1020,12 @@ function M.goto_thread(thread, before)
       vim.api.nvim_win_set_buf(0, bufnr)
     end
   else
-    vim.cmd.edit(vim.fn.fnameescape(path))
+    vim.cmd.edit(vim.fn.fnameescape(full))
   end
-  local last = vim.api.nvim_buf_line_count(0)
-  vim.api.nvim_win_set_cursor(0, { math.min(thread.line, last), 0 })
-  -- Going to a thread is asking to be shown it, whichever window asked
-  -- -- the every-thread window, the comments window, the quickfix list.
-  read_here()
+  if line then
+    local last = vim.api.nvim_buf_line_count(0)
+    vim.api.nvim_win_set_cursor(0, { math.min(line, last), 0 })
+  end
   return true
 end
 

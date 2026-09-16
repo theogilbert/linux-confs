@@ -25,12 +25,16 @@
 -- they do with it. `config.comments.follow` is the kinds, and `true` in
 -- any of them is that.
 --
--- With one exception, which is the one destination that is not a page
--- somewhere else: a link to another comment on this merge request is a
--- link to a conversation this editor already has open, and `true` goes
--- to it. Nothing is opened that was not open, no browser is raised, and
--- the reader who pressed the key on "see !7 (comment 1234)" asked for
--- exactly this.
+-- With two exceptions, which are the two destinations that are not a
+-- page somewhere else. A link to another comment on this merge request
+-- is a link to a conversation this editor already has open, and `true`
+-- goes to it. And a link to a file of this repository -- the
+-- `/-/blob/<ref>/<path>#L12` the forge's own "copy permalink" writes,
+-- or `doc/design.md` written bare -- is a link to a file this editor
+-- can open, and `true` opens it on the line. Nothing is opened that
+-- was not on the disk already, no browser is raised, and the reader
+-- who pressed the key on "see !7 (comment 1234)" or on "the check in
+-- `src/app.lua#L40`" asked for exactly this.
 --
 -- The refs themselves come from `threads.render`, which puts what a run
 -- points at beside the run: this module only remembers where they
@@ -199,6 +203,58 @@ function M.line_link(path, first, last, at)
   return ("%s/-/blob/%s/%s%s"):format(project, sha, path, lines)
 end
 
+--- The file of this repository a link names, as `{ path, line, last }`,
+--- or nil for a link to anything else: another project, a page of this
+--- one that is not a file, or a file the checkout has not got.
+---
+--- What `href` is by the time this reads it: `M.href` has already put
+--- a bare `doc/design.md` on the target branch of this project, so a
+--- link to a file is always `<project>/-/blob/<ref>/<path>`, and the
+--- forge's own permalink is that with the head sha for `ref` and
+--- `#L12` or `#L12-14` on the end.
+---
+--- Where the ref stops and the path starts is not something the URL
+--- says: `feat/x/src/app.lua` is `src/app.lua` on `feat/x` or
+--- `x/src/app.lua` on `feat`, and only a list of the branches can tell
+--- them apart. The checkout is the list this has: the path is tried
+--- from the shortest ref up, and the first spelling that is a file
+--- here is the file. A link to a file that is nowhere in the checkout
+--- is a page on the forge, which is what it always was.
+---
+--- The line is as the link says it, against whatever ref the link
+--- named. A permalink to a sha behind the branch can be a line off, the
+--- same way a thread written against last week's push can -- and the
+--- alternative, refusing every link not written against the head, is a
+--- key that works on half the links in a review and says nothing about
+--- which half.
+function M.file_of(href)
+  local session = require("nemeton.session")
+  local _, project = forge()
+  local root = session.current and session.current.root
+  if not (href and project and root) then
+    return nil
+  end
+  local rest = href:match("^" .. vim.pesc(project) .. "/%-/blob/(.+)$")
+  if not rest then
+    return nil
+  end
+  local named, fragment = rest:match("^([^#?]*)[^#]*#?(.*)$")
+  named = vim.uri_decode(named or "")
+  local first, last = fragment:match("^L(%d+)%-?(%d*)")
+  for at in named:gmatch("()/") do
+    local path = named:sub(at + 1)
+    local stat = path ~= "" and vim.uv.fs_stat(root .. "/" .. path)
+    if stat and stat.type == "file" then
+      return {
+        path = path,
+        line = tonumber(first),
+        last = tonumber(last) or tonumber(first),
+      }
+    end
+  end
+  return nil
+end
+
 --- Puts `text` where a paste will find it.
 ---
 --- The `+` register: the system clipboard, which is where "copied"
@@ -310,12 +366,23 @@ function M.go(ref, leave)
   if ref.kind == "thread" and ref.iid == mine() then
     thread = require("nemeton.session").thread_of(ref.text)
   end
+  -- ...and the file of this repository the link names, for the same
+  -- reason: a file on the disk is a place to go, and the function of
+  -- yours that would otherwise have to work out which file is handed
+  -- the answer.
+  local file = nil
+  if ref.kind == "url" or ref.kind == "path" then
+    file = M.file_of(href)
+  end
   if type(how) == "function" then
-    how(ref.text, href, thread)
+    how(ref.text, href, thread, file)
     return true
   end
   if thread then
     return shown(thread, leave)
+  end
+  if file then
+    return require("nemeton.session").goto_file(file.path, file.line, leave)
   end
   local message = said(ref, href)
   if not message then

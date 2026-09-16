@@ -434,7 +434,9 @@ return {
     -- where this plugin cannot work out a page: a mention read with no
     -- merge request open has no forge to be a user of. A `thread` gets
     -- a third argument as well: the thread itself, where the comment it
-    -- names is one this review has open, and nil where it is not.
+    -- names is one this review has open, and nil where it is not; a
+    -- `url` or `path` gets a fourth: the file of this repository the
+    -- link names, `{ path, line, last }`, and nil for anything else.
     --
     -- `true` is the built-in, which is the quietest thing that is still
     -- an answer: `User alice`, `commit a1b2c3d4`, and a link put on the
@@ -449,7 +451,11 @@ return {
     -- the review already open, in this editor, and the reader who
     -- pressed the key on "see !7 (comment 1234)" asked to be shown it.
     -- A comment on another merge request has nowhere to go and falls
-    -- back to the clipboard, with the reason said out loud.
+    -- back to the clipboard, with the reason said out loud. A link to
+    -- a file of this repository is the other, for the same reason: the
+    -- forge's `…/-/blob/<ref>/src/app.lua#L12` names a file on the
+    -- disk, and `true` opens it on the line. A file the checkout has
+    -- not got is a page, and is copied like one.
     --
     -- `url` and `path` are the two halves of what was one `link`: a
     -- page anywhere, and a page on this forge written as the path to

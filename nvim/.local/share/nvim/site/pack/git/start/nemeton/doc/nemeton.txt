@@ -1166,6 +1166,15 @@ widest first and a cell that still does not fit is cut with an ellipsis
 -- a ruled table cannot wrap, because a rule that wraps is two rules.
 `comments.tables = false` leaves the pipes.
 
+A CITATION -- the lines that start with `>` -- is drawn behind a bar
+and in the quiet colour, |hl-NemetonCitation|, the way the page sets it
+off and greys it: it is the one part of a note that is not its author
+speaking, the sentence they are answering pasted in front of the
+answer. What was quoted was markdown when it was quoted, so it is read
+the same way -- a heading in it is a heading, a table is ruled, and
+`> > so` is a citation inside one, behind two bars. `comments.citation`
+is the bar, the rail's own glyph one step in; `false` leaves the `>`s.
+
 None of it changes what is sent. |:Nemeton| `edit` posts back the text
 its author wrote, brackets and hashes and pipes and all, because that is
 what the forge renders and what the next person to edit it has to see.
@@ -1477,6 +1486,7 @@ COMMENTS                                             *nemeton-config-comments*
       styles = true,         -- `**bold**`, `*italic*`, `~~struck~~`, `code`
       headings = true,       -- `## why` without the hashes, by level
       tables = true,         -- a pipe table ruled and lined up
+      citation = "▎ ",       -- `> quoted` behind a bar; false for the >
       suggest_box = true,    -- a suggestion in a box, not behind a fence
       follow = {             -- what `<C-]>` does with one |nemeton-follow|
         mention = true,      -- true: its page | false | fun(text, href)
@@ -1854,6 +1864,7 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonItalic         one written `*like this*`       italic, no colour
     NemetonStrike         one written `~~like this~~`     struck through
     NemetonCode           one written `` `like this` ``   String
+    NemetonCitation       what a note quotes with `>`     Comment
     NemetonThread         what they said                  Normal's fg
     NemetonMeta           when, where, how many           Comment
     NemetonResolved       the tick on a settled thread    DiagnosticOk
@@ -1919,6 +1930,14 @@ inside a link, the language's own inside a suggestion.
 the one piece of a comment that quotes something rather than says it,
 and `String` is the colour an editor already draws quoted text in.
 |nemeton-config-comments|
+
+                                                         *hl-NemetonCitation*
+`NemetonCitation` is a citation -- the lines a note starts with `>` --
+and the bar drawn down the side of it in place of them. Quiet, because
+the quotation is somebody else's sentence and the answer under it is
+what the note is for; one group for the bar and the words, so a scheme
+that colours one has coloured both. `comments.citation` is the bar.
+|nemeton-markdown|
 
                                                              *hl-NemetonQuote*
 `NemetonQuote` is the band the code a thread is about is quoted on

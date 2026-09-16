@@ -1017,6 +1017,25 @@ function M.render(thread, opts)
   local indent = config.comments.reply_indent or ""
   local mark = config.comments.reply_mark or ""
 
+  -- The bar down the side of what a note quotes, and how many of them
+  -- the line being drawn is inside. A citation is drawn by putting the
+  -- bar on the end of `lead` and drawing what it quotes behind that,
+  -- so that everything measuring the lead is already right; what the
+  -- depth is for is colouring the bars back out of it, since a lead is
+  -- one chunk in the rail's colour and a bar is not the rail.
+  local bar = config.comments.citation or ""
+  local cited = 0
+
+  --- What stands at the front of a line: `lead` as chunks, the rail's
+  --- part in the rail's colour and each citation bar in its own.
+  local function front(lead)
+    local chunks = { { lead:sub(1, #lead - #bar * cited), rail[2] } }
+    for _ = 1, cited do
+      table.insert(chunks, { bar, "NemetonCitation" })
+    end
+    return chunks
+  end
+
   -- One line of text, wrapped and put down behind `lead`. `sign` is the
   -- "+ " or "- " a suggestion's lines carry, and the "was " on a line
   -- of code that has changed since: it belongs to the first piece only,
@@ -1043,12 +1062,13 @@ function M.render(thread, opts)
     local cursor = 1
     for j, piece in ipairs(wrap(text, room)) do
       local marker = j > 1 and pad or sign
+      local line = front(lead)
       if not runs then
-        table.insert(out, { { lead, rail[2] }, { marker .. piece, band or hl } })
+        table.insert(line, { marker .. piece, band or hl })
+        table.insert(out, line)
       else
         local at = text:find(piece, cursor, true) or cursor
         cursor = at + #piece
-        local line = { { lead, rail[2] } }
         if marker ~= "" then
           -- The `+` and the `-` are on the band and nothing else: they
           -- are not code, and the band's own foreground is the colour
@@ -1175,7 +1195,9 @@ function M.render(thread, opts)
     local wide = vim.fn.strdisplaywidth(said)
     local top = inner >= wide + 1 and (BOX[5] .. said .. BOX[5]:rep(inner - wide - 1))
       or BOX[5]:rep(inner)
-    table.insert(out, { { lead, rail[2] }, { BOX[1] .. top .. BOX[2], "NemetonMeta" } })
+    local top_rule = front(lead)
+    table.insert(top_rule, { BOX[1] .. top .. BOX[2], "NemetonMeta" })
+    table.insert(out, top_rule)
     for _, row in ipairs(rows) do
       -- The rules are not on the band. Everywhere else in a
       -- conversation a band is the line, edge to edge, because there is
@@ -1187,7 +1209,8 @@ function M.render(thread, opts)
       -- between them -- which is what `line.contained` tells the two
       -- shading passes, since both of them would otherwise take a band
       -- on a line to be the ground of the whole line.
-      local line = { { lead, rail[2] }, { BOX[6], "NemetonMeta" } }
+      local line = front(lead)
+      table.insert(line, { BOX[6], "NemetonMeta" })
       -- The `+` and the `-` are on the band and nothing else: they are
       -- not code, and the band's own foreground is the colour the whole
       -- half used to be drawn in.
@@ -1208,10 +1231,9 @@ function M.render(thread, opts)
       line.contained = true
       table.insert(out, line)
     end
-    table.insert(out, {
-      { lead, rail[2] },
-      { BOX[3] .. BOX[5]:rep(inner) .. BOX[4], "NemetonMeta" },
-    })
+    local bottom_rule = front(lead)
+    table.insert(bottom_rule, { BOX[3] .. BOX[5]:rep(inner) .. BOX[4], "NemetonMeta" })
+    table.insert(out, bottom_rule)
   end
 
   -- The rules of a table: the corners, the tees and the cross.
@@ -1283,7 +1305,9 @@ function M.render(thread, opts)
         table.insert(parts, ("─"):rep(widths[c] + 2))
         table.insert(parts, c < columns and RULE[kind][2] or RULE[kind][3])
       end
-      return { { lead, rail[2] }, { table.concat(parts), "NemetonMeta" } }
+      local line = front(lead)
+      table.insert(line, { table.concat(parts), "NemetonMeta" })
+      return line
     end
 
     table.insert(out, rule("top"))
@@ -1291,7 +1315,7 @@ function M.render(thread, opts)
       -- The head in the colour a name is drawn in: it is what the
       -- columns are called and not one of the values in them.
       local hl = r == 1 and "NemetonAuthor" or body_hl
-      local line = { { lead, rail[2] } }
+      local line = front(lead)
       for c = 1, columns do
         local cell = row[c] or { text = "" }
         local text, runs = cell.text, cell.runs
@@ -1592,53 +1616,72 @@ function M.render(thread, opts)
       end
     end
     table.insert(out, head)
-    -- What was said, as the markdown it was written in rather than as
-    -- the characters it was typed with: `nemeton.markdown` decides what
-    -- each block is, and each is drawn as the thing it is.
-    for _, block in ipairs(markdown.blocks(vim.split(note.body or "", "\n", { plain = true }))) do
-      if block.kind == "suggestion" then
-        -- A GitLab suggestion is a fenced block that the forge can
-        -- apply with a button, and it is the one part of a comment that
-        -- is not prose: it is the code that would replace what you are
-        -- looking at. Drawn as a diff, in the colours the editor
-        -- already uses for one, so it reads as a change rather than as
-        -- more sentences.
-        suggestion(lead, block)
-      elseif block.kind == "code" then
-        -- Somebody else's fence, drawn as they typed it -- the fence
-        -- lines included, because they are the only thing saying where
-        -- their code starts and stops. Nothing rendered inside it: code
-        -- that says `:tada:` says `:tada:`, and code that says
-        -- `[a](b)` says `[a](b)`.
-        body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
-        for _, l in ipairs(block.lines) do
-          body(lead, l, body_hl, nil, nil, nil, code)
+
+    --- `blocks` drawn behind `lead`, in `hl` where a block is words.
+    ---
+    --- What was said, as the markdown it was written in rather than as
+    --- the characters it was typed with: `nemeton.markdown` decides
+    --- what each block is, and each is drawn as the thing it is. A
+    --- function rather than a loop because a citation is these same
+    --- blocks again, behind a bar.
+    local function draw(lead, blocks, hl)
+      for _, block in ipairs(blocks) do
+        if block.kind == "suggestion" then
+          -- A GitLab suggestion is a fenced block that the forge can
+          -- apply with a button, and it is the one part of a comment
+          -- that is not prose: it is the code that would replace what
+          -- you are looking at. Drawn as a diff, in the colours the
+          -- editor already uses for one, so it reads as a change
+          -- rather than as more sentences.
+          suggestion(lead, block)
+        elseif block.kind == "code" then
+          -- Somebody else's fence, drawn as they typed it -- the fence
+          -- lines included, because they are the only thing saying
+          -- where their code starts and stops. Nothing rendered inside
+          -- it: code that says `:tada:` says `:tada:`, and code that
+          -- says `[a](b)` says `[a](b)`.
+          body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
+          for _, l in ipairs(block.lines) do
+            body(lead, l, hl, nil, nil, nil, code)
+          end
+          if block.close then
+            body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
+          end
+        elseif block.kind == "table" then
+          tabled(lead, block)
+        elseif block.kind == "citation" then
+          -- What somebody quoted before answering it, behind a bar and
+          -- in the quiet colour: it is the one part of a note that is
+          -- not the note's author speaking, and the page draws it set
+          -- off and greyed for the same reason. The bar goes on the
+          -- lead, so that a wrapped line keeps it and a table or a box
+          -- inside the citation is measured against what is left.
+          cited = cited + 1
+          draw(lead .. bar, block.blocks, "NemetonCitation")
+          cited = cited - 1
+        else
+          -- The picture a forge would have drawn, and the link as the
+          -- words it was given: what this line points at is kept
+          -- beside the run it is drawn in, for the key that follows
+          -- it.
+          local prose, runs = markdown.inline(M.emoji(block.text))
+          -- A heading in the colour a name is drawn in and without its
+          -- hashes. There is no bigger type in a terminal, so what
+          -- says "this is a heading" is what says it everywhere else
+          -- here: a colour, and the words on their own line.
+          -- ...and which level of one: there is no bigger type in a
+          -- terminal, so the six are told apart by weight instead --
+          -- underlined and bold at the top, quiet and italic at the
+          -- bottom. See `marks.setup_highlights`.
+          local colour = hl
+          if block.kind == "heading" then
+            colour = "NemetonHeading" .. math.min(block.level or 1, 6)
+          end
+          body(lead, prose, colour, nil, runs)
         end
-        if block.close then
-          body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
-        end
-      elseif block.kind == "table" then
-        tabled(lead, block)
-      else
-        -- The picture a forge would have drawn, and the link as the
-        -- words it was given: what this line points at is kept beside
-        -- the run it is drawn in, for the key that follows it.
-        local prose, runs = markdown.inline(M.emoji(block.text))
-        -- A heading in the colour a name is drawn in and without its
-        -- hashes. There is no bigger type in a terminal, so what says
-        -- "this is a heading" is what says it everywhere else here: a
-        -- colour, and the words on their own line.
-        -- ...and which level of one: there is no bigger type in a
-        -- terminal, so the six are told apart by weight instead --
-        -- underlined and bold at the top, quiet and italic at the
-        -- bottom. See `marks.setup_highlights`.
-        local hl = body_hl
-        if block.kind == "heading" then
-          hl = "NemetonHeading" .. math.min(block.level or 1, 6)
-        end
-        body(lead, prose, hl, nil, runs)
       end
     end
+    draw(lead, markdown.blocks(vim.split(note.body or "", "\n", { plain = true })), body_hl)
     -- ...and what people said back without saying anything, under it.
     --
     -- A row of pictures with a count beside each, in the order they
@@ -1651,7 +1694,7 @@ function M.render(thread, opts)
     -- usernames in here -- and a review is read for what people wrote,
     -- not for who thumbed it.
     if config.comments.reactions and note.reactions and #note.reactions > 0 then
-      local row = { { lead, rail[2] } }
+      local row = front(lead)
       for n, given in ipairs(note.reactions) do
         table.insert(row, {
           ("%s%s %d"):format(n > 1 and "  " or "", M.emoji(":" .. given.name .. ":"), given.count),

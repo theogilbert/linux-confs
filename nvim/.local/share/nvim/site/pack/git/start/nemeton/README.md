@@ -779,6 +779,15 @@ first and a cell that still does not fit is cut with an ellipsis — a
 ruled table cannot wrap, because a rule that wraps is two rules.
 `comments.tables = false` leaves the pipes.
 
+A **citation** — the lines that start with `>` — is drawn behind a bar
+and in the quiet colour, `NemetonCitation`, the way the page sets it off
+and greys it: it is the one part of a note that is not its author
+speaking, the sentence they are answering pasted in front of the answer.
+What was quoted was markdown when it was quoted, so it is read the same
+way — a heading in it is a heading, a table is ruled, and `> > so` is a
+citation inside one, behind two bars. `comments.citation` is the bar,
+the rail's own glyph one step in; `false` leaves the `>`s.
+
 None of it changes what is sent: `:Nemeton edit` posts back the text its
 author wrote, brackets and hashes and pipes and all, because that is what
 the forge renders and what the next person to edit it has to see. Inside
@@ -1080,8 +1089,9 @@ lua/nemeton/
   threads.lua    GitLab's discussions -> "which threads are on line 42",
                  pure, and the part the tests lean on hardest
   markdown.lua   a comment read as the page rather than as the source:
-                 links, headings, emphasis, code, tables, fences -- pure,
-                 and a parser only, since the drawing is threads.lua's
+                 links, headings, citations, emphasis, code, tables,
+                 fences -- pure, and a parser only, since the drawing
+                 is threads.lua's
   follow.lua     what <C-]> goes to: where each kind of reference has a
                  page, and the one kind that is a thread in here instead
   session.lua    one merge request at a time, and everything hanging off it

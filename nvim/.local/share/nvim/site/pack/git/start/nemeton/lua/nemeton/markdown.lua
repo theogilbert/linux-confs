@@ -15,7 +15,8 @@
 -- out is two shapes:
 --
 --   `M.blocks(lines)`  the note as the blocks it is written in: prose,
---                      a heading, a table, a suggestion, a fence.
+--                      a heading, a citation, a table, a suggestion, a
+--                      fence.
 --   `M.inline(line)`   one line as the runs it is drawn as, each
 --                      carrying in `ref` what it points at -- which is
 --                      what `<C-]>` follows -- and in `style` the
@@ -711,6 +712,7 @@ end
 ---
 ---   prose       `text`
 ---   heading     `text`, `level`
+---   citation    `blocks` -- what was quoted, read the same way
 ---   table       `rows` (the head first), `align`
 ---   suggestion  `lines`, `above`, `below`, `fence`, `close`
 ---   code        `lines`, `fence`, `close`
@@ -718,12 +720,21 @@ end
 --- A fence nobody closed is applied anyway, with `close` nil -- which
 --- is what GitLab does with one, and what one looks like while it is
 --- still being typed.
+---
+--- A citation is the lines that start with `>`, with the `>` taken off
+--- and the rest read again by this same function: what somebody quoted
+--- was markdown when they quoted it, so a heading in one is a heading
+--- and `> > so` is a citation inside a citation. Only the lines that
+--- carry the `>`: markdown lets a paragraph run on under one without
+--- it, and a reviewer who meant that would have been surprised by the
+--- page too.
 function M.blocks(lines)
   local c = config.comments
   local out, i = {}, 1
   while i <= #lines do
     local line = lines[i]
     local fence = line:match("^%s*```(.*)$")
+    local cited = c.citation and line:match("^%s*>%s?(.*)$")
     local heading, said = line:match("^(#+)%s+(.*)$")
     local align = c.tables and alignments(lines[i + 1]) or nil
     if fence then
@@ -751,6 +762,18 @@ function M.blocks(lines)
         table.insert(out, { kind = "code", lines = body, fence = line, close = close })
       end
       i = j + 1
+    elseif cited then
+      local inner, j = { cited }, i + 1
+      while j <= #lines do
+        local more = lines[j]:match("^%s*>%s?(.*)$")
+        if not more then
+          break
+        end
+        table.insert(inner, more)
+        j = j + 1
+      end
+      table.insert(out, { kind = "citation", blocks = M.blocks(inner) })
+      i = j
     elseif heading and c.headings and #heading <= 6 then
       table.insert(out, { kind = "heading", text = said, level = #heading })
       i = i + 1

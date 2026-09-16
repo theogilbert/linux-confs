@@ -419,6 +419,36 @@ end
 --- be in flight, and every one of them should recover the same way.
 local function run(args, opts, cb)
   opts = opts or {}
+  -- A call that changes something is sent to the project by the path
+  -- the forge calls it now, rather than by the one the remote does.
+  -- The two differ once a project has been moved or renamed: GitLab
+  -- keeps the old path as a redirect, follows it for a GET, and
+  -- answers every other method at it with `405 Non GET methods are
+  -- not allowed for moved projects`. So `:fullpath` -- which glab
+  -- fills in from the remote -- is right for reading and wrong for
+  -- writing, and the path the project answered a GET with is what
+  -- goes into a POST. Asked once per repository; a forge that will
+  -- not say leaves the remote's spelling, and its own refusal.
+  local method = args[1] == "api" and args[2] == "--method" and args[3]:upper() or "GET"
+  local last = args[#args]
+  if
+    method ~= "GET"
+    and opts.cwd
+    and not opts.addressed
+    and type(last) == "string"
+    and last:find(":fullpath", 1, true)
+  then
+    M.project_path(opts.cwd, function(path)
+      if path then
+        args = vim.list_extend({}, args)
+        args[#args] = last:gsub(":fullpath", function()
+          return vim.uri_encode(path, "rfc2396")
+        end, 1)
+      end
+      run(args, vim.tbl_extend("force", opts, { addressed = true }), cb)
+    end)
+    return
+  end
   local sent_under = generation
   spawn(args, opts, function(ok, out, err)
     -- `no_prompt` is for the calls whose *own* failure mode looks like

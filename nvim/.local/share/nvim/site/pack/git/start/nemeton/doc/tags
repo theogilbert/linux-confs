@@ -5,6 +5,7 @@ beside	nemeton.txt	/*beside*
 but	nemeton.txt	/*but*
 hl-NemetonBold	nemeton.txt	/*hl-NemetonBold*
 hl-NemetonChanged	nemeton.txt	/*hl-NemetonChanged*
+hl-NemetonCitation	nemeton.txt	/*hl-NemetonCitation*
 hl-NemetonCode	nemeton.txt	/*hl-NemetonCode*
 hl-NemetonCommit	nemeton.txt	/*hl-NemetonCommit*
 hl-NemetonHead	nemeton.txt	/*hl-NemetonHead*

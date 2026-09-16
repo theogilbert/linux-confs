@@ -342,6 +342,19 @@ return {
     -- rules.
     tables = true,
 
+    -- What stands down the side of a citation -- the lines a note
+    -- starts with `>` -- in place of the `>` on each of them.
+    --
+    -- A citation is the one part of a note that is not its author
+    -- speaking: the sentence they are answering, pasted in front of
+    -- the answer. The page sets it off with a bar and greys it, and so
+    -- does this, in `NemetonCitation`; what was quoted is read as
+    -- markdown too, so a heading in it is a heading and `> > so` is a
+    -- citation inside one. U+258E, the rail's own glyph, since it is
+    -- the same idea one step in; "│ " without it, and `false` to leave
+    -- the `>`s as they were typed.
+    citation = "▎ ",
+
     -- Whether a suggestion is drawn in a box instead of behind the
     -- fence GitLab wrote it with.
     --

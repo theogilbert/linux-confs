@@ -283,7 +283,10 @@ end
 local function reading(bufnr)
   local old = session.old_side(bufnr)
   if old then
-    if not session.against(old.sha) then
+    -- A revision that is not the one the review compares with is a
+    -- revision no thread can be anchored to. With no review open there
+    -- is nothing to compare with, and a link to it is a link to it.
+    if session.current and not session.against(old.sha) then
       return nil,
         nil,
         nil,
@@ -313,7 +316,16 @@ end
 --- posted: it goes to the clipboard, because pasting it is the next
 --- thing that happens to it -- into a comment here, or into a message
 --- to somebody somewhere else.
-M.link = with_session(function(first, last)
+---
+--- With no review open as well -- the one verb here that is. The page
+--- it links to is the project's and not a merge request's, and the
+--- line somebody wants to point at from a chat window is on whatever
+--- they happen to be reading. So the project is asked of the forge,
+--- once, and the revision is the checkout's own HEAD: the commit the
+--- line is being read at, which is what a permalink is for. A HEAD
+--- the forge has not been sent is a link that works once it has.
+function M.link(first, last)
+  ready()
   local path, _, sha, why = reading(vim.api.nvim_get_current_buf())
   if not path then
     session.notify(why, vim.log.levels.WARN)
@@ -321,17 +333,46 @@ M.link = with_session(function(first, last)
   end
   first = first or vim.api.nvim_win_get_cursor(0)[1]
   last = math.max(last or first, first)
+  local follow = require("nemeton.follow")
+  local function copied(url, why_not)
+    if not url then
+      session.notify(why_not, vim.log.levels.WARN)
+      return
+    end
+    follow.copy(url)
+    session.notify(span(path, first, last) .. " — link copied")
+  end
   -- On the old side, a link against the revision that buffer is
   -- showing: the line numbers are that file's, and against the head
   -- they would point at whatever happens to be there now.
-  local url = require("nemeton.follow").line_link(path, first, last, sha)
-  if not url then
-    session.notify("no page to link to — the merge request has no url", vim.log.levels.WARN)
+  if session.current then
+    copied(
+      follow.line_link(path, first, last, sha),
+      "no page to link to — the merge request has no url"
+    )
     return
   end
-  require("nemeton.follow").copy(url)
-  session.notify(span(path, first, last) .. " — link copied")
-end)
+  local root = session.root()
+  require("nemeton.glab").project_url(root, function(project, err)
+    if not project then
+      copied(
+        nil,
+        "no page to link to — " .. (err or "the forge did not say which project this is")
+      )
+      return
+    end
+    if sha then
+      copied(follow.line_link(path, first, last, sha, project))
+      return
+    end
+    session.head(root, function(head)
+      copied(
+        head and follow.line_link(path, first, last, head, project),
+        "no page to link to — this checkout is at no commit"
+      )
+    end)
+  end)
+end
 
 --- A new thread against the line under the cursor, or against the lines
 --- of a visual selection.
@@ -802,6 +843,10 @@ local function over_selection(fn)
   end
 end
 
+--- `M.link` over the lines of a visual selection, for the global key
+--- the plugin file binds in that mode.
+M.link_lines = over_selection(M.link)
+
 --- Every review key, and the verb behind it. One list, bound twice.
 local function bindings()
   local k = config.keys.session
@@ -816,7 +861,7 @@ local function bindings()
     { k.delete, M.delete, "delete a comment in the thread here" },
     { k.suggest, over_selection(M.suggest), "suggest a change to these lines", "x" },
     { k.link, M.link, "copy a link to this line" },
-    { k.link, over_selection(M.link), "copy a link to these lines", "x" },
+    { k.link, M.link_lines, "copy a link to these lines", "x" },
     { k.resolve, M.resolve, "resolve the thread here" },
     { k.description, M.description, "what this merge request is for" },
     { k.notes, M.notes, "every comment on the merge request" },
@@ -1091,18 +1136,33 @@ function M.setup(opts)
     end,
   })
 
-  -- The plugin file bound the default; a `setup{}` that moves the key
+  -- The plugin file bound the defaults; a `setup{}` that moves a key
   -- takes that one back rather than leaving the editor with both.
-  local bound = vim.g.nemeton_global_key
-  local k = config.keys.global.list
-  if bound and bound ~= k then
-    pcall(vim.keymap.del, "n", bound)
-    vim.g.nemeton_global_key = nil
+  --- `name` is the key's name in `keys.global` and in the `vim.g`
+  --- variable the plugin file left it in; `modes` are the modes it is
+  --- bound in, with the function for each.
+  local function global(name, modes)
+    local var = "nemeton_global_" .. name
+    local bound = vim.g[var]
+    local k = config.keys.global[name]
+    if bound and bound ~= k then
+      for mode in pairs(modes) do
+        pcall(vim.keymap.del, mode, bound)
+      end
+      vim.g[var] = nil
+    end
+    if k and k ~= "" and vim.g[var] ~= k then
+      for mode, fn in pairs(modes) do
+        vim.keymap.set(mode, k, fn[1], { silent = true, desc = "nemeton: " .. fn[2] })
+      end
+      vim.g[var] = k
+    end
   end
-  if k and k ~= "" and vim.g.nemeton_global_key ~= k then
-    vim.keymap.set("n", k, M.list, { silent = true, desc = "nemeton: merge requests" })
-    vim.g.nemeton_global_key = k
-  end
+  global("list", { n = { M.list, "merge requests" } })
+  global("link", {
+    n = { M.link, "copy a link to this line" },
+    x = { M.link_lines, "copy a link to these lines" },
+  })
   -- The other way in, unbound by default. Nothing in `plugin/` binds
   -- this one, so there is no earlier key to take back -- and rebinding
   -- it in a second `setup{}` is `keymap.set` over `keymap.set`, which

@@ -44,15 +44,17 @@ local session_token = nil
 -- the second failure must not put a second prompt on the screen.
 local generation = 0
 
--- root -> the project's full path, resolved once. GraphQL wants the
--- path spelled out; glab's `:fullpath` placeholder only fills in a REST
--- endpoint, so it is asked for and kept.
+-- root -> the project, as GitLab's own object, resolved once. GraphQL
+-- wants the path spelled out and glab's `:fullpath` placeholder only
+-- fills in a REST endpoint; a link to a line wants the project's page
+-- when there is no merge request open to read it off. So it is asked
+-- for and kept.
 --
 -- Declared up here with the other caches rather than beside the
 -- function that fills it, because `reset_credentials` below clears it
 -- and a `local` declared after its use is a different variable: a
 -- global, silently, and the cache went on being read.
-local project_paths = {}
+local projects = {}
 
 -- root -> whose token this is, as GitLab's own `user` object, resolved
 -- once. Which reaction on a note is yours is a question with no other
@@ -115,7 +117,7 @@ function M.reset_credentials()
   cached_env = nil
   -- Which project a directory belongs to is a question about the host
   -- as much as about the directory.
-  project_paths = {}
+  projects = {}
   -- ...and so is who the token belongs to.
   whoami = {}
   -- ...and so is what the forge is and what its API will take: a
@@ -741,18 +743,32 @@ function M.approvals(root, iid, cb)
   )
 end
 
-function M.project_path(root, cb)
-  local known = project_paths[root]
+--- The project this repository points at, as GitLab's own object.
+local function project(root, cb)
+  local known = projects[root]
   if known ~= nil then
     cb(known or nil)
     return
   end
   json({ "api", "projects/:fullpath" }, { cwd = root }, function(data, err)
-    local path = type(data) == "table" and data.path_with_namespace or nil
     -- `false` rather than nil for "asked and got nowhere", so a forge
     -- that will not answer is not asked once per list.
-    project_paths[root] = path or false
-    cb(path, err)
+    projects[root] = type(data) == "table" and data or false
+    cb(projects[root] or nil, err)
+  end)
+end
+
+function M.project_path(root, cb)
+  project(root, function(data, err)
+    cb(data and data.path_with_namespace or nil, err)
+  end)
+end
+
+--- ...and its page, for a link to a line of it written with no merge
+--- request open to read the page off.
+function M.project_url(root, cb)
+  project(root, function(data, err)
+    cb(data and data.web_url or nil, err)
   end)
 end
 

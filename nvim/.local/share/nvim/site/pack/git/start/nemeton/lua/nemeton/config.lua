@@ -826,6 +826,15 @@ return {
       -- keys for one plugin is one too many. `:Nemeton open` is it
       -- typed.
       open = "<leader>mo",
+      -- A permalink to the line, or to the selection, on the clipboard:
+      -- what you paste into a comment to point at code the comment is
+      -- not on, or into a chat window to point at code at all. Global
+      -- rather than a review key, because the page it links to is the
+      -- project's and not a merge request's: with none open the
+      -- project is asked of the forge and the revision is HEAD. Under
+      -- the same prefix as the review keys all the same, since it is
+      -- a link to the forge and not to git.
+      link = "<leader>mL",
     },
     -- The review keys, bound while a merge request is open and taken
     -- away again when it is closed.
@@ -846,12 +855,6 @@ return {
       peek = "<leader>mp", -- the thread under the cursor, in a float
       comment = "<leader>ma", -- a new thread on this line
       suggest = "<leader>ms", -- visual mode: suggest a change to these lines
-      -- A permalink to the line, or to the selection, on the clipboard:
-      -- what you paste into a comment to point at code the comment is
-      -- not on. Under the same prefix as the rest of a review and not
-      -- under git's, because it is a link to the merge request's own
-      -- page and means nothing outside one.
-      link = "<leader>mL", -- a link to this line on the forge
       description = "<leader>md", -- the merge request itself, in a float
       -- On a key rather than one letter further in, unlike the rest of
       -- the verbs below: ending a review is not something you go to a
@@ -874,6 +877,7 @@ return {
       publish = false, -- `s` there -- send every comment kept unsent
       threads = false, -- :Nemeton threads -- every thread, as a quickfix list
       toggle = false, -- :Nemeton comments -- the markers on and off
+      link = false, -- moved to `keys.global.link`: it needs no review open
 
       -- ...and the four verbs that act on a conversation that is
       -- already there, which are `r`, `x`, `e` and `d` in the pane

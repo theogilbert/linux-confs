@@ -188,19 +188,36 @@ end
 --- the forge offers a permalink on the page. `#L3-4` is GitLab's own
 --- spelling of a span.
 ---
---- Nil where there is no page to point at: no review open, or a merge
---- request this plugin never learned the URL of.
-function M.line_link(path, first, last, at)
+--- `at` and `project` are the revision and the project's page where
+--- the caller knows better than the review does -- the revision an old
+--- side is showing, or both, with no review open at all. Nil where
+--- there is no page to point at: no review open and nothing given
+--- instead, or a merge request this plugin never learned the URL of.
+function M.line_link(path, first, last, at, project)
   local session = require("nemeton.session")
   local mr = session.current
   local sha = at or (mr and mr.diff_refs and mr.diff_refs.head_sha)
-  local _, project = forge()
+  project = project or select(2, forge())
   if not (path and sha and project) then
     return nil
   end
   local lines = (last and last > first) and ("#L%d-%d"):format(first, last)
     or ("#L%d"):format(first)
   return ("%s/-/blob/%s/%s%s"):format(project, sha, path, lines)
+end
+
+--- Whether `sha` names a commit this checkout has.
+---
+--- Synchronous, on a keypress: `cat-file -e` on a local object store
+--- is a millisecond, and it is asked only of a link that has already
+--- failed the cheaper test.
+local function have_commit(root, sha)
+  local log = require("nemeton.log")
+  local cmd = { "git", "cat-file", "-e", sha .. "^{commit}" }
+  local done = log.exec(cmd, { cwd = root })
+  local out = vim.system(cmd, { text = true, cwd = root }):wait()
+  done(out.code, out.stderr)
+  return out.code == 0
 end
 
 --- The file of this repository a link names, as `{ path, line, last }`,
@@ -212,6 +229,15 @@ end
 --- link to a file is always `<project>/-/blob/<ref>/<path>`, and the
 --- forge's own permalink is that with the head sha for `ref` and
 --- `#L12` or `#L12-14` on the end.
+---
+--- Which project is this one is asked two ways. By name first: the
+--- project of the link is the project of the merge request, however
+--- the host was spelled and whatever the case. And, where the name is
+--- another, by the commit: a project that has been moved is linked to
+--- under the name it had, a fork is linked to under its upstream's,
+--- and in both the link's sha is a commit this checkout has and no
+--- other repository does. A branch name is no such evidence -- every
+--- repository has a `main` -- so only a sha is asked about.
 ---
 --- Where the ref stops and the path starts is not something the URL
 --- says: `feat/x/src/app.lua` is `src/app.lua` on `feat/x` or
@@ -234,22 +260,30 @@ function M.file_of(href)
   if not (href and project and root) then
     return nil
   end
-  local rest = href:match("^" .. vim.pesc(project) .. "/%-/blob/(.+)$")
+  local theirs, rest = href:match("^https?://[^/]+/(.-)/%-/blob/(.+)$")
   if not rest then
     return nil
   end
+  local mine = project:match("^https?://[^/]+/(.*)$") or ""
+  local same = theirs:lower() == mine:lower()
   local named, fragment = rest:match("^([^#?]*)[^#]*#?(.*)$")
   named = vim.uri_decode(named or "")
   local first, last = fragment:match("^L(%d+)%-?(%d*)")
   for at in named:gmatch("()/") do
-    local path = named:sub(at + 1)
+    local ref, path = named:sub(1, at - 1), named:sub(at + 1)
     local stat = path ~= "" and vim.uv.fs_stat(root .. "/" .. path)
     if stat and stat.type == "file" then
-      return {
-        path = path,
-        line = tonumber(first),
-        last = tonumber(last) or tonumber(first),
-      }
+      if same or (#ref >= 7 and ref:match("^%x+$") and have_commit(root, ref)) then
+        return {
+          path = path,
+          line = tonumber(first),
+          last = tonumber(last) or tonumber(first),
+        }
+      end
+      -- The file is here and the project is not this one by either
+      -- test: a file of somebody else's project that happens to share
+      -- a path with one of ours, which is a page.
+      return nil
     end
   end
   return nil

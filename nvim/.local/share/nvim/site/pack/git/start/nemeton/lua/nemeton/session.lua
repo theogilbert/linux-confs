@@ -1147,6 +1147,20 @@ end
 --- written against.
 ---
 --- It happens constantly -- someone pushes while you are reviewing --
+--- The commit the checkout is at, or nil for a directory git has no
+--- answer for.
+function M.head(root, cb)
+  local cmd = { "git", "rev-parse", "HEAD" }
+  local done = log.exec(cmd, { cwd = root })
+  vim.system(cmd, { text = true, cwd = root }, function(res)
+    done(res.code, res.stderr)
+    local head = vim.trim(res.stdout or "")
+    vim.schedule(function()
+      cb(res.code == 0 and head ~= "" and head or nil)
+    end)
+  end)
+end
+
 --- and the consequence is specific: every line number in every thread
 --- refers to a file you are no longer looking at. Better to say so than
 --- to draw markers next to the wrong code.

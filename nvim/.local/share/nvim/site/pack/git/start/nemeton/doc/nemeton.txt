@@ -239,6 +239,16 @@ ALWAYS                                               *nemeton-mappings-global*
 
     <leader>ml      the merge request list
     <leader>mo      open one by number, asked for instead |:Nemeton|
+    <leader>mL      a link to this line, or (visual) to these lines, on
+                    the clipboard
+
+The link needs a project and not a review, which is why it is here:
+with no merge request open the project is asked of the forge, once,
+and the revision is the checkout's own HEAD -- the commit the line is
+being read at, which is what a permalink is for. A HEAD the forge has
+not been sent yet is a link that works once it has. With a review open
+it links against the merge request's head instead, and on an old side
+|nemeton-old-side| against that revision.
 
 THE REVIEW                                          *nemeton-mappings-session*
 
@@ -269,7 +279,6 @@ a checkout makes it do.
     <leader>mp      peek at the thread on this line
     <leader>ma      comment on this line, or (visual) on these lines
     <leader>ms      (visual) suggest a change to these lines
-    <leader>mL      a link to this line, or (visual) to these lines
     <leader>md      the merge request's own window -- the one review key
                     that is not about the line under the cursor
     <leader>mq      end the review -- the markers and these keys go
@@ -1236,10 +1245,16 @@ it would be a key pressed on the way to `:edit`. The forge's own
 permalink -- `…/-/blob/<ref>/src/app.lua#L12`, or `#L12-14` for a span
 -- opens the file with the cursor on the line, and a bare
 `[the check](src/app.lua#L12)` is the same file once it is on the
-branch. Where the ref stops and the path starts is not something the
-URL says, so it is read off the checkout: the first spelling that is a
-file here is the file, and a link to a file the checkout has not got
-is a page on the forge, as it always was. The line is as the link says
+branch. Which project is this one is asked two ways: by name, however
+the host was spelled; and, under another name, by the commit -- a
+project that has been moved is linked to under the name it had, a fork
+under its upstream's, and in both the link's sha is a commit this
+checkout has and no other repository does. A branch name is no such
+evidence, so only a sha is asked about. Where the ref stops and the
+path starts is not something the URL says, so it is read off the
+checkout: the first spelling that is a file here is the file, and a
+link to a file the checkout has not got is a page on the forge, as it
+always was. The line is as the link says
 it, against whatever the link was written against: a permalink to a
 sha behind the branch can be a line off, the way a thread written
 against last week's push can.

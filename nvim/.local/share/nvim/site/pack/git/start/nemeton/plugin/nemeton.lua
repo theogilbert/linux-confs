@@ -33,12 +33,24 @@ end, {
   desc = "nemeton: review merge requests",
 })
 
-local key = require("nemeton.config").keys.global.list
-if key and key ~= "" then
-  vim.keymap.set("n", key, function()
+local keys = require("nemeton.config").keys.global
+if keys.list and keys.list ~= "" then
+  vim.keymap.set("n", keys.list, function()
     require("nemeton").list()
   end, { silent = true, desc = "nemeton: merge requests" })
   -- Which key this file bound, so that a `setup{}` moving it can take
   -- the old one back rather than leaving both.
-  vim.g.nemeton_global_key = key
+  vim.g.nemeton_global_list = keys.list
+end
+-- ...and a link to the line under the cursor, which needs a project and
+-- not a merge request, so it is here with the way in rather than with
+-- the review keys.
+if keys.link and keys.link ~= "" then
+  vim.keymap.set("n", keys.link, function()
+    require("nemeton").link()
+  end, { silent = true, desc = "nemeton: copy a link to this line" })
+  vim.keymap.set("x", keys.link, function()
+    require("nemeton").link_lines()
+  end, { silent = true, desc = "nemeton: copy a link to these lines" })
+  vim.g.nemeton_global_link = keys.link
 end

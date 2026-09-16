@@ -143,6 +143,16 @@ and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
 `<leader>mo` (`keys.global.open`) is the same thing on a key.
 
+`<leader>mL` puts a link to the line under the cursor — or to the
+selection, in visual mode — on the clipboard, and is global too: what
+you paste into a comment to point at code the comment is not on, or
+into a chat window to point at code at all. It needs a project and not
+a review, so with no merge request open the project is asked of the
+forge, once, and the revision is the checkout's own HEAD — the commit
+the line is being read at, which is what a permalink is for. A HEAD the
+forge has not been sent yet is a link that works once it has. With a
+review open it links against the merge request's head instead.
+
 **That prompt is up on the keypress, not on the answer.** The list is
 the whole reason it exists, so it used to wait for `glab` to say what
 was open before it could be typed into at all — a subprocess and a
@@ -176,7 +186,6 @@ when there is no line to be about.
 | `<leader>mp` | peek at the thread here |
 | `<leader>ma` | comment on this line, or on the lines selected in visual mode |
 | `<leader>ms` | in visual mode: suggest a change to these lines |
-| `<leader>mL` | a link to this line, or to the selection, on the clipboard |
 | `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
 | `]m` `[m` | next / previous comment, across the whole merge request |
@@ -265,10 +274,13 @@ same reason: the file is on the disk, and a key that copied a URL to it
 would be a key pressed on the way to `:edit`. The forge's own permalink
 — `…/-/blob/<ref>/src/app.lua#L12`, or `#L12-14` for a span — opens the
 file with the cursor on the line, and a bare `[the check](src/app.lua#L12)`
-is the same file once it is on the branch. Where the ref stops and the
-path starts is read off the checkout, since the URL does not say; a link
-to a file the checkout has not got is a page on the forge, as it always
-was. The line is as the link says it: a permalink to a sha behind the
+is the same file once it is on the branch. Which project is this one is
+asked by name, however the host was spelled, and — under another name,
+which is what a moved project or a fork's upstream is linked as — by
+whether the link's sha is a commit this checkout has. Where the ref stops
+and the path starts is read off the checkout, since the URL does not say;
+a link to a file the checkout has not got is a page on the forge, as it
+always was. The line is as the link says it: a permalink to a sha behind the
 branch can be a line off, the way a thread written against last week's
 push can.
 

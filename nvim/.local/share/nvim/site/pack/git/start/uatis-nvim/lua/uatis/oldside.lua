@@ -427,6 +427,14 @@ function M.refresh(view)
   if not (old and vim.api.nvim_buf_is_valid(old.buf)) then
     return
   end
+  -- A refresh is the moment the two sides may have changed -- a render
+  -- landing, the revision moving under a commit step -- and `sides` is
+  -- cached against a render count that is bumped only once this has
+  -- run. Opened before the first render, the old window was laid out
+  -- from a cache of the text the view had then, which was nothing:
+  -- every row blank, with the removal bands drawn on the blanks, until
+  -- a second render came along to replace it.
+  view.side_cache = nil
 
   -- The name carries the ref, and the ref moves under an open window when
   -- the base branch is changed. Left alone, `:ls` and the tabline would go

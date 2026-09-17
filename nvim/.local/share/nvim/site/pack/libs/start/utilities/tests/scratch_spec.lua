@@ -39,19 +39,17 @@ describe("scratch", function()
     end
 
     ---The scratches |scratch.search_scratches()| would offer from the current
-    ---directory, obtained by running the listing command it hands to fzf-lua.
+    ---directory, in the order it hands them to fzf-lua.
     local function visible()
         local entries = {}
-        local original_files = fzf.files
-        fzf.files = function(opts)
-            entries = vim.fn.systemlist(
-                ("cd %s && %s"):format(vim.fn.shellescape(opts.cwd), opts.cmd))
+        local original_exec = fzf.fzf_exec
+        fzf.fzf_exec = function(contents)
+            entries = contents
         end
 
         scratch.search_scratches()
 
-        fzf.files = original_files
-        table.sort(entries)
+        fzf.fzf_exec = original_exec
         return entries
     end
 
@@ -114,6 +112,20 @@ describe("scratch", function()
 
         in_new_dir()
         assert.are.same({}, visible())
+    end)
+
+    it("lists project scratches before global ones", function()
+        scratch.setup()
+        in_new_dir()
+
+        new_scratch("global", "a.md")
+        local project = vim.fs.basename(vim.fs.dirname(new_scratch("project", "z.md")))
+        new_scratch("project", "notes/b.md")
+
+        assert.are.same(
+            { project .. "/notes/b.md", project .. "/z.md", "global/a.md" },
+            visible()
+        )
     end)
 
     it("gives two directories sharing a name distinct scratch directories", function()

@@ -81,27 +81,42 @@ function M.setup()
     H.migrate_unscoped_scratches()
 end
 
----List the global scratches together with the ones private to the cwd.
-function M.search_scratches()
-    -- fd is given the scopes as search paths, so entries stay relative to the
-    -- root and read as "<scope>/<name>". A scope directory only exists once it
-    -- holds something, and listing must not be what creates it: fd would
-    -- otherwise be asked to search a path that is not there.
-    local scopes = {}
-    for _, dir in ipairs({ H.global_dir(), H.project_dir() }) do
-        if vim.fn.isdirectory(dir) == 1 then
-            table.insert(scopes, vim.fn.shellescape(vim.fs.basename(dir)))
+---Scratches of one scope, as "<scope>/<name>" entries in name order.
+---
+---@param dir string Scope directory
+---@return string[]
+function H.scope_entries(dir)
+    local entries = {}
+    if vim.fn.isdirectory(dir) == 0 then
+        return entries -- A scope directory only exists once it holds something
+    end
+    local scope = vim.fs.basename(dir)
+    for name, type in vim.fs.dir(dir, { depth = math.huge }) do
+        if type == "file" or type == "link" then
+            table.insert(entries, scope .. "/" .. name)
         end
     end
+    table.sort(entries)
+    return entries
+end
 
-    if #scopes == 0 then
+---List the scratches private to the cwd, then the global ones. Nothing else
+---is offered: the scratches of other projects stay out of sight.
+function M.search_scratches()
+    local entries = {}
+    for _, dir in ipairs({ H.project_dir(), H.global_dir() }) do
+        vim.list_extend(entries, H.scope_entries(dir))
+    end
+
+    if #entries == 0 then
         vim.notify("No scratch file yet", vim.log.levels.INFO)
         return
     end
 
-    fzf.files({
+    fzf.fzf_exec(entries, {
         cwd = H.root(),
-        cmd = "fd --color=never --type f --type l . " .. table.concat(scopes, " "),
+        previewer = "builtin",
+        actions = fzf.defaults.actions.files,
         winopts = { title = " Scratches " },
     })
 end

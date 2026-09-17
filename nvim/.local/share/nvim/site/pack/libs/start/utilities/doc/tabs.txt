@@ -16,6 +16,9 @@ buffer's name, so a tab renames itself every time you switch buffers inside
 it. The `utilities.tabs` module lets you pin an explicit name to a tab
 instead, stored as a tab-local variable and rendered by a custom tabline.
 
+It also remembers the tabs it closes, so that one closed by mistake can be
+reopened with its windows, buffers and name.
+
 ==============================================================================
 2. USAGE                                                           *tabs-usage*
 
@@ -25,6 +28,13 @@ tab's assigned name, falling back to the active buffer's name for tabs that
 have none: >lua
 
     require("utilities.tabs").setup()
+<
+Close tabs through |utilities.tabs.close_current_tab()| rather than
+|:tabclose| to be able to reopen them: >lua
+
+    local tabs = require("utilities.tabs")
+    vim.keymap.set("n", "<C-w>Q", tabs.close_current_tab)
+    vim.keymap.set("n", "<C-w>U", tabs.reopen_closed_tab)
 <
 ==============================================================================
 3. COMMANDS                                                     *tabs-commands*
@@ -52,6 +62,21 @@ utilities.tabs.clear_current_tab_name()      *utilities.tabs.clear_current_tab_n
 
     Clear the current tab's assigned name and notify that it was cleared.
     This is the function |:TabClearName| calls.
+
+utilities.tabs.close_current_tab()          *utilities.tabs.close_current_tab()*
+
+    Close the current tab after recording its name, its window layout and
+    the buffer and cursor position of each window. Only tabs closed this
+    way can be reopened; |:tabclose| and |:quit| record nothing.
+
+utilities.tabs.reopen_closed_tab()          *utilities.tabs.reopen_closed_tab()*
+
+    Reopen the tab closed last by |utilities.tabs.close_current_tab()|, as
+    a new tab at the end of the tabline: the splits are rebuilt, each
+    window shows its buffer again at the cursor position it had, and the
+    name is restored. A buffer wiped in the meantime leaves its window on
+    an empty buffer. Every call reaches one tab further back; with nothing
+    left to reopen, a notification says so.
 
 utilities.tabs.render()                                *utilities.tabs.render()*
 

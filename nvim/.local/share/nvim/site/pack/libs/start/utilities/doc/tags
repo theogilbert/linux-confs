@@ -59,6 +59,7 @@ utilities.clipboard.rotate()	utilities.txt	/*utilities.clipboard.rotate()*
 utilities.clipboard.setup()	utilities.txt	/*utilities.clipboard.setup()*
 utilities.commands.run_and_check()	utilities.txt	/*utilities.commands.run_and_check()*
 utilities.dap.peek_string_value()	utilities.txt	/*utilities.dap.peek_string_value()*
+utilities.dap.prompt_condition()	utilities.txt	/*utilities.dap.prompt_condition()*
 utilities.lsp_completion.complete_inside_identifiers()	utilities.txt	/*utilities.lsp_completion.complete_inside_identifiers()*
 utilities.lsp_sort.deprioritize_test_references()	utilities.txt	/*utilities.lsp_sort.deprioritize_test_references()*
 utilities.lsp_sort.sort_workspace_symbols()	utilities.txt	/*utilities.lsp_sort.sort_workspace_symbols()*
@@ -72,8 +73,10 @@ utilities.table.from_csv()	utilities.txt	/*utilities.table.from_csv()*
 utilities.table.from_structured_data()	utilities.txt	/*utilities.table.from_structured_data()*
 utilities.table.get_column_at_cursor()	utilities.txt	/*utilities.table.get_column_at_cursor()*
 utilities.tabs.clear_current_tab_name()	tabs.txt	/*utilities.tabs.clear_current_tab_name()*
+utilities.tabs.close_current_tab()	tabs.txt	/*utilities.tabs.close_current_tab()*
 utilities.tabs.name_current_tab()	tabs.txt	/*utilities.tabs.name_current_tab()*
 utilities.tabs.render()	tabs.txt	/*utilities.tabs.render()*
+utilities.tabs.reopen_closed_tab()	tabs.txt	/*utilities.tabs.reopen_closed_tab()*
 utilities.tabs.setup()	tabs.txt	/*utilities.tabs.setup()*
 utilities.terminal.send_sel_to_terminals()	utilities.txt	/*utilities.terminal.send_sel_to_terminals()*
 utilities.terminal.send_to_terminals()	utilities.txt	/*utilities.terminal.send_to_terminals()*

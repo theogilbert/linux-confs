@@ -186,15 +186,16 @@ local NS = vim.api.nvim_create_namespace("utilities.clipboard")
 ---How long the confirmation stays on screen, in milliseconds.
 local HINT_MS = 1000
 
----Show a short-lived virtual text at the end of the cursor line.
+---Show a short-lived virtual text right after the cursor, over whatever
+---text follows it.
 ---
 ---@param text string
 function H.hint(text)
     local buf = vim.api.nvim_get_current_buf()
-    local row = vim.api.nvim_win_get_cursor(0)[1] - 1
-    local mark = vim.api.nvim_buf_set_extmark(buf, NS, row, 0, {
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local mark = vim.api.nvim_buf_set_extmark(buf, NS, cursor[1] - 1, cursor[2] + 1, {
         virt_text = { { text, "Comment" } },
-        virt_text_pos = "eol",
+        virt_text_pos = "overlay",
     })
     vim.defer_fn(function()
         if vim.api.nvim_buf_is_valid(buf) then

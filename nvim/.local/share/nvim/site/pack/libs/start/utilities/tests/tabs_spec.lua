@@ -45,6 +45,47 @@ describe("tabs", function()
         assert.are.equal("Tab name cleared", messages[1])
     end)
 
+    describe("close and reopen", function()
+        after_each(function()
+            vim.cmd("tabonly")
+        end)
+
+        it("brings back the windows, buffers and name of the closed tab", function()
+            vim.cmd("tabnew")
+            local top_left = vim.api.nvim_get_current_buf()
+            vim.cmd("vsplit")
+            local right = vim.api.nvim_create_buf(true, false)
+            vim.api.nvim_win_set_buf(0, right)
+            vim.cmd("wincmd h | split")
+            local bottom_left = vim.api.nvim_create_buf(true, false)
+            vim.api.nvim_win_set_buf(0, bottom_left)
+            tabs.name_current_tab("work")
+
+            tabs.close_current_tab()
+            assert.are.equal(1, vim.fn.tabpagenr("$"))
+
+            tabs.reopen_closed_tab()
+
+            assert.are.equal(2, vim.fn.tabpagenr("$"))
+            assert.are.equal("work", vim.t.tabname)
+            local layout = vim.fn.winlayout()
+            assert.are.equal("row", layout[1])
+            assert.are.equal("col", layout[2][1][1])
+            local function buf(leaf) return vim.api.nvim_win_get_buf(leaf[2]) end
+            assert.are.equal(top_left, buf(layout[2][1][2][1]))
+            assert.are.equal(bottom_left, buf(layout[2][1][2][2]))
+            assert.are.equal(right, buf(layout[2][2]))
+        end)
+
+        it("notifies when there is nothing to reopen", function()
+            local messages = stub_notify()
+
+            tabs.reopen_closed_tab()
+
+            assert.are.same({ "No closed tab to reopen" }, messages)
+        end)
+    end)
+
     describe("render", function()
         after_each(function()
             vim.cmd("tabonly")

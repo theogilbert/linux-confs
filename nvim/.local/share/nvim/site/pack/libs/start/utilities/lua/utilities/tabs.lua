@@ -39,6 +39,73 @@ function M.render()
     return table.concat(parts)
 end
 
+---Snapshots of the tabs closed with M.close_current_tab(), oldest first.
+local closed = {}
+
+---Turn a `winlayout()` tree into one that outlives its windows.
+---
+---@param node table
+---@return table
+local function snapshot(node)
+    if node[1] == "leaf" then
+        local win = node[2]
+        return { "leaf", buf = vim.api.nvim_win_get_buf(win), cursor = vim.api.nvim_win_get_cursor(win) }
+    end
+    local children = {}
+    for _, child in ipairs(node[2]) do
+        table.insert(children, snapshot(child))
+    end
+    return { node[1], children }
+end
+
+---Rebuild a snapshot inside a window: a leaf shows its buffer again, a row
+---or column splits the window as many times as it has children.
+---
+---@param node table
+---@param win integer
+local function restore(node, win)
+    if node[1] == "leaf" then
+        if vim.api.nvim_buf_is_valid(node.buf) then
+            vim.api.nvim_win_set_buf(win, node.buf)
+            pcall(vim.api.nvim_win_set_cursor, win, node.cursor)
+        end
+        return
+    end
+    local wins = { win }
+    for i = 2, #node[2] do
+        wins[i] = vim.api.nvim_open_win(vim.api.nvim_win_get_buf(wins[i - 1]), false, {
+            split = node[1] == "row" and "right" or "below",
+            win = wins[i - 1],
+        })
+    end
+    for i, child in ipairs(node[2]) do
+        restore(child, wins[i])
+    end
+end
+
+---Close the current tab, remembering its name, windows and buffers so that
+---M.reopen_closed_tab() can bring it back.
+function M.close_current_tab()
+    table.insert(closed, {
+        name = vim.t.tabname,
+        layout = snapshot(vim.fn.winlayout()),
+    })
+    vim.cmd("tabclose")
+end
+
+---Reopen the tab closed last, as a new tab at the end of the tabline with
+---the same windows, buffers and name. Buffers wiped since are left empty.
+function M.reopen_closed_tab()
+    local tab = table.remove(closed)
+    if not tab then
+        vim.notify("No closed tab to reopen", vim.log.levels.INFO)
+        return
+    end
+    vim.cmd("$tabnew")
+    vim.t.tabname = tab.name
+    restore(tab.layout, vim.api.nvim_get_current_win())
+end
+
 function M.setup()
     vim.api.nvim_create_user_command("TabName", function(opts)
         M.name_current_tab(opts.args)

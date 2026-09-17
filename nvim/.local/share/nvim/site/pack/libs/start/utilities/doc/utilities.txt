@@ -345,7 +345,8 @@ utilities.commands.run_and_check({command})
 ==============================================================================
 6. DAP                                                         *utilities-dap*
 
-Reading a long string in a debugger, without the escapes.
+Reading a long string in a debugger without the escapes, and editing a
+breakpoint condition with the comfort of a real Python buffer.
 
 utilities.dap.peek_string_value()          *utilities.dap.peek_string_value()*
 
@@ -360,6 +361,28 @@ utilities.dap.peek_string_value()          *utilities.dap.peek_string_value()*
     Anything else -- a dict, a list, an object -- falls through to
     `dapui.eval()`, which keeps its expandable tree view. With no session
     running, `dapui.eval()` is called directly.
+
+utilities.dap.prompt_condition()            *utilities.dap.prompt_condition()*
+
+    Set, or edit, the condition of the breakpoint on the cursor line, in a
+    one-line split at the bottom of the screen. <CR>, in insert or normal
+    mode, sets a conditional breakpoint on the line -- replacing whatever
+    breakpoint was there -- and closes the prompt. <Esc> or `q` in normal
+    mode, leaving the window, or an empty condition, cancel and leave the
+    breakpoints as they were. A condition already on the line is prefilled.
+
+    The prompt is not an ordinary input: the buffer behind it is a Python
+    file made of the source up to the breakpoint line, with the condition
+    as its last line at that line's indentation -- as if it were being
+    written on the line above the breakpoint. Syntax highlighting and the
+    language server therefore work as in the source itself, and completion
+    offers the names in scope at that point. The window shows only the
+    condition line, the cursor is kept on it, and diagnostics are off for
+    the buffer.
+
+    The buffer is named `.dap-condition.<source name>` next to the source
+    so that the language server resolves imports from the same project. It
+    never exists on disk and is wiped when the prompt closes.
 
 ==============================================================================
 7. LSP_SORT                                               *utilities-lsp_sort*
@@ -578,8 +601,9 @@ utilities.table.get_column_at_cursor({cols_width}, {virtual_col})
 14. TABS                                                      *utilities-tabs*
 
 Pins an explicit name to a tab page, so a tab stops renaming itself every
-time you switch buffers inside it. Registers |:TabName| and |:TabClearName|.
-See |tabs.txt|.
+time you switch buffers inside it, and reopens closed tabs with their
+windows and buffers. Registers |:TabName| and |:TabClearName|. See
+|tabs.txt|.
 
 ==============================================================================
 15. TERMINAL                                              *utilities-terminal*

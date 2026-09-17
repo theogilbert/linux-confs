@@ -101,4 +101,159 @@ M.peek_string_value = function()
     end)
 end
 
+---Condition of the breakpoint on a line, if there is one.
+---
+---@param bufnr integer
+---@param lnum integer
+---@return string|nil
+local function condition_at(bufnr, lnum)
+    for _, bp in ipairs(require("dap.breakpoints").get(bufnr)[bufnr] or {}) do
+        if bp.line == lnum then
+            return bp.condition
+        end
+    end
+    return nil
+end
+
+---Indentation of a line, taken from the closest non-blank line at or above
+---it.
+---
+---@param lines string[]
+---@param lnum integer
+---@return string
+local function indent_at(lines, lnum)
+    for i = lnum, 1, -1 do
+        local indent, rest = lines[i]:match("^(%s*)(.*)$")
+        if rest ~= "" then
+            return indent
+        end
+    end
+    return ""
+end
+
+---Path the prompt buffer is named after: a file that never exists, next to
+---the source so that the language server resolves imports from the same
+---project.
+---
+---@param source string Path of the source buffer
+---@return string
+local function prompt_name(source)
+    return vim.fs.joinpath(vim.fs.dirname(source), ".dap-condition." .. vim.fs.basename(source))
+end
+
+-- Edit the condition of the breakpoint on the current line in a one-line
+-- split at the bottom. The buffer behind it is a Python file holding the
+-- source up to that line, with the condition as its last line, so that
+-- highlighting and the language server's completion see the names in scope.
+-- The rest of the buffer stays out of sight and the cursor is kept on the
+-- condition. <CR> sets the breakpoint (replacing one already there), <Esc> or
+-- q in normal mode, or leaving the window, cancels; an empty condition cancels
+-- too.
+M.prompt_condition = function()
+    local dap = require("dap")
+    local src_win = vim.api.nvim_get_current_win()
+    local src_buf = vim.api.nvim_get_current_buf()
+    local lnum = vim.api.nvim_win_get_cursor(src_win)[1]
+    local source = vim.api.nvim_buf_get_name(src_buf)
+
+    local lines = vim.api.nvim_buf_get_lines(src_buf, 0, lnum - 1, false)
+    local indent = indent_at(vim.api.nvim_buf_get_lines(src_buf, 0, lnum, false), lnum)
+    table.insert(lines, indent .. (condition_at(src_buf, lnum) or ""))
+    local last = #lines
+
+    local name = prompt_name(source)
+    local stale = vim.fn.bufnr(name)
+    if stale ~= -1 then
+        vim.api.nvim_buf_delete(stale, { force = true })
+    end
+
+    local buf = vim.api.nvim_create_buf(false, false)
+    vim.api.nvim_buf_set_name(buf, name)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].buflisted = false
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].modified = false
+    vim.diagnostic.enable(false, { bufnr = buf })
+
+    vim.cmd("botright 1split")
+    local win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+    vim.wo[win].winfixheight = true
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = "no"
+    vim.wo[win].foldenable = false
+    vim.wo[win].scrolloff = 0
+    vim.wo[win].wrap = false
+    vim.wo[win].statusline = (" Break condition for %s:%d   <CR> set   <Esc> cancel "):format(
+        vim.fn.fnamemodify(source, ":~:."), lnum)
+
+    local closed = false
+    local function close()
+        if closed then
+            return
+        end
+        closed = true
+        if vim.api.nvim_buf_is_valid(buf) then
+            vim.api.nvim_buf_delete(buf, { force = true })
+        end
+        if vim.api.nvim_win_is_valid(src_win) then
+            vim.api.nvim_set_current_win(src_win)
+        end
+    end
+
+    local function confirm()
+        local condition = vim.trim(vim.api.nvim_buf_get_lines(buf, last - 1, last, false)[1] or "")
+        close()
+        if condition == "" or not vim.api.nvim_win_is_valid(src_win) then
+            return
+        end
+        vim.api.nvim_win_call(src_win, function()
+            -- nvim-dap works on the cursor line: point it at the breakpoint
+            -- line for the call, then put it back.
+            local cursor = vim.api.nvim_win_get_cursor(src_win)
+            vim.api.nvim_win_set_cursor(src_win, { lnum, 0 })
+            dap.set_breakpoint(condition)
+            vim.api.nvim_win_set_cursor(src_win, cursor)
+        end)
+    end
+
+    -- Set before entering insert mode, so that nvim-cmp takes the <CR> as
+    -- the fallback of its own mapping.
+    local opts = { buffer = buf, nowait = true, silent = true }
+    vim.keymap.set({ "n", "i" }, "<CR>", confirm, opts)
+    vim.keymap.set("n", "<Esc>", close, opts)
+    vim.keymap.set("n", "q", close, opts)
+
+    local group = vim.api.nvim_create_augroup("utilities_dap_condition_" .. buf, { clear = true })
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = group,
+        buffer = buf,
+        callback = function()
+            if vim.api.nvim_win_get_cursor(win)[1] ~= last then
+                vim.api.nvim_win_set_cursor(win, { last, #lines[last] })
+            end
+        end,
+    })
+    vim.api.nvim_create_autocmd("BufLeave", { group = group, buffer = buf, callback = close })
+    -- The language server attaches after the prompt has entered insert mode,
+    -- and cmp-nvim-lsp only picks up clients on InsertEnter: replay it.
+    vim.api.nvim_create_autocmd("LspAttach", {
+        group = group,
+        buffer = buf,
+        callback = function()
+            if vim.fn.mode():sub(1, 1) == "i" then
+                pcall(vim.api.nvim_exec_autocmds, "InsertEnter", { group = "cmp_nvim_lsp", buffer = buf })
+            end
+        end,
+    })
+
+    -- Filetype last: it starts the language server, which must see the
+    -- final name and content.
+    vim.bo[buf].filetype = "python"
+    vim.api.nvim_win_set_cursor(win, { last, #lines[last] })
+    vim.cmd("startinsert!")
+end
+
 return M

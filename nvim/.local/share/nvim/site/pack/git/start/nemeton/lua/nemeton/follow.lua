@@ -302,11 +302,17 @@ end
 
 --- Puts `text` where a paste will find it.
 ---
---- The `+` register: the system clipboard, which is where "copied"
+--- `config.clipboard` where there is one: the reader whose paste is on
+--- another machine knows how to reach it and this does not. Otherwise
+--- the `+` register: the system clipboard, which is where "copied"
 --- means what a reader outside this editor thinks it means. An editor
 --- built without one leaves it in the unnamed register, which is still
 --- a paste away.
 function M.copy(text)
+  if type(config.clipboard) == "function" then
+    config.clipboard(text)
+    return
+  end
   pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', text)
 end
 

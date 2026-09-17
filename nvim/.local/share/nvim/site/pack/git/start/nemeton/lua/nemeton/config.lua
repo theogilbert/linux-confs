@@ -825,6 +825,19 @@ return {
     mention_menu = true,
   },
 
+  -- Where "copied" puts a link: the one `<leader>mL` makes, and the
+  -- one `<C-]>` falls back to for a reference that is a page somewhere
+  -- (`comments.follow`).
+  --
+  -- Nil is the `+` register -- the system clipboard, which is where
+  -- "copied" means what a reader outside this editor thinks it means
+  -- -- or the unnamed one in an editor built without a clipboard,
+  -- which is still a paste away. A function is yours, called with the
+  -- string: for the editor on the far end of an ssh session, whose
+  -- `+` is a clipboard on the wrong machine, this is where OSC 52
+  -- goes, once, rather than once per kind of link.
+  clipboard = nil,
+
   keys = {
     -- Global, for the one thing you do before there is a session to
     -- have buffer-local keys in.

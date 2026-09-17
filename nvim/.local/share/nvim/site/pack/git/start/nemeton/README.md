@@ -154,6 +154,13 @@ the line is being read at, which is what a permalink is for. A HEAD the
 forge has not been sent yet is a link that works once it has. With a
 review open it links against the merge request's head instead.
 
+Where "copied" puts it is `clipboard` in the config: `nil` is the `+`
+register, and a function is called with the link instead — for the
+editor at the far end of an ssh session, whose `+` is a clipboard on
+the wrong machine, `clipboard = function(text) ... end` is where OSC 52
+goes, once, and every link this plugin copies (this key, and what
+`<C-]>` falls back to) goes through it.
+
 `:Nemeton history` is global for the same reason — it is a question
 about the file in front of you, and it is asked of the checkout rather
 than of the forge — and unbound by default; `keys.global.history` puts
@@ -230,6 +237,17 @@ opening, until the review is loaded. A checkout that fails says so in
 the window, folded to fit and whole — what git said was in the way and
 what to do about it, not the nine lines `glab` wrapped around it — and
 `<CR>` puts the queue back.
+
+One failure is not one: a branch deleted with its merge. `glab mr
+checkout` fetches the source branch by name, and the merged merge
+request is the one you open to find out how something came to be done
+that way. GitLab keeps the commits under `refs/merge-requests/<iid>/head`
+for as long as the merge request exists, so when glab cannot find the
+branch — or the merge request says it is merged or closed — the head is
+fetched by that ref from the remote whose address is the merge
+request's project, and checked out **detached**: a branch of the
+deleted one's name would be one nobody can push, and a review of history
+is read rather than written to. It says so once the review is open.
 
 A row's CI, its approvals and how much it changes are three questions
 GitLab's list payload does not answer, asked one row at a time and drawn

@@ -256,6 +256,9 @@ not been sent yet is a link that works once it has. With a review open
 it links against the merge request's head instead, and on an old side
 |nemeton-old-side| against that revision.
 
+Where "copied" puts it is `clipboard` |nemeton-config-clipboard|: the
+`+` register, or a function of yours.
+
 `:Nemeton history` |nemeton-history-window| is global for the same
 reason -- a question about the file in front of you, asked of the
 checkout rather than of the forge -- and unbound by default:
@@ -402,6 +405,17 @@ banner between them, or an "exit status 1" that says only that
 something failed. `<CR>` puts the queue back underneath it without
 asking the forge for it again. What `glab` said in full is in the log.
 |nemeton-log|
+
+One failure is not one: a branch deleted with its merge. `glab mr
+checkout` fetches the source branch by name, and the merged merge
+request is the one opened to find out how something came to be done
+that way. GitLab keeps the commits under `refs/merge-requests/<iid>/
+head` for as long as the merge request exists, so when glab cannot find
+the branch -- or the merge request says it is merged or closed -- the
+head is fetched by that ref, from the remote whose address is the merge
+request's project, and checked out detached: a branch of the deleted
+one's name would be one nobody can push, and a review of history is
+read rather than written to. It says so once the review is open.
 
 `s` walks the queue through the four states GitLab has: the open ones a
 review queue is made of, then the merged, the closed, and all of them
@@ -1832,6 +1846,23 @@ completes. Using a completion engine instead? Point it at
 `require("nemeton.mentions").candidates(root, prefix)`, which is what
 the omnifunc reads.
 
+CLIPBOARD                                           *nemeton-config-clipboard*
+>
+    clipboard = nil,         -- nil: the `+` register | fun(text)
+<
+Where "copied" puts a link: the one `<leader>mL` makes, and the one
+`<C-]>` falls back to for a reference that is a page somewhere
+|nemeton-follow|. `nil` is the `+` register -- the system clipboard,
+or the unnamed register in an editor built without one, which is still
+a paste away. A function is yours, called with the string: for the
+editor at the far end of an ssh session, whose `+` is a clipboard on
+the wrong machine, this is where OSC 52 goes, once, rather than once
+per kind of link. >lua
+
+    clipboard = function(text)
+      require("vim.ui.clipboard.osc52").copy("+")({ text })
+    end
+<
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,

@@ -786,6 +786,90 @@ function M.refresh_changes(cb)
   end)
 end
 
+--- A git URL as `host/path`, however it was spelled -- `https://` with
+--- or without a user in front, `ssh://` with or without a port,
+--- `git@host:path` -- so that a remote and the forge's own page for the
+--- project can be asked whether they are the same repository.
+local function address(url)
+  local u = url:gsub("%.git/?$", ""):gsub("/+$", "")
+  local host, path = u:match("^%a[%w+.%-]*://[^/@]*@?([^/:]+):?%d*/(.+)$")
+  if not host then
+    host, path = u:match("^[^@/]+@([^:/]+):(.+)$")
+  end
+  return host and (host .. "/" .. path) or nil
+end
+
+--- Checks the merge request's head out by the ref the forge keeps for
+--- it, for a merge request whose branch is gone.
+---
+--- `glab mr checkout` fetches the source branch by name, and the
+--- branch of a merged merge request is usually deleted with the merge
+--- -- which is exactly the merge request you open to find out how
+--- something came to be done that way. GitLab keeps
+--- `refs/merge-requests/<iid>/head` on the project for as long as the
+--- merge request exists, so the commits are still there under the one
+--- name that does not go away.
+---
+--- Detached, on purpose. A branch of the deleted one's name would be a
+--- branch nobody can push, and one the reviewer may still have local
+--- commits on that a reset would throw away; a review of history is
+--- read, not written to.
+---
+--- From the remote whose URL names the merge request's project, which
+--- is where the ref lives -- a fork's remote has merge requests of its
+--- own under the same numbers -- and from `origin` where no remote's
+--- address can be read. `cb(true)` once checked out, or `cb(false,
+--- why, fetched)`: `fetched` says the ref was there and the checkout
+--- itself is what failed, which is a different sentence.
+function M.checkout_ref(root, mr, cb)
+  local function git(args, next)
+    local cmd = vim.list_extend({ "git" }, args)
+    local done = log.exec(cmd, { cwd = root })
+    vim.system(cmd, { text = true, cwd = root }, function(res)
+      done(res.code, res.stderr)
+      vim.schedule(function()
+        next(res)
+      end)
+    end)
+  end
+  local project = mr.web_url and address((mr.web_url:match("^(.-)/%-/merge_requests/") or ""))
+  git({ "config", "--get-regexp", "^remote\\..*\\.url$" }, function(all)
+    local remote, first = nil, nil
+    for line in (all.stdout or ""):gmatch("[^\n]+") do
+      local name, url = line:match("^remote%.(.+)%.url%s+(%S+)")
+      if name then
+        first = first or name
+        if name == "origin" and not remote then
+          remote = name
+        end
+        if project and address(url) == project then
+          remote = name
+          break
+        end
+      end
+    end
+    remote = remote or first
+    if not remote then
+      cb(false, "no remote to fetch from")
+      return
+    end
+    local ref = ("refs/merge-requests/%d/head"):format(mr.iid)
+    git({ "fetch", remote, ref }, function(res)
+      if res.code ~= 0 then
+        cb(false, vim.trim(res.stderr or ""))
+        return
+      end
+      git({ "checkout", "--detach", "FETCH_HEAD" }, function(out)
+        if out.code ~= 0 then
+          cb(false, vim.trim(out.stderr or ""), true)
+          return
+        end
+        cb(true)
+      end)
+    end)
+  end)
+end
+
 --- Opens a merge request: fetch it, check its branch out, fetch the
 --- threads, draw them.
 ---
@@ -807,6 +891,13 @@ function M.open(iid, opts)
   end
 
   local mr, checked_out, failed = nil, opts.checkout == false, false
+  -- What glab said when it could not check the branch out, kept until
+  -- the merge request has arrived and can say whether that is the
+  -- branch being gone -- and nil again once it has been acted on.
+  local checkout_error = nil
+  -- ...and that it was: said once the review is open, since a HEAD
+  -- that is on no branch is a thing to know before the first edit.
+  local detached = false
 
   -- Something is happening, and until the branch is checked out and the
   -- discussions are in there is nothing on the screen to say so: two
@@ -882,6 +973,14 @@ function M.open(iid, opts)
       notify(
         ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
       )
+      if detached then
+        notify(
+          ("its branch %s is gone from the remote — checked out detached at the merge request's head"):format(
+            mr.source_branch or "?"
+          ),
+          vim.log.levels.WARN
+        )
+      end
       if opts.on_open then
         opts.on_open()
       end
@@ -893,8 +992,38 @@ function M.open(iid, opts)
   end
 
   --- Called by each of the two; the second one through does the work.
+  ---
+  --- A checkout glab gave up on is not the end of it. The branch of a
+  --- merged merge request is usually deleted with the merge, and the
+  --- forge keeps the commits under a ref of its own -- so once the
+  --- merge request has arrived and says it is merged or closed, or
+  --- glab's own words say the branch is what was missing, the head is
+  --- fetched by that ref instead. Anything else glab refused -- a
+  --- dirty working tree on an open merge request -- is refused here
+  --- too, in glab's words.
   local function ready()
-    if failed or not (mr and checked_out) then
+    if failed or not mr then
+      return
+    end
+    if checkout_error then
+      local why = checkout_error
+      checkout_error = nil
+      if mr.state ~= "opened" or why:match("couldn't find remote ref") then
+        M.checkout_ref(root, mr, function(ok, err, fetched)
+          if not ok then
+            fail("checkout failed\n" .. (fetched and err or why))
+            return
+          end
+          vim.cmd("checktime")
+          checked_out, detached = true, true
+          ready()
+        end)
+      else
+        fail("checkout failed\n" .. why)
+      end
+      return
+    end
+    if not checked_out then
       return
     end
     loaded()
@@ -914,8 +1043,10 @@ function M.open(iid, opts)
       if not ok then
         -- On its own line: what follows is git's own sentence, often
         -- beginning "error:", and "checkout failed: error: ..." reads
-        -- as a failure inside a failure.
-        fail("checkout failed\n" .. out)
+        -- as a failure inside a failure. Not yet a failure, though --
+        -- `ready` decides that, with the merge request in hand.
+        checkout_error = out
+        ready()
         return
       end
       -- Neovim is still showing the files from the branch we left.

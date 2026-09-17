@@ -247,9 +247,9 @@ utilities.clipboard.osc52_yank()            *utilities.clipboard.osc52_yank()*
     Yank the visual selection into register `o` -- never `"`, `+` or `*`,
     so the provider in effect is not involved -- and write it to the
     terminal as an OSC 52 sequence. The number of lines copied is shown
-    for a second as virtual text at the end of the cursor line, in the
-    `Comment` highlight, rather than as a message. Meant for a visual-mode
-    keymap.
+    for a second as virtual text right after the cursor, in the `Comment`
+    highlight and over whatever text follows on the line, rather than as
+    a message. Meant for a visual-mode keymap.
 
     The backend is left untouched: this is for the odd yank that has to
     reach the physical machine while the default keeps everything local.
@@ -507,8 +507,10 @@ utilities.scratch.setup()                          *utilities.scratch.setup()*
 
 utilities.scratch.search_scratches()    *utilities.scratch.search_scratches()*
 
-    Pick a scratch with `fzf-lua`, among the global ones and those of the
-    current working directory. Entries read as `<scope>/<name>`.
+    Pick a scratch with `fzf-lua`, among those of the current working
+    directory and the global ones, in that order and sorted by name within
+    each scope. Entries read as `<scope>/<name>`. Scratches of other
+    projects are never listed.
 
 utilities.scratch.prompt_new_file()      *utilities.scratch.prompt_new_file()*
 

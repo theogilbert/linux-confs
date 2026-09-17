@@ -199,10 +199,21 @@ local dapui = require("dapui")
 local dap_settings = require("dap-plugins")
 vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint, { desc = "Toggle [B]reakpoint" })
 vim.keymap.set("n", "<leader>dC", function()
+	-- suit.nvim runs the callback while its floating prompt is still the
+	-- current window, and nvim-dap places breakpoints at the current
+	-- window's cursor: go back to the code window for the call.
+	local win = vim.api.nvim_get_current_win()
 	vim.ui.input({ prompt = "Break condition: " }, function(cond)
-		dap.toggle_breakpoint(cond)
+		if cond == nil or cond == "" then
+			return -- cancelled
+		end
+		vim.api.nvim_win_call(win, function()
+			-- set_breakpoint replaces an existing breakpoint on the line, where
+			-- toggle_breakpoint would remove it instead.
+			dap.set_breakpoint(cond)
+		end)
 	end)
-end, { desc = "Toggle [C]onditional breakpoint" })
+end, { desc = "Set [C]onditional breakpoint" })
 vim.keymap.set("n", "<leader>dU", dapui.toggle, { desc = "Toggle DAP [U]I" })
 vim.keymap.set("n", "<leader>dr", dap.continue, { desc = "[R]un / continue" })
 vim.keymap.set("n", "<leader>dR", dap.restart, { desc = "[R]estart" })

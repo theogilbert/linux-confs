@@ -34,6 +34,7 @@ utilities-contents	utilities.txt	/*utilities-contents*
 utilities-dap	utilities.txt	/*utilities-dap*
 utilities-dependencies	utilities.txt	/*utilities-dependencies*
 utilities-introduction	utilities.txt	/*utilities-introduction*
+utilities-lsp_completion	utilities.txt	/*utilities-lsp_completion*
 utilities-lsp_sort	utilities.txt	/*utilities-lsp_sort*
 utilities-quick_term	utilities.txt	/*utilities-quick_term*
 utilities-runner	utilities.txt	/*utilities-runner*
@@ -58,6 +59,7 @@ utilities.clipboard.rotate()	utilities.txt	/*utilities.clipboard.rotate()*
 utilities.clipboard.setup()	utilities.txt	/*utilities.clipboard.setup()*
 utilities.commands.run_and_check()	utilities.txt	/*utilities.commands.run_and_check()*
 utilities.dap.peek_string_value()	utilities.txt	/*utilities.dap.peek_string_value()*
+utilities.lsp_completion.complete_inside_identifiers()	utilities.txt	/*utilities.lsp_completion.complete_inside_identifiers()*
 utilities.lsp_sort.deprioritize_test_references()	utilities.txt	/*utilities.lsp_sort.deprioritize_test_references()*
 utilities.lsp_sort.sort_workspace_symbols()	utilities.txt	/*utilities.lsp_sort.sort_workspace_symbols()*
 utilities.runner.run_python_file()	utilities.txt	/*utilities.runner.run_python_file()*

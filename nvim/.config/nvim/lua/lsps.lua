@@ -74,6 +74,8 @@ vim.lsp.config("basedpyright", {
 })
 
 vim.lsp.config("ty", {
+    -- ty returns no attribute completions when the cursor is inside an identifier
+    on_attach = require("utilities.lsp_completion").complete_inside_identifiers,
     settings = {
         ty = {
             completions = {

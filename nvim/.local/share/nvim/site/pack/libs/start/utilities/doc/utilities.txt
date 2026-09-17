@@ -22,15 +22,16 @@ CONTENTS                                                  *utilities-contents*
      5. commands ............................ |utilities-commands|
      6. dap ................................. |utilities-dap|
      7. lsp_sort ............................ |utilities-lsp_sort|
-     8. quick_term .......................... |utilities-quick_term|
-     9. runner .............................. |utilities-runner|
-    10. scratch ............................. |utilities-scratch|
-    11. search .............................. |utilities-search|
-    12. table ............................... |utilities-table|
-    13. tabs ................................ |utilities-tabs|
-    14. terminal ............................ |utilities-terminal|
-    15. window_picker ....................... |utilities-window_picker|
-    16. Tests ............................... |utilities-tests|
+     8. lsp_completion ...................... |utilities-lsp_completion|
+     9. quick_term .......................... |utilities-quick_term|
+    10. runner .............................. |utilities-runner|
+    11. scratch ............................. |utilities-scratch|
+    12. search .............................. |utilities-search|
+    13. table ............................... |utilities-table|
+    14. tabs ................................ |utilities-tabs|
+    15. terminal ............................ |utilities-terminal|
+    16. window_picker ....................... |utilities-window_picker|
+    17. Tests ............................... |utilities-tests|
 
 ==============================================================================
 1. INTRODUCTION                                       *utilities-introduction*
@@ -116,7 +117,9 @@ local desktop and over ssh: the same nvim wants wl-copy on the desktop, the
 tmux paste buffer on a remote server, and OSC 52 only when a yank genuinely
 has to reach the machine sitting in front of you.
 
-This module turns that into a two-way switch with a remembered default.
+This module turns that into a two-way switch with a remembered default, plus
+a one-off yank over OSC 52 for when the default is "keep it local" and a
+single yank still has to reach the physical machine.
 
 ------------------------------------------------------------------------------
 4.1 BACKENDS                                    *utilities-clipboard-backends*
@@ -172,6 +175,12 @@ without restarting: >lua
 
     vim.keymap.set("n", "<Leader>Oc", require("utilities.clipboard").rotate,
         { desc = "Toggle [O]ption [C]lipboard (osc52 -> tmux -> auto)" })
+<
+And |utilities.clipboard.osc52_yank()| in visual mode, so that a selection
+can be pushed to the physical machine without switching backend first: >lua
+
+    vim.keymap.set("x", "<leader>y", require("utilities.clipboard").osc52_yank,
+        { desc = "[Y]ank over OSC 52" })
 <
 ------------------------------------------------------------------------------
 4.3 CHOOSING THE DEFAULT                         *utilities-clipboard-default*
@@ -232,6 +241,25 @@ utilities.clipboard.rotate()                    *utilities.clipboard.rotate()*
     Both are named because they do not always match: "auto" and "tmux"
     outside of tmux resolve to the same autodetected provider, so only the
     backend name tells them apart.
+
+utilities.clipboard.osc52_yank()            *utilities.clipboard.osc52_yank()*
+
+    Yank the visual selection into register `o` -- never `"`, `+` or `*`,
+    so the provider in effect is not involved -- and write it to the
+    terminal as an OSC 52 sequence. The number of lines copied is shown
+    for a second as virtual text at the end of the cursor line, in the
+    `Comment` highlight, rather than as a message. Meant for a visual-mode
+    keymap.
+
+    The backend is left untouched: this is for the odd yank that has to
+    reach the physical machine while the default keeps everything local.
+    It needs the same cooperation from tmux and the terminal as the
+    "osc52" backend, see |utilities-clipboard-trouble|.
+
+utilities.clipboard.osc52_send({lines})     *utilities.clipboard.osc52_send()*
+
+    Write {lines}, a list of strings, to the terminal over OSC 52. What
+    |utilities.clipboard.osc52_yank()| calls once it has the text.
 
 utilities.clipboard.provider_name()      *utilities.clipboard.provider_name()*
 
@@ -358,13 +386,74 @@ utilities.lsp_sort.deprioritize_test_references()
     `/test/` or `/tests/` segment come last.
 
 ==============================================================================
-8. QUICK_TERM                                           *utilities-quick_term*
+8. LSP_COMPLETION                                   *utilities-lsp_completion*
+
+Working around servers whose `textDocument/completion` returns nothing when
+the cursor sits inside an identifier. ty does this for attribute access:
+`os.pa|` completes, `os.p|a` and `os.|pa` do not, so going back into a word
+to change it gives no menu at all.
+
+                         *utilities.lsp_completion.complete_inside_identifiers()*
+utilities.lsp_completion.complete_inside_identifiers({client})
+
+    Wrap {client}'s `request` method so that a completion request made with
+    identifier characters right after the cursor is answered as if they
+    were not there. Meant as the client's `on_attach`: >lua
+
+        vim.lsp.config("ty", {
+            on_attach = require("utilities.lsp_completion")
+                .complete_inside_identifiers,
+        })
+<
+    A client is wrapped once, however many buffers attach to it, and only
+    if it uses incremental document sync. Requests for other methods, and
+    completion requests with no identifier after the cursor, are passed
+    straight through.
+
+    How it works ~
+
+    The server cannot be asked to ignore part of the document, so it is
+    shown a different one. For a request at `os.p|ath`:
+
+    1. neovim's pending `didChange` notifications for the buffer are
+       flushed, so the server is up to date before anything is faked.
+    2. A `didChange` carrying the full buffer text with `ath` removed is
+       sent, under a throwaway version number.
+    3. The request goes out as-is; its position is unchanged since only
+       text after the cursor was removed.
+    4. When the response arrives -- before the caller's handler runs --
+       pending changes are flushed again and a `didChange` with the real
+       buffer text puts the server's document back in sync.
+
+    Full-document syncs are used in both directions because the buffer may
+    have been edited between 2 and 4: an incremental restore would then
+    insert the identifier tail at a position that no longer means anything.
+    With the real content re-sent at the end, whatever incremental edits
+    the server saw against the faked document in between do not matter.
+    Overlapping requests on the same buffer are counted, and the restore
+    waits for the last one to answer.
+
+    Version numbers ~
+
+    ty derives a document's revision from the `didChange` version and
+    re-analyses only when it differs from the previous one (it need not
+    increase). Faked documents therefore get decreasing negative versions
+    a real edit can never produce, and the restore uses the buffer's real
+    version minus one: different from the throwaway one, different from
+    the version of an edit flushed while the request was in flight, and
+    smaller than every version neovim will send afterwards.
+
+    The wrapper relies on `vim.lsp._changetracking.flush()` and
+    `vim.lsp.util.buf_versions`, both private to neovim.
+
+==============================================================================
+9. QUICK_TERM                                           *utilities-quick_term*
 
 Runs a command in a throwaway floating or bottom-split terminal, closing the
 window when the process exits. See |quick_term.txt|.
 
 ==============================================================================
-9. RUNNER                                                   *utilities-runner*
+10. RUNNER                                                  *utilities-runner*
 
 Running the Python file you are editing, and feeding a REPL from the buffer.
 Both open a `belowright` split and return focus to the window you started
@@ -391,7 +480,7 @@ utilities.runner.send_selection_to_repl()
     indented block would otherwise end the block early in the REPL.
 
 ==============================================================================
-10. SCRATCH                                                *utilities-scratch*
+11. SCRATCH                                                *utilities-scratch*
 
 Throwaway files that persist, kept together under
 `stdpath("data") .. "/scratches/"` rather than scattered across `/tmp`. They
@@ -429,7 +518,7 @@ utilities.scratch.prompt_new_file()      *utilities.scratch.prompt_new_file()*
     rejected name and the reason, so it can be corrected rather than retyped.
 
 ==============================================================================
-11. SEARCH                                                  *utilities-search*
+12. SEARCH                                                  *utilities-search*
 
 utilities.search.grep({opts})                        *utilities.search.grep()*
 
@@ -448,7 +537,7 @@ utilities.search.grep({opts})                        *utilities.search.grep()*
                     and pass it as `-t` before searching.
 
 ==============================================================================
-12. TABLE                                                    *utilities-table*
+13. TABLE                                                    *utilities-table*
 
 A CSV parser and a fixed-width table formatter, used to render query results
 as aligned text.
@@ -484,14 +573,14 @@ utilities.table.get_column_at_cursor({cols_width}, {virtual_col})
     cursor sits on a separator between columns.
 
 ==============================================================================
-13. TABS                                                      *utilities-tabs*
+14. TABS                                                      *utilities-tabs*
 
 Pins an explicit name to a tab page, so a tab stops renaming itself every
 time you switch buffers inside it. Registers |:TabName| and |:TabClearName|.
 See |tabs.txt|.
 
 ==============================================================================
-14. TERMINAL                                              *utilities-terminal*
+15. TERMINAL                                              *utilities-terminal*
 
 Sending buffer text to the terminals of the current tab. Each send appends a
 newline, so what is sent is executed.
@@ -509,7 +598,7 @@ utilities.terminal.send_to_terminals({text})
     nothing when the tab has no terminal.
 
 ==============================================================================
-15. WINDOW_PICKER                                    *utilities-window_picker*
+16. WINDOW_PICKER                                    *utilities-window_picker*
 
 Jumping to a window by letter instead of by repeated <C-w>w.
 
@@ -532,7 +621,7 @@ utilities.window_picker.get_ordered_wins()
     The labels are drawn with the `UtilWindowPickerLabel` highlight group.
 
 ==============================================================================
-16. TESTS                                                    *utilities-tests*
+17. TESTS                                                    *utilities-tests*
 
 Specs live in `tests/`, one `<module>_spec.lua` per covered module, written
 in the `describe`/`it` style. |utilities-scratch|, |utilities-table|,

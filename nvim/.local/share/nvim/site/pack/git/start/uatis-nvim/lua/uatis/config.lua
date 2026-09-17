@@ -140,6 +140,12 @@ return {
     tab = true,
   },
 
+  tab = {
+    -- The tab variable `:UatisShow` names the tab it opens in --
+    -- `t:tabname` -- for a tabline that shows one. `false` for none.
+    name = "tabname",
+  },
+
   diff = {
     -- Which backend a view starts in: "struct" or "line". Both are
     -- reachable at any time with `keys.view.diff_mode`.

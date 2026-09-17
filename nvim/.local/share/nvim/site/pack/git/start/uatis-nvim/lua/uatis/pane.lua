@@ -1726,6 +1726,25 @@ function M.hide(pane)
   end
 end
 
+--- Names the tab this module opened after the commit it opened it for,
+--- for a tabline that shows names.
+---
+--- Neovim has no name for a tab, only a number, and a tabline that draws
+--- one reads it off a tab variable -- `config.tab.name` says which. Only
+--- a tab of the review's OWN: nothing else is ever in it, so the sha is
+--- what the tab is. A review running in the reader's tab names nothing,
+--- since that tab holds their own work too, and may already carry a name
+--- they gave it. The tab goes when the review does, so there is nothing
+--- to put back.
+local function name_tab(pane)
+  local var = config.tab.name
+  if not var or var == "" or not pane.owns_tab then
+    return
+  end
+  vim.api.nvim_tabpage_set_var(pane.tab, var, pane.commit.short)
+  vim.cmd("redrawtabline")
+end
+
 function M.close(pane)
   pane = pane or M.get()
   if not pane or pane.closing then
@@ -2144,6 +2163,7 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     pane.src = opts.commit.short
   end
 
+  name_tab(pane)
   pane.hint = hint_for(pane)
   panes[tab] = pane
   pane.on_ready = opts.on_ready

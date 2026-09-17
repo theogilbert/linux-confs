@@ -461,6 +461,15 @@ macro -- and `q` in the list still means only the list |uatis-mappings-pane|.
 There the review is ended with `<leader>gu`, which leaves your tab as it
 found it.
 
+                                                              *uatis-tab-name*
+Neovim has no name for a tab, only a number; a tabline that shows one reads
+it off a tab variable. The tab |:UatisShow| opens is named the commit's
+short sha in `t:tabname` -- nothing else is ever in that tab, so the sha is
+what the tab is. A review running in a tab of your own names nothing: that
+tab holds your own work too, and may already carry a name you gave it.
+`tab = { name = "..." }` picks the variable your tabline reads; `false`
+leaves tabs alone.
+
                                                         *uatis-commit-message*
 The header puts sha, date and author on one greyed row and the message under
 it in the buffer's own colour: the first is how you FIND a commit, the second
@@ -545,6 +554,10 @@ comment on each saying what it controls. The commonly-changed ones: >lua
         follow = true,        -- annotate a listed file as you arrive at it
         auto_read = true,     -- ]c / [c mark the chunk they move away from
         remember_read = true, -- ...and the marks outlive the session
+      },
+      tab = {
+        name = "tabname",     -- the tab variable :UatisShow names its tab
+                              -- in, see |uatis-tab-name|; false for none
       },
       diff = {
         default_backend = "struct",   -- or "line"

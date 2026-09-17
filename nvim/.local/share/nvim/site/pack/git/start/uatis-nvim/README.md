@@ -217,6 +217,11 @@ to go here and say so; walking a branch a commit at a time is
 `<leader>gh`, inside a review of it. `show = { tab = false }` opens it in
 place instead, which does end whatever review that tab was holding.
 
+The tab is named after the commit — `t:tabname`, for a tabline that shows
+names. Only that tab: a review running in a tab of your own holds your own
+work too, and keeps whatever name you gave it. `tab = { name = "..." }`
+picks the variable your tabline reads.
+
 `q` in the list closes that window and nothing else — in a tab you
 opened yourself. (In one `:UatisShow` opened it ends the commit, above.)
 The review goes on,
@@ -374,6 +379,7 @@ require("uatis").setup({
     progress = false,                 -- no progress bar under the list
   },
   show = { tab = false },             -- :UatisShow in place, not in a new tab
+  tab = { name = false },             -- do not name the tab :UatisShow opens
   diff = { default_backend = "line" },
   keys = { view = { layout = "<leader>gv" } },
 })

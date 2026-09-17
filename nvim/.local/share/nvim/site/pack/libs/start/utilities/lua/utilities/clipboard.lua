@@ -181,6 +181,28 @@ function M.osc52_send(lines)
     require("vim.ui.clipboard.osc52").copy("+")(lines)
 end
 
+local NS = vim.api.nvim_create_namespace("utilities.clipboard")
+
+---How long the confirmation stays on screen, in milliseconds.
+local HINT_MS = 1000
+
+---Show a short-lived virtual text at the end of the cursor line.
+---
+---@param text string
+function H.hint(text)
+    local buf = vim.api.nvim_get_current_buf()
+    local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local mark = vim.api.nvim_buf_set_extmark(buf, NS, row, 0, {
+        virt_text = { { text, "Comment" } },
+        virt_text_pos = "eol",
+    })
+    vim.defer_fn(function()
+        if vim.api.nvim_buf_is_valid(buf) then
+            vim.api.nvim_buf_del_extmark(buf, NS, mark)
+        end
+    end, HINT_MS)
+end
+
 ---One-off copy of the visual selection over OSC 52, leaving the backend
 ---alone.  For a visual-mode keymap.
 function M.osc52_yank()
@@ -188,7 +210,7 @@ function M.osc52_yank()
 
     local lines = vim.fn.getreg(OSC52_REG, 1, true)
     M.osc52_send(lines)
-    vim.notify(("OSC 52: %d line%s copied"):format(#lines, #lines == 1 and "" or "s"), vim.log.levels.INFO)
+    H.hint(("OSC 52: %d line%s copied"):format(#lines, #lines == 1 and "" or "s"))
 end
 
 return M

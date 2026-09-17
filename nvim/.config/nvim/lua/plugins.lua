@@ -167,28 +167,17 @@ require("grannos").setup({
 
 local uatis = require("uatis")
 
--- Over OSC 52 rather than into `+`: a link is followed to be pasted
--- somewhere on the physical machine, whichever backend `+` is on.
-local function copy_link(_, href)
-    if not href then
-        vim.notify("No link to copy", vim.log.levels.WARN)
-        return
-    end
-    require("utilities.clipboard").osc52_send({ href })
-    vim.notify("Link copied over OSC 52", vim.log.levels.INFO)
-end
-
 require("nemeton").setup({
+    -- Over OSC 52 rather than into `+`: a link is copied to be pasted
+    -- somewhere on the physical machine, whichever backend `+` is on.
+    -- Every link nemeton copies -- <leader>mL, and what <C-]> falls
+    -- back to on a page, an issue, a merge request -- goes this way.
+    clipboard = function(text)
+        require("utilities.clipboard").osc52_send({ text })
+    end,
     comments = {
         follow = {
             commit = uatis.show_commit,
-            -- Every kind whose answer is a link to paste: a page on the
-            -- forge, a page anywhere, and the issue or merge request a
-            -- comment names.
-            url = copy_link,
-            path = copy_link,
-            issue = copy_link,
-            mr = copy_link,
         },
         -- Where the two plugins meet, and the only place that knows
         -- both are installed. uatis says which buffer is showing which

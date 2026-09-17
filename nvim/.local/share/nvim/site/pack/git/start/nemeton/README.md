@@ -653,6 +653,14 @@ conversation is drawn in here, so you have already answered the question
 a picker would ask. The head of a note counts as part of it; on a line
 that is nobody's comment, the list is still asked.
 
+`x` settles the thread on the keypress — tick, gutter, dimming — and
+the forge confirms it after, a refusal putting it back: the verdict is
+the reviewer's own, and four round trips between the key and the tick
+was a key that seemed not to work. It moves on, too, to the next thread
+owed an answer the way `]m` would, since resolving is the end of reading
+a thread; reopening is the start of one and stays put.
+`comments.resolve_next = false` stays put either way.
+
 `g?` prints all eleven of them in a float, which is what the header says
 about the keys: it used to spend its right-hand side on `]m next · r
 reply · <CR> code · q close`, said in full and then as the letters alone

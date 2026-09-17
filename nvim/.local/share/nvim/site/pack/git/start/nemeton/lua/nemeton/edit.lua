@@ -242,6 +242,19 @@ end
 --- Here rather than beside the key that used to be the only way to
 --- press it, because it is the same verb from the pane, and a thread is
 --- settled from wherever it is being read.
+---
+--- Drawn settled on the keypress, and confirmed after. The forge is
+--- the source of truth for what a thread *says*, which is why a
+--- comment is never invented locally -- but whether it is settled is
+--- one bit, the verdict is the reviewer's own, and waiting for the PUT
+--- and then the three calls of a refresh to draw a tick was four round
+--- trips between the key and the thing it did. A refusal puts the bit
+--- back and says so.
+---
+--- ...and moves on. Resolving is the end of reading a thread, and the
+--- next thing owed an answer is where `]m` was about to go anyway
+--- (`comments.resolve_next`). Not on reopening, which is the start of
+--- one.
 function M.resolve(thread)
   local mr = session.current
   if not mr or not thread then
@@ -256,8 +269,15 @@ function M.resolve(thread)
     return
   end
   local want = not thread.resolved
+  thread.resolved = want
+  session.redraw_all()
+  if want and config.comments.resolve_next then
+    session.walk_on()
+  end
   glab.resolve(mr.root, mr.iid, thread.id, want, function(data, err)
     if not data then
+      thread.resolved = not want
+      session.redraw_all()
       session.refused("could not resolve", err)
       return
     end

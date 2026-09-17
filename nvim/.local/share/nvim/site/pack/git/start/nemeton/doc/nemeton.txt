@@ -651,7 +651,14 @@ between two threads, the code one was written against -- the list is
 still asked.
 
 `x` is the one verb here that is about the thread rather than a comment
-in it: an argument is settled as a whole.
+in it: an argument is settled as a whole. Settled on the keypress -- the
+tick, the gutter, the dimming -- and confirmed by the forge after, with
+a refusal putting it back: the verdict is the reviewer's own, and four
+round trips between the key and the tick was a key that seemed not to
+work. And it moves on, to the next thread owed an answer, the way `]m`
+would, since resolving is the end of reading a thread; reopening is the
+start of one and stays put. `comments.resolve_next = false` stays put
+either way.
 
 `+` reacts |nemeton-reactions|, and reacting again with the same emoji
 takes it back -- which is GitLab's own gesture and the only one there
@@ -1611,6 +1618,7 @@ COMMENTS                                             *nemeton-config-comments*
       },
       show_resolved = true,  -- draw resolved threads at all
       short_commits = true,  -- a link to a commit as its short sha
+      resolve_next = true,   -- resolving a thread walks on, as `]m` would
       syntax = true,         -- a suggestion in its language's colours
       rail = "▎",            -- the rail drawn down a thread
       reply_indent = "  ",   -- what a reply is indented by

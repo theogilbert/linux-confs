@@ -1622,7 +1622,7 @@ function M.render(thread, opts)
     --- what each block is, and each is drawn as the thing it is. A
     --- function rather than a loop because a citation is these same
     --- blocks again, behind a bar.
-    local function draw(lead, blocks, hl)
+    local function draw(left, blocks, hl)
       for _, block in ipairs(blocks) do
         if block.kind == "suggestion" then
           -- A GitLab suggestion is a fenced block that the forge can
@@ -1631,31 +1631,31 @@ function M.render(thread, opts)
           -- you are looking at. Drawn as a diff, in the colours the
           -- editor already uses for one, so it reads as a change
           -- rather than as more sentences.
-          suggestion(lead, block)
+          suggestion(left, block)
         elseif block.kind == "code" then
           -- Somebody else's fence, drawn as they typed it -- the fence
           -- lines included, because they are the only thing saying
           -- where their code starts and stops. Nothing rendered inside
           -- it: code that says `:tada:` says `:tada:`, and code that
           -- says `[a](b)` says `[a](b)`.
-          body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
+          body(left, block.fence, "NemetonMeta", nil, nil, nil, code)
           for _, l in ipairs(block.lines) do
-            body(lead, l, hl, nil, nil, nil, code)
+            body(left, l, hl, nil, nil, nil, code)
           end
           if block.close then
-            body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
+            body(left, block.close, "NemetonMeta", nil, nil, nil, code)
           end
         elseif block.kind == "table" then
-          tabled(lead, block)
+          tabled(left, block)
         elseif block.kind == "citation" then
           -- What somebody quoted before answering it, behind a bar and
           -- in the quiet colour: it is the one part of a note that is
           -- not the note's author speaking, and the page draws it set
           -- off and greyed for the same reason. The bar goes on the
-          -- lead, so that a wrapped line keeps it and a table or a box
+          -- left, so that a wrapped line keeps it and a table or a box
           -- inside the citation is measured against what is left.
           cited = cited + 1
-          draw(lead .. bar, block.blocks, "NemetonCitation")
+          draw(left .. bar, block.blocks, "NemetonCitation")
           cited = cited - 1
         else
           -- The picture a forge would have drawn, and the link as the
@@ -1675,7 +1675,7 @@ function M.render(thread, opts)
           if block.kind == "heading" then
             colour = "NemetonHeading" .. math.min(block.level or 1, 6)
           end
-          body(lead, prose, colour, nil, runs)
+          body(left, prose, colour, nil, runs)
         end
       end
     end

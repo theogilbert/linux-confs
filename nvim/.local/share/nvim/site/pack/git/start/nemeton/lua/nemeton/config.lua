@@ -274,6 +274,16 @@ return {
     -- marked is a reference `<C-]>` cannot find.
     references = true,
 
+    -- Whether resolving a thread walks on to the next one owed an
+    -- answer, as `]m` would.
+    --
+    -- Resolving is the end of reading a thread, and the next thing
+    -- owed an answer is where the key in the hand was about to go
+    -- anyway; the pane follows, as it follows `]m`. Reopening is the
+    -- start of reading one and stays put. `false` stays put either
+    -- way.
+    resolve_next = true,
+
     -- Whether a markdown link is drawn as the words it was given rather
     -- than as the brackets it was typed in.
     --

@@ -1501,8 +1501,8 @@ function M.jump(dir)
   end
   local win = vim.api.nvim_get_current_win()
   local last = vim.api.nvim_buf_line_count(0)
-  local row = math.min(target.line, last)
-  vim.api.nvim_win_set_cursor(win, { row, 0 })
+  local landed = math.min(target.line, last)
+  vim.api.nvim_win_set_cursor(win, { landed, 0 })
   -- The walk is what the pane reads: it holds still while the cursor
   -- wanders through the code, and moves when the reviewer says "the
   -- next thing owed an answer" -- and opens on that, if it was shut.
@@ -1518,11 +1518,26 @@ function M.jump(dir)
     span = math.max(span, threads.span(t))
   end
   local height = vim.api.nvim_win_get_height(win)
-  local top = math.max(math.floor((row - span + row) / 2) - math.floor(height / 2), 1)
+  local top = math.max(math.floor((landed - span + landed) / 2) - math.floor(height / 2), 1)
   vim.api.nvim_win_call(win, function()
     vim.fn.winrestview({ topline = top })
   end)
   return target.line
+end
+
+--- `]m` from wherever the review is being read: the window the cursor
+--- is in, or, in the pane, the window the pane was opened from -- the
+--- pane has no cursor on the code to walk, and its own `]m` makes the
+--- same trip.
+function M.walk_on()
+  local pane = require("nemeton.pane")
+  local win = vim.api.nvim_get_current_win()
+  if win == pane.win and pane.source and vim.api.nvim_win_is_valid(pane.source) then
+    return vim.api.nvim_win_call(pane.source, function()
+      return M.jump(1)
+    end)
+  end
+  return M.jump(1)
 end
 
 return M

@@ -391,7 +391,14 @@ local function blob(root, sha, path)
     if res.code ~= 0 then
       return
     end
-    blobs[key] = vim.split(res.stdout or "", "\n", { plain = true })
+    local lines = vim.split(res.stdout or "", "\n", { plain = true })
+    -- The split's last element is what follows the final newline,
+    -- which for a file is nothing; kept, it is a blank line the
+    -- file does not have.
+    if lines[#lines] == "" then
+      table.remove(lines)
+    end
+    blobs[key] = lines
     vim.schedule(function()
       if M.current then
         M.redraw_all()
@@ -448,108 +455,100 @@ function M.original(thread, above, below)
   return #out > 0 and out or nil
 end
 
---- The code a thread is about, quoted, with what has happened to each
---- line of it since.
----
---- A comment is half of a pair, and the code is the half that moves:
---- someone pushes while you are reading, or you edit the file you are
---- reviewing, and the note stays on line 42 while line 42 comes to say
---- something else. The comment then reads as a remark about whatever
---- happens to be under it, which is worse than no comment at all.
----
---- So the quotation is what is there *now*, and the verdict is on the
---- lines rather than on the block: a line that has not moved says
---- nothing, a line edited since is marked as changed, a line that has
---- arrived since as added, and a line the file no longer has is drawn
---- from the revision that had it and marked gone. Four states in the
---- three colours a diff is already read in, one line at a time --
---- which is the question a reader actually has ("is the thing they are
---- talking about still here?") rather than the one a band across the
---- whole block answered ("something under here is different").
----
---- `now` is what is there at this moment, read by whichever window is
---- drawing -- the buffer under the marker, the file on disk -- over the
---- same span, context included. For a thread on a removed line that
---- span is the marker's row and the context above it, and the rows
---- above the gap are the context the deleted lines had: the diff pairs
---- them off and what is left over of the base is drawn gone, which is
---- the one way the deleted code is ever seen. Returned as it is, with no verdict on
---- any line, where there is nothing to compare it against: an overall
---- comment, a thread with no position, a blob that has not arrived or
---- never will.
----
---- `row` is where the last line of `now` is in the file, and every line
---- that is still in the file is handed back with its `line` counted
---- from it -- the number a reader of the quotation finds it under out
---- on the code. A line that has gone has no number: it is under none.
-function M.quoted(thread, now, context, row)
-  if not now or #now == 0 then
-    return nil
-  end
-  local function line_of(b)
-    return row and (row - #now + b) or nil
-  end
-  local plain = {}
-  for b, line in ipairs(now) do
-    table.insert(plain, { text = line, line = line_of(b) })
-  end
-  local mr = M.current
-  local sha = mr and revision(thread)
-  local path, first, last = about(thread)
-  local lines = sha and blob(mr.root, sha, path)
-  if not lines then
-    return plain
-  end
-  local was = vim.list_slice(lines, math.max(first - (context or 0), 1), last)
-  if #was == 0 then
-    return plain
-  end
-
-  local out = {}
-  local a, b = 1, 1
-  --- The lines of `was` in [a, to) and of `now` in [b, to2), as the
-  --- verdict this hunk of the diff passes on them: as many pairs as
-  --- both sides have are lines that were edited, and whatever is left
-  --- over on one side alone arrived or went away.
-  local function hunk(count_a, count_b)
-    local both = math.min(count_a, count_b)
-    for _ = 1, both do
-      table.insert(out, { text = now[b], state = "changed", line = line_of(b) })
-      a, b = a + 1, b + 1
-    end
-    for _ = both + 1, count_b do
-      table.insert(out, { text = now[b], state = "added", line = line_of(b) })
-      b = b + 1
-    end
-    for _ = both + 1, count_a do
-      -- The one state whose line is not in the file any more, so it is
-      -- quoted from the revision that had it.
-      table.insert(out, { text = was[a], state = "gone" })
-      a = a + 1
-    end
-  end
-
+--- Which lines of `old` the file still has, as `old line -> line of
+--- now`, by the diff between the two. A line the diff pairs off
+--- unchanged is there, at the number it has on the other side; one the
+--- diff takes away, edited or removed, is not in the map at all.
+local function survived(old, now)
   local ok, hunks =
-    pcall(vim.diff, table.concat(was, "\n") .. "\n", table.concat(now, "\n") .. "\n", {
+    pcall(vim.diff, table.concat(old, "\n") .. "\n", table.concat(now, "\n") .. "\n", {
       result_type = "indices",
     })
   if not (ok and hunks) then
-    return plain
+    return {}
   end
+  local at = {}
+  local a, b = 1, 1
   for _, h in ipairs(hunks) do
     -- `vim.diff` counts an insertion as starting *after* the line it
     -- follows, so the run of untouched lines before it reaches one
     -- further on than for a change.
     local until_a = h[2] == 0 and h[1] + 1 or h[1]
     while a < until_a do
-      table.insert(out, { text = now[b], line = line_of(b) })
-      a, b = a + 1, b + 1
+      at[a], a, b = b, a + 1, b + 1
     end
-    hunk(h[2], h[4])
+    a, b = a + h[2], b + h[4]
   end
-  while b <= #now do
-    table.insert(out, { text = now[b], line = line_of(b) })
-    b = b + 1
+  while a <= #old do
+    at[a], a, b = b, a + 1, b + 1
+  end
+  return at
+end
+
+--- The code a thread is about, quoted as the thread saw it, with
+--- which lines of it the file still has.
+---
+--- A comment is half of a pair, and the code is the half that moves:
+--- someone pushes while you are reading, or you edit the file you are
+--- reviewing, and the note stays on line 42 while line 42 comes to say
+--- something else. Quoted from the file as it is now, the comment then
+--- reads as a remark about whatever happens to be under it, which is
+--- worse than no comment at all. So the quotation is what the author
+--- was looking at -- the revision the note was written against -- and
+--- the verdict is on the lines rather than on the block: a line the
+--- file still has says nothing, and a line it no longer has is drawn
+--- gone. One question, asked one line at a time, which is the one a
+--- reader actually has ("is the thing they are talking about still
+--- here?").
+---
+--- "Still has" is by the diff between that revision and the file, not
+--- by the number: a block that has moved down because something was
+--- added above it is the same block, and a verdict on it would be a
+--- verdict on the file's numbering. What the diff pairs off is still
+--- there, at whatever number it is at now; what it takes away is gone,
+--- and a line edited since is gone as it was, which is the thing being
+--- quoted.
+---
+--- `now` is the whole file as it is at this moment, read by whichever
+--- window is drawing -- the buffer under the marker, the file on disk.
+--- `row` is where the marker is in it, one-based, and is only for the
+--- file's own lines to be quoted from around it, with no verdict on
+--- any of them, where there is nothing to quote the revision's from: a
+--- blob that has not arrived or never will. Nil for a thread with no
+--- position, which is about no code.
+---
+--- Every line that is still in the file is handed back with its
+--- `line` -- the number a reader of the quotation finds it under out
+--- on the code. A line that has gone has no number: it is under none.
+function M.quoted(thread, now, context, row)
+  if not (thread and thread.path and thread.line) then
+    return nil
+  end
+  local mr = M.current
+  local sha = mr and revision(thread)
+  local path, first, last = about(thread)
+  local lines = sha and blob(mr.root, sha, path)
+  if not lines then
+    if not (now and row) then
+      return nil
+    end
+    local out = {}
+    for n = math.max(row - threads.span(thread) - (context or 0), 1), math.min(row, #now) do
+      table.insert(out, { text = now[n], line = n })
+    end
+    return #out > 0 and out or nil
+  end
+
+  local lo = math.max(first - (context or 0), 1)
+  local was = vim.list_slice(lines, lo, last)
+  if #was == 0 then
+    return nil
+  end
+  local out = {}
+  local at = now and survived(lines, now) or {}
+  for i, text in ipairs(was) do
+    local n = at[lo + i - 1]
+    table.insert(out, { text = text, line = n, state = not n and "gone" or nil })
   end
   return out
 end
@@ -1369,12 +1368,29 @@ function M.jump(dir)
   if target.path ~= path then
     vim.cmd.edit(vim.fn.fnameescape(M.root() .. "/" .. target.path))
   end
+  local win = vim.api.nvim_get_current_win()
   local last = vim.api.nvim_buf_line_count(0)
-  vim.api.nvim_win_set_cursor(0, { math.min(target.line, last), 0 })
+  local row = math.min(target.line, last)
+  vim.api.nvim_win_set_cursor(win, { row, 0 })
   -- The walk is what the pane reads: it holds still while the cursor
   -- wanders through the code, and moves when the reviewer says "the
   -- next thing owed an answer" -- and opens on that, if it was shut.
   read_here()
+  -- With the code the thread is about in the middle of the window,
+  -- and not the anchor line wherever the scroll happened to leave it:
+  -- the walk lands on a line to read what is around it, and a comment
+  -- written over a selection is about the lines above the anchor as
+  -- much as the anchor. After the pane has opened, since that is what
+  -- decides how tall the window is.
+  local span = 0
+  for _, t in ipairs(M.current.by_file[target.path][target.line] or {}) do
+    span = math.max(span, threads.span(t))
+  end
+  local height = vim.api.nvim_win_get_height(win)
+  local top = math.max(math.floor((row - span + row) / 2) - math.floor(height / 2), 1)
+  vim.api.nvim_win_call(win, function()
+    vim.fn.winrestview({ topline = top })
+  end)
   return target.line
 end
 

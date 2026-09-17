@@ -164,12 +164,11 @@ local function render()
       paint = code_in(t),
       paint_was = quote_in(t),
       -- Read out of the buffer where the file is open and off the disk
-      -- where it is not, which is what `replaced` already does: this
+      -- where it is not, which is what `replaced` reads too: this
       -- window is read with no file windows open at all, and "the code
-      -- has changed since" is exactly the thing you cannot see for
+      -- has gone since" is exactly the thing you cannot see for
       -- yourself from in here.
-      was = replaced and session.quoted(t, replaced(threads.span(t) + context, 0), context, t.line)
-        or nil,
+      was = replaced and session.quoted(t, file_lines(t.path), context, t.line) or nil,
     })
     for _, line in ipairs(drawn) do
       table.insert(chunks, line)

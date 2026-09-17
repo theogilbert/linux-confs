@@ -27,6 +27,8 @@ vim.api.nvim_create_user_command("Nemeton", function(opts)
   require("nemeton").command(opts)
 end, {
   nargs = "*",
+  -- For the one verb that takes lines: `:'<,'>Nemeton history`.
+  range = true,
   complete = function(arg_lead)
     return require("nemeton").complete(arg_lead)
   end,

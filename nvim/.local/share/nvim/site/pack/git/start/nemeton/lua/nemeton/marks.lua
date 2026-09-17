@@ -307,27 +307,16 @@ local function ground()
   band("NemetonSuggestNew", "NemetonAdded")
   band("NemetonSuggestOld", "NemetonRemoved")
 
-  -- ...and the other two verdicts the quotation carries. `NemetonWas`
-  -- above is the line that is gone; a line that has been edited since
-  -- and a line that has arrived since are not the same news, and a
-  -- reader who has to work out which from the words has been told
-  -- nothing the words did not already say. The same three colours a
-  -- diff is read in everywhere else, at the weight of a band, because
-  -- that is the vocabulary already in the reader's eye.
-  --
-  band("NemetonWasChanged", "NemetonChanged")
-  band("NemetonWasAdded", "NemetonAdded")
-
-  -- ...and the band under the lines that have not moved, which is most
+  -- ...and the band under the lines the file still has, which is most
   -- of them. It used to be nothing, so that a verdict on one line was
   -- the only band in the block -- and the block was then code drawn on
   -- the ground the prose is on, in the colour the prose is in, told
   -- from the comment under it by being indented like code. Two lines
   -- of context and a one-line comment read as three lines of somebody
   -- writing oddly. A ground of its own says "this is the file, not the
-  -- conversation" before a word of it is read, and the three verdicts
-  -- still say what they said, on the line they say it about, because a
-  -- line carrying one is drawn on that instead.
+  -- conversation" before a word of it is read, and the verdict still
+  -- says what it said, on the line it says it about, because a line
+  -- carrying one is drawn on that instead.
   --
   -- A step further off the page than the conversation and leaning
   -- nowhere the conversation does not: a quotation is a different kind
@@ -351,8 +340,6 @@ end
 local OWN_GROUND = {
   NemetonQuote = true,
   NemetonWas = true,
-  NemetonWasChanged = true,
-  NemetonWasAdded = true,
   NemetonSuggestNew = true,
   NemetonSuggestOld = true,
   NemetonHead = true,

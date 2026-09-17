@@ -410,7 +410,7 @@ function M.render()
     -- them says how far up it reaches -- the lines it is anchored to
     -- and the couple above them, which is what makes a quotation of
     -- one line a sentence rather than a fragment; `session.quoted`
-    -- says what has become of each.
+    -- says which of them the file still has.
     local span, widest = 0, shown[1]
     for _, t in ipairs(shown) do
       if threads.span(t) > span then
@@ -418,7 +418,8 @@ function M.render()
       end
     end
     local context = config.comments.context or 0
-    local was = session.quoted(widest, replaced(span + context, 0), context, row)
+    local was =
+      session.quoted(widest, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), context, row)
     for i, t in ipairs(shown) do
       -- A blank line between two conversations on one line of code, and
       -- nothing but a blank line: it is the one place the rail stops

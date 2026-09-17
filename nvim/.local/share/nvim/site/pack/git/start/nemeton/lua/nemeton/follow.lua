@@ -171,6 +171,17 @@ function M.href(ref)
   if ref.kind == "commit" then
     return project and (project .. "/-/commit/" .. ref.text) or nil
   end
+  -- `#12` is an issue of this project and `group/proj#12` one of that
+  -- project, which is a path from the root of the forge: the same two
+  -- places a path is measured from above.
+  if ref.kind == "issue" or ref.kind == "mr" then
+    local elsewhere, number = ref.text:match("^(.-)[#!](%d+)$")
+    local page = ref.kind == "issue" and "/-/issues/" or "/-/merge_requests/"
+    if elsewhere and elsewhere ~= "" then
+      return host and (host .. "/" .. elsewhere .. page .. number) or nil
+    end
+    return project and number and (project .. page .. number) or nil
+  end
   if ref.kind == "mention" then
     -- A username is a page at the root of the forge, which is the one
     -- shape of GitLab URL that has stayed the same since it had one.
@@ -345,6 +356,12 @@ local function said(ref, href)
   end
   if ref.kind == "commit" then
     return ("commit %s"):format(ref.text)
+  end
+  if ref.kind == "issue" then
+    return ("issue %s"):format(ref.text)
+  end
+  if ref.kind == "mr" then
+    return ("merge request %s"):format(ref.text)
   end
   -- A comment this review cannot show. Said out loud rather than passed
   -- over in silence: the reader pressed the key expecting to be taken

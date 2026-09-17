@@ -27,8 +27,6 @@ hl-NemetonStrike	nemeton.txt	/*hl-NemetonStrike*
 hl-NemetonSuggestNew	nemeton.txt	/*hl-NemetonSuggestNew*
 hl-NemetonSuggestOld	nemeton.txt	/*hl-NemetonSuggestOld*
 hl-NemetonWas	nemeton.txt	/*hl-NemetonWas*
-hl-NemetonWasAdded	nemeton.txt	/*hl-NemetonWasAdded*
-hl-NemetonWasChanged	nemeton.txt	/*hl-NemetonWasChanged*
 last	nemeton.txt	/*last*
 nemeton	nemeton.txt	/*nemeton*
 nemeton-commands	nemeton.txt	/*nemeton-commands*
@@ -55,6 +53,7 @@ nemeton-follow	nemeton.txt	/*nemeton-follow*
 nemeton-getting-started	nemeton.txt	/*nemeton-getting-started*
 nemeton-health	nemeton.txt	/*nemeton-health*
 nemeton-highlights	nemeton.txt	/*nemeton-highlights*
+nemeton-history-window	nemeton.txt	/*nemeton-history-window*
 nemeton-introduction	nemeton.txt	/*nemeton-introduction*
 nemeton-jobs-window	nemeton.txt	/*nemeton-jobs-window*
 nemeton-license	nemeton.txt	/*nemeton-license*

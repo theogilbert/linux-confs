@@ -376,16 +376,25 @@ local function styled(runs)
 end
 
 -- What a comment points at rather than says: a name somebody is being
--- called by, and a commit somebody is pointing at. Word-bounded, so an
--- email address is not a mention and a word in the middle of a sentence
--- is not a sha.
+-- called by, a commit somebody is pointing at, and the issue or the
+-- merge request they are pointing at -- `#12`, `!7`, and either with
+-- a project in front of it, `group/proj#12`, the way GitLab spells a
+-- reference to one somewhere else. Word-bounded, so an email address
+-- is not a mention and a word in the middle of a sentence is not a
+-- sha.
 --
 -- A sha needs a digit *and* a letter in it to count. Seven characters
 -- of nothing but a-f is a word English happens to have -- "defaced",
 -- "acceded" -- and seven of nothing but digits is a number somebody
 -- wrote down; a commit is the thing that is both.
+--
+-- The issue and the merge request are captured whole, project and
+-- all, because the project is the half that says which forge page
+-- the number is on and `follow` is the one that reads it.
 local REFERENCES = {
   { "@([%w][%w%._%-]*)", "mention", "NemetonMention" },
+  { "([%w%._%-/]*#%d+)", "issue", "NemetonLink" },
+  { "([%w%._%-/]*!%d+)", "mr", "NemetonLink" },
   {
     "(%x%x%x%x%x%x%x+)",
     "commit",

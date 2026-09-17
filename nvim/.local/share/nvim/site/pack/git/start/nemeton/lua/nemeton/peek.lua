@@ -66,7 +66,7 @@ function M.show(list)
         return session.original(t, above, below)
       end,
       width = most,
-      was = session.quoted(t, replaced(threads.span(t) + context, 0), context, row + 1),
+      was = session.quoted(t, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), context, row + 1),
       paint = paint,
       paint_was = paint_was,
     })

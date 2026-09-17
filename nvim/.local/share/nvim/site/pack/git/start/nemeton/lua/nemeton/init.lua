@@ -717,6 +717,16 @@ M.jobs = with_session(function()
   require("nemeton.jobs").open()
 end)
 
+--- The commits that have touched the file in front of you, and what
+--- each did to it -- or, over `first` to `last`, the ones that touched
+--- those lines. Not `with_session`: the history is the checkout's,
+--- and the question is asked about a file, whether or not a review is
+--- open on it.
+function M.history(first, last)
+  ready()
+  require("nemeton.history").open(nil, first, last)
+end
+
 --- Every thread on the merge request, in the quickfix list.
 ---
 --- The counterpart to the gutter: the gutter says what is on the line
@@ -846,6 +856,9 @@ end
 --- `M.link` over the lines of a visual selection, for the global key
 --- the plugin file binds in that mode.
 M.link_lines = over_selection(M.link)
+
+--- ...and `M.history` over them, for the same key in that mode.
+M.history_lines = over_selection(M.history)
 
 --- Every review key, and the verb behind it. One list, bound twice.
 local function bindings()
@@ -1009,6 +1022,9 @@ local SUBCOMMANDS = {
     M.link()
   end,
   jobs = M.jobs,
+  history = function()
+    M.history()
+  end,
   conversation = M.conversation,
   publish = function()
     M.publish()
@@ -1039,6 +1055,11 @@ function M.command(opts)
       vim.log.levels.ERROR
     )
     return
+  end
+  -- The range, for the one verb that takes lines: `:'<,'>Nemeton
+  -- history` is the history of the selection.
+  if args[1] == "history" and (opts.range or 0) > 0 then
+    return M.history(opts.line1, opts.line2)
   end
   return fn(args[2])
 end
@@ -1162,6 +1183,10 @@ function M.setup(opts)
   global("link", {
     n = { M.link, "copy a link to this line" },
     x = { M.link_lines, "copy a link to these lines" },
+  })
+  global("history", {
+    n = { M.history, "the commits that touched this file" },
+    x = { M.history_lines, "the commits that touched these lines" },
   })
   -- The other way in, unbound by default. Nothing in `plugin/` binds
   -- this one, so there is no earlier key to take back -- and rebinding

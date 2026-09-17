@@ -121,6 +121,7 @@ rest.
 | `:Nemeton delete` | delete one, after asking |
 | `:Nemeton suggest` | suggest a change to the line under the cursor |
 | `:Nemeton jobs` | what CI did, job by job |
+| `:Nemeton history` | every commit that has touched this file, renames followed, and what each did to it; over a range (`:'<,'>`), the ones that touched those lines |
 | `:Nemeton resolve` | resolve or reopen it |
 | `:Nemeton note` | an overall comment, on the MR rather than a line |
 | `:Nemeton publish` | send every comment kept unsent |
@@ -152,6 +153,12 @@ forge, once, and the revision is the checkout's own HEAD — the commit
 the line is being read at, which is what a permalink is for. A HEAD the
 forge has not been sent yet is a link that works once it has. With a
 review open it links against the merge request's head instead.
+
+`:Nemeton history` is global for the same reason — it is a question
+about the file in front of you, and it is asked of the checkout rather
+than of the forge — and unbound by default; `keys.global.history` puts
+it on a key, in visual mode too, where it is the history of the
+selected lines. See [A file's history](#a-files-history).
 
 **That prompt is up on the keypress, not on the answer.** The list is
 the whole reason it exists, so it used to wait for `glab` to say what
@@ -406,6 +413,37 @@ the runner wrote for a terminal — colour escapes, GitLab's
 `section_start:` markers, the carriage returns a progress bar was drawn
 with — is taken out on the way in.
 
+### A file's history
+
+`:Nemeton history` lists every commit that has touched the file in the
+current buffer, newest first — sha, subject, author, date — the whole
+way back to the commit that wrote it, through every rename on the way
+(`git log --follow`), with a commit that renamed it saying what from.
+"Why is it like this" is the question a reviewer asks about the line
+the merge request did not change, and `git blame` answers it one line
+and one commit deep. It needs no review open: the history is the
+checkout's, and the forge's copy of it would be a round trip to read
+what is already on the disk.
+
+`<CR>` on a commit opens what it did to the file — the patch, as a
+diff, in a **tab** of its own like a job's log, headed by the commit and
+where it stands in the history (`2/17`). From inside it `J` steps to
+the commit before and `K` to the one after, without going back to the
+list: down the list is back in time, and the two keys move the way the
+eye would on it. `o` opens the commit on GitLab, in either window; `q`
+closes the tab and lands back on the list, on the commit you were
+reading, and `q` again closes the list.
+
+Over a visual selection — `keys.global.history` in visual mode, or
+`:'<,'>Nemeton history` — it is the history of those lines rather than
+of the file (`git log -L`): only the commits that touched them, and of
+each only the hunk that did, followed back through every edit around
+them and every rename of the file. Which is the question more often
+than the file's: the file is a thousand lines and the puzzling ones are
+six. The lines are numbered as git can count them — at HEAD, or at the
+revision an old-side buffer is showing — so a line added in the buffer
+and not yet committed is on no commit's side of anything.
+
 A suggestion is drawn as the diff it is wherever you read it — expanded
 under the code, in the peek float, in the every-thread window — the
 lines it would replace in red above the lines it would put there in
@@ -484,16 +522,19 @@ in the pane and the every-thread window — a seam runs from edge to
 edge — and the width of the band in the peek float, which is sized to
 what is in it.
 
-What has happened to each of those lines since is on the line rather
-than on the block. A comment is half of a pair and the code is the half
-that moves — someone pushes while you are reading, or you edit the file
-you are reviewing — and the question a reader has is whether the thing
-being talked about is still there. So: a line that has not moved is
-on the quotation's own band (`NemetonQuote`), one edited since is on a
-yellow one (`NemetonWasChanged`), one that has arrived since on a green
-one (`NemetonWasAdded`), and one the file no longer has is quoted from
-the revision that had it, on a red one (`NemetonWas`). The three
-colours a diff is read in everywhere else.
+The quotation is the code as the thread saw it — the revision the
+comment was written against — and not what the file says now. A
+comment is half of a pair and the code is the half that moves: someone
+pushes while you are reading, or you edit the file you are reviewing,
+and a comment quoted over whatever is under it now reads as a remark
+about that. What the reader wants to know is whether the thing being
+talked about is still there, and that is said on the line rather than
+on the block: a line the file still has is on the quotation's own band
+(`NemetonQuote`), and one it no longer has — taken out, or edited so
+that it no longer says this — is on a red one (`NemetonWas`). Still
+there is by the diff between that revision and the file, not by the
+number: a block pushed down by lines added above it is the same block,
+and is quoted without a mark on it, under the numbers it has now.
 
 The quotation is drawn in the colours of its language, the way a
 suggestion is: it is the same code out of the same file, and a before
@@ -554,7 +595,10 @@ The walk opens it, too. `]m` with the pane shut opens it on the thread
 it lands on, and so does arriving at one from a list or down a link:
 arriving at a conversation is asking to read it, and a gutter marker
 answers only that there is one. The mode goes with the pane, as it
-does whenever the pane is opened.
+does whenever the pane is opened. It lands with the code the thread is
+about in the middle of the window — the whole span of a comment written
+over a selection, not the anchor line wherever the scroll left it —
+because the walk stops on a line to read what is around it.
 
 The review moving on closes it. The pane is the conversations of the
 file you are reading, beside it; when the window beside it holds the
@@ -832,9 +876,12 @@ author wrote, links and all. `comments.short_commits = false` leaves
 them whole.
 
 What a comment *points at* rather than says is drawn in a colour of its
-own: `@somebody` in `NemetonMention` and the commit it blames in
+own: `@somebody` in `NemetonMention`, the commit it blames in
 `NemetonCommit`, both `DiagnosticInfo` — the same colour as a link, since
-all three are one kind of thing: a reference out of the comment. They are
+all three are one kind of thing: a reference out of the comment — and
+the issue or merge request it names, `#12` and `!7`, as the link the
+forge draws them as (`NemetonLink`), with a project in front where
+GitLab puts one: `group/proj#12`. They are
 the things in a comment that point somewhere else — a person to ask, a
 commit to go and read, a page — and all of them are looked for by
 scanning rather than by reading the sentence around them. An address is not a mention and a word is not
@@ -845,7 +892,7 @@ seven of nothing but digits is a number somebody wrote down. In a settled
 thread as well as an open one: the rest of one is dimmed because it is
 history, and the commit it names is not history — it is what somebody
 reading a resolved argument came for. `comments.references = false` turns
-it off, and takes those two out of what `<C-]>` can find with them.
+it off, and takes all of them out of what `<C-]>` can find with them.
 
 `:tada:` is drawn as 🎉, the way the forge would have drawn it — a
 comment read with the colons still in it has a word missing out of the
@@ -1136,6 +1183,8 @@ lua/nemeton/
   qf.lua         every thread, into the quickfix list
   jobs.lua       what CI did, job by job
   trace.lua      what one job printed, in a tab
+  history.lua    every commit that touched a file, and each one's
+                 patch to it in a tab
   compose.lua    the buffer you write a comment in
   seen.lua       what the forge last said was open here, so the prompt
                  that asks which merge request is up on the keypress

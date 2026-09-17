@@ -210,6 +210,12 @@ A review, end to end:
 
 :Nemeton jobs           What CI did, job by job. |nemeton-jobs-window|
 
+:Nemeton history        Every commit that has touched this file, renames
+                        followed, and what each did to it -- or, with a
+                        range (`:'<,'>Nemeton history`), the ones that
+                        touched those lines. Needs no review open.
+                        |nemeton-history-window|
+
 :Nemeton publish        Send every comment you have kept unsent, as one
                         review.
 
@@ -249,6 +255,12 @@ being read at, which is what a permalink is for. A HEAD the forge has
 not been sent yet is a link that works once it has. With a review open
 it links against the merge request's head instead, and on an old side
 |nemeton-old-side| against that revision.
+
+`:Nemeton history` |nemeton-history-window| is global for the same
+reason -- a question about the file in front of you, asked of the
+checkout rather than of the forge -- and unbound by default:
+`keys.global.history` puts it on a key, in visual mode too, where it is
+the history of the selected lines.
 
 THE REVIEW                                          *nemeton-mappings-session*
 
@@ -545,7 +557,10 @@ The walk opens it, too. `]m` with the pane shut opens it on the thread
 it lands on, and so does arriving at a thread from a list or down a
 link: arriving at a conversation is asking to read it, and a gutter
 marker answers only that there is one. The mode goes with the pane, as
-it does whenever the pane is opened.
+it does whenever the pane is opened. The walk lands with the code the
+thread is about in the middle of the window -- the whole span of a
+comment written over a selection, not the anchor line wherever the
+scroll left it -- because it stops on a line to read what is around it.
 
 Not the cursor. Reading a comment and reading the code it is about are
 the same activity: you go to the line it names, then to the function
@@ -724,6 +739,47 @@ puts you back in front of it. What the runner wrote for a terminal is
 taken out on the way in: the colour escapes, GitLab's `section_start:`
 markers, and the carriage returns a progress bar was drawn with -- of
 which only what the line ended up saying is kept.
+
+A FILE'S HISTORY                                      *nemeton-history-window*
+
+`:Nemeton history`, or `keys.global.history`. Every commit that has
+touched the file in the current buffer, newest first -- sha, subject,
+author, date -- the whole way back to the commit that wrote it, through
+every rename on the way (`git log --follow`), with a commit that
+renamed it saying what from. "Why is it like this" is the question a
+reviewer asks about the line the merge request did not change, and
+`git blame` answers it one line and one commit deep. It needs no review
+open: the history is the checkout's, and the forge's copy of it would
+be a round trip to read what is already on the disk.
+
+    <CR>            what the commit under the cursor did to the file
+    o               open the commit under the cursor on GitLab
+    q               close
+
+`<CR>` opens the patch, as a diff, in a tab of its own like a job's log
+|nemeton-log-window|, headed by the commit and where it stands in the
+history (`2/17`). From inside it the history is stepped through without
+going back to the list: down the list is back in time, and the two keys
+move the way the eye would on it.
+
+    J               the commit before this one
+    K               the commit after it
+    o               open this commit on GitLab
+    q               close the tab
+
+The list is left standing in the tab it was opened from, with its
+cursor on the commit being read, so `q` puts you back in front of it;
+`q` again closes the list.
+
+Over a visual selection -- `keys.global.history` in that mode, or
+`:'<,'>Nemeton history` -- it is the history of those lines rather than
+of the file (`git log -L`): only the commits that touched them, and of
+each only the hunk that did, followed back through every edit around
+them and every rename of the file. Which is the question more often
+than the file's: the file is a thousand lines and the puzzling ones are
+six. The lines are numbered as git can count them -- at HEAD, or at the
+revision an old side |nemeton-old-side| is showing -- so a line added
+in the buffer and not yet committed is on no commit's side of anything.
 
 A MERGE REQUEST OF YOUR OWN                            *nemeton-create-window*
 
@@ -1199,10 +1255,13 @@ the cursor", doing what it has always done: a tag jump, into a forge
 instead of a tags file. On a line with nothing on it to follow it does
 nothing and says nothing -- it is pressed while reading.
 
-Five kinds of thing, and one setting each in `comments.follow`:
+Seven kinds of thing, and one setting each in `comments.follow`:
 
     mention   @alice                 the person's page on the forge
     commit    a1b2c3d4               the commit's page on the project
+    issue     #12, group/proj#12     the issue's page, on this project
+                                     or on the one named
+    mr        !7, group/proj!7       the merge request's page, likewise
     thread    !7 (comment 1234)      the conversation itself, in here
     path      a link written as one  a page on this forge
     url       a link to a page       wherever it points
@@ -1216,7 +1275,7 @@ and GitLab takes you to that file on the target branch, not to a page of
 that name on the forge. A bare `#anchor` is somewhere on the merge
 request's own page.
 
-`true` is the default for all five. For four of them it is the quietest
+`true` is the default for all seven. For all but one it is the quietest
 thing that is still an answer: it says what is under the cursor and puts
 the link on the clipboard. Nothing is opened and no window moves -- a
 key that took the editor somewhere would be a key pressed once by
@@ -1294,9 +1353,13 @@ still says `link` is read as both of them; a config that says `link` and
 one of the two new names is a migration half-done, and the specific name
 is the one to keep.
 
-`comments.references = false` takes the colours off `@name` and the
-shas, and takes them out of what `<C-]>` can find with them: a reference
-nobody marked is a reference the key cannot see.
+`comments.references = false` takes the colours off `@name`, the shas,
+`#12` and `!7`, and takes them out of what `<C-]>` can find with them:
+a reference nobody marked is a reference the key cannot see.
+
+`mr = function(text) require("nemeton").open(text:match("%d+$")) end`
+is the one worth writing: a merge request named in a review is one to
+go and read in the same editor.
 
 A suggestion is drawn as the diff it is, wherever it is read -- under
 the code with |:Nemeton| `expand`, in the peek float, in the every-thread
@@ -1391,23 +1454,27 @@ every-thread window, a seam from edge to edge, and the width of the
 band in the peek float, which is sized to what is in it. `false` for
 the two bands to meet.
 
-What has become of each of those lines is drawn on the line, not on the
-block. A comment is half of a pair and the code is the half that moves
--- someone pushes while you are reading, or you edit the file you are
-reviewing -- and the question a reader has is whether the thing being
-talked about is still there:
+The quotation is the code as the thread saw it -- the revision the
+comment was written against -- and not what the file says now. A
+comment is half of a pair and the code is the half that moves: someone
+pushes while you are reading, or you edit the file you are reviewing,
+and a comment quoted over whatever is under it now reads as a remark
+about that. What the reader wants to know is whether the thing being
+talked about is still there, and that is drawn on the line, not on the
+block:
 
-  unchanged      the quotation's own band |hl-NemetonQuote|, which is
-                 most of them
-  edited since   a yellow band            |hl-NemetonWasChanged|
-  arrived since  a green band             |hl-NemetonWasAdded|
-  gone since     a red band               |hl-NemetonWas|, and the
-                 line quoted from the revision that still had it
+  still there    the quotation's own band |hl-NemetonQuote|, which is
+                 most of them, under the number the line is at now
+  gone since     a red band               |hl-NemetonWas|, under no
+                 number -- taken out, or edited so that it no longer
+                 says this
 
-The three colours a diff is read in everywhere else, one line at a
-time. A band runs the width of the editor from the rail out; in the two
-windows that are real buffers it is as wide as the widest line of the
-block, there being no editor-wide ground there to match.
+"Still there" is by the diff between that revision and the file, not
+by the number: a block pushed down by lines added above it is the same
+block, and is quoted without a mark on it. A band runs the width of
+the editor from the rail out; in the two windows that are real buffers
+it is as wide as the widest line of the block, there being no
+editor-wide ground there to match.
 
 The quotation is drawn in the colours of its language, the way a
 suggestion is |nemeton-syntax|: it is the same code out of the same
@@ -1522,6 +1589,8 @@ COMMENTS                                             *nemeton-config-comments*
       follow = {             -- what `<C-]>` does with one |nemeton-follow|
         mention = true,      -- true: its page | false | fun(text, href)
         commit = true,
+        issue = true,        -- `#12`
+        mr = true,           -- `!7`
         thread = true,       -- true: go to the thread, in here
         path = true,         -- a page on this forge
         url = true,          -- a page anywhere
@@ -1613,11 +1682,14 @@ written against no commit and gets none.
 |nemeton-emoji|.
 
 `references` draws what a comment points at rather than says --
-`@somebody`, and the commit it blames -- in |hl-NemetonMention| and
-|hl-NemetonCommit|, blue by default. They are the two things in a
-comment that are a reference to something outside it, a person to be
-asked and a commit to go and read, and both are found by scanning
-rather than by reading the sentence they are in. An address is not a
+`@somebody`, the commit it blames, and the issue (`#12`) or merge
+request (`!7`) it names, with a project in front where GitLab puts one
+(`group/proj#12`) -- in |hl-NemetonMention|, |hl-NemetonCommit| and,
+for the two that are the links the forge draws them as,
+|hl-NemetonLink|, blue by default. They are the things in a comment
+that are a reference to something outside it, a person to be asked, a
+commit to go and read, a page on the forge, and all are found by
+scanning rather than by reading the sentence they are in. An address is not a
 mention and a word is not a sha: a name has to start where a word
 starts, and seven characters count as a commit only if they are both
 digits and letters -- seven of nothing but a-f is a word English
@@ -1763,8 +1835,8 @@ the omnifunc reads.
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
-`keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`, `keys.create`
-and `keys.compose`, each a table of
+`keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`,
+`keys.history`, `keys.create` and `keys.compose`, each a table of
 what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
 can be `false`:
 >
@@ -1979,7 +2051,7 @@ kind of thing on the same panel, not a different state of it. Where the
 grounds lean by kind it leans towards |hl-NemetonCode|, since a code
 span and this are the same thing at two sizes. Without true colour it
 is `CursorLine`, as every ground here is. A line of the quotation that
-has changed since is drawn on one of the three below instead.
+the file no longer has is drawn on |hl-NemetonWas| instead.
 
                                                                *hl-NemetonWas*
 `NemetonWas` is the band the code a thread was written against is drawn
@@ -1990,17 +2062,6 @@ colour text is -- the background is carrying the verdict, and red words
 on a red band are a line you have to work at to read. Without
 'termguicolors' there is nothing to mix and it is |hl-NemetonRemoved|,
 as it used to be.
-
-                                                  *hl-NemetonWasChanged*
-                                                    *hl-NemetonWasAdded*
-`NemetonWasChanged` and `NemetonWasAdded` are the other two verdicts a
-quoted line can carry |nemeton-drift|: the line edited since the
-comment was written, and the line that has arrived since. Built the
-same way as the two halves of a suggestion, out of |hl-NemetonChanged|
-and `NemetonAdded`. A line that has not moved carries no band at
-all: the block is mostly those, and a ground under every line of it
-says "this is a quotation" at the cost of saying anything about any one
-line.
 
                                                       *hl-NemetonChanged*
 `NemetonChanged` is the colour a changed line is drawn in, linked to

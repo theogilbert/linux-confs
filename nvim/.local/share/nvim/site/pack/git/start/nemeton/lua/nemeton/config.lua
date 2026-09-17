@@ -254,13 +254,17 @@ return {
     emoji = true,
 
     -- Whether what a comment points at is drawn in a colour of its own:
-    -- `@somebody`, and the commit a note blames.
+    -- `@somebody`, the commit a note blames, and the issue (`#12`) or
+    -- merge request (`!7`) it points at, on this project or with a
+    -- project in front (`group/proj#12`).
     --
-    -- They are the two things in a comment that are not prose but a
+    -- They are the things in a comment that are not prose but a
     -- reference to something outside it -- a person to be asked, a
-    -- commit to go and read -- and both are found by scanning rather
-    -- than by reading the sentence they are in. `NemetonMention` and
-    -- `NemetonCommit` are the colours, blue by default.
+    -- commit to go and read, a page on the forge -- and all are found
+    -- by scanning rather than by reading the sentence they are in.
+    -- `NemetonMention` and `NemetonCommit` are the colours, blue by
+    -- default; an issue and a merge request are drawn as the link
+    -- they are, in `NemetonLink`.
     --
     -- In a settled thread as well as an open one. The rest of one is
     -- dimmed, because it is history; the commit it names is not history
@@ -424,6 +428,8 @@ return {
     --
     --   mention  ("alice", "https://gitlab.example.com/alice")
     --   commit   ("a1b2c3d4", "https://…/-/commit/a1b2c3d4")
+    --   issue    ("#12", "https://…/-/issues/12")
+    --   mr       ("!7", "https://…/-/merge_requests/7")
     --   thread   ("1234", "https://…/-/merge_requests/7#note_1234")
     --   path     ("the failing job", "https://…/-/jobs/1234")
     --   url      ("the docs", "https://example.com/docs")
@@ -439,8 +445,8 @@ return {
     -- link names, `{ path, line, last }`, and nil for anything else.
     --
     -- `true` is the built-in, which is the quietest thing that is still
-    -- an answer: `User alice`, `commit a1b2c3d4`, and a link put on the
-    -- clipboard. Nothing is opened and no window moves -- a key that
+    -- an answer: `User alice`, `commit a1b2c3d4`, `issue #12`, and a
+    -- link put on the clipboard. Nothing is opened and no window moves -- a key that
     -- took the editor somewhere would be a key pressed once by accident
     -- and then never again -- and what the reader usually wanted is the
     -- string anyway: the sha to `git show`, the name to ask around
@@ -466,6 +472,11 @@ return {
     follow = {
       mention = true,
       commit = true,
+      -- `mr = function(text) require("nemeton").open(text:match("%d+$")) end`
+      -- is the one worth writing: a merge request named in a review
+      -- is one to go and read in the same editor.
+      issue = true,
+      mr = true,
       thread = true,
       url = true,
       path = true,
@@ -835,6 +846,13 @@ return {
       -- the same prefix as the review keys all the same, since it is
       -- a link to the forge and not to git.
       link = "<leader>mL",
+      -- The commits that have touched the file you are reading, and
+      -- what each did to it -- `git log --follow -p`, in a window.
+      -- Global for the reason the link is: it is a question about the
+      -- file and not about a merge request, and it is asked of the
+      -- checkout rather than of the forge. Unbound, because it is
+      -- asked once per file at most; `:Nemeton history` is it typed.
+      history = false,
     },
     -- The review keys, bound while a merge request is open and taken
     -- away again when it is closed.
@@ -1035,6 +1053,20 @@ return {
       refresh = "R", -- a running job has more of it every second
       browser = "o",
       quit = "q", -- closes the tab
+    },
+
+    -- A file's history: the commits that have touched it, and then one
+    -- commit's patch to it in a tab of its own, the way a job's log
+    -- is. `J` and `K` step through the commits from inside the patch
+    -- -- down the list is back in time, and the two keys move the way
+    -- the eye would on it; neither means anything in a buffer that
+    -- cannot be edited.
+    history = {
+      show = "<CR>", -- what the commit under the cursor did to the file
+      older = "J", -- in the patch: the commit before this one
+      newer = "K", -- ...and the one after
+      browser = "o", -- the commit, on GitLab
+      quit = "q", -- close the list, or the patch's tab
     },
 
     -- The window a merge request of your own is written in. Nothing

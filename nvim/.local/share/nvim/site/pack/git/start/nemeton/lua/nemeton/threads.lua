@@ -823,15 +823,13 @@ local function fit(s, width)
   return out
 end
 
--- What a line of the quoted code is drawn on, by what has become of
--- it. The quotation's own ground for the line that has not moved,
--- which is most of them, and one of the three colours a diff is read
--- in for a line that has: the verdict is on the line and not on the
--- block, because the reader's question is about one line.
+-- What a line of the quoted code is drawn on, by whether the file
+-- still has it. The quotation's own ground for the line it does, which
+-- is most of them, and the colour a line taken away is read in for the
+-- line it does not: the verdict is on the line and not on the block,
+-- because the reader's question is about one line.
 local WAS = {
   gone = "NemetonWas",
-  changed = "NemetonWasChanged",
-  added = "NemetonWasAdded",
 }
 local QUOTE = "NemetonQuote"
 
@@ -944,10 +942,10 @@ end
 ---
 --- `opts.was` -- the code the thread is about, drawn above the first
 --- note. A list of strings, or of `{ text = ..., state = ..., line = ... }`
---- where the caller knows what has become of each line -- "changed",
---- "added", "gone", or nothing at all for the line that has not moved
---- -- and which line of the file it is now, drawn in front of it.
---- `session.quoted` is what works those out.
+--- where the caller knows what has become of each line -- "gone", or
+--- nothing at all for the line the file still has -- and which line
+--- of the file it is now, drawn in front of it. `session.quoted` is
+--- what works those out.
 ---
 --- `opts.paint_was(was)` -- the painter for that quotation, handed the
 --- list whole, for the caller that can colour it better than
@@ -1378,9 +1376,9 @@ function M.render(thread, opts)
     -- a colour reads as text that has been cut off.
     local room = code and (code - vim.fn.strdisplaywidth(rail[1]) - 2)
     -- A line of the quotation is its text and, where the caller worked
-    -- them out, what has happened to it since the comment was written
-    -- and which line of the file it is now. A plain string is the
-    -- caller that had nothing to compare against.
+    -- them out, whether the file still has it and which line of the
+    -- file it is now. A plain string is the caller that had nothing to
+    -- compare against.
     local texts, states, numbers = {}, {}, {}
     local digits = 0
     for i, line in ipairs(opts.was) do

@@ -106,7 +106,8 @@ return {
       -- `keys.global.toggle_diff` already does it from anywhere.
       quit = false,
     },
-    -- Inside the side-by-side old-revision window.
+    -- Inside the side-by-side old-revision window. `keys.view.layout`
+    -- is bound there too, and does what `quit` does.
     old = {
       quit = "q",
       -- Jump to the matching row in the file.

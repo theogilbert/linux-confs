@@ -456,6 +456,18 @@ local function choose_layout(view, layout)
   end
 end
 
+--- ...and the old window has to be able to make it too. `<leader>go`
+--- pressed in there has one meaning it can have -- back to inline --
+--- and `q` there, which closes the same window, is that choice made
+--- under another name: a close that left `view.layout` at `"side"` had
+--- the next file `]f` opens come up side by side again, and the next
+--- press of the toggle in your buffer closing a window that was
+--- already gone. Public because `oldside` binds both keys and is
+--- required by this module, so it reaches back at call time.
+function M.choose_layout(view, layout)
+  choose_layout(view, layout)
+end
+
 local function toggle_layout(view)
   choose_layout(view, view.layout == "side" and "inline" or "side")
 end
@@ -843,6 +855,34 @@ local function setup_watchers(view)
           return
         end
         M.close(view.bufnr)
+      end)
+    end,
+  })
+
+  -- ...and `BufWinLeave` does not fire at all while the buffer is still
+  -- on screen somewhere else -- the same file open in another tab, or in
+  -- a second split. The window this view was drawn in then moved on to
+  -- the next file with the view still standing: `view.win` showing a
+  -- file that is not the view's, the old revision still split beside
+  -- it, and the next file's own old window opened alongside -- two old
+  -- sides on screen, one of them for a file that is no longer there.
+  -- What the view is drawn in is the window; when that moves on, the
+  -- view goes with it, exactly as when the buffer left its last window.
+  -- The event is only the moment to look: what is checked is the state.
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = view.augroup,
+    callback = function()
+      if views[view.bufnr] ~= view
+        or not (view.win and vim.api.nvim_win_is_valid(view.win))
+        or vim.api.nvim_win_get_buf(view.win) == view.bufnr then
+        return
+      end
+      vim.schedule(function()
+        if views[view.bufnr] == view
+          and view.win and vim.api.nvim_win_is_valid(view.win)
+          and vim.api.nvim_win_get_buf(view.win) ~= view.bufnr then
+          M.close(view.bufnr)
+        end
       end)
     end,
   })

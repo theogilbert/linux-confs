@@ -205,7 +205,8 @@ it.
 IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
 >
     <CR>            jump to the matching row in your file
-    q               close it
+    <leader>go      back to the inline layout
+    q               the same: close it, and the next file opens inline
 <
 ==============================================================================
 7. THE FILE LIST                                                  *uatis-list*

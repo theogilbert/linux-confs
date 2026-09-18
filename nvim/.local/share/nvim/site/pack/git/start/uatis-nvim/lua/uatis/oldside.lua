@@ -657,13 +657,22 @@ local function setup_keymaps(view, buf)
       })
     end
   end
-  map(k.quit, function()
+  -- Closing this window from inside it is choosing the inline layout,
+  -- and is recorded as one so the next file opens the way this one was
+  -- left. `view.choose_layout` closes the window and re-renders; what
+  -- is left to do is put the cursor back in your file, since the
+  -- window it was in is gone.
+  local function back_inline()
     local win = view.win
-    M.close(view)
+    require("uatis.view").choose_layout(view, "inline")
     if win and vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_set_current_win(win)
     end
-  end, "uatis: close the old revision")
+  end
+  map(k.quit, back_inline, "uatis: close the old revision")
+  -- The same key that opened it from your buffer: a toggle that only
+  -- worked from one of the two windows it lays out was half a toggle.
+  map(config.keys.view.layout, back_inline, "uatis: back to the in-place layout")
   map(k.jump, function()
     if not (view.win and vim.api.nvim_win_is_valid(view.win)) then
       return

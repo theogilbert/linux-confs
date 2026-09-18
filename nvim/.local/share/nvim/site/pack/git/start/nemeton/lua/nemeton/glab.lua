@@ -729,6 +729,23 @@ function M.discussions(root, iid, cb)
   }, { cwd = root }, cb)
 end
 
+--- Every push the merge request has had, oldest first: GitLab's
+--- "versions", each the head the branch was at and when it got there.
+---
+--- What says which commit a comment was written against, because the
+--- note's own `position` does not: GitLab moves a note's position
+--- forward on every push it can trace the line through, head sha and
+--- all, so what a note carries is the last push its line survived and
+--- not the one its author was reading. The version current when the
+--- note was written is; the API keeps no other record of it.
+function M.versions(root, iid, cb)
+  json({
+    "api",
+    "--paginate",
+    ("projects/:fullpath/merge_requests/%d/versions?per_page=100"):format(iid),
+  }, { cwd = root }, cb)
+end
+
 --- Who has approved the merge request, and how many more it needs.
 ---
 --- Its own endpoint because approvals are their own resource: the

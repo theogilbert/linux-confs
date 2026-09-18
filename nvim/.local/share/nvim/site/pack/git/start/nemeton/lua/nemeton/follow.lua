@@ -73,20 +73,33 @@ function M.set(buf, refs, leave)
   drawn[buf] = { refs = refs or {}, leave = leave }
 end
 
---- The reference at (row, col) of `buf` -- 0-based, the way the cursor
---- is reported once the row is taken off it.
+--- The reference the cursor is inside at (row, col) of `buf` -- 0-based,
+--- the way the cursor is reported once the row is taken off it -- and
+--- nothing from anywhere else on the line. What a hover wants: the
+--- thing the cursor is *on*, not the nearest.
+function M.under(buf, row, col)
+  for _, ref in ipairs((drawn[buf] or {}).refs or {}) do
+    if ref.row == row and col >= ref.col and col < ref.end_col then
+      return ref.ref
+    end
+  end
+  return nil
+end
+
+--- The reference at (row, col) of `buf`, for a key.
 ---
 --- The one the cursor is inside, and otherwise the next one along on
 --- the same line: `<C-]>` pressed at the start of a line that carries
 --- one link should follow it rather than say there is nothing here.
 --- Nothing at all from a line that carries none, which is most of them.
 function M.at(buf, row, col)
+  local inside = M.under(buf, row, col)
+  if inside then
+    return inside
+  end
   local best = nil
   for _, ref in ipairs((drawn[buf] or {}).refs or {}) do
     if ref.row == row then
-      if col >= ref.col and col < ref.end_col then
-        return ref.ref
-      end
       if ref.col > col and (not best or ref.col < best.col) then
         best = ref
       end
@@ -215,6 +228,49 @@ function M.line_link(path, first, last, at, project)
   local lines = (last and last > first) and ("#L%d-%d"):format(first, last)
     or ("#L%d"):format(first)
   return ("%s/-/blob/%s/%s%s"):format(project, sha, path, lines)
+end
+
+--- A link to `note`, as the forge's own "copy link" on a comment writes
+--- it: the merge request's page with `#note_<id>` on the end, which is
+--- the anchor |nemeton-follow| reads back. Nil for a comment the forge
+--- has not got -- a draft, or one still on its way -- and for a merge
+--- request this plugin never learned the URL of.
+function M.note_link(note)
+  local session = require("nemeton.session")
+  local page = session.current and session.current.web_url
+  if not (page and note and note.id) or note.draft or note.sending then
+    return nil
+  end
+  return ("%s#note_%s"):format(page, note.id)
+end
+
+--- Puts a link to `note` -- or, given none, to the opening comment of
+--- `thread` -- on the clipboard, and says so. The verb behind the link
+--- key in the three windows that draw a conversation: the same key as
+--- on a line of code, since it is the same gesture, and what is under
+--- the cursor in here is a comment rather than a line.
+---
+--- The opening comment where the cursor is on no comment in
+--- particular -- the blank between two threads, the code one was
+--- written against, or a window that lists each thread by its head --
+--- because a link to a thread is a link to its first note.
+function M.copy_note(thread, note)
+  local session = require("nemeton.session")
+  note = note or (thread and thread.notes and thread.notes[1])
+  if not note then
+    return
+  end
+  local url = M.note_link(note)
+  if not url then
+    session.notify(
+      (note.draft or note.sending) and "not sent yet — nothing on the forge to link to"
+        or "no page to link to — the merge request has no url",
+      vim.log.levels.WARN
+    )
+    return
+  end
+  M.copy(url)
+  session.notify(("comment by %s — link copied"):format(note.author or "?"))
 end
 
 --- Whether `sha` names a commit this checkout has.
@@ -354,28 +410,28 @@ end
 --- the sha to `git show`, the name to ask around about, the URL to send
 --- to somebody. So the default hands over the string.
 ---
---- A link goes to the clipboard as well as to the message, because a
---- URL is the one of them that is never typed out again by hand.
+--- The link goes to the clipboard as well as to the message, for every
+--- kind that has one, because a URL is the one of them that is never
+--- typed out again by hand -- and a name said out loud with nothing
+--- copied is a key that seemed to do half of what it was pressed for.
+--- Nowhere to point -- a mention with no review open to read the
+--- forge off -- is the name alone.
 local function said(ref, href)
+  local what = nil
   if ref.kind == "mention" then
-    return ("User %s"):format(ref.text)
-  end
-  if ref.kind == "commit" then
-    return ("commit %s"):format(ref.text)
-  end
-  if ref.kind == "issue" then
-    return ("issue %s"):format(ref.text)
-  end
-  if ref.kind == "mr" then
-    return ("merge request %s"):format(ref.text)
-  end
-  -- A comment this review cannot show. Said out loud rather than passed
-  -- over in silence: the reader pressed the key expecting to be taken
-  -- there, and "link copied" on its own reads as the plugin having
-  -- decided not to bother.
-  local why = nil
-  if ref.kind == "thread" then
-    why = ref.iid ~= mine() and ("comment %s is on !%s"):format(ref.text, ref.iid)
+    what = ("User %s"):format(ref.text)
+  elseif ref.kind == "commit" then
+    what = ("commit %s"):format(ref.text)
+  elseif ref.kind == "issue" then
+    what = ("issue %s"):format(ref.text)
+  elseif ref.kind == "mr" then
+    what = ("merge request %s"):format(ref.text)
+  elseif ref.kind == "thread" then
+    -- A comment this review cannot show. Said out loud rather than
+    -- passed over in silence: the reader pressed the key expecting to
+    -- be taken there, and "link copied" on its own reads as the plugin
+    -- having decided not to bother.
+    what = ref.iid ~= mine() and ("comment %s is on !%s"):format(ref.text, ref.iid)
       -- Resolved while resolved threads are not being drawn, deleted
       -- since somebody linked it, or written on a merge request this
       -- editor has not got open.
@@ -383,10 +439,10 @@ local function said(ref, href)
   end
   local url = href or ref.href
   if not url then
-    return nil
+    return what
   end
   M.copy(url)
-  return why and (why .. " — link copied") or "Link copied to clipboard"
+  return what and (what .. " — link copied") or "Link copied to clipboard"
 end
 
 --- Follows `ref`: whatever `config.comments.follow` says to do with one

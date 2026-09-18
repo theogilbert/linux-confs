@@ -256,6 +256,14 @@ not been sent yet is a link that works once it has. With a review open
 it links against the merge request's head instead, and on an old side
 |nemeton-old-side| against that revision.
 
+The same key in the three windows that draw a conversation -- the pane
+|nemeton-pane-window|, every-thread |nemeton-conversation-window| and
+the comments window |nemeton-notes-window| -- copies a link to the
+*comment* under the cursor instead: `…/merge_requests/7#note_1234`,
+which is what the forge's own "copy link" on a comment gives you. The
+same gesture, a link to what the cursor is on, so the same key. A
+comment kept unsent has no page yet, and says so.
+
 Where "copied" puts it is `clipboard` |nemeton-config-clipboard|: the
 `+` register, or a function of yours.
 
@@ -508,6 +516,8 @@ then the ones that are about no line at all.
     e               edit one of its comments
     d               delete one, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
+    K               who gave the reaction under the cursor
+    <leader>mL      a link to it, on the clipboard
     R               refetch
     q               close
 
@@ -542,6 +552,8 @@ EVERY THREAD                                     *nemeton-conversation-window*
     e               edit the comment under the cursor
     d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
+    K               who gave the reaction under the cursor
+    <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               close
 
@@ -619,7 +631,7 @@ sits, how many answers there are and whether the line carries a second
 argument -- and `g?`, on the right.
 
 `g?` is the whole of what the header says about the keys, because there
-are eleven of them and a header has room to name three. It prints them
+are thirteen of them and a header has room to name three. It prints them
 in a float, read out of the bindings themselves rather than out of a
 list written beside them: a help that is a second copy of the keymaps is
 a help that is wrong the first time one of them moves. `q` or `<Esc>`
@@ -638,10 +650,18 @@ enough.
     x               resolve the thread, or reopen it
     <C-]>           follow what is under the cursor |nemeton-follow|
     +               react to the comment under the cursor
+    K               who gave the reaction under the cursor
+    <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               fold the conversations away
     ]m  [m          the next thread owed an answer, and the previous
     g?              all of the above, in a float
+
+`<CR>` lands the way `]m` lands |nemeton-mappings-session|: on the
+anchor line, with the whole span of a comment written over a selection
+in the middle of the window rather than its last line wherever the
+scroll left it. A conversation is read beside its code, and the code
+is what the key is pressed for.
 
 `e` and `d` act on the comment the cursor is standing on rather than on
 one picked out of a list: the whole conversation is drawn in here, so
@@ -1114,9 +1134,17 @@ terminal drawing one leaves a cell nobody wrote, which puts the border
 of every float that sizes itself to its own text through the last
 character of a line.
 
-The names of the people who gave them are not drawn. That is a hover on
-the web page and a line of usernames in here, and a review is read for
-what people wrote.
+The names of the people who gave them are not drawn under the note: a
+review is read for what people wrote. But "who" is asked of a row
+often enough -- three thumbs from three maintainers is an argument
+being over, and three from the author's friends is not -- and on the
+page the answer is a hover. So it is a hover here: the cursor resting
+on a picture, or `K` on it, opens a float beside it with the names,
+"you" among them where one is yours, and the next move takes it away.
+Nothing to close and nothing left open over the prose. Resting is
+|CursorHold|, which is 'updatetime' -- four seconds as Neovim ships and
+a few hundred milliseconds in most configs, where it is what makes a
+hover a hover. `comments.hover = false` leaves only the key.
 
 All of it is one GraphQL call beside the discussions on every refresh.
 REST publishes reactions one note at a time, so the REST answer to
@@ -1633,6 +1661,7 @@ COMMENTS                                             *nemeton-config-comments*
       heading_accent = true, -- ...leaning towards the thread's own colour
       heading = 0.06,        -- how far it leans
       reactions = true,      -- the emoji on a note, under it
+      hover = true,          -- ...and who gave one, on the cursor resting
       reaction_names = {...},-- ...and which ones `+` offers
       wrap = 80,             -- the widest a comment is drawn
       pane_wrap = false,     -- ...and whether the pane wraps code too
@@ -1697,8 +1726,11 @@ it.
 after the date: eight digits, the ones GitLab itself prints. The other
 half of "when" -- a review comment is about code at a moment, the date
 says which afternoon and this says which push, and `git show` on it says
-what the file said then. A comment on the merge request as a whole was
-written against no commit and gets none.
+what the file said then. The push current when the note was written,
+read out of the merge request's versions -- not the head its position
+carries, which GitLab moves forward on every push it can trace the
+line through. A comment on the merge request as a whole was written
+against no commit and gets none. `false` spares the call as well.
 
 `emoji` draws a `:name:` GitLab knows as the character it names; see
 |nemeton-emoji|.

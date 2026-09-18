@@ -262,10 +262,10 @@ function M.refresh(cb)
     return
   end
   local mr = M.current
-  -- Both at once. The drafts are a second round trip and a refresh runs
+  -- All at once. The drafts are a second round trip and a refresh runs
   -- after everything that posts anything, so they go out together and
-  -- the buffers are redrawn once, when both are in.
-  local pending, ok = 3, true
+  -- the buffers are redrawn once, when all four are in.
+  local pending, ok = 4, true
   local function done()
     pending = pending - 1
     if pending > 0 or M.current ~= mr then
@@ -282,6 +282,9 @@ function M.refresh(cb)
     -- have been reacted to by.
     threads.attach_reactions(mr.inline, mr.reactions, mr.me)
     threads.attach_reactions(mr.overview, mr.reactions, mr.me)
+    -- ...and the push each was written on, which the note's own
+    -- position stopped saying the first time the branch moved.
+    threads.attach_commits(mr.inline, mr.versions)
     -- ...and whatever is still in flight, which the refresh that
     -- carries it home is the one to take away: a comment that vanished
     -- for the length of a round trip and then came back is a comment
@@ -322,6 +325,18 @@ function M.refresh(cb)
         mr.reactions = given
         done()
       end)
+    end)
+  end
+
+  -- ...and the pushes, for the commit in the head of each note.
+  -- Quietly as well: a forge that will not list them leaves the
+  -- position's head to stand in, which is what was drawn before.
+  if not config.comments.head_commit then
+    done()
+  else
+    glab.versions(mr.root, mr.iid, function(data)
+      mr.versions = type(data) == "table" and data or nil
+      done()
     end)
   end
 
@@ -1086,6 +1101,24 @@ function M.thread_of(id)
   return nil
 end
 
+--- Scrolls `win` so that the code the threads on `line` of `path` are
+--- about is in the middle of it, and not the anchor line wherever the
+--- scroll happened to leave it: a reader arrives on a line to read
+--- what is around it, and a comment written over a selection is about
+--- the lines above the anchor as much as the anchor. Called after the
+--- pane has opened, since that is what decides how tall the window is.
+local function centre(win, path, line)
+  local span = 0
+  for _, t in ipairs(((M.current.by_file or {})[path] or {})[line] or {}) do
+    span = math.max(span, threads.span(t))
+  end
+  local height = vim.api.nvim_win_get_height(win)
+  local top = math.max(math.floor((line - span + line) / 2) - math.floor(height / 2), 1)
+  vim.api.nvim_win_call(win, function()
+    vim.fn.winrestview({ topline = top })
+  end)
+end
+
 --- Shows the pane the thread the cursor has just been put on, opening
 --- it when it is shut. Arriving at a conversation -- by `]m`, from a
 --- list, down a link -- is asking to read it, and a gutter marker
@@ -1121,6 +1154,11 @@ function M.goto_thread(thread, before)
   -- Going to a thread is asking to be shown it, whichever window asked
   -- -- the every-thread window, the comments window, the quickfix list.
   read_here()
+  -- ...and to be shown the code it is about, the way the walk lands:
+  -- the whole span in the middle of the window, so that `<CR>` in the
+  -- pane on a comment written over twelve lines shows the twelve and
+  -- not the last of them at the bottom of the screen.
+  centre(vim.api.nvim_get_current_win(), thread.path, vim.api.nvim_win_get_cursor(0)[1])
   return true
 end
 
@@ -1507,21 +1545,7 @@ function M.jump(dir)
   -- wanders through the code, and moves when the reviewer says "the
   -- next thing owed an answer" -- and opens on that, if it was shut.
   read_here()
-  -- With the code the thread is about in the middle of the window,
-  -- and not the anchor line wherever the scroll happened to leave it:
-  -- the walk lands on a line to read what is around it, and a comment
-  -- written over a selection is about the lines above the anchor as
-  -- much as the anchor. After the pane has opened, since that is what
-  -- decides how tall the window is.
-  local span = 0
-  for _, t in ipairs(M.current.by_file[target.path][target.line] or {}) do
-    span = math.max(span, threads.span(t))
-  end
-  local height = vim.api.nvim_win_get_height(win)
-  local top = math.max(math.floor((landed - span + landed) / 2) - math.floor(height / 2), 1)
-  vim.api.nvim_win_call(win, function()
-    vim.fn.winrestview({ topline = top })
-  end)
+  centre(win, target.path, landed)
   return target.line
 end
 

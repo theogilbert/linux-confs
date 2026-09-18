@@ -154,6 +154,17 @@ the line is being read at, which is what a permalink is for. A HEAD the
 forge has not been sent yet is a link that works once it has. With a
 review open it links against the merge request's head instead.
 
+The same key in the three windows that draw a conversation — the pane,
+every-thread and the comments window — copies a link to the *comment*
+under the cursor instead, `…/merge_requests/7#note_1234`, which is what
+the forge's own "copy link" on a comment gives you and is otherwise
+three clicks into a page you are not reading. It is the same gesture,
+a link to what the cursor is on, so it is the same key. In the comments
+window, which draws each thread by its opening line, it is a link to
+that; in the other two, on a line that is nobody's comment, it is the
+thread's opening one. A comment kept unsent has no page yet and says
+so.
+
 Where "copied" puts it is `clipboard` in the config: `nil` is the `+`
 register, and a function is called with the link instead — for the
 editor at the far end of an ssh session, whose `+` is a clipboard on
@@ -264,7 +275,9 @@ request itself, which has no code to be read beside and is otherwise
 only ever seen as its opening line; the pane stays up while the reply
 is written. `r` replies to it, `a` writes a comment on the merge
 request, `t` writes one people can reply to, `e` edits one of its
-comments, `d` deletes one, `R` refetches, `q` closes. Every thread is
+comments, `d` deletes one, `K` says who gave the reaction under the
+cursor, `<leader>mL` copies a link to it, `R` refetches, `q` closes.
+Every thread is
 there, the ones on code saying which line they sit on, and each is its
 opening note and nothing else — the answers to it are what
 `:Nemeton conversation` is for.
@@ -388,7 +401,9 @@ the review starts on the new one, discussions and all.
 
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
-comments, `d` deletes one, `R` refetches, `q` closes.
+comments, `d` deletes one, `K` says who gave the reaction under the
+cursor, `<leader>mL` copies a link to the comment under the cursor,
+`R` refetches, `q` closes.
 
 The pane's own header is the one line of it that does not scroll, so it
 carries what stays true while the conversation is read: its state, in
@@ -406,8 +421,12 @@ then the date, and the name of who said it only when dropping both was
 not enough.
 
 In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the code
-the thread being read is about, `r` replies, `e` edits, `d` deletes, `+`
-reacts, `R` refetches — and `q` folds the conversations away rather than only closing
+the thread being read is about, landing the way `]m` lands, with the
+whole span of a comment written over a selection in the middle of the
+window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says who
+gave the reaction under the cursor, `<leader>mL` copies a link to the
+comment under the cursor, `R` refetches — and `q`
+folds the conversations away rather than only closing
 the window, because while it is open the pane *is* what expanded means.
 Closing it any other way says the same thing: the mode follows the
 window. `]m` and `[m` work in there too: out in the code they move the
@@ -508,9 +527,14 @@ The head of every note says what commit it was written against as well
 as when — eight digits after the date, the ones GitLab itself prints.
 That is the other half of "when": a review comment is about code at a
 moment, "27 Aug" says which afternoon and the sha says which push, and
-`git show` on it says what the file said then. A comment on the merge
-request as a whole was written against no commit and gets none.
-`comments.head_commit = false` leaves the date to say it alone.
+`git show` on it says what the file said then. It is the push that was
+current when the note was written, read out of the merge request's
+versions — not the head the note's own position carries, which GitLab
+moves forward on every push it can trace the line through, so that a
+comment on the first push and still on its line after the fourth would
+name the fourth. A comment on the merge request as a whole was written
+against no commit and gets none. `comments.head_commit = false` leaves
+the date to say it alone, and spares the call.
 
 The head of every note — who said it and when — is drawn on a band told
 apart from the ground the conversation is on by colour rather than by
@@ -943,6 +967,16 @@ are drawn in a colour of their own so the picker and the row agree
 about what the key will do. `comments.reaction_names` is what it
 offers, plus whatever is already on the note.
 
+Who gave them is not drawn under the note — a review is read for what
+people wrote — but it is asked of the row often enough: three thumbs
+from three maintainers is an argument being over, and three from the
+author's friends is not. So it is the hover it is on the page: the
+cursor resting on a picture, or `K` on it, opens a float beside it with
+the names, "you" among them where one is yours, and the next move
+takes it away. Resting is `CursorHold`, which is `updatetime` — four
+seconds as Neovim ships, a few hundred milliseconds in most configs.
+`comments.hover = false` leaves only the key.
+
 That list is short on purpose and it is not the limit.
 `vim.ui.select` is a numbered list unless you have replaced it, and a
 numbered list of all 258 names `emoji.lua` knows is a wall rather than
@@ -1202,6 +1236,7 @@ lua/nemeton/
                  under the list and in the merge request's own window
   overview.lua   that window: the description, and the keys to act on it
   peek.lua       one thread, in a float
+  who.lua        who gave a reaction, in a float the next move closes
   notes.lua      the comments about the merge request rather than about
                  a line of it -- read, answered, written
   conversation.lua  every thread at once, to read rather than to walk

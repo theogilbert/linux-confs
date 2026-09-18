@@ -234,8 +234,12 @@ return {
     -- after it read the same otherwise. `git show` on it says what the
     -- file said then.
     --
-    -- GitLab gives it for comments on a line; one on the merge request
-    -- as a whole was written against no commit and gets none.
+    -- The push that was current when the note was written, out of the
+    -- merge request's versions, which is one more call per refresh:
+    -- the note's own position is no record of it, since GitLab moves
+    -- a position forward on every push it can trace the line through.
+    -- Comments on a line only; one on the merge request as a whole was
+    -- written against no commit and gets none.
     head_commit = true,
 
     -- Whether a `:name:` in a comment is drawn as the emoji GitLab
@@ -403,6 +407,15 @@ return {
     -- field, or a token without `read_api`, is a review drawn without
     -- pictures rather than an error after every post.
     reactions = true,
+
+    -- ...and whether the cursor resting on one says who gave it, in a
+    -- float the next move takes away. The names are not drawn under
+    -- the note -- that is a hover on the web page, and this is the
+    -- hover here. Resting is `CursorHold`, which is 'updatetime':
+    -- four seconds as Neovim ships and a few hundred milliseconds in
+    -- most configs. `false` leaves the key (`K` in the windows that
+    -- draw a conversation), which asks the same thing on purpose.
+    hover = true,
 
     -- ...and which of them the key offers, in the order it offers
     -- them.
@@ -983,6 +996,12 @@ return {
       edit = "e", -- rewrite one of the comments in this thread
       delete = "d", -- delete one of them, after asking
       follow = "<C-]>", -- what the word under the cursor points at
+      who = "K", -- who gave the reaction under the cursor
+      -- A link to the thread under the cursor on the clipboard. The
+      -- same key as on a line of code, because it is the same gesture
+      -- -- a link to what the cursor is on -- and the one key in these
+      -- windows that is not a letter for that reason.
+      link = "<leader>mL",
       refresh = "R",
       quit = "q",
     },
@@ -1014,6 +1033,8 @@ return {
       edit = "e",
       delete = "d",
       follow = "<C-]>", -- what the word under the cursor points at
+      who = "K", -- who gave the reaction under the cursor
+      link = "<leader>mL", -- a link to the comment under the cursor, copied
       refresh = "R",
       quit = "q",
     },
@@ -1053,6 +1074,16 @@ return {
       -- same shape: a key that writes should not look like the letters
       -- that read.
       react = "+",
+      -- ...and who gave the one under the cursor, in a float the next
+      -- move takes away. Vim's own key for "what is this", and the same
+      -- answer the cursor resting on it gives (`comments.hover`).
+      who = "K",
+      -- A link to the comment under the cursor, on the clipboard: what
+      -- the forge's own "copy link" on a comment gives you, from the
+      -- window it is read in. The same key as on a line of code, since
+      -- it is the same gesture, and a comment is what is under the
+      -- cursor in here.
+      link = "<leader>mL",
       refresh = "R",
       quit = "q",
       -- ...and the list of all of them, since there are now more than a

@@ -36,6 +36,7 @@ local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local syntax = require("nemeton.syntax")
 local threads = require("nemeton.threads")
+local who = require("nemeton.who")
 
 local M = {}
 
@@ -675,6 +676,7 @@ function M.open(at)
   end
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
+  who.attach(M.buf)
 
   -- Split from the window the code is in, and back to it afterwards:
   -- the pane is opened to be read beside the file, not to be typed in,
@@ -750,6 +752,7 @@ function M.open(at)
       "delete the comment under the cursor",
     },
     { k.follow, follow.here, "follow what is under the cursor" },
+    { k.who, who.show, "who gave the reaction under the cursor" },
     -- On the comment under the cursor, like the two above it: the
     -- whole conversation is drawn here, so the reader is already
     -- pointing at the one they mean.
@@ -759,6 +762,17 @@ function M.open(at)
         edit.react(thread, nil, note_at())
       end),
       "react to the comment under the cursor",
+    },
+    -- ...and a link to it, where the forge's own "copy link" is three
+    -- clicks into a page that is not being read. Buffer-local over the
+    -- global key of the same name, which in here would look for a line
+    -- of a file and find a pane.
+    {
+      k.link,
+      on_thread(function(thread)
+        follow.copy_note(thread, note_at())
+      end),
+      "copy a link to the comment under the cursor",
     },
   }
   -- The walk, from inside the pane. `]m` and `[m` are bound everywhere

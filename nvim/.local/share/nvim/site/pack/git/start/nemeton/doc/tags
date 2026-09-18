@@ -3,6 +3,7 @@ answer	nemeton.txt	/*answer*
 are	nemeton.txt	/*are*
 beside	nemeton.txt	/*beside*
 but	nemeton.txt	/*but*
+comment	nemeton.txt	/*comment*
 hl-NemetonBold	nemeton.txt	/*hl-NemetonBold*
 hl-NemetonChanged	nemeton.txt	/*hl-NemetonChanged*
 hl-NemetonCitation	nemeton.txt	/*hl-NemetonCitation*
@@ -31,6 +32,7 @@ last	nemeton.txt	/*last*
 nemeton	nemeton.txt	/*nemeton*
 nemeton-commands	nemeton.txt	/*nemeton-commands*
 nemeton-config-ci	nemeton.txt	/*nemeton-config-ci*
+nemeton-config-clipboard	nemeton.txt	/*nemeton-config-clipboard*
 nemeton-config-comments	nemeton.txt	/*nemeton-config-comments*
 nemeton-config-compose	nemeton.txt	/*nemeton-config-compose*
 nemeton-config-glab	nemeton.txt	/*nemeton-config-glab*

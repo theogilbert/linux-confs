@@ -26,6 +26,7 @@ local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
 local win = require("nemeton.win")
+local who = require("nemeton.who")
 
 local M = {}
 
@@ -265,6 +266,7 @@ function M.open(focus)
   local height = math.max(4, math.floor(vim.o.lines * 0.5))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
+  who.attach(M.buf)
   local back = win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
@@ -309,6 +311,7 @@ function M.open(focus)
     -- What the word under the cursor points at -- a link, a commit, the
     -- person a comment is calling on. See `comments.follow`.
     { k.follow, follow.here, "follow what is under the cursor" },
+    { k.who, who.show, "who gave the reaction under the cursor" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {
@@ -369,6 +372,16 @@ function M.open(focus)
         end
       end,
       "delete a comment in the thread here",
+    },
+    -- To the thread's opening note: that is the one line of it this
+    -- window draws, and a link to a thread is a link to where it
+    -- starts.
+    {
+      k.link,
+      function()
+        follow.copy_note(thread_at())
+      end,
+      "copy a link to the thread here",
     },
     {
       k.refresh,

@@ -333,6 +333,48 @@ function M.detach_sending(inline, overview, one)
   end
 end
 
+--- Puts on each note the commit it was written against: the head of
+--- the push that was current when it was, out of `versions` -- the
+--- merge request's, oldest first, as `glab.versions` fetched them.
+---
+--- Not the note's `position.head_sha`, which is what this used to
+--- draw and is the wrong fact: GitLab moves a position forward on
+--- every push it can trace the line through, so a comment written on
+--- the first push and still on its line after the fourth carries the
+--- fourth's head. The reader wanting to `git show` what the author
+--- was looking at was shown the wrong tree.
+---
+--- Only the threads on a line: a comment on the merge request as a
+--- whole was written against no commit, and the same is said of it
+--- as before. Compared to the second, which is what both timestamps
+--- carry, and in UTC, which is what GitLab writes. In place, and safe
+--- to run again. A note earlier than the first push, or no versions
+--- at all, leaves `commit` unset and the position's head to stand in.
+function M.attach_commits(list, versions)
+  local pushes = {}
+  for _, v in ipairs(versions or {}) do
+    if v.head_commit_sha and v.created_at then
+      table.insert(pushes, { at = v.created_at:sub(1, 19), sha = v.head_commit_sha })
+    end
+  end
+  table.sort(pushes, function(a, b)
+    return a.at < b.at
+  end)
+  for _, t in ipairs(list or {}) do
+    for _, note in ipairs(t.notes or {}) do
+      note.commit = nil
+      if t.path and note.created_at then
+        local at = note.created_at:sub(1, 19)
+        for _, push in ipairs(pushes) do
+          if push.at <= at then
+            note.commit = push.sha
+          end
+        end
+      end
+    end
+  end
+end
+
 --- Puts the reactions on the notes they were given to.
 ---
 --- `given` is `{ [note_id] = { { name, user }, ... } }` -- what
@@ -1551,10 +1593,12 @@ function M.render(thread, opts)
     -- ...and the commit it was said against, which is the other half of
     -- when. A review comment is about code at a moment: eight digits
     -- say which push it was written on, and `git show` on them says
-    -- what it said then. The note's own where it has one -- an answer
-    -- three days later is an answer to a different branch -- and the
-    -- thread's otherwise, which is what an older GitLab gives.
-    local sha = config.comments.head_commit and (note.head_sha or thread.head_sha)
+    -- what it said then. The push current when it was written, where
+    -- the versions have been fetched (`attach_commits`); the note's
+    -- position otherwise, which is the last push its line survived and
+    -- the right answer only for one written since -- and the thread's
+    -- where the note has none, which is what an older GitLab gives.
+    local sha = config.comments.head_commit and (note.commit or note.head_sha or thread.head_sha)
     if sha then
       table.insert(head, { " · " .. sha:sub(1, 8), on_band("NemetonMeta") })
       -- The first thing dropped: it is the finest-grained fact on the
@@ -1688,15 +1732,21 @@ function M.render(thread, opts)
     -- a colour of their own: the key that adds one takes it back, so
     -- which of them are yours is what says what the key will do.
     --
-    -- No names. Who reacted is a hover on the web page and a line of
-    -- usernames in here -- and a review is read for what people wrote,
-    -- not for who thumbed it.
+    -- No names. Who reacted is a hover on the web page, and a hover in
+    -- here too (`nemeton.who`): each picture carries them beside the
+    -- chunk, the way a link carries where it goes, and a review is
+    -- read for what people wrote, not for who thumbed it.
     if config.comments.reactions and note.reactions and #note.reactions > 0 then
       local row = front(lead)
       for n, given in ipairs(note.reactions) do
+        local picture = M.emoji(":" .. given.name .. ":")
+        if n > 1 then
+          table.insert(row, { "  ", "NemetonReaction" })
+        end
         table.insert(row, {
-          ("%s%s %d"):format(n > 1 and "  " or "", M.emoji(":" .. given.name .. ":"), given.count),
+          ("%s %d"):format(picture, given.count),
           given.mine and "NemetonReactionMine" or "NemetonReaction",
+          ref = { kind = "reaction", name = given.name, who = given.who, mine = given.mine },
         })
       end
       table.insert(out, row)

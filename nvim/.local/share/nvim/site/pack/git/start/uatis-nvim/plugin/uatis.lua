@@ -23,6 +23,12 @@ end, {
   desc = "uatis: what one commit did, in a tab of its own (default: ask which)",
 })
 
+vim.api.nvim_create_user_command("UatisConflicts", function()
+  require("uatis").conflicts()
+end, {
+  desc = "uatis: start or end a review of the files a merge stopped on",
+})
+
 vim.api.nvim_create_user_command("UatisColors", function()
   require("uatis").colors()
 end, {

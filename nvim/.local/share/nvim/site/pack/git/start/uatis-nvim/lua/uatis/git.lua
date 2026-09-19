@@ -112,6 +112,66 @@ function M.blob(root, rev, path, cb)
   end)
 end
 
+-- ------------------------------------------------------------------
+-- A merge in progress
+-- ------------------------------------------------------------------
+
+--- The paths with unmerged entries in the index: the files a merge, a
+--- rebase or a cherry-pick stopped on. cb({ path, ... }).
+function M.unmerged(root, cb)
+  run(root, { "diff", "--name-only", "--diff-filter=U", "-z" }, function(ok, out)
+    if not ok then
+      cb({})
+      return
+    end
+    local paths = {}
+    for path in out:gmatch("([^%z]+)") do
+      table.insert(paths, path)
+    end
+    cb(paths)
+  end)
+end
+
+--- One side of an unmerged path, out of the index: stage 1 is the
+--- base, 2 ours, 3 theirs. cb(text|nil) -- nil where the stage does not
+--- exist, as the base does not for a file both sides added.
+---
+--- Not through `blob`: that cache is content-addressed by revision and
+--- never evicted, and `:1:path` names whatever the index holds at the
+--- moment, which the next merge replaces.
+function M.stage(root, n, path, cb)
+  run(root, { "show", ":" .. n .. ":" .. path }, function(ok, out)
+    if not ok then
+      cb(nil)
+      return
+    end
+    cb((out:gsub("\n$", "")))
+  end)
+end
+
+--- The last commit at or before `rev` that touched lines `from`..`to`
+--- of `path` as they stand AT `rev`: `git log -L`, which follows the
+--- lines back through the edits that moved them. cb(commit|nil, err).
+--- Only the header is read; `-L` prints the diff as well and there is
+--- no flag that stops it.
+function M.touched(root, rev, path, from, to, cb)
+  run(root, { "log", "-1", "--date=short", "--no-patch",
+    "--format=%H%x09%h%x09%ad%x09%an%x09%s",
+    "-L", string.format("%d,%d:%s", from, to, path), rev }, function(ok, out, err)
+    if not ok then
+      cb(nil, vim.trim(err or ""))
+      return
+    end
+    local sha, short, date, author, subject =
+      out:match("^(%S+)\t(%S+)\t([^\t]*)\t([^\t]*)\t([^\r\n]*)")
+    if not sha then
+      cb(nil, "git said nothing about those lines")
+      return
+    end
+    cb({ sha = sha, short = short, date = date, author = author, subject = subject })
+  end)
+end
+
 --- Diff from a revision to the WORKING TREE, `git diff <rev>` with no
 --- second revision. Not a range: the in-place view measures the live
 --- buffer against a revision, so the file list beside it has to count the

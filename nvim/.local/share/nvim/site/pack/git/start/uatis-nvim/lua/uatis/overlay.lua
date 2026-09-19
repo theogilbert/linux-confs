@@ -414,6 +414,45 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, "UatisStatusD", { link = "DiffDelete" })
   vim.api.nvim_set_hl(0, "UatisStatusM", { link = "DiffChange" })
   vim.api.nvim_set_hl(0, "UatisStatusR", { link = "Special" })
+
+  -- A conflict block. Ours takes the addition's green, theirs the
+  -- change's blue -- the two colours a diff already taught the reader,
+  -- and the two the scheme is surest to have -- at a lightness below a
+  -- changed line's, since here whole blocks are banded and a band the
+  -- weight of an edit would be a wall of it. The words each side
+  -- changed are the same colour deeper. The base, and the markers, are
+  -- a grey: not a side, and not code.
+  local function side(band, mark, source, named)
+    local src = vim.api.nvim_get_hl(0, { name = source, link = false })
+    if not src.bg and source == "DiffChange" then
+      src = vim.api.nvim_get_hl(0, { name = "DiffText", link = false })
+    end
+    if named then
+      vim.api.nvim_set_hl(0, band, { bg = named })
+    elseif src.bg then
+      vim.api.nvim_set_hl(0, band, {
+        bg = deepen(src.bg, config.highlight.saturation, config.highlight.conflict_lightness),
+      })
+    else
+      vim.api.nvim_set_hl(0, band, { link = source })
+    end
+    if src.bg then
+      vim.api.nvim_set_hl(0, mark, {
+        bg = deepen(src.bg, config.highlight.saturation, config.highlight.conflict_mark_lightness),
+      })
+    else
+      vim.api.nvim_set_hl(0, mark, { link = source, bold = true })
+    end
+  end
+  side("UatisOurs", "UatisOursMark", "DiffAdd", config.highlight.ours_bg)
+  side("UatisTheirs", "UatisTheirsMark", "DiffChange", config.highlight.theirs_bg)
+  local normal_fg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg
+  local base_bg = (list_bg and normal_fg)
+    and mix(list_bg, normal_fg, config.highlight.conflict_base_contrast) or nil
+  vim.api.nvim_set_hl(0, "UatisBase", base_bg and { bg = base_bg } or { link = "CursorLine" })
+  local comment_fg = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg
+  vim.api.nvim_set_hl(0, "UatisMarker", { fg = comment_fg, bg = base_bg })
+  vim.api.nvim_set_hl(0, "UatisStatusU", { link = "DiffText" })
 end
 
 function M.clear(bufnr)

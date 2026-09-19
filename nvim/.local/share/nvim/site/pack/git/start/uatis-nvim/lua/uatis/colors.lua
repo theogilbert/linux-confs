@@ -63,6 +63,10 @@ local ROWS = {
   { key = "signal_lightness_dark", swatch = "UatisMinus", note = "...and on a light one" },
   { head = "a file that is read" },
   { key = "read_recede", swatch = "UatisRead", step = 0.05 },
+  { head = "a conflict: ours, theirs, and the base between" },
+  { key = "conflict_lightness", swatch = "UatisTheirs" },
+  { key = "conflict_mark_lightness", swatch = "UatisTheirsMark" },
+  { key = "conflict_base_contrast", swatch = "UatisBase" },
 }
 
 -- The colours a reader can name outright instead of deriving. Not
@@ -74,6 +78,8 @@ local FIXED = {
   { key = "delete_bg", of = "delete_lightness" },
   { key = "delete_dim_bg", of = "delete_dim_contrast" },
   { key = "add_dim_bg", of = "dim_lightness" },
+  { key = "ours_bg", of = "conflict_lightness" },
+  { key = "theirs_bg", of = "conflict_lightness" },
 }
 
 local STEP = 0.01

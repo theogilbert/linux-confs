@@ -19,6 +19,7 @@ local filelist = require("uatis.filelist")
 local read = require("uatis.read")
 local ui = require("uatis.ui")
 local view_mod = require("uatis.view")
+local conflict_mod = require("uatis.conflict")
 local base = require("uatis.base")
 local keys = require("uatis.keys")
 
@@ -96,6 +97,30 @@ end
 local function compose(pane)
   local scope = pane.scope or ""
   local files, by_path = {}, {}
+  -- A conflict review lists what the index calls unmerged and nothing
+  -- else, with each file's count taken from its buffer where one is
+  -- annotated -- a pick is an edit, and the row has to move with it
+  -- before the file is written.
+  if pane.conflicts then
+    local live = {}
+    for _, c in ipairs(conflict_mod.all()) do
+      if c.root == pane.root then
+        live[c.relpath] = #c.blocks
+      end
+    end
+    for _, f in ipairs(pane.tracked or {}) do
+      local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
+      if row then
+        if live[row.path] then
+          row.conflicts = live[row.path]
+        end
+        row.total = pane.conflict_total[row.path] or row.conflicts
+        table.insert(files, row)
+      end
+    end
+    table.sort(files, function(a, b) return a.path < b.path end)
+    return files
+  end
   -- A commit on show is finished. What it changed cannot depend on what
   -- is unsaved now, or on a file git has never been told about, so the
   -- two sources that answer for the working tree are left out and the
@@ -256,6 +281,13 @@ end
 local function rebuild(pane, keep_path)
   pane.files = compose(pane)
   pane.stat_added, pane.stat_removed = patch.total(pane.files)
+  if pane.conflicts then
+    pane.stat_conflicts, pane.stat_resolved = 0, 0
+    for _, f in ipairs(pane.files) do
+      pane.stat_conflicts = pane.stat_conflicts + (f.conflicts or 0)
+      pane.stat_resolved = pane.stat_resolved + math.max((f.total or 0) - (f.conflicts or 0), 0)
+    end
+  end
   pane.file_idx = 1
   if keep_path then
     for i, f in ipairs(pane.files) do
@@ -281,7 +313,7 @@ function M.recount(view)
       local cur = pane.files[pane.file_idx]
       -- No git call: what moved is whether a buffer is written, and
       -- `pane.head` from the last re-read still answers for the disk.
-      if not pane.commit then
+      if not pane.commit and not pane.conflicts then
         pane.src = src_of(pane)
       end
       rebuild(pane, cur and cur.path or nil)
@@ -290,6 +322,62 @@ function M.recount(view)
       end
     end
   end
+end
+
+--- A conflicted file's block count moved -- a pick, an edit, an undo --
+--- so the list of conflicts says so. No git, as `recount`.
+function M.recount_conflicts(c)
+  for _, pane in pairs(panes) do
+    if pane.conflicts and pane.root == c.root then
+      local cur = pane.files[pane.file_idx]
+      rebuild(pane, cur and cur.path or nil)
+      if pane.list_buf then
+        filelist.render(pane)
+      end
+    end
+  end
+end
+
+--- What is left of the merge beyond this file, for its winbar and the
+--- notice when it is done: `, 1 more in helper.lua`, or `, 3 more in 2
+--- files`. nil with no list, or nothing left.
+function M.conflicts_left(c)
+  local pane = M.get()
+  if not (pane and pane.conflicts and pane.root == c.root) then
+    return nil
+  end
+  local blocks, files, last = 0, 0, nil
+  for _, f in ipairs(pane.files) do
+    if f.path ~= c.relpath and (f.conflicts or 0) > 0 then
+      blocks = blocks + f.conflicts
+      files = files + 1
+      last = f
+    end
+  end
+  if blocks == 0 then
+    return nil
+  end
+  if files == 1 then
+    return string.format(", %d more in %s", blocks, ui.shown(last))
+  end
+  return string.format(", %d more in %d files", blocks, files)
+end
+
+--- Steps the list from a file buffer: `]f` bound in a view or a
+--- conflicted file. Reads the list if there is none yet, without a
+--- window -- the key asked which file comes next, not for somewhere to
+--- stand and look at a list.
+function M.step_from(dir)
+  local list = M.get()
+  if list and (list.renders or 0) > 0 then
+    M.step_file(list, dir)
+    return
+  end
+  M.list({
+    on_ready = function(p)
+      M.step_file(p, dir)
+    end,
+  })
 end
 
 --- Told by a view which of its file's chunks the backend drew nothing
@@ -327,7 +415,11 @@ end
 --- `git diff <fork point>` with no second revision, so it counts the
 --- working tree rather than the commits: a file whose change is staged, or
 --- saved and not committed, is part of what this branch has done.
+local refresh_conflicts
 local function refresh(pane, keep_path)
+  if pane.conflicts then
+    return refresh_conflicts(pane, keep_path)
+  end
   pane.gen = (pane.gen or 0) + 1
   local gen = pane.gen
   local function fetch(cb)
@@ -439,6 +531,65 @@ local function refresh(pane, keep_path)
   end)
 end
 
+--- The conflict review's read: the unmerged paths, each counted by
+--- the blocks in it -- off the buffer where the file is loaded, off
+--- the disk where it is not -- and the branch taking the merge, which
+--- is what the header names.
+---
+--- How many blocks a file HAD is kept from the first read (and never
+--- lowered), since a settled block leaves the file: that is what
+--- `resolved` is counted against. Memory only -- a review started
+--- after half the merge is done counts what is left as the whole.
+local function count_blocks(root, path)
+  local bufnr = vim.fn.bufnr(root .. "/" .. path)
+  local lines
+  if bufnr > 0 and vim.api.nvim_buf_is_loaded(bufnr) then
+    lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  else
+    local ok, read_lines = pcall(vim.fn.readfile, root .. "/" .. path)
+    lines = ok and read_lines or {}
+  end
+  return #require("uatis.merge").blocks(lines)
+end
+
+refresh_conflicts = function(pane, keep_path)
+  pane.gen = (pane.gen or 0) + 1
+  local gen = pane.gen
+  git.unmerged(pane.root, function(paths)
+    if panes[pane.tab] ~= pane or pane.gen ~= gen then
+      return
+    end
+    local rows = {}
+    for _, path in ipairs(paths) do
+      local n = count_blocks(pane.root, path)
+      pane.conflict_total[path] = math.max(pane.conflict_total[path] or 0, n)
+      table.insert(rows, {
+        path = path, status = "U", conflicts = n, binary = false,
+        added = 0, removed = 0, hunks = {}, chunks = {},
+      })
+    end
+    pane.tracked = rows
+    git.abbrev_ref(pane.root, "HEAD", function(name)
+      if panes[pane.tab] ~= pane or pane.gen ~= gen then
+        return
+      end
+      pane.src = (name and name ~= "" and name ~= "HEAD") and name or "a detached HEAD"
+      local cur = (pane.files or {})[pane.file_idx or 0]
+      rebuild(pane, cur and cur.path or keep_path)
+      if pane.list_buf then
+        filelist.render(pane)
+      end
+      follow_visible(pane)
+      pane.renders = (pane.renders or 0) + 1
+      local ready = pane.on_ready
+      if ready then
+        pane.on_ready = nil
+        ready(pane)
+      end
+    end)
+  end)
+end
+
 -- ------------------------------------------------------------------
 -- Commit by commit
 -- ------------------------------------------------------------------
@@ -482,8 +633,11 @@ local function keys_of(pane)
   end
 
   add(k.select, "open the file on this row")
-  add(k.file_next .. " " .. k.file_prev, "next / previous changed file")
-  add(k.mark_read, "mark this row read -- a directory and all under it, a selection as one")
+  add(k.file_next .. " " .. k.file_prev, pane.conflicts
+    and "next / previous conflicted file" or "next / previous changed file")
+  if not pane.conflicts then
+    add(k.mark_read, "mark this row read -- a directory and all under it, a selection as one")
+  end
   add(k.fold, "fold this directory")
   add(k.fold_close .. " " .. k.fold_open, "shut it / open it")
   add(k.fold_close_all .. " " .. k.fold_open_all, "fold everything / open everything")
@@ -492,6 +646,24 @@ local function keys_of(pane)
   add(k.quit, "hide this window -- the review stays on")
   add(k.help, "this")
 
+  if pane.conflicts then
+    local x = config.keys.conflict
+    table.insert(rows, { head = "in a conflicted file" })
+    add(x.next .. " " .. x.prev, "next / previous conflict")
+    add(x.ours, "take our side")
+    add(x.theirs, "take their side")
+    add(x.both, "take both, ours first")
+    add(x.base, "take the base")
+    add(x.resolve, "merge this conflict by the word")
+    add(x.resolve_all, "the same, over the whole file")
+    add(x.peek, "on a marker row, the commit it names")
+    add(v.file_next .. " " .. v.file_prev, "next / previous conflicted file")
+    add(v.files, "toggle this list")
+    table.insert(rows, { head = "anywhere" })
+    add(g.conflicts, "end the conflict review")
+    add(g.toggle_diff, "start a review of the branch")
+    return rows
+  end
   if pane.standalone then
     table.insert(rows, { head = "this commit" })
     add(k.commit_message, "its whole message")
@@ -621,6 +793,94 @@ end
 ---
 --- Read on demand rather than carried on the commit: a walk holds a
 --- thousand of them and draws none.
+--- A commit in a float: sha, date and author on one greyed row and the
+--- message under it in the buffer's own colour -- the shape the header
+--- has, since one is where you found the commit and the other is what
+--- it says. Centred and entered by default, `q` closing it; with
+--- `opts.at_cursor` a transient one beside the cursor, not entered, and
+--- gone the moment the cursor moves.
+---
+--- No `gitcommit` filetype. Its syntax is for WRITING a message -- it
+--- colours the subject as an overlong-line warning past 50 characters
+--- and greys everything under a `#` -- and none of that is a statement
+--- about a message already written.
+function M.commit_float(commit, text, opts)
+  opts = opts or {}
+  local said = commit.date or ""
+  if commit.author and commit.author ~= "" then
+    said = said ~= "" and (said .. " · " .. commit.author) or commit.author
+  end
+  local lines = { commit.short .. (said ~= "" and (" · " .. said) or ""), "" }
+  for _, l in ipairs(vim.split(text ~= "" and text or (commit.subject or ""),
+    "\n", { plain = true })) do
+    table.insert(lines, l)
+  end
+
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  width = math.min(math.max(width + 2, 40), math.max(vim.o.columns - 8, 20))
+  local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+    end_row = 1,
+    end_col = 0,
+    hl_group = "UatisMeta",
+    hl_eol = true,
+  })
+  local place
+  if opts.at_cursor then
+    place = { relative = "cursor", row = 1, col = 0, focusable = false }
+  else
+    place = {
+      relative = "editor",
+      row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+      col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    }
+  end
+  local win = vim.api.nvim_open_win(buf, not opts.at_cursor, vim.tbl_extend("force", place, {
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = opts.title or " commit message ",
+    title_pos = "center",
+  }))
+  vim.wo[win].wrap = true
+  local function close()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+  if opts.at_cursor then
+    -- Transient: the next thing the reader does takes it away. The
+    -- autocmds are one group, cleared with the window, so a float
+    -- closed by the cursor does not leave them waiting on nothing.
+    local group = vim.api.nvim_create_augroup("UatisPeek" .. win, { clear = true })
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufLeave", "WinScrolled", "InsertEnter" }, {
+      group = group,
+      buffer = opts.from or vim.api.nvim_get_current_buf(),
+      once = true,
+      callback = function()
+        close()
+        pcall(vim.api.nvim_del_augroup_by_id, group)
+      end,
+    })
+  else
+    for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.commit_message }) do
+      if lhs and lhs ~= "" then
+        vim.keymap.set("n", lhs, close, { buffer = buf, nowait = true, silent = true })
+      end
+    end
+  end
+  return win
+end
+
 function M.peek_commit(pane)
   pane = pane or M.get()
   if not pane or not pane.commit then
@@ -632,64 +892,7 @@ function M.peek_commit(pane)
     if panes[pane.tab] ~= pane or pane.commit ~= commit then
       return
     end
-    -- Sha, when, who on one row and the message under it, which is the
-    -- same shape the header has: one is where you found the commit, the
-    -- other is what it says.
-    local said = commit.date or ""
-    if commit.author and commit.author ~= "" then
-      said = said ~= "" and (said .. " · " .. commit.author) or commit.author
-    end
-    local lines = { commit.short .. (said ~= "" and (" · " .. said) or ""), "" }
-    for _, l in ipairs(vim.split(text ~= "" and text or (commit.subject or ""),
-      "\n", { plain = true })) do
-      table.insert(lines, l)
-    end
-
-    local width = 0
-    for _, l in ipairs(lines) do
-      width = math.max(width, vim.fn.strdisplaywidth(l))
-    end
-    width = math.min(math.max(width + 2, 40), math.max(vim.o.columns - 8, 20))
-    local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
-
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].modifiable = false
-    -- No `gitcommit` filetype. Its syntax is for WRITING a message --
-    -- it colours the subject as an overlong-line warning past 50
-    -- characters and greys everything under a `#` -- and none of that
-    -- is a statement about a message already written. The message is
-    -- drawn in the buffer's own colour, with only the line naming the
-    -- commit greyed, so what the reader is here to read is the one
-    -- thing on the float at full strength.
-    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
-      end_row = 1,
-      end_col = 0,
-      hl_group = "UatisMeta",
-      hl_eol = true,
-    })
-    local win = vim.api.nvim_open_win(buf, true, {
-      relative = "editor",
-      width = width,
-      height = height,
-      row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
-      col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-      style = "minimal",
-      border = "rounded",
-      title = " commit message ",
-      title_pos = "center",
-    })
-    vim.wo[win].wrap = true
-    for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.commit_message }) do
-      if lhs and lhs ~= "" then
-        vim.keymap.set("n", lhs, function()
-          if vim.api.nvim_win_is_valid(win) then
-            vim.api.nvim_win_close(win, true)
-          end
-        end, { buffer = buf, nowait = true, silent = true })
-      end
-    end
+    M.commit_float(commit, text)
   end)
 end
 
@@ -781,6 +984,10 @@ function M.toggle_commits(pane)
   if not pane then
     return false
   end
+  if pane.conflicts then
+    vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
+    return true
+  end
   -- Nowhere to go from a review that is one commit. Off, this key means
   -- "the whole branch against the working tree", and here that would be
   -- the commit's PARENT against the working tree -- a comparison nobody
@@ -816,6 +1023,10 @@ end
 function M.step_commit(pane, dir)
   pane = pane or M.get()
   if not pane then
+    return
+  end
+  if pane.conflicts then
+    vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
     return
   end
   if pane.standalone then
@@ -868,7 +1079,7 @@ function M.recheck(pane)
   if pane.standalone then
     return
   end
-  if not pane.tracks_base then
+  if not pane.tracks_base or pane.conflicts then
     return M.refresh(pane)
   end
   pane.rechecking = true
@@ -1133,6 +1344,12 @@ end
 --- one chunk of three still to go.
 local function set_read(pane, files, on)
   if #files == 0 then
+    return
+  end
+  -- A conflict is not read, it is settled, and the row says so by
+  -- itself when it is.
+  if pane.conflicts then
+    vim.notify("uatis: a conflicted file is done when its blocks are, not when it is marked", vim.log.levels.INFO)
     return
   end
   if on == nil then
@@ -1459,6 +1676,13 @@ function M.goto_file(pane, idx)
 
   in_code_win(pane, win, function()
     vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+    if pane.conflicts then
+      local bufnr = vim.api.nvim_get_current_buf()
+      if not conflict_mod.get(bufnr) then
+        conflict_mod.attach(bufnr, vim.api.nvim_get_current_win(), pane.root, f.path)
+      end
+      return
+    end
     -- Usually annotated already: `follow` took the buffer in on
     -- `BufEnter`, at this revision. Opening it again would diff it a
     -- second time for nothing -- and a git call later, land on whatever
@@ -1492,7 +1716,7 @@ local function follow(pane, bufnr, win, force)
   if not (config.pane.follow or force) then
     return false
   end
-  if view_mod.get(bufnr) or not view_mod.can_open(bufnr) then
+  if view_mod.get(bufnr) or conflict_mod.get(bufnr) or not view_mod.can_open(bufnr) then
     return false
   end
   -- Never into the pane's own window: `:e` from inside the list would put
@@ -1531,6 +1755,17 @@ local function follow(pane, bufnr, win, force)
   -- the revision the list is describing.
   if pane.commit then
     return false
+  end
+  -- A conflict review annotates the files it lists and no other: a
+  -- file with no block in it has nothing for the annotator to draw,
+  -- and `force` -- the reader asking for THIS file -- is answered by
+  -- the row it is not on.
+  if pane.conflicts then
+    if not file then
+      return false
+    end
+    conflict_mod.attach(bufnr, win, pane.root, relpath)
+    return true
   end
   view_mod.attach(bufnr, win, pane.root, relpath, pinned(pane, file or {}))
   return true
@@ -1653,6 +1888,10 @@ function lend_keys(pane, bufnr)
   if vim.bo[bufnr].buftype ~= "" and view_mod.get(bufnr) == nil then
     return
   end
+  -- ...and a conflicted file binds the walk itself, as a view does.
+  if conflict_mod.get(bufnr) then
+    return
+  end
   local k = config.keys.pane
   local lend = {}
   -- The view binds the walk itself, so a buffer it has annotated is not
@@ -1753,6 +1992,10 @@ function M.close(pane)
   pane.closing = true
   panes[pane.tab] = nil
   return_keys(pane)
+  -- The list is the review: a conflict review's annotators go with it.
+  if pane.conflicts then
+    conflict_mod.close_all(pane.root)
+  end
   if pane.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, pane.augroup)
     pane.augroup = nil
@@ -2020,7 +2263,7 @@ local function setup_watchers(pane)
         or ev.buf == pane.list_buf then
         return
       end
-      if not view_mod.get(ev.buf) then
+      if not (view_mod.get(ev.buf) or conflict_mod.get(ev.buf)) then
         -- A file this review lists is annotated on arrival, however you
         -- arrived.
         follow(pane, ev.buf, vim.api.nvim_get_current_win())
@@ -2161,6 +2404,18 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
     pane.commit, pane.commit_idx = opts.commit, 1
     pane.mode = "commit"
     pane.src = opts.commit.short
+  end
+
+  -- A conflict review: the files the index calls unmerged, each
+  -- annotated by `conflict.lua` rather than compared by `view.lua`.
+  -- No revision is measured against, so `ref`/`rev` name the mode,
+  -- and nothing a view is matched on can match it.
+  if opts.conflicts then
+    pane.conflicts = true
+    pane.mode = "conflicts"
+    pane.target = "conflicts"
+    pane.src = ""
+    pane.conflict_total = {}
   end
 
   name_tab(pane)
@@ -2390,6 +2645,53 @@ function M.show_commit(rev, opts)
         end,
       }, false)
       M.open({ focus = false })
+      return pane
+    end)
+  end)
+end
+
+--- A review of the files a merge stopped on, in the tab you are in:
+--- the list of them, and the file under the cursor annotated if it is
+--- one -- the first of them opened if it is not. Nothing at all when
+--- there is nothing unmerged, which is the answer said out loud.
+---
+--- In the tab you are in rather than one of its own, unlike a commit:
+--- the reader is here to fix the tree they are standing in, and the
+--- list goes beside the file they were looking at when they asked.
+function M.review_conflicts(opts)
+  opts = opts or {}
+  base.root(function(root, path)
+    if not root then
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    git.unmerged(root, function(paths)
+      if #paths == 0 then
+        vim.notify("uatis: no conflicts", vim.log.levels.INFO)
+        return
+      end
+      local tab = vim.api.nvim_get_current_tabpage()
+      if panes[tab] then
+        M.close(panes[tab])
+      end
+      local pane = build(tab, root, "conflicts", "conflicts", nil, {
+        conflicts = true,
+        on_ready = function(p)
+          if panes[p.tab] ~= p then
+            return
+          end
+          if not conflict_mod.get(vim.api.nvim_get_current_buf()) and #p.files > 0 then
+            M.goto_file(p, 1)
+          end
+          if opts.on_ready then
+            opts.on_ready(p)
+          end
+        end,
+      }, false)
+      if config.pane.auto_open then
+        M.open({ focus = false })
+      end
       return pane
     end)
   end)

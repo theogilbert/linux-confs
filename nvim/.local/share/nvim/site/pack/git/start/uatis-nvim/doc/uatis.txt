@@ -17,11 +17,12 @@ CONTENTS                                                      *uatis-contents*
     9. Backends ............................. |uatis-backends|
    10. How a change is drawn ................ |uatis-marks|
    11. Commit by commit ..................... |uatis-commits|
-   12. Colours ............................. |uatis-colours|
-   13. Configuration ....................... |uatis-config|
-   14. Statusline .......................... |uatis-statusline|
-   15. Health .............................. |uatis-health|
-   16. Troubleshooting ..................... |uatis-troubleshooting|
+   12. Conflicts ........................... |uatis-conflicts|
+   13. Colours ............................. |uatis-colours|
+   14. Configuration ....................... |uatis-config|
+   15. Statusline .......................... |uatis-statusline|
+   16. Health .............................. |uatis-health|
+   17. Troubleshooting ..................... |uatis-troubleshooting|
 
 ==============================================================================
 1. INTRODUCTION                                           *uatis-introduction*
@@ -137,6 +138,10 @@ with nothing changed. Both are remembered per repository between sessions
                         its diff on a file five commits younger describes
                         neither.
 
+                                                             *:UatisConflicts*
+:UatisConflicts         Start, or end, a review of the files a merge, rebase
+                        or cherry-pick stopped on. See |uatis-conflicts|.
+
                                                                 *:UatisColors*
 :UatisColors            A float that turns every number in `highlight`, with
                         everything already on screen following. See
@@ -158,6 +163,7 @@ press a buffer-local key in. >
     <leader>gB      what am I reviewing: base and subtree, in one panel
     <leader>gA      one commit against its parent, in a tab of its own
     <leader>gS      everything since a revision you pick
+    <leader>gx      start or end a review of the conflicts a merge left
 <
 IN A REVIEWED FILE                                       *uatis-mappings-view*
 >
@@ -207,6 +213,25 @@ IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
     <CR>            jump to the matching row in your file
     <leader>go      back to the inline layout
     q               the same: close it, and the next file opens inline
+<
+IN A CONFLICTED FILE                                 *uatis-mappings-conflict*
+
+While a conflict review is on (|uatis-conflicts|). Every pick is an ordinary
+edit in your own buffer, and its own undo step. >
+
+    ]x  [x          next / previous conflict; off the end, the next file
+    <leader>xo      take our side of the block under the cursor
+    <leader>xt      take their side
+    <leader>xb      take both, ours first
+    <leader>xa      take the base
+    <leader>xw      merge the block by the word, see |uatis-wand|
+    <leader>xW      the same, over the whole file
+    K               on a <<<<<<< or >>>>>>> row, the last commit on that
+                    side to touch the block's lines; on a ||||||| row the
+                    base commit -- author, date, message, in a float that
+                    goes when the cursor does. On any other row, your own K
+    ]f  [f          next / previous conflicted file
+    <leader>gf      toggle the file list
 <
 ==============================================================================
 7. THE FILE LIST                                                  *uatis-list*
@@ -484,7 +509,94 @@ body is the half that says why, and a review is exactly the activity that
 wants it. `q` or `<Esc>` closes it.
 
 ==============================================================================
-12. COLOURS                                                    *uatis-colours*
+12. CONFLICTS                                                *uatis-conflicts*
+
+`<leader>gx` (|:UatisConflicts|) is the same premise applied to a merge in
+progress: the files git stopped on, listed, and each one annotated in the
+buffer git left the markers in. Nothing is copied anywhere. Your file stays
+your file, still writable, and every way of settling a block is an edit in
+it that `u` takes back.
+
+In a conflicted file the markers are dimmed and the block's sides banded --
+ours from `DiffAdd`, theirs from `DiffChange`, the base (where the markers
+carry one) in a grey between them -- with the words each side changed
+marked a shade deeper. The `<<<<<<< HEAD` row names the branch HEAD is,
+in parentheses after the word, and says which block this is of how many
+and whether the wand can take it. `K` on a `<<<<<<<` or `>>>>>>>` row
+shows the last commit on that side to touch the block's lines -- the one
+you are deciding about, which on a long branch is rarely its tip -- and on
+a `|||||||` row the base commit, with author, date and message, in a float
+beside the cursor that goes when the cursor does; on the other rows of the
+file `K` stays whatever it was, an LSP's hover included.
+
+`]x` and `[x` move between blocks, and off the last block of a file into
+the next file the list names. `<leader>xo`, `<leader>xt`, `<leader>xb` and
+`<leader>xa` replace the block with one side, both, or the base; see
+|uatis-mappings-conflict|.
+
+Diagnostics are off in a file while it has blocks in it, and back once it
+has none (`conflict.quiet_diagnostics`): a file with markers in it does not
+parse, so every diagnostic a server reports on it is about the markers, and
+none of it is a thing you can act on before the block is settled.
+
+The list is the review. It is read from what the index calls unmerged, each
+row counting the blocks left in its file -- off the buffer where one is
+open, so a pick moves the row before you write -- and saying `done` when
+none are. The count line and the bar under the list count blocks settled
+against blocks there were. Writing a file re-reads the list, and `git add`
+drops the file from it. `x` in the list has nothing to mark: a conflicted
+file is done when its blocks are.
+
+A conflict review is in the tab you are in, not one of its own -- you are
+here to fix the tree you are standing in -- and a tab holds one review, so
+a review of the branch running there is ended first, and said so.
+`<leader>gx` again ends it, and so does `<leader>gu`, being the key that
+ends the review in this tab whichever kind it is.
+
+                                                                  *uatis-wand*
+`<leader>xw` merges the block under the cursor BY THE WORD. git merges by
+the line: two branches that touched the same line -- or adjacent lines --
+get a conflict block however different the words they touched were, and
+most of what a reader settles by hand is exactly that: one side reworded a
+comment, the other changed the expression under it. The wand runs the merge
+again inside the block at word granularity, base against ours and base
+against theirs, and where the two sets of changes touch no common word it
+applies both. Where they do touch it applies nothing and says so -- half a
+block merged by a program and half by hand is the one outcome worse than
+either -- and `<leader>xW` does the same over every block in the file,
+reporting how many it took.
+
+Touching is strict: two edits to adjacent words are a conflict, and so are
+two insertions at the same point, since a merge that guesses the order of
+two insertions is worse than one that asks. The blank between two words is
+a word, and counts as context.
+
+The base a block is merged against comes from the markers where your
+`merge.conflictStyle` is `diff3` or `zdiff3`, and otherwise out of the
+index -- stage 1, projected onto the block -- so the wand works whatever
+style wrote the file. A file both sides ADDED has no base, and the wand
+leaves it to you.
+
+                                                     *UatisConflictAttach*
+`User UatisConflictAttach` fires when a buffer joins a conflict review,
+after its keys are bound, with `data = { buf, root, path }`. For a config
+that wants to do something with such a buffer the moment it is one -- a
+which-key group over `<leader>x`, for instance: >lua
+
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "UatisConflictAttach",
+      callback = function(ev)
+        require("which-key").add({
+          { "<leader>x", desc = "conflict", buffer = ev.data.buf },
+        })
+      end,
+    })
+<
+The keys go when the review ends, and a group with nothing under it is
+not shown, so there is nothing to undo.
+
+==============================================================================
+13. COLOURS                                                    *uatis-colours*
 
 Every group is derived from your own colourscheme's `DiffAdd` and `DiffDelete`
 at load: their hue is kept, their saturation floored or capped, and their
@@ -517,6 +629,13 @@ preserve.
     UatisStatusM        modified
     UatisStatusD        deleted
     UatisStatusR        renamed
+    UatisStatusU        unmerged
+    UatisOurs           our side of a conflict block
+    UatisOursMark       ...and the words it changed
+    UatisTheirs         their side
+    UatisTheirsMark     ...and the words it changed
+    UatisBase           the base between them, where the markers carry one
+    UatisMarker         the marker rows
 <
 Set any of them yourself after `setup()` and the derivation for that group is
 what you replace.
@@ -532,7 +651,7 @@ the way to settle them is to look at them over your own code with a review
 running.
 
 ==============================================================================
-13. CONFIGURATION                                               *uatis-config*
+14. CONFIGURATION                                               *uatis-config*
 
 `setup()` is optional. Pass only what you want to change; it is folded into
 the defaults. Lists are replaced whole rather than merged by index, and an
@@ -560,6 +679,9 @@ comment on each saying what it controls. The commonly-changed ones: >lua
         name = "tabname",     -- the tab variable :UatisShow names its tab
                               -- in, see |uatis-tab-name|; false for none
       },
+      conflict = {
+        quiet_diagnostics = true, -- no diagnostics while a file has blocks
+      },
       diff = {
         default_backend = "struct",   -- or "line"
         struct = {
@@ -574,8 +696,10 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           base_branch = "<leader>gB",
           show_commit = "<leader>gA",
           since_commit = "<leader>gS",
+          conflicts = "<leader>gx",
         },
         view = { layout = "<leader>go", diff_mode = "<leader>gm" },
+        conflict = { next = "]x", prev = "[x", resolve = "<leader>xw" },
       },
     })
 <
@@ -590,10 +714,11 @@ The functions behind the mappings, for binding yourself: >lua
     require("uatis").toggle_pane()
     require("uatis").show_commit([rev])
     require("uatis").since_commit([rev])
+    require("uatis").conflicts()
     require("uatis").colors()
 <
 ==============================================================================
-14. STATUSLINE                                              *uatis-statusline*
+15. STATUSLINE                                              *uatis-statusline*
 
 Three functions answer in plain data. Their field names are the only ones
 this plugin promises not to change.
@@ -614,6 +739,15 @@ being reviewed: >
     pending             a structural diff is running -- the counts are the
                         last answer, not this one
 <
+A buffer in a conflict review has no comparison in it, and answers with
+`mode` instead: >
+
+    mode                "conflicts"
+    conflicts           blocks still in the file
+    resolved            blocks settled since the file was opened
+    conflict            which block the cursor is in, or nil
+    root, path          as above
+<
                                                               *uatis.review()*
 `require("uatis").review()` -- about the review in this tab, or nil: >
 
@@ -625,6 +759,9 @@ being reviewed: >
     file                the one the list is standing on, if any
     tracks_base         as above
     window              true while the list has a window up
+    mode                "branch", "commit" or "conflicts"
+    conflicts           in a conflict review, blocks left across the files
+    resolved            ...and blocks settled since it began
 <
 `pending` matters if you show the counts: a structural diff that has not come
 back yet looks exactly like a file with nothing in it, and `+0 -0` is not
@@ -664,7 +801,7 @@ is a job for the config that knows you run both: >lua
 <
 
 ==============================================================================
-15. HEALTH                                                      *uatis-health*
+16. HEALTH                                                      *uatis-health*
 
 `:checkhealth uatis` covers the three external requirements -- Neovim's
 version, git, difftastic -- and then what the current repository says about
@@ -678,7 +815,7 @@ print something no unified-diff parser can read, and the symptom is an empty
 file list beside a buffer visibly full of changes.
 
 ==============================================================================
-16. TROUBLESHOOTING                                    *uatis-troubleshooting*
+17. TROUBLESHOOTING                                    *uatis-troubleshooting*
 
 The file list is empty but the file clearly changed ~
     Run `:checkhealth uatis`. Some git configuration rewrites `git diff`

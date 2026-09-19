@@ -166,6 +166,23 @@ end
 --- The caller maps cursor position to file through `rows` rather than
 --- assuming a fixed header height, since the header's height depends on
 --- how much of the commit subject fits.
+--- The count on a conflicted file's row: how many blocks are left in
+--- it, or `done` -- what the reader is here to bring to zero, in the
+--- place a review's row keeps the churn.
+local function left_text(left)
+  return left > 0 and string.format("%d left", left) or "done"
+end
+
+--- Whether a row is finished with, which is what draws it receded: a
+--- file every chunk of which is read, or -- in a conflict review -- one
+--- with no block left in it.
+local function finished(pane, f)
+  if pane.conflicts then
+    return (f.conflicts or 0) == 0
+  end
+  return read.is_read(pane, f)
+end
+
 function M.build_list(pane, width)
   local b = new_buf()
   local inner = math.max(width - 2, 10)
@@ -190,9 +207,16 @@ function M.build_list(pane, width)
   -- over three rows makes the reader assemble it. The message goes
   -- below, on its own, which is the thing they are actually here to
   -- read.
+  --
+  -- A conflict review has no two sides to name -- the sides are in the
+  -- files -- so it says what it is and which branch is taking the merge.
   if pane.standalone and pane.commit then
     b:add(pad(names({ pane.src, pane.commit.date, pane.commit.author }, inner)),
       "UatisMeta")
+  elseif pane.conflicts then
+    for _, l in ipairs(M.wrap("conflicts on " .. pane.src, inner)) do
+      b:add(pad(l), "UatisHeader")
+    end
   else
     for _, l in ipairs(M.wrap(pane.target .. " ← " .. pane.src, inner)) do
       b:add(pad(l), "UatisHeader")
@@ -241,9 +265,15 @@ function M.build_list(pane, width)
   local added, removed = pane.stat_added, pane.stat_removed
   local head = pad(string.format("%d file%s · ", #pane.files,
     #pane.files == 1 and "" or "s"))
-  local line = b:add(head .. stat_text(added, removed))
-  b:hl(line, 0, -1, "UatisMeta")
-  stat_hl(b, line, #head, added, removed)
+  if pane.conflicts then
+    local line = b:add(head .. string.format("%d left · %d resolved",
+      pane.stat_conflicts or 0, pane.stat_resolved or 0))
+    b:hl(line, 0, -1, "UatisMeta")
+  else
+    local line = b:add(head .. stat_text(added, removed))
+    b:hl(line, 0, -1, "UatisMeta")
+    stat_hl(b, line, #head, added, removed)
+  end
   for _, l in ipairs(M.wrap(pane.hint or "", inner)) do
     b:add(pad(l), "UatisHint")
   end
@@ -259,20 +289,21 @@ function M.build_list(pane, width)
   -- already knows all of its own ancestors.
   local dir_stat = {}
   for _, f in ipairs(pane.files) do
-    local read = read.is_read(pane, f)
+    local done = finished(pane, f)
     for _, d in ipairs(M.dirs_of(M.shown(f))) do
-      local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0 }
+      local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0, left = 0 }
       t.added = t.added + (f.added or 0)
       t.removed = t.removed + (f.removed or 0)
+      t.left = t.left + (f.conflicts or 0)
       t.files = t.files + 1
-      t.read = t.read + (read and 1 or 0)
+      t.read = t.read + (done and 1 or 0)
       dir_stat[d] = t
     end
   end
 
   local rows, dirs = {}, {}
   if #pane.files == 0 then
-    b:add(pad("(no changes)"), "UatisMeta")
+    b:add(pad(pane.conflicts and "(no conflicts)" or "(no changes)"), "UatisMeta")
   end
 
   -- Drawn from the fold exactly as the reader left it. Keeping the
@@ -298,8 +329,8 @@ function M.build_list(pane, width)
       local dir_read = t_all ~= nil and t_all.files > 0 and t_all.read == t_all.files
       local line
       if entry.collapsed then
-        local t = dir_stat[entry.path] or { added = 0, removed = 0 }
-        local stat = stat_text(t.added, t.removed)
+        local t = dir_stat[entry.path] or { added = 0, removed = 0, left = 0 }
+        local stat = pane.conflicts and left_text(t.left) or stat_text(t.added, t.removed)
         -- Measured in display cells: the twisty is multi-byte, and
         -- padding a row out by byte count leaves its churn column short.
         local avail = math.max(inner - vim.fn.strdisplaywidth(head_prefix) - #stat, 6)
@@ -308,34 +339,41 @@ function M.build_list(pane, width)
           .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
         line = b:add(head .. stat)
         b:hl(line, 0, #head, dir_read and "UatisRead" or "UatisDir")
-        stat_hl(b, line, #head, t.added, t.removed)
+        if pane.conflicts then
+          b:hl(line, #head, -1, t.left > 0 and "UatisStatDel" or "UatisRead")
+        else
+          stat_hl(b, line, #head, t.added, t.removed)
+        end
       else
         line = b:add(head_prefix .. entry.name .. "/", dir_read and "UatisRead" or "UatisDir")
       end
       dirs[line] = entry.path
     else
       local f = pane.files[entry.index]
-      local stat = f.binary and "bin" or stat_text(f.added, f.removed)
+      local stat = pane.conflicts and left_text(f.conflicts or 0)
+        or (f.binary and "bin" or stat_text(f.added, f.removed))
       local head_prefix = " " .. indent .. f.status .. " "
       local avail = math.max(inner - #head_prefix - #stat, 6)
       local shown = M.truncate_path(entry.name, avail)
       local head = head_prefix .. shown .. string.rep(" ", math.max(avail - #shown, 0)) .. " "
       local line = b:add(head .. stat)
       rows[line] = entry.index
-      if read.is_read(pane, f) then
+      if finished(pane, f) then
         -- Read: status letter and name in one colour. The letter is how
         -- a reader decides what to open next, and on a file they have
         -- read there is nothing left to decide.
         b:hl(line, 0, #head, "UatisRead")
       else
         b:hl(line, #indent + 1, #indent + 2,
-          "UatisStatus" .. (f.status:match("^[AMDR]") and f.status or "M"))
+          "UatisStatus" .. (f.status:match("^[AMDRU]") and f.status or "M"))
       end
       -- Per-file churn, coloured the same way as everywhere else, read
       -- or not: how much a file grew or shrank is a fact about the
       -- file, and a column of counts that went green whenever a row did
       -- would be a column the eye could no longer read down.
-      if not f.binary then
+      if pane.conflicts then
+        b:hl(line, #head, -1, (f.conflicts or 0) > 0 and "UatisStatDel" or "UatisRead")
+      elseif not f.binary then
         stat_hl(b, line, #head, f.added, f.removed)
       end
       -- Last, so it wins the span it covers: where you are standing is
@@ -375,6 +413,21 @@ function M.progress(pane, width)
   if n == 0 then
     return ""
   end
+  -- A conflict review is measured in blocks: what is settled over
+  -- what there was, and files with nothing left in them.
+  if pane.conflicts then
+    local left, total, files = 0, 0, 0
+    for _, f in ipairs(pane.files) do
+      left = left + (f.conflicts or 0)
+      total = total + math.max(f.total or 0, f.conflicts or 0)
+      if (f.conflicts or 0) == 0 then
+        files = files + 1
+      end
+    end
+    return M.bar(width, total > 0 and (total - left) / total or files / n,
+      ("%d/%d · %d%%"):format(files, n,
+        math.floor((total > 0 and (total - left) / total or files / n) * 100 + 0.5)))
+  end
   -- Counted chunk by chunk, since that is what a mark is on: a file of
   -- three chunks with two of them read is two-thirds of its delta
   -- behind the reader, whatever the row beside it says.
@@ -402,7 +455,11 @@ function M.progress(pane, width)
   end
   local frac = total > 0 and done / total or files / n
   local text = ("%d/%d · %d%%"):format(files, n, math.floor(frac * 100 + 0.5))
+  return M.bar(width, frac, text)
+end
 
+--- The bar itself, `frac` full, with `text` beside it.
+function M.bar(width, frac, text)
   -- The bar takes what the numbers leave, and goes entirely rather than
   -- shrinking to a handful of cells: four blocks and three dots is not a
   -- proportion anyone can read off, and the numbers beside it are
@@ -719,6 +776,52 @@ function M.view_winbar_expr()
 end
 
 M.VIEW_WINBAR = "%!v:lua.require'uatis.ui'.view_winbar_expr()"
+
+-- ------------------------------------------------------------------
+-- A conflicted file
+-- ------------------------------------------------------------------
+
+--- Where the reader is in the file's conflicts, and how much of the
+--- merge is left beyond it. Nothing about a comparison: there is none.
+local function conflict_winbar_text(c, width)
+  local left = {}
+  local function add(text, hl)
+    table.insert(left, { text = text, hl = hl })
+  end
+  local st = require("uatis.conflict").state(c)
+  add(c.relpath, "UatisHeader")
+  if st.conflicts == 0 then
+    add("no conflicts left", "UatisMeta")
+  else
+    add(string.format("conflict %s/%d", st.conflict and tostring(st.conflict) or "–", st.conflicts),
+      "UatisMeta")
+  end
+  local rest = require("uatis.pane").conflicts_left(c)
+  if rest then
+    add((rest:gsub("^, ", "")), "UatisMeta")
+  end
+  if vim.bo[c.bufnr].modified then
+    add("modified", "UatisMeta")
+  end
+  return compose(left, {}, width)
+end
+
+M.conflict_winbar_text = conflict_winbar_text
+
+function M.conflict_winbar_expr()
+  local win = tonumber(vim.g.statusline_winid)
+  local buf = win and vim.api.nvim_win_is_valid(win)
+    and vim.api.nvim_win_get_buf(win) or nil
+  local c = buf and require("uatis.conflict").get(buf) or nil
+  if not c then
+    return ""
+  end
+  local width = (win and vim.api.nvim_win_is_valid(win))
+    and vim.api.nvim_win_get_width(win) or vim.o.columns
+  return conflict_winbar_text(c, width)
+end
+
+M.CONFLICT_WINBAR = "%!v:lua.require'uatis.ui'.conflict_winbar_expr()"
 
 -- ------------------------------------------------------------------
 -- Old-revision window

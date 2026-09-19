@@ -48,6 +48,8 @@ return {
       show_commit = "<leader>gA",
       -- Everything since a revision you pick, in your own buffers.
       since_commit = "<leader>gS",
+      -- Start or end a review of the files a merge stopped on.
+      conflicts = "<leader>gx",
     },
     -- Inside the changed-file list.
     pane = {
@@ -113,6 +115,26 @@ return {
       -- Jump to the matching row in the file.
       jump = "<CR>",
     },
+    -- In a conflicted file, while the conflict review is on. The walk
+    -- (`keys.view.files`, `file_next`, `file_prev`) is bound there too.
+    conflict = {
+      next = "]x",
+      prev = "[x",
+      -- Settle the block under the cursor with one side, both (ours
+      -- first), or the base.
+      ours = "<leader>xo",
+      theirs = "<leader>xt",
+      both = "<leader>xb",
+      base = "<leader>xa",
+      -- Merge the block under the cursor by the word, where the two
+      -- sides changed different words; and every block of the file.
+      resolve = "<leader>xw",
+      resolve_all = "<leader>xW",
+      -- On a `<<<<<<<`, `|||||||` or `>>>>>>>` row, the commit it names
+      -- in a float that goes when the cursor does. On any other row
+      -- the key does what it did before.
+      peek = "K",
+    },
   },
 
   pane = {
@@ -139,6 +161,12 @@ return {
   show = {
     -- Open `<leader>gA` / `:UatisShow` in a new tab.
     tab = true,
+  },
+
+  conflict = {
+    -- Hide diagnostics in a file while it has conflict blocks in it,
+    -- and show them again once it has none.
+    quiet_diagnostics = true,
   },
 
   tab = {
@@ -260,6 +288,18 @@ return {
     -- How far a read row steps back from the `+N` green towards the
     -- list's background: 0 is that green, 1 is gone.
     read_recede = 0.4,
+
+    -- A conflict block's two sides, banded from `DiffAdd` (ours) and
+    -- `DiffChange` (theirs): how far the band sits from the background,
+    -- and how far the words that side changed sit.
+    conflict_lightness = 0.06,
+    conflict_mark_lightness = 0.18,
+    -- The base between them, and the marker rows: a grey this far from
+    -- the background towards the foreground.
+    conflict_base_contrast = 0.08,
+    -- ...or the two bands named outright, as `0xrrggbb`.
+    ours_bg = nil,
+    theirs_bg = nil,
   },
 
   syntax = {

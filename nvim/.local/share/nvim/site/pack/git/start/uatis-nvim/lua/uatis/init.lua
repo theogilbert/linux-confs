@@ -202,6 +202,13 @@ function M.toggle_diff()
     view.stop(current)
     return false
   end
+  -- The review in this tab is of the merge: this key ends it, being
+  -- the key that ends the review in this tab whichever kind it is.
+  local list = pane.get()
+  if list and list.conflicts then
+    pane.close(list)
+    return false
+  end
   -- No file here to annotate: the list is the whole answer, and toggling
   -- it is what the key means from a buffer that has nothing to compare.
   --
@@ -227,6 +234,29 @@ function M.toggle_diff()
     return true
   end
   view.open(nil, { resolve = base.resolve, tracks_base = true, on_open = follow_up })
+  return true
+end
+
+--- The files a merge stopped on, listed and annotated -- or, pressed
+--- with that review already running in this tab, the end of it.
+---
+--- A review of the branch running in this tab is ended first, and said
+--- so: a tab holds one list, and a reader asking about the merge is
+--- asking about the tree they stand in, not the branch. `<leader>gu`
+--- ends either kind, since it ends "the review in this tab".
+function M.conflicts()
+  local list = pane.get()
+  if list and list.conflicts then
+    pane.close(list)
+    return false
+  end
+  if list then
+    vim.notify("uatis: ending the review of " .. tostring(list.ref) .. " for the conflicts",
+      vim.log.levels.INFO)
+    view.close_all(list.root, list.rev, list.standalone)
+    pane.close(list)
+  end
+  pane.review_conflicts()
   return true
 end
 
@@ -398,11 +428,28 @@ end
 ---   degraded         difftastic was asked for and could not answer
 ---   pending          a structural diff is running: the counts are the
 ---                    last answer, not this one
+---
+--- A buffer in a conflict review answers differently -- there is no
+--- comparison in it -- and says so with `mode`:
+---
+---   mode             "conflicts"
+---   conflicts        blocks still in the file
+---   resolved         blocks settled since the file was opened
+---   conflict         which block the cursor is in, or nil
+---   path, root       as above
 function M.status(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
   local v = view.get(bufnr)
   if not v then
-    return nil
+    local conflict = require("uatis.conflict")
+    local c = conflict.get(bufnr)
+    if not c then
+      return nil
+    end
+    local st = conflict.state(c)
+    st.mode = "conflicts"
+    st.root, st.path = c.root, c.relpath
+    return st
   end
   return {
     added = v.added or 0,
@@ -434,6 +481,9 @@ end
 ---   added, removed   across all of them
 ---   file             the one the list is standing on, if any
 ---   window           true while the list has a window up
+---   mode             "branch", "commit" or "conflicts"
+---   conflicts        in a conflict review: blocks left across the files
+---   resolved         ...and blocks settled since the review began
 --- How many of a list's files the reader has marked read -- and still
 --- has, a file edited since being no longer one of them.
 local function read_count(list)
@@ -463,6 +513,9 @@ function M.review()
     file = current and current.path or nil,
     tracks_base = list.tracks_base == true,
     window = list.list_win ~= nil and vim.api.nvim_win_is_valid(list.list_win),
+    mode = list.conflicts and "conflicts" or (list.commit and "commit" or "branch"),
+    conflicts = list.conflicts and (list.stat_conflicts or 0) or nil,
+    resolved = list.conflicts and (list.stat_resolved or 0) or nil,
   }
 end
 
@@ -593,6 +646,8 @@ local function setup_keymaps()
       desc = "uatis: show one commit, in a tab of its own" },
     { lhs = k.since_commit, rhs = function() M.since_commit() end,
       desc = "uatis: review everything changed since a revision" },
+    { lhs = k.conflicts, rhs = function() M.conflicts() end,
+      desc = "uatis: start or end a review of the merge's conflicts" },
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then

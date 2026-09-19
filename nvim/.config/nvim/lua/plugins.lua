@@ -135,6 +135,21 @@ wk.add({
 	{ "<leader>vs", desc = "[V]im [S]essions actions" },
 	{ "<leader>S", desc = "[S]cratch file actions" },
 	{ "<leader>b", desc = "Data[b]ase operations" },
+	{ "<leader>m", desc = "[M]erge requests operations" },
+})
+-- uatis binds <leader>x… in a conflicted file while its conflict review
+-- is on, and nowhere else. The group is added per buffer as one joins
+-- the review (which-key reads `cond` once at load, not when the popup
+-- opens); once the keys are gone a group with nothing under it is not
+-- shown, so there is nothing to take back.
+vim.api.nvim_create_autocmd("User", {
+	pattern = "UatisConflictAttach",
+	callback = function(ev)
+		if not vim.b[ev.data.buf].uatis_wk_group then
+			vim.b[ev.data.buf].uatis_wk_group = true
+			wk.add({ { "<leader>x", desc = "Conflict resolution operations", buffer = ev.data.buf } })
+		end
+	end,
 })
 
 -- optionally enable 24-bit colour

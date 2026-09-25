@@ -828,6 +828,14 @@ return {
     -- for a forge.
     mentions = true,
 
+    -- Completion for the `#` in front of an issue and the `!` in front
+    -- of a merge request, from what is open on this project, most
+    -- recently touched first: the number where you know it, and the
+    -- title where -- as usual -- you know roughly what it was called.
+    -- Fetched when the composer opens, every time, since an issue is
+    -- filed more often than a member joins.
+    numbers = true,
+
     -- Completion for the `:name:` of an emoji, from the shortcodes
     -- GitLab draws as pictures. On `<C-x><C-o>` in the composer, like
     -- the names above and through the same one `omnifunc`: which of
@@ -846,6 +854,11 @@ return {
     -- and this plugin will not set a global option to get one. On an
     -- older Neovim the key above still completes.
     mention_menu = true,
+
+    -- ...and as the `#` or the `!` is typed, with the same footnote.
+    -- Not on a `#` alone at the start of a line, which is how a
+    -- heading starts.
+    number_menu = true,
   },
 
   -- Where "copied" puts a link: the one `<leader>mL` makes, and the

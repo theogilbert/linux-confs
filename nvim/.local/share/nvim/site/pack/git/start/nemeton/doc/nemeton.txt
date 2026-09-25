@@ -1048,6 +1048,19 @@ and the names are the members of this project and of the groups above
 it, which is who GitLab will accept. See |nemeton-config-compose| for
 the two switches and for what to point a completion engine at.
 
+                                                             *nemeton-numbers*
+`#` and `!` complete the same way, over what is open on the project:
+`#12` is an issue and `!7` a merge request, and GitLab turns either
+into a link and a note on the thing it names, so the wrong number is a
+note on the wrong argument. Nobody remembers the number. Digits after
+the sigil match the front of one, and anything else matches anywhere
+in the title -- `#proxy` for "the proxy one" -- with the title beside
+each in the menu. Most recently touched first, one page of a hundred,
+fetched every time the composer opens: an issue is filed more often
+than a member joins. A `#` alone at the start of a line is left to be
+the heading it is starting, and a `!` on the end of a word is the end
+of a sentence.
+
 EMOJI                                                          *nemeton-emoji*
 
 `:` and the first letters of a shortcode completes the same way, through
@@ -1859,6 +1872,8 @@ COMPOSER                                              *nemeton-config-compose*
       height = 10,            -- rows of the split you write in
       mentions = true,        -- complete `@name` from the project
       mention_menu = true,    -- ...and put the menu up as you type
+      numbers = true,         -- complete `#12` and `!7` from what is open
+      number_menu = true,     -- ...and put that menu up as you type
       emoji = true,           -- complete `:name:` from the shortcodes
       emoji_menu = true,      -- ...and put that menu up as you type
       remember = true,        -- keep what was closed unsent
@@ -1872,6 +1887,11 @@ the composer. They are fetched when the window opens, once per
 repository per editor session, because completion is synchronous and a
 round trip inside a keystroke is a freeze. A forge that will not answer
 leaves the key completing nothing and says nothing about it.
+
+`numbers` and `number_menu` are the same two switches for `#12` and
+`!7` (|nemeton-numbers|), fetched when the composer opens -- every
+time, since what is open changes. An engine reads
+`require("nemeton.numbers").candidates(root, sigil, prefix)`.
 
 `emoji` and `emoji_menu` are the same two switches for the `:name:` of
 an emoji (|nemeton-emoji|), on the same key: one `omnifunc` answers for

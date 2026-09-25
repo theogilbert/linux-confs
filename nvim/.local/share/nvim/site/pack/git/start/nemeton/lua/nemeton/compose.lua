@@ -23,13 +23,22 @@ local M = {}
 local opened = 0
 
 -- What a half-written word can turn into: the `@name` of somebody on
--- the project, and the `:name:` of an emoji. Each says for itself
--- whether the cursor is in one of its words, and each is switched off
--- by its own setting.
+-- the project, the `#12` of an issue or the `!7` of a merge request,
+-- and the `:name:` of an emoji. Each says for itself whether the
+-- cursor is in one of its words, and each is switched off by its own
+-- setting.
 local SOURCES = {
   { module = "nemeton.mentions", on = "mentions", menu = "mention_menu" },
+  { module = "nemeton.numbers", on = "numbers", menu = "number_menu" },
   { module = "nemeton.emoji", on = "emoji", menu = "emoji_menu" },
 }
+
+--- Whether `base` is a word of `source`'s: its sigil in front, and a
+--- source with two sigils owns both.
+local function owns(source, base)
+  local sigil = (base or ""):sub(1, 1)
+  return sigil == source.it.sigil or (source.it.sigils and source.it.sigils[sigil]) or false
+end
 
 --- The sources switched on, in the order they are asked.
 local function sources()
@@ -54,7 +63,8 @@ local function starts_here()
   return nil, -3
 end
 
---- Completion for `@name` and `:name:`, on this buffer alone.
+--- Completion for `@name`, `#12`, `!7` and `:name:`, on this buffer
+--- alone.
 ---
 --- `omnifunc` rather than a completion engine: this plugin has no
 --- dependencies and is not about to grow one over a menu. `<C-x><C-o>`
@@ -63,16 +73,16 @@ end
 --- `nemeton.emoji.candidates` -- which is why those are functions and
 --- not closures in this file.
 ---
---- One `omnifunc` for the two of them, because there is one
---- `omnifunc`. Which is being typed is the sigil in front of the
---- cursor, and no word begins with both.
+--- One `omnifunc` for all of them, because there is one `omnifunc`.
+--- Which is being typed is the sigil in front of the cursor, and no
+--- word begins with two.
 function M.omnifunc(findstart, base)
   if findstart == 1 then
     local _, at = starts_here()
     return at
   end
   for _, source in ipairs(sources()) do
-    if (base or ""):sub(1, 1) == source.it.sigil then
+    if owns(source, base) then
       return source.it.omnifunc(0, base)
     end
   end
@@ -110,7 +120,7 @@ local function completion_on(buf, window)
   end
   vim.api.nvim_create_autocmd("TextChangedI", {
     buffer = buf,
-    desc = "nemeton: what an @ or a : can turn into",
+    desc = "nemeton: what an @, a #, a ! or a : can turn into",
     callback = function()
       if vim.fn.pumvisible() == 1 or vim.api.nvim_get_current_win() ~= window then
         return

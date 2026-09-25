@@ -623,16 +623,12 @@ function M.open()
     },
     -- `q` keeps it. Everything in this window is still here on the next
     -- keypress of `+`, which is the point of it being a window.
+    --
+    -- And only `q`: `<Esc>` is what a field's prompt is dismissed with
+    -- and what a reader presses to be sure of being in normal mode,
+    -- and a form that vanished under either was a form to reopen.
     {
       k.quit,
-      function()
-        M.close()
-        back()
-      end,
-      "close it, keeping what is typed",
-    },
-    {
-      "<Esc>",
       function()
         M.close()
         back()

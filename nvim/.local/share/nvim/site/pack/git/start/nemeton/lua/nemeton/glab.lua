@@ -590,6 +590,16 @@ function M.project_users(root, cb)
   json({ "api", "projects/:fullpath/users?per_page=100" }, { cwd = root }, cb)
 end
 
+--- What is open on the project under a number, for the composer to
+--- complete: `kind` is "issues" or "merge_requests", and the answer is
+--- one page of a hundred, most recently touched first.
+function M.numbered(root, kind, cb)
+  json({
+    "api",
+    ("projects/:fullpath/%s?state=opened&order_by=updated_at&per_page=100"):format(kind),
+  }, { cwd = root }, cb)
+end
+
 --- The branches on the project, for the one a merge request goes to.
 ---
 --- The forge's list rather than `git branch -r`: what a merge request

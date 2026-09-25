@@ -1012,12 +1012,16 @@ pictures rather than an error after every post.
 
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
-`<C-b>` turns it into a suggestion, `q` puts it away, and two sigils
-complete — `@` the people on the project
-and `:` the emoji GitLab draws as pictures. The menu comes up as you
-type either, `<C-x><C-o>` asks for it where it does not, and what goes in
-is `@username` and `:tada:`, sigils and all, because that is what GitLab
-turns into a notification and into a picture. Keeping is the default
+`<C-b>` turns it into a suggestion, `q` puts it away, and four sigils
+complete — `@` the people on the project, `#` the open issues, `!` the
+open merge requests, and `:` the emoji GitLab draws as pictures. The
+menu comes up as you type any of them, `<C-x><C-o>` asks for it where
+it does not, and what goes in is `@username`, `#12` and `:tada:`,
+sigils and all, because that is what GitLab turns into a notification,
+a link and a picture. An issue is reached by its number where you know
+it and by any word of its title where — as usual — you know roughly
+what it was called; a `#` alone at the start of a line is left to be
+the heading it is starting. Keeping is the default
 because a review is written as a whole: a comment posted the moment it
 is typed cannot be taken back after reading the next file.
 
@@ -1255,6 +1259,7 @@ lua/nemeton/
   log.lua        every subprocess, into ~/.local/state, with the token
                  scrubbed out on the way
   mentions.lua   the people you can put an @ in front of
+  numbers.lua    the issues and merge requests a # or a ! names
   emoji.lua      the names between two colons, and what they draw as
   win.lua        where the cursor was before a window of this took it
   sha1.lua       the digest GitLab names a line of a diff with

@@ -604,3 +604,47 @@ SELECT 3;
         }, root_nodes)
     end)
 end)
+
+describe("should parse mongo sections", function()
+    local parser = require("sections.parser")
+
+    local function build_header(name, line)
+        return {
+            name = name,
+            type = "header",
+            position = { line, 0 },
+            children = {},
+            private = false,
+        }
+    end
+
+    it("parse banner block comments, keeping only the name line", function()
+        local buf = create_buf_with_text(
+            [[
+/******************
+ * First section  *
+ * some description *
+ ******************/
+{"find": "orders"}
+
+/* regular comment */
+// line comment
+{"find": "items"}
+
+/*******************
+ * Second section
+ *******************/
+{"find": "users"}
+]],
+            "mongo"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_header("First section", 1),
+            build_header("Second section", 11),
+        }, root_nodes)
+    end)
+end)

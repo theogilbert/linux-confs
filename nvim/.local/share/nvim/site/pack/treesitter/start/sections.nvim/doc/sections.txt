@@ -161,7 +161,7 @@ displayed in the panel:
     header      `name`                
 
 Sections found inside another section are shown as its children, except
-for SQL where sections are always a flat list. Sections marked as private
+for SQL and MongoDB where sections are always a flat list. Sections marked as private
 can be hidden with the `p` key (|sections-keymap-private|).
 
 The examples below show a source snippet, followed by what the panel
@@ -254,6 +254,21 @@ SQL:~
     SELECT * FROM customers WHERE active;
 <   Panel: >
      Customers
+<
+*sections-mongo*
+MongoDB (`.mongo`, grannos parser):~
+- Banner block comments: a `/*` followed by two or more stars, then
+  ` * ` lines, closed by a line of stars ending in `*/`. Only the first
+  inner line is used as the section name (the trailing `*` is optional),
+  so further lines can hold a description. Other comments are ignored.
+  As with SQL, sections are a flat list. >
+    /******************
+     * Orders         *
+     * Open orders only *
+     ******************/
+    {"find": "orders", "filter": {"status": "open"}}
+<   Panel: >
+     Orders
 <
 To add support for additional languages, create Tree-sitter query files
 in the `queries/<language>/sections.scm` directory. See |sections-queries|.

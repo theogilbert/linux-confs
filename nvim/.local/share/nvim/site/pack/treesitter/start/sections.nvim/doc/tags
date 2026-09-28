@@ -18,6 +18,7 @@ sections-languages	sections.txt	/*sections-languages*
 sections-license	sections.txt	/*sections-license*
 sections-lua	sections.txt	/*sections-lua*
 sections-markdown	sections.txt	/*sections-markdown*
+sections-mongo	sections.txt	/*sections-mongo*
 sections-python	sections.txt	/*sections-python*
 sections-queries	sections.txt	/*sections-queries*
 sections-requirements	sections.txt	/*sections-requirements*

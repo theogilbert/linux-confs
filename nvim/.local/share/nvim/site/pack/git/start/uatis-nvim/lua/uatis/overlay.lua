@@ -351,6 +351,18 @@ function M.setup_highlights()
 
   local bar = bar_bg()
   local fg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg
+
+  -- The commit card pinned under the winbar is the winbar's second row,
+  -- and takes its background: a float's own is a near miss beside it,
+  -- and it is the band -- not a hue -- that tells the message from the
+  -- code under it. Its text in the bar's own colour, since any accent
+  -- the scheme has is one its syntax is already using: `Title` under
+  -- sonokai is the keyword pink, and the subject read as code.
+  local winbar = vim.api.nvim_get_hl(0, { name = "WinBar", link = false })
+  vim.api.nvim_set_hl(0, "UatisCard", winbar.bg
+    and { bg = winbar.bg, fg = winbar.fg }
+    or { link = "NormalFloat" })
+  vim.api.nvim_set_hl(0, "UatisCardText", winbar.fg and { fg = winbar.fg } or { link = "Normal" })
   vim.api.nvim_set_hl(0, "UatisHint", (bar and fg)
     and { fg = mix(bar, fg, config.highlight.hint_contrast) }
     or { link = "NonText" })
@@ -544,18 +556,34 @@ M.covers_all = covers_all
 --- Joining them is what says the same thing in this medium; drawing the
 --- gap is what would add something difftastic never said.
 ---
---- Whitespace only, because whitespace is the one run of characters a
---- reader cannot be asked to recognise. Anything else between two marks
---- is code that came through unchanged, and covering it would claim an
+--- Whitespace, and one character of punctuation with it. A lone `.` or
+--- `(` left between two marks is difftastic matching it against a `.`
+--- or `(` of whatever old row it happened to align with: true of the
+--- character and meaningless for the line. `uatis.showing(bufnr)` in
+--- place of `vim.fn.setreg(...)` came back green with its dot stepped
+--- back, a correspondence the reader goes looking for and does not
+--- find. Anything more -- a word, or two marks of punctuation -- is
+--- code that came through unchanged, and covering it would claim an
 --- edit that did not happen.
-local function joined(ranges, text)
+---
+--- `strict` keeps to whitespace: `atoms` joins string literals into the
+--- sentences they make up, and a comma between two literals is where
+--- one ends and the next begins.
+local function bridges(gap, strict)
+  if strict then
+    return gap:match("^%s*$") ~= nil
+  end
+  return gap:match("^%s*[^%w_%s]?%s*$") ~= nil
+end
+
+local function joined(ranges, text, strict)
   table.sort(ranges, function(a, b)
     return a.col_start < b.col_start
   end)
   local out = {}
   for _, r in ipairs(ranges) do
     local last = out[#out]
-    if last and text:sub(last.col_end + 1, r.col_start):match("^%s*$") then
+    if last and bridges(text:sub(last.col_end + 1, r.col_start), strict) then
       last.col_end = math.max(last.col_end, r.col_end)
     else
       table.insert(out, { col_start = r.col_start, col_end = r.col_end })
@@ -597,7 +625,7 @@ local function atoms(spans, text, all)
       table.insert(ranges, { col_start = sp.col_start, col_end = sp.col_end })
     end
   end
-  return joined(ranges, text)
+  return joined(ranges, text, true)
 end
 
 --- The emphasis, kept to where difftastic's own display would draw it:
@@ -879,6 +907,23 @@ local function narrowed_atoms(quiet, fine, regions, text, about)
     -- to be the other of, whatever shape the hunk has.
     if under == nil then
       return true
+    end
+    -- What would stay pale is punctuation and nothing else: the quotes
+    -- of `"old"` against the quotes of whatever string it was aligned
+    -- with. A delimiter matches a delimiter wherever it came from, so
+    -- there is no old half here, only the character they share.
+    local covered = {}
+    for _, r in ipairs(fine or {}) do
+      for col = math.max(r.col_start, sp.col_start), math.min(r.col_end, sp.col_end) - 1 do
+        covered[col] = true
+      end
+    end
+    local worded = false
+    for col = sp.col_start, math.min(sp.col_end, #text) - 1 do
+      worded = worded or (not covered[col] and text:sub(col + 1, col + 1):match("[%w_]") ~= nil)
+    end
+    if not worded then
+      return false
     end
     -- Several old rows became fewer new ones: a replacement, not a
     -- rewording, and no row here is a version of one row there.

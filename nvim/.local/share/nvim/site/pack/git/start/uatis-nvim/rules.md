@@ -43,6 +43,14 @@ unmatched. A genuine rewrite is left as difft read it: there its pairing is
 the better one, and a line diff over a rewritten file is exactly the
 re-pairing-by-coincidence we turn `linematch` off to avoid.
 
+A rewrite refused that way still gives up its **edges**: the rows at either end
+of the region that are byte-identical on both sides, read inwards from rows the
+two sides agree on, are paired as unchanged. difft calls a node's opening rows
+novel when the node was rebuilt around them — `follow = {` whose table gained
+fields comes back red above the same `follow = {` in green. Only where that
+changes a pairing: an edge difft already paired with its twin (a docstring's
+first rows) is left to `quiet_unchanged`.
+
 ### A lone unchanged row between a deletion and an insertion — `diff.lua`
 
 A single unchanged row between two changed ones normally stays inside the hunk,
@@ -135,8 +143,13 @@ alike — `total += self.measure(box)` losing its `total` and its `+=` came back
 with the space between them at the step-back, as though a space had survived a
 deletion on either side of it.
 
-Whitespace only. Anything else between two marks is code that came through
-unchanged, and covering it would claim an edit that did not happen.
+Whitespace, and **one character of punctuation** with it. A lone `.` or `(`
+between two marks is difft matching it against a `.` or `(` of whatever old
+row it aligned with: `uatis.showing(bufnr)` in place of `vim.fn.setreg(...)`
+came back with its dot stepped back. A word, or two marks of punctuation, is
+code that came through unchanged, and covering it would claim an edit that
+did not happen. `atoms` keeps to whitespace: a comma between two literals is
+where one ends.
 
 ---
 
@@ -197,25 +210,28 @@ nothing on it can have been lifted from another row.
 
 ### `narrowed_atoms` — `overlay.lua`
 
-Whether the step-back is offered at all. Four gates, in order:
+Whether the step-back is offered at all. Five gates, in order:
 
 1. **Nothing new in the atom** → leave it alone. There is no half for the rest
    to be the other of. (This is what keeps the closing `"""` of a reworded
    docstring from lighting up.)
-2. **The hunk collapsed** — several old rows became fewer new ones → tint whole.
+2. **Only punctuation would stay pale** → tint whole. The quotes of `"old"`
+   match the quotes of any string it was aligned with; that is the character
+   they share, not an old half.
+3. **The hunk collapsed** — several old rows became fewer new ones → tint whole.
    The new row is not a version of any one of them, it is what replaced all of
    them, and the emphasis there is computed over the whole *block*, so the pale
    text can be scavenged from a line that is not the one being drawn. Six
    `parts.append("title: " + plan.title)` lines becoming one f-string came back
    with `plan.title` and `plan.author` stepped back inside it, lifted out of two
    different old rows.
-3. **Nothing was removed, and the row has an old partner** → step back. The old
+4. **Nothing was removed, and the row has an old partner** → step back. The old
    atom is on the row in one piece, so everything about to be dimmed is
    genuinely it. `"diagram"` → `"structural diagram"` is eleven of twenty
    characters new, and `diagram` still did not change. Both halves matter: a
    row with *no* partner also lost nothing, and stepping part of it back would
    say a wholly new line arrived carrying a sentence.
-4. **Otherwise `diff.line.emphasis_ratio` decides.** Past half the atom being
+5. **Otherwise `diff.line.emphasis_ratio` decides.** Past half the atom being
    new, what is left is whatever the old block happened to contain — a
    backtick, a hyphen, a common word, matched because the character was
    somewhere in it. A README paragraph rewritten from `pip install grannos-py`

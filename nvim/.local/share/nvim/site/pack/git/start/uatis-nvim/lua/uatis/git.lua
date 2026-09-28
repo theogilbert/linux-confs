@@ -434,6 +434,18 @@ function M.commit_message(root, sha, cb)
   end)
 end
 
+--- What a file shown at a commit carries above its first line:
+--- cb(datetime, message), the author date to the second and the whole
+--- message. The author date, as everywhere else here: it is when the work
+--- was done, where the committer's is when it was last rebased.
+function M.commit_card(root, sha, cb)
+  run(root, { "log", "-1", "--no-walk", "--date=format:%Y-%m-%d %H:%M:%S",
+    "--format=%ad%x00%B", sha }, function(ok, out)
+    local date, message = (ok and out or ""):match("^([^%z]*)%z(.*)$")
+    cb(date or "", vim.trim(message or ""))
+  end)
+end
+
 --- Files git has never been told about: `ls-files --others
 --- --exclude-standard`, so what `.gitignore` covers is not in it.
 --- cb({ path, ... }), repo-relative.

@@ -926,6 +926,68 @@ local function realign(rows, old_lines, new_lines, classify)
         end
       end
 
+      -- Refused as a repair, the region still gives up its EDGES: the
+      -- rows at either end that are byte-identical on both sides, read
+      -- inwards from the rows the two sides already agree on. That is
+      -- no coincidence of a rewrite -- it is the rewrite not having
+      -- started yet. difftastic calls such rows novel when the node
+      -- they open was rebuilt around them (a `follow = {` whose table
+      -- gained a field), and taken literally the before-image drew them
+      -- in red above the same text drawn in green.
+      if not fixed and #a_idx > 0 and #b_idx > 0 then
+        local head = 0
+        while head < math.min(#a_text, #b_text) and a_text[head + 1] == b_text[head + 1] do
+          head = head + 1
+        end
+        local tail = 0
+        while tail < math.min(#a_text, #b_text) - head
+          and a_text[#a_text - tail] == b_text[#b_text - tail] do
+          tail = tail + 1
+        end
+        -- ...and only where that is a repair, as above: an edge
+        -- difftastic already paired with its twin is one
+        -- `quiet_unchanged` answers, and re-cutting the hunk around it
+        -- changes what a node rewritten inside is drawn as.
+        local partner = {}
+        for k = i, j - 1 do
+          if rows[k].lhs then
+            partner[rows[k].lhs] = rows[k].rhs or false
+          end
+        end
+        local repairs = false
+        for k = 1, head do
+          repairs = repairs or partner[a_idx[k]] ~= b_idx[k]
+        end
+        for k = 0, tail - 1 do
+          repairs = repairs or partner[a_idx[#a_idx - k]] ~= b_idx[#b_idx - k]
+        end
+        if repairs then
+          local gone = { a = {}, b = {} }
+          local function edge(list, ka, kb)
+            gone.a[a_idx[ka]], gone.b[b_idx[kb]] = true, true
+            table.insert(list, { lhs = a_idx[ka], rhs = b_idx[kb], kind = "same" })
+          end
+          fixed = {}
+          for k = 1, head do
+            edge(fixed, k, k)
+          end
+          local suffix = {}
+          for k = tail - 1, 0, -1 do
+            edge(suffix, #a_idx - k, #b_idx - k)
+          end
+          for k = i, j - 1 do
+            local lhs = rows[k].lhs and not gone.a[rows[k].lhs] and rows[k].lhs or nil
+            local rhs = rows[k].rhs and not gone.b[rows[k].rhs] and rows[k].rhs or nil
+            if lhs or rhs then
+              local kind = (lhs == rows[k].lhs and rhs == rows[k].rhs) and rows[k].kind
+                or classify(lhs, rhs)
+              table.insert(fixed, { lhs = lhs, rhs = rhs, kind = kind })
+            end
+          end
+          vim.list_extend(fixed, suffix)
+        end
+      end
+
       for _, r in ipairs(fixed or {}) do
         table.insert(out, r)
       end

@@ -1400,7 +1400,7 @@ local function target_win(pane)
     return pane.code_win
   end
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(pane.tab)) do
-    if win ~= pane.list_win then
+    if win ~= pane.list_win and vim.api.nvim_win_get_config(win).relative == "" then
       pane.code_win = win
       return win
     end
@@ -1732,6 +1732,158 @@ local function buffer_at(root, sha, short, path, text)
   return buf
 end
 
+local card_ns = vim.api.nvim_create_namespace("uatis_card")
+
+--- The commit card on show in each window: { float, buf, scrolloff, au }.
+local cards = {}
+
+--- `only`: close it only while it is still that card. A buffer's wipe is
+--- answered on the next tick, and by then a step to the next commit has
+--- put that commit's card up in the same window.
+local function close_card(win, only)
+  local card = cards[win]
+  if not card or (only and card ~= only) then
+    return
+  end
+  cards[win] = nil
+  pcall(vim.api.nvim_del_augroup_by_id, card.au)
+  pcall(vim.api.nvim_win_close, card.float, true)
+  if vim.api.nvim_win_is_valid(win) then
+    vim.api.nvim_set_option_value("scrolloff", card.scrolloff, { scope = "local", win = win })
+  end
+  if vim.api.nvim_buf_is_valid(card.buf) then
+    vim.api.nvim_buf_clear_namespace(card.buf, card_ns, 0, -1)
+  end
+end
+
+--- The card's rows into its float: text, then the highlight of each chunk.
+local function fill_card(card, rows)
+  local fbuf = vim.api.nvim_win_get_buf(card.float)
+  local lines = {}
+  for i, row in ipairs(rows) do
+    lines[i] = table.concat(vim.tbl_map(function(c) return c[1] end, row))
+  end
+  vim.bo[fbuf].modifiable = true
+  vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, lines)
+  vim.bo[fbuf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(fbuf, card_ns, 0, -1)
+  for i, row in ipairs(rows) do
+    local col = 0
+    for _, c in ipairs(row) do
+      vim.api.nvim_buf_set_extmark(fbuf, card_ns, i - 1, col,
+        { end_col = col + #c[1], hl_group = c[2] })
+      col = col + #c[1]
+    end
+  end
+  card.height = #rows
+end
+
+--- Where the float sits: the full width of the window, under its winbar.
+--- Placed again whenever the window changes size or scrolls, since the
+--- winbar the view draws may arrive after the card does.
+local function place_card(win)
+  local card = cards[win]
+  if not (card and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_is_valid(card.float)) then
+    return
+  end
+  -- Against the editor, at the window's first row of text: `relative =
+  -- "win"` counts rows from the winbar in some layouts and from under it
+  -- in others.
+  local info = vim.fn.getwininfo(win)[1] or {}
+  vim.api.nvim_win_set_config(card.float, {
+    relative = "editor", row = info.winrow - 1 + (info.winbar or 0), col = info.wincol - 1,
+    width = info.width, height = card.height,
+  })
+  -- The first rows of the file would sit under the float at the top of
+  -- it; blank filler of the same height above line 1 is what they sit
+  -- under instead, and the cursor is kept out from under the float
+  -- everywhere else by 'scrolloff'.
+  if vim.api.nvim_buf_is_valid(card.buf) then
+    local blank = {}
+    for i = 1, card.height do
+      blank[i] = { { "" } }
+    end
+    card.filler = vim.api.nvim_buf_set_extmark(card.buf, card_ns, 0, 0,
+      { id = card.filler, virt_lines = blank, virt_lines_above = true })
+  end
+  vim.api.nvim_set_option_value("scrolloff", math.max(card.scrolloff < 0 and vim.o.scrolloff
+    or card.scrolloff, card.height), { scope = "local", win = win })
+end
+
+--- The commit a file is shown at, pinned under the winbar.
+---
+--- Like the winbar, it stays wherever the reader is in the file: a
+--- float over the top rows of the window, which a split could not be
+--- without rearranging the pane's layout around it. What it covers is
+--- taken back as above -- filler over line 1, 'scrolloff' below it -- so
+--- no row of the file is out of reach, only the top few of the screen.
+---
+--- Drawn at once from what the walk already knows and filled in when git
+--- answers with the date to the second and the body.
+local function show_card(pane, win, buf, commit)
+  close_card(win)
+  local max = config.show.message_lines
+  if not max or max < 1 then
+    return
+  end
+  local fbuf = vim.api.nvim_create_buf(false, true)
+  vim.bo[fbuf].bufhidden = "wipe"
+  local card = {
+    buf = buf,
+    scrolloff = vim.api.nvim_get_option_value("scrolloff", { scope = "local", win = win }),
+    float = vim.api.nvim_open_win(fbuf, false, {
+      relative = "editor", row = 0, col = 0, width = 1, height = 1,
+      focusable = false, style = "minimal", zindex = 20,
+    }),
+    au = vim.api.nvim_create_augroup("uatis_card_" .. win, { clear = true }),
+  }
+  vim.wo[card.float].winhighlight = "Normal:UatisCard,NormalFloat:UatisCard"
+  cards[win] = card
+  fill_card(card, ui.commit_card(commit.date, commit.subject, max))
+  place_card(win)
+  view_mod.reveal_top(win)
+  vim.api.nvim_create_autocmd({ "BufWipeout", "BufWinLeave" }, {
+    group = card.au, buffer = buf,
+    callback = function() vim.schedule(function() close_card(win, card) end) end,
+  })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = card.au, pattern = tostring(win),
+    callback = function() vim.schedule(function() close_card(win, card) end) end,
+  })
+  vim.api.nvim_create_autocmd("WinResized", {
+    group = card.au,
+    callback = function() place_card(win) end,
+  })
+  -- Arriving at the top from further down shows the filler: `gg` and a
+  -- scroll up both stop at line 1 with it scrolled past, and line 1 then
+  -- sits under the float. Only ARRIVING -- `<C-e>` from the top scrolls
+  -- the filler away a row at a time without leaving line 1, and putting
+  -- it back each time would pin the window there.
+  card.top = vim.fn.line("w0", win)
+  vim.api.nvim_create_autocmd("WinScrolled", {
+    group = card.au,
+    callback = function()
+      if not vim.api.nvim_win_is_valid(win) then
+        return
+      end
+      local top = vim.fn.line("w0", win)
+      if top == 1 and card.top ~= 1 then
+        view_mod.reveal_top(win)
+      end
+      card.top = top
+      place_card(win)
+    end,
+  })
+  git.commit_card(pane.root, commit.sha, function(date, message)
+    if cards[win] ~= card or not vim.api.nvim_win_is_valid(card.float) then
+      return
+    end
+    fill_card(card, ui.commit_card(date, message, max))
+    place_card(win)
+    view_mod.reveal_top(win)
+  end)
+end
+
 --- Does `fn` in the pane's code window.
 ---
 --- Focus follows the reader only where they already are. In the pane's
@@ -1853,6 +2005,7 @@ function M.goto_file(pane, idx)
         end
         local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
         vim.api.nvim_win_set_buf(win, buf)
+        show_card(pane, win, buf, commit)
         -- A history of lines is about one place in the file, and the
         -- commit may have touched others: the lines asked about, where
         -- `-L` said they stood in this commit. Set on the buffer at once

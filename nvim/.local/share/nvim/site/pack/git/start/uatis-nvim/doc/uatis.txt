@@ -494,6 +494,14 @@ commit is your own buffer; anything else opens read-only as
 `uatis://at/<short>/<path>`. Arriving at a file by hand does not annotate it:
 that file holds the working tree, not the commit.
 
+A file opened as it was carries its commit pinned under the winbar, there
+wherever you are in the file: the author date to the second and the subject
+(the winbar has the sha), then as much of the body as fits in
+`show.message_lines` rows (2; `0` for none), the last one `...` where there
+is more. It hides none of the file -- at the top, line 1 sits below it, and
+elsewhere the cursor is kept out from under it. `K` in the list has the
+whole message.
+
 `<leader>gA` (|:UatisShow|) is the same shape reached from outside a review --
 one commit, against its parent, in a tab of its own. Its header names the sha
 and stops: "against its parent" is the only thing it ever means.
@@ -547,9 +555,9 @@ file, or on a directory row, for everything under it. Each commit reads the
 way |:UatisShow| reads one: against its own parent, its files as they were
 at that commit, in a tab of its own (`show.tab`).
 
-The list is the commits, newest at the top, and the newest is on show. Its
-date and author open under its row; for a directory, so do the files it
-touched in there, drawn relative to it. `<CR>` on another row puts that one
+The list is the commits, newest at the top and dated, and the newest is on
+show. Its sha and author open under its row; for a directory, so do the files
+it touched in there, drawn relative to it. `<CR>` on another row puts that one
 on show, `[C` and `]C` step one older or newer from anywhere in the tab, and
 `K` on a row opens that commit's whole message. The commits either side of
 the one on show are compared in the background while you read, so a step
@@ -697,6 +705,8 @@ preserve.
     UatisHeader         the list's identity line
     UatisMeta           dates, authors, counts
     UatisHint           key hints
+    UatisCard           the commit pinned under the winbar: its background
+    UatisCardText       ...and its subject
     UatisDir            a directory row
     UatisFileCur        the file the list is standing on
     UatisRead           a file read, and the filled part of the bar

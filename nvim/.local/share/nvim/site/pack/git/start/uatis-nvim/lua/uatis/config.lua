@@ -170,6 +170,10 @@ return {
   show = {
     -- Open `<leader>gA` / `:UatisShow`, and a history, in a new tab.
     tab = true,
+    -- Rows of the commit's message drawn above the first line of a file
+    -- shown as it was at a commit, the `...` that says there is more
+    -- included. `0` for none.
+    message_lines = 2,
   },
 
   conflict = {

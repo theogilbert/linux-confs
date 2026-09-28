@@ -89,6 +89,34 @@ local function names(parts, width)
   return table.concat(kept, " · ")
 end
 
+--- The commit a file is shown at, as rows of `{ text, hl }` chunks:
+--- `datetime · subject`, then the body, `max` rows in all. No sha: the
+--- winbar right above it already names the commit.
+---
+--- The blank row git puts between subject and body is dropped -- it
+--- would spend one of so few rows saying nothing. Cut short, the last row
+--- is `...`, so a message that goes on is never read as one that ended
+--- mid-thought.
+function M.commit_card(date, message, max)
+  local text = vim.split(message or "", "\n", { plain = true })
+  local rows = { {
+    { (date ~= "" and date) and (date .. " · ") or "", "UatisMeta" },
+    { text[1] or "", "UatisCardText" },
+  } }
+  local body = 2
+  while text[body] and vim.trim(text[body]) == "" do
+    body = body + 1
+  end
+  for i = body, #text do
+    if #rows == max then
+      rows[max] = { { "...", "UatisMeta" } }
+      break
+    end
+    table.insert(rows, { { text[i], "UatisMeta" } })
+  end
+  return rows
+end
+
 --- A byte count as a person reads one.
 ---
 --- Powers of two, and one decimal past the first unit: the question a
@@ -353,14 +381,17 @@ local function history_list(pane, width)
   for i = n, 1, -1 do
     local c = pane.commits[i]
     local here = i == pane.commit_idx
-    local head = " " .. (here and fold.open or fold.closed) .. " " .. c.short .. " "
+    -- The date on the row, the sha under it once expanded: a history is
+    -- read by WHEN, and a sha tells the reader nothing until they need
+    -- to name the commit somewhere else.
+    local head = " " .. (here and fold.open or fold.closed) .. " " .. (c.date or c.short) .. " "
     local subject = clip(c.subject or "", math.max(inner - vim.fn.strdisplaywidth(head), 4))
     local line = b:add(head .. subject)
     commits[line] = i
     b:hl(line, 0, #head, "UatisMeta")
     if here then
       b:hl(line, #head, -1, "UatisFileCur")
-      b:add(pad("    " .. names({ c.date, c.author }, inner - 4)), "UatisMeta")
+      b:add(pad("    " .. names({ c.short, c.author }, inner - 4)), "UatisMeta")
       if h.dir then
         if #pane.files == 0 then
           b:add(pad("    (nothing here)"), "UatisMeta")

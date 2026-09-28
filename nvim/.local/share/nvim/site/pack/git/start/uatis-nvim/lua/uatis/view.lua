@@ -539,6 +539,22 @@ local function leave_chunk(view, cur, target)
   pane.list({ on_ready = mark })
 end
 
+--- Shows whatever is drawn above line 1, where the window is at the top.
+---
+--- `virt_lines` above the first line are filler Neovim scrolls past by
+--- default: `zz`, `gg` and a cursor set on row 1 all leave `topfill` at
+--- 0, so a before-image of the file's first lines was drawn and never
+--- seen, and the filler that keeps line 1 clear of a commit card was
+--- not there to do it. `<C-y>` is the one motion that reveals them, and
+--- it stops at however many there are.
+function M.reveal_top(win)
+  vim.api.nvim_win_call(win, function()
+    if vim.fn.line("w0") == 1 then
+      vim.cmd("normal! 99\25")
+    end
+  end)
+end
+
 --- Puts the cursor on `line` in the view's own window, centred.
 local function jump(view, line)
   local win = view.win
@@ -549,6 +565,7 @@ local function jump(view, line)
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! zz")
   end)
+  M.reveal_top(win)
 end
 
 --- The end of a file, when `]c` was asking for the next change.

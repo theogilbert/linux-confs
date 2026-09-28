@@ -150,24 +150,111 @@ Note: These keymaps are only active when the cursor is in the sections panel.
 ================================================================================
 7. SUPPORTED LANGUAGES                                      *sections-languages*
 
-By default, the plugin supports the following languages:
+Each supported language has a query in `queries/<language>/sections.scm`.
+A section has one of four types, which sets its icon and how its name is
+displayed in the panel:
+
+    Type        Displayed as          Icon (default)~
+    function    `name(param, ...)`    󰊕
+    class       `Name(Base, ...)`     
+    attribute   `name: type`          󰠲
+    header      `name`                
+
+Sections found inside another section are shown as its children, except
+for SQL where sections are always a flat list. Sections marked as private
+can be hidden with the `p` key (|sections-keymap-private|).
+
+The examples below show a source snippet, followed by what the panel
+displays.
 
 *sections-lua*
 Lua:~
-- Function declarations
-- Function assignments (local func = function() end)
-
-*sections-python*  
+- `function M.name(...)` → public function
+- `function M:name(...)` → private function
+- `function name(...)` and `local function name(...)` → private function
+- `name = function(...)` and `local name = function(...)` → private function
+Parameters are shown after the name. >lua
+    local M = {}
+    local function helper(a) end
+    function M.setup(opts) end
+<   Panel: >
+    󰊕 helper(a)        (private)
+    󰊕 M.setup(opts)
+<
+*sections-python*
 Python:~
-- Functions (public and private, starting with '_')
-- Classes (public and private, starting with '_')
-- Class attributes with type annotations
-- Module-level attributes
-
+- Functions and methods, with their parameters
+- Classes, with their base classes
+- Class attributes (assignments in a class body), with their type annotation
+- Module-level attributes, with their type annotation
+Names starting with `_` are private. >python
+    VERSION: str = "1"
+    class Foo(Base):
+        size: int = 0
+        def run(self, x): ...
+        def _check(self): ...
+<   Panel: >
+    󰠲 VERSION: str
+     Foo(Base)
+      󰠲 size: int
+      󰊕 run(self, x)
+      󰊕 _check(self)   (private)
+<
 *sections-markdown*
 Markdown:~
-- Headers (all levels using # syntax)
-
+- ATX headers (`#` to `######`), nested by level >markdown
+    # Intro
+    ## Details
+    # Usage
+<   Panel: >
+     Intro
+       Details
+     Usage
+<
+*sections-json*
+JSON:~
+- Object keys, nested by object >json
+    { "server": { "port": 80 }, "debug": true }
+<   Panel: >
+     server
+       port
+     debug
+<
+*sections-yaml*
+YAML:~
+- Mapping keys, nested by mapping >yaml
+    server:
+      port: 80
+    debug: true
+<   Panel: >
+     server
+       port
+     debug
+<
+*sections-xml*
+XML:~
+- Elements, including self-closing ones, nested by element >xml
+    <config>
+      <server port="80"/>
+    </config>
+<   Panel: >
+     config
+       server
+<
+*sections-sql*
+SQL:~
+- Banner comments: a line of three or more dashes, followed directly by a
+  `-- name --` line. Only this first line is used as the section name, so
+  any further `-- ... --` lines can hold a description. Other comments
+  are ignored. >sql
+    ------------------
+    -- Customers --
+    -- Active customers only --
+    ------------------
+    SELECT * FROM customers WHERE active;
+<   Panel: >
+     Customers
+<
 To add support for additional languages, create Tree-sitter query files
 in the `queries/<language>/sections.scm` directory. See |sections-queries|.
 

@@ -27,7 +27,9 @@ local function build_section(match, metadata, query_info, buf_id)
             elseif vim.startswith(capture_name, "section.") then
                 local attr_name = string.sub(capture_name, 9)
                 if vim.tbl_contains(SUPPORTED_CAPTURES, capture_name) then
-                    current_section[attr_name] = ts.get_node_text(node, buf_id)
+                    -- Directives such as #gsub! store a rewritten text in the capture's metadata
+                    local capture_meta = metadata[id]
+                    current_section[attr_name] = (capture_meta and capture_meta.text) or ts.get_node_text(node, buf_id)
                 else
                     vim.notify(
                         "Capture " .. capture_name .. " is not supported and has been ignored.",

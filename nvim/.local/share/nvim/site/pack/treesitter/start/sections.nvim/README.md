@@ -9,7 +9,7 @@ A Neovim plugin that displays code sections (functions, classes, headers, etc.) 
 - **Private Section Filtering** - Toggle visibility of private functions and classes
 - **Quick Navigation** - Jump directly to any section in your code
 - **Customizable Icons** - Configure icons for different section types
-- **Multi-language Support** - Works with Lua, Python, Markdown, and extensible to other languages
+- **Multi-language Support** - Works with Lua, Python, Markdown, JSON, YAML, XML and SQL, and extensible to other languages
 - **Auto-refresh** - Automatically updates when you save files or switch buffers
 
 ## Requirements
@@ -96,21 +96,29 @@ require("sections").setup({
 
 ## Supported Languages
 
-### Lua
+See `:help sections-languages` for an example of each.
 
-- Function declarations
-- Function assignments (`local func = function() end`)
+| Language | Sections | Type |
+|----------|----------|------|
+| Lua | `function M.name()` (public); `function M:name()`, `function name()`, `local function name()`, `name = function()` (private) | function |
+| Python | Functions and methods (private if named `_*`) | function |
+| | Classes, with base classes (private if named `_*`) | class |
+| | Class and module attributes, with type annotation (private if named `_*`) | attribute |
+| Markdown | ATX headers (`#`), nested by level | header |
+| JSON | Object keys, nested | header |
+| YAML | Mapping keys, nested | header |
+| XML | Elements, including self-closing, nested | header |
+| SQL | Banner comments (see below) | header |
 
-### Python  
+SQL sections are declared with a banner comment. Only the first inner line
+is used as the section name; any following lines can hold a description:
 
-- Functions (public and private with `_` prefix)
-- Classes (public and private with `_` prefix)
-- Class attributes with type annotations
-- Module-level variables
-
-### Markdown
-
-- Headers (all levels using `#` syntax)
+```sql
+------------------
+-- Customers --
+-- Active customers only --
+------------------
+```
 
 ## Extending Language Support
 

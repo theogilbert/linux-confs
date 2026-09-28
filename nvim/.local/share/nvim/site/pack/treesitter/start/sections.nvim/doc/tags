@@ -9,6 +9,7 @@ sections-configuration	sections.txt	/*sections-configuration*
 sections-contents	sections.txt	/*sections-contents*
 sections-installation	sections.txt	/*sections-installation*
 sections-introduction	sections.txt	/*sections-introduction*
+sections-json	sections.txt	/*sections-json*
 sections-keymap-private	sections.txt	/*sections-keymap-private*
 sections-keymap-select	sections.txt	/*sections-keymap-select*
 sections-keymap-toggle	sections.txt	/*sections-keymap-toggle*
@@ -20,7 +21,10 @@ sections-markdown	sections.txt	/*sections-markdown*
 sections-python	sections.txt	/*sections-python*
 sections-queries	sections.txt	/*sections-queries*
 sections-requirements	sections.txt	/*sections-requirements*
+sections-sql	sections.txt	/*sections-sql*
 sections-usage	sections.txt	/*sections-usage*
+sections-xml	sections.txt	/*sections-xml*
+sections-yaml	sections.txt	/*sections-yaml*
 sections.complete({arglead})	sections.txt	/*sections.complete({arglead})*
 sections.focus()	sections.txt	/*sections.focus()*
 sections.jump({name})	sections.txt	/*sections.jump({name})*

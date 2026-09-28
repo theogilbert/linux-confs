@@ -561,3 +561,46 @@ describe("should parse json headers", function()
 end)
 
 
+
+describe("should parse sql sections", function()
+    local parser = require("sections.parser")
+
+    local function build_header(name, line)
+        return {
+            name = name,
+            type = "header",
+            position = { line, 0 },
+            children = {},
+            private = false,
+        }
+    end
+
+    it("parse banner comments, keeping only the name line", function()
+        local buf = create_buf_with_text(
+            [[
+------------------
+-- First section --
+-- some description --
+------------------
+SELECT 1;
+
+-- regular comment --
+SELECT 2;
+
+---------------------
+-- Second section --
+---------------------
+SELECT 3;
+]],
+            "sql"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_header("First section", 1),
+            build_header("Second section", 10),
+        }, root_nodes)
+    end)
+end)

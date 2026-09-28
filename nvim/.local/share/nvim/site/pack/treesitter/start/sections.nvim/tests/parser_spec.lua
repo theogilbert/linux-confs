@@ -692,3 +692,46 @@ MATCH (n)-[r]->(m) RETURN r;
         }, root_nodes)
     end)
 end)
+
+describe("should parse lucene sections", function()
+    local parser = require("sections.parser")
+
+    local function build_header(name, line)
+        return {
+            name = name,
+            type = "header",
+            position = { line, 0 },
+            children = {},
+            private = false,
+        }
+    end
+
+    it("parse banner comments, keeping only the name line", function()
+        local buf = create_buf_with_text(
+            [[
+------------------
+-- First section --
+-- some description --
+------------------
+logs-* | level:error
+
+-- regular comment --
+logs-* | level:warn
+
+---------------------
+-- Second section --
+---------------------
+metrics | host:web01
+]],
+            "lucene"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_header("First section", 1),
+            build_header("Second section", 10),
+        }, root_nodes)
+    end)
+end)

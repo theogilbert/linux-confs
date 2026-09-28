@@ -18,6 +18,7 @@ sections-keymaps	sections.txt	/*sections-keymaps*
 sections-languages	sections.txt	/*sections-languages*
 sections-license	sections.txt	/*sections-license*
 sections-lua	sections.txt	/*sections-lua*
+sections-lucene	sections.txt	/*sections-lucene*
 sections-markdown	sections.txt	/*sections-markdown*
 sections-mongo	sections.txt	/*sections-mongo*
 sections-python	sections.txt	/*sections-python*

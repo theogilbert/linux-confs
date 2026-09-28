@@ -161,8 +161,8 @@ displayed in the panel:
     header      `name`                
 
 Sections found inside another section are shown as its children, except
-for SQL, MongoDB and Cypher where sections are always a flat list.
-Sections marked as private can be hidden with the `p` key
+for SQL, Lucene, MongoDB and Cypher where sections are always a flat
+list. Sections marked as private can be hidden with the `p` key
 (|sections-keymap-private|).
 
 The examples below show a source snippet, followed by what the panel
@@ -242,12 +242,12 @@ XML:~
      config
        server
 <
-*sections-sql*
-SQL:~
+*sections-sql* *sections-lucene*
+SQL and Lucene (`.lucene`, grannos parser):~
 - Banner comments: a line of three or more dashes, followed directly by a
   `-- name --` line. Only this first line is used as the section name, so
   any further `-- ... --` lines can hold a description. Other comments
-  are ignored. >sql
+  are ignored. Example (SQL): >sql
     ------------------
     -- Customers --
     -- Active customers only --

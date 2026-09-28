@@ -1331,6 +1331,13 @@ local function in_pieces(old_text, new_text, opts, ext, cb)
   end
 end
 
+--- Answers still out, by the same key as `difft_cache`: the callbacks
+--- waiting on each. A second ask for a pair already running joins it
+--- rather than starting difftastic again -- which is what a prefetch is
+--- for, since the reader is as likely as not to arrive at the commit
+--- before its answer does.
+local inflight = {}
+
 local function struct_compute(old_text, new_text, opts, cb)
   if vim.fn.executable(config.diff.struct.bin) ~= 1 then
     return no_difft(old_text, new_text, opts, cb)
@@ -1341,6 +1348,18 @@ local function struct_compute(old_text, new_text, opts, cb)
   if difft_cache[ck] then
     cb(difft_cache[ck])
     return
+  end
+  if inflight[ck] then
+    table.insert(inflight[ck], cb)
+    return
+  end
+  inflight[ck] = { cb }
+  cb = function(result)
+    local waiting = inflight[ck] or {}
+    inflight[ck] = nil
+    for _, w in ipairs(waiting) do
+      w(result)
+    end
   end
 
   -- difftastic reads paths, not stdin, and detects the language from the

@@ -264,6 +264,18 @@ function M.commits_between(root, from, to, cb)
     end)
 end
 
+--- The empty tree's name in this repository: cb(sha|nil, err). What a
+--- commit with no parent is measured against.
+local function empty_tree(root, cb)
+  run(root, { "hash-object", "-t", "tree", "/dev/null" }, function(made, tree, why)
+    if not made or vim.trim(tree) == "" then
+      cb(nil, "the empty tree has no name here: " .. vim.trim(why or ""))
+      return
+    end
+    cb(vim.trim(tree))
+  end)
+end
+
 --- One commit, and the revision its diff is measured against:
 --- cb({ sha, short, date, author, subject }, parent) -- or cb(nil, nil,
 --- err) for a rev git will not resolve.
@@ -308,14 +320,107 @@ function M.commit(root, rev, cb)
       -- what a caller does about it is not only which revision to diff
       -- against: there is no `<sha>^` to name in a header either.
       commit.orphan = true
-      run(root, { "hash-object", "-t", "tree", "/dev/null" }, function(made, tree, why)
-        if not made or vim.trim(tree) == "" then
-          cb(nil, nil, "the empty tree has no name here: " .. vim.trim(why or ""))
+      empty_tree(root, function(tree, why)
+        if not tree then
+          cb(nil, nil, why)
           return
         end
-        cb(commit, vim.trim(tree))
+        cb(commit, tree)
       end)
     end)
+end
+
+--- The commits that touched part of the tree, oldest first -- what
+--- `git log` says about one file, one directory, or a run of lines in a
+--- file. cb(commits|nil, err), each commit carrying `parent`: the
+--- revision it is measured against, as `commit` above answers it.
+---
+--- `subject` is { path, dir, from, to, rev }: `path` inside the
+--- repository ("" with `dir` for all of it), `from`..`to` the lines of
+--- it as they stand at `rev` (HEAD when nil).
+---
+--- A FILE is followed across renames (`--follow`), since the history of
+--- a file is not over the day it was moved, and each commit is told what
+--- the file was called in it (`path`) -- which is how the list finds its
+--- row in a commit's diff. A run of lines is `git log -L`, which follows
+--- the lines themselves, through the edits that moved them; the first
+--- hunk git prints for a commit says where they stood in it (`row`), so
+--- the reader lands on the lines rather than at the top of the file.
+--- `-L` prints that diff whether asked or not, and it is the only place
+--- the answer is. A directory is neither: `--follow` takes one path.
+---
+--- Oldest first, like `commits_between`: the walk counts that way, and
+--- `]C` means forward in time wherever it is pressed.
+function M.history(root, subject, cb)
+  local fmt = "--format=%x01%H%x09%h%x09%ad%x09%an%x09%P%x09%s"
+  local rev = subject.rev or "HEAD"
+  local args
+  if subject.from then
+    args = { "log", "--date=short", fmt, "-L",
+      string.format("%d,%d:%s", subject.from, subject.to, subject.path), rev }
+  elseif subject.dir then
+    args = { "log", "--date=short", fmt, rev }
+    if subject.path ~= "" then
+      vim.list_extend(args, { "--", subject.path })
+    end
+  else
+    args = { "log", "--date=short", "--follow", "--name-status", fmt, rev,
+      "--", subject.path }
+  end
+  run(root, args, function(ok, out, err)
+    if not ok then
+      cb(nil, vim.trim(err or ""))
+      return
+    end
+    local newest_first, cur = {}, nil
+    for line in out:gmatch("[^\n]+") do
+      if line:sub(1, 1) == "\1" then
+        local sha, short, date, author, parents, subj =
+          line:sub(2):match("^(%S+)\t(%S+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\r]*)")
+        cur = sha and {
+          sha = sha, short = short, date = date, author = author,
+          subject = subj, parent = parents:match("^(%S+)"),
+        } or nil
+        table.insert(newest_first, cur)
+      elseif cur and subject.from then
+        -- The first of each, and only the first: after them come the
+        -- lines of the diff, and an added line that reads `++ b/x` is
+        -- `+++ b/x` in the patch.
+        if not cur.path then
+          cur.path = line:match("^%+%+%+ b/(.+)$")
+        end
+        if not cur.row then
+          cur.row = tonumber(line:match("^@@ %-%S+ %+(%d+)"))
+        end
+      elseif cur and not subject.dir then
+        -- `R100<TAB>old<TAB>new`, `M<TAB>path`: the name it has after
+        -- the commit is the last field.
+        local status, rest = line:match("^(%u)%d*\t(.+)$")
+        if status then
+          cur.path = rest:match("([^\t]+)$")
+        end
+      end
+    end
+    local commits = {}
+    for i = #newest_first, 1, -1 do
+      table.insert(commits, newest_first[i])
+    end
+    local orphans = vim.tbl_filter(function(c) return not c.parent end, commits)
+    if #orphans == 0 then
+      cb(commits)
+      return
+    end
+    empty_tree(root, function(tree, why)
+      if not tree then
+        cb(nil, why)
+        return
+      end
+      for _, c in ipairs(orphans) do
+        c.parent, c.orphan = tree, true
+      end
+      cb(commits)
+    end)
+  end)
 end
 
 --- One commit's whole message, subject and body: cb(text).

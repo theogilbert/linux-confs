@@ -669,10 +669,10 @@ local function setup_keymaps(view, buf)
       vim.api.nvim_set_current_win(win)
     end
   end
-  map(k.quit, back_inline, "uatis: close the old revision")
+  map(k.quit, back_inline, "Uatis - Close old revision")
   -- The same key that opened it from your buffer: a toggle that only
   -- worked from one of the two windows it lays out was half a toggle.
-  map(config.keys.view.layout, back_inline, "uatis: back to the in-place layout")
+  map(config.keys.view.layout, back_inline, "[G]it - Close [o]ld side window")
   map(k.jump, function()
     if not (view.win and vim.api.nvim_win_is_valid(view.win)) then
       return
@@ -680,7 +680,7 @@ local function setup_keymaps(view, buf)
     local row = vim.api.nvim_win_get_cursor(0)[1]
     vim.api.nvim_set_current_win(view.win)
     put_cursor(view.win, view.bufnr, M.new_row(view, row))
-  end, "uatis: jump to the line this became")
+  end, "Uatis - Jump to matching line")
 end
 
 local function fill(view, text)

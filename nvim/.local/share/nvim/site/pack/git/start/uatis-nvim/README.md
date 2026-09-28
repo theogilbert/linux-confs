@@ -59,6 +59,16 @@ against a revision you picked instead of against the fork point. The
 question `<leader>gA` does not answer: not what one commit did, but where
 the tree has got to since one.
 
+**The project as it was** is `<leader>gw`, or `:UatisAt [<rev>]`: no
+comparison, just the code at a revision — a read-only checkout in a tab
+of its own, so a language server, your explorer and your finder all work
+on it. See [The project at a revision](#the-project-at-a-revision).
+
+**The history of something** is `<leader>gL`, or `:UatisHistory [<path>]`:
+every commit that touched this file — or, from Visual mode, these lines;
+or a directory — back to the one that made it. See
+[History](#history).
+
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
 `main`. `<leader>gB` picks another through `vim.ui.select`, offering the
 one in force and whichever of those conventional names this repository
@@ -109,6 +119,11 @@ its own — see [One commit on its own](#one-commit-on-its-own).
 `<leader>gS` (global too) asks the same question one size up: everything
 changed since the revision you pick, in your own buffers — `:Uatis <rev>`
 without typing the rev.
+
+`<leader>gL` (global) lists every commit that touched the file you are in,
+and from Visual mode every commit that touched the lines selected — see
+[History](#history). `L` in the list does it for the row's file or
+directory.
 
 In the list, that toggle is a bare `C` — a scratch buffer of rows has
 nothing for it to change, and it reads as the capital of the two keys
@@ -217,6 +232,9 @@ to go here and say so; walking a branch a commit at a time is
 `<leader>gh`, inside a review of it. `show = { tab = false }` opens it in
 place instead, which does end whatever review that tab was holding.
 
+Quitting nvim closes the tabs uatis opened before anything is saved, so
+a session written on exit does not restore them as empty tabs.
+
 The tab is named after the commit — `t:tabname`, for a tabline that shows
 names. Only that tab: a review running in a tab of your own holds your own
 work too, and keeps whatever name you gave it. `tab = { name = "..." }`
@@ -247,6 +265,48 @@ one, and ending the review forgets the choice.
 
 A file the branch **deleted** opens too: the revision on the left, nothing
 opposite it.
+
+### History
+
+`<leader>gL` in a file, `L` on a row of the list, or `:UatisHistory
+[<path>]` lists every commit that ever touched a file or a directory,
+back to the one that made it; `<leader>gL` over a Visual selection (or
+`:'<,'>UatisHistory`) lists only the commits that touched those lines.
+It opens in a tab of its own, like `:UatisShow`, and each commit reads
+the way `:UatisShow` reads one: against its own parent, its files as
+they were then.
+
+The list is the commits, newest at the top, with the newest on show. The
+one on show opens under its row — date and author, and for a directory
+the files it touched in there. `<CR>` on another row puts that one on
+show, `[C`/`]C` step one older or newer from anywhere in the tab, and
+`K` on a row is that commit's whole message, with the `+N -M` of every
+file it touched under it. The commits either side of
+the one on show are compared in the background, so a step usually lands
+already drawn rather than waiting seconds on difftastic.
+
+A file is followed across renames, each commit read under the name it
+had then. Lines are followed by `git log -L`, through the edits that
+moved them, and every commit opens with the cursor on them; the lines of
+your own file are asked about as HEAD has them, so an uncommitted edit
+above the selection does not move the question. From a file shown as it
+was — a commit on show, the old side — the history runs back from that
+revision.
+
+### The project at a revision
+
+`<leader>gw` in a file, or `:UatisAt [<rev>]`, opens the project as it
+was at a revision you pick, on that file, in a tab of its own. It is a
+real `git worktree` checkout in the cache with the tab's working
+directory (`:tcd`) set to it, so everything that reads code works there
+as it does in the present: the language server attaches and jumps to
+definitions within that revision, and your explorer, fuzzy finder and a
+relative `:edit` all browse it. Every file is read-only, and the winbar
+names the revision. Untracked files — a virtualenv, `node_modules` — are
+not in a checkout, which a language server may notice.
+
+Closing the tab removes the checkout and stops the servers started for
+it; quitting nvim does too, before a session is saved.
 
 ## What the colours mean
 

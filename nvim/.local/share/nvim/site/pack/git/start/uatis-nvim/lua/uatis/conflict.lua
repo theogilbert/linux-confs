@@ -767,31 +767,31 @@ local function setup_keymaps(c)
   local v = config.keys.view
   c.saved_keys = keys.apply(c.bufnr, "n", {
     { lhs = k.next, rhs = function() step(c, 1) end,
-      opts = { desc = "uatis: next conflict" } },
+      opts = { desc = "Uatis - Next conflict" } },
     { lhs = k.prev, rhs = function() step(c, -1) end,
-      opts = { desc = "uatis: previous conflict" } },
+      opts = { desc = "Uatis - Previous conflict" } },
     { lhs = k.ours, rhs = function() pick(c, "ours") end,
-      opts = { desc = "uatis: take our side of this conflict" } },
+      opts = { desc = "Uatis - Take [o]urs" } },
     { lhs = k.theirs, rhs = function() pick(c, "theirs") end,
-      opts = { desc = "uatis: take their side of this conflict" } },
+      opts = { desc = "Uatis - Take [t]heirs" } },
     { lhs = k.both, rhs = function() pick(c, "both") end,
-      opts = { desc = "uatis: take both sides, ours first" } },
+      opts = { desc = "Uatis - Take [b]oth, ours first" } },
     { lhs = k.base, rhs = function() pick(c, "base") end,
-      opts = { desc = "uatis: take the base of this conflict" } },
+      opts = { desc = "Uatis - Take b[a]se" } },
     { lhs = k.resolve, rhs = function() resolve(c) end,
-      opts = { desc = "uatis: merge this conflict by the word" } },
+      opts = { desc = "Uatis - Merge conflict by [w]ord" } },
     { lhs = k.resolve_all, rhs = function() resolve_all(c) end,
-      opts = { desc = "uatis: merge the whole file by the word" } },
+      opts = { desc = "Uatis - Merge [W]hole file by word" } },
     { lhs = k.peek, rhs = function() peek(c, function() fall_through(c, k.peek) end) end,
-      opts = { desc = "uatis: the commit this marker names" } },
+      opts = { desc = "Uatis - Show commit this marker names" } },
     -- The list's keys, bound here as the view binds them, so that a
     -- conflicted file has the same walk a reviewed one has.
     { lhs = v.files, rhs = function() require("uatis.pane").toggle() end,
-      opts = { desc = "uatis: show or hide the conflicted files" } },
+      opts = { desc = "[G]it - Toggle conflicted [f]iles list" } },
     { lhs = v.file_next, rhs = function() require("uatis.pane").step_from(1) end,
-      opts = { desc = "uatis: next conflicted file" } },
+      opts = { desc = "Uatis - Next conflicted [f]ile" } },
     { lhs = v.file_prev, rhs = function() require("uatis.pane").step_from(-1) end,
-      opts = { desc = "uatis: previous conflicted file" } },
+      opts = { desc = "Uatis - Previous conflicted [f]ile" } },
   })
 end
 

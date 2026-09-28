@@ -183,10 +183,202 @@ local function finished(pane, f)
   return read.is_read(pane, f)
 end
 
-function M.build_list(pane, width)
+--- The files as a tree, one row each, under whatever `b` holds already
+--- and `lead` further in: rows[line] = file index, dirs[line] = path.
+local function draw_tree(b, pane, inner, lead)
+  local fold = require("uatis.config").list.fold
+  -- What each directory is worth, summed over everything beneath it --
+  -- drawn only where the directory is shut. Open, every one of those
+  -- files is on screen carrying its own count one row below, and the
+  -- total restates them; shut, it is the whole of what the row has to
+  -- say and the reason you would open it again. Counted over every
+  -- prefix rather than rolled up from the children, since a file
+  -- already knows all of its own ancestors.
+  local dir_stat = {}
+  for _, f in ipairs(pane.files) do
+    local done = finished(pane, f)
+    for _, d in ipairs(M.dirs_of(M.shown(f))) do
+      local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0, left = 0 }
+      t.added = t.added + (f.added or 0)
+      t.removed = t.removed + (f.removed or 0)
+      t.left = t.left + (f.conflicts or 0)
+      t.files = t.files + 1
+      t.read = t.read + (done and 1 or 0)
+      dir_stat[d] = t
+    end
+  end
+
+  local rows, dirs = {}, {}
+
+  -- Drawn from the fold exactly as the reader left it. Keeping the
+  -- current file's directories open is `pane.reveal`'s job and is done
+  -- on ARRIVAL: doing it again here, every render, quietly overrode the
+  -- reader instead of backing them up -- folding the directory you are
+  -- standing in did nothing at all, which in a repo whose files all live
+  -- under one top-level directory is every fold that matters.
+  for _, entry in ipairs(M.tree_rows(pane.files, pane.collapsed)) do
+    local indent = string.rep("  ", entry.depth)
+    if entry.kind == "dir" then
+      -- A shut directory takes the shape of a file row -- marker, name,
+      -- churn against the right edge -- because it is standing in for
+      -- the rows underneath it and has to be read the same way they
+      -- would be. An open one is just the name: its files are right
+      -- there, each with its own count.
+      local twisty = entry.collapsed and fold.closed or fold.open
+      local head_prefix = " " .. lead .. indent .. twisty .. " "
+      -- A directory whose every file is read is itself read. Shut, that
+      -- is the whole of what the row has to say -- and it is what makes
+      -- folding a finished directory away worth doing.
+      local t_all = dir_stat[entry.path]
+      local dir_read = t_all ~= nil and t_all.files > 0 and t_all.read == t_all.files
+      local line
+      if entry.collapsed then
+        local t = dir_stat[entry.path] or { added = 0, removed = 0, left = 0 }
+        local stat = pane.conflicts and left_text(t.left) or stat_text(t.added, t.removed)
+        -- Measured in display cells: the twisty is multi-byte, and
+        -- padding a row out by byte count leaves its churn column short.
+        local avail = math.max(inner - vim.fn.strdisplaywidth(head_prefix) - #stat, 6)
+        local shown = M.truncate_path(entry.name .. "/", avail)
+        local head = head_prefix .. shown
+          .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
+        line = b:add(head .. stat)
+        b:hl(line, 0, #head, dir_read and "UatisRead" or "UatisDir")
+        if pane.conflicts then
+          b:hl(line, #head, -1, t.left > 0 and "UatisStatDel" or "UatisRead")
+        else
+          stat_hl(b, line, #head, t.added, t.removed)
+        end
+      else
+        line = b:add(head_prefix .. entry.name .. "/", dir_read and "UatisRead" or "UatisDir")
+      end
+      dirs[line] = entry.path
+    else
+      local f = pane.files[entry.index]
+      local stat = pane.conflicts and left_text(f.conflicts or 0)
+        or (f.binary and "bin" or stat_text(f.added, f.removed))
+      local head_prefix = " " .. lead .. indent .. f.status .. " "
+      local avail = math.max(inner - #head_prefix - #stat, 6)
+      local shown = M.truncate_path(entry.name, avail)
+      local head = head_prefix .. shown .. string.rep(" ", math.max(avail - #shown, 0)) .. " "
+      local line = b:add(head .. stat)
+      rows[line] = entry.index
+      if finished(pane, f) then
+        -- Read: status letter and name in one colour. The letter is how
+        -- a reader decides what to open next, and on a file they have
+        -- read there is nothing left to decide.
+        b:hl(line, 0, #head, "UatisRead")
+      else
+        b:hl(line, #lead + #indent + 1, #lead + #indent + 2,
+          "UatisStatus" .. (f.status:match("^[AMDRU]") and f.status or "M"))
+      end
+      -- Per-file churn, coloured the same way as everywhere else, read
+      -- or not: how much a file grew or shrank is a fact about the
+      -- file, and a column of counts that went green whenever a row did
+      -- would be a column the eye could no longer read down.
+      if pane.conflicts then
+        b:hl(line, #head, -1, (f.conflicts or 0) > 0 and "UatisStatDel" or "UatisRead")
+      elseif not f.binary then
+        stat_hl(b, line, #head, f.added, f.removed)
+      end
+      -- Last, so it wins the span it covers: where you are standing is
+      -- not something a colour for what you have done may take away.
+      if entry.index == pane.file_idx then
+        b:hl(line, #head_prefix, #head_prefix + #shown, "UatisFileCur")
+      end
+    end
+  end
+
+  return rows, dirs
+end
+
+--- `text` cut to `width` display cells from the end, with `…` where it
+--- was cut: a subject keeps its first words, which say what it did.
+local function clip(text, width)
+  if vim.fn.strdisplaywidth(text) <= width then
+    return text
+  end
+  if width <= 1 then
+    return "…"
+  end
+  local out = ""
+  for _, ch in ipairs(vim.fn.split(text, "\\zs")) do
+    if vim.fn.strdisplaywidth(out .. ch) > width - 1 then
+      break
+    end
+    out = out .. ch
+  end
+  return out .. "…"
+end
+
+--- The list of a history: what it is the history of, then one row per
+--- commit, newest at the top -- the order every log is read in, and the
+--- one that puts what happened here last where the eye lands first.
+---
+--- The commit on show opens under its own row: when and who, on one
+--- greyed row as everywhere else, and for a directory the files it
+--- touched in there, drawn as the list draws any files. A file's history
+--- has one file to show and the window beside the list is showing it.
+---
+--- A row is sha and subject and nothing else. The date is the first
+--- thing a narrow pane would have to drop, and it is one row away.
+local function history_list(pane, width)
   local b = new_buf()
   local inner = math.max(width - 2, 10)
+  local h = pane.history
   local fold = require("uatis.config").list.fold
+  local function pad(text)
+    return " " .. text
+  end
+
+  local what = h.path ~= "" and (h.path .. (h.dir and "/" or "")) or "the whole repository"
+  for _, l in ipairs(M.wrap("history of " .. what, inner)) do
+    b:add(pad(l), "UatisHeader")
+  end
+  if h.from then
+    b:add(pad(h.from == h.to and ("line " .. h.from)
+      or string.format("lines %d-%d", h.from, h.to)), "UatisHeader")
+  end
+  local n = #(pane.commits or {})
+  local oldest = (pane.commits or {})[1]
+  b:add(pad(names({
+    string.format("%d commit%s", n, n == 1 and "" or "s"),
+    oldest and oldest.date and ("since " .. oldest.date) or nil,
+  }, inner)), "UatisMeta")
+  for _, l in ipairs(M.wrap(pane.hint or "", inner)) do
+    b:add(pad(l), "UatisHint")
+  end
+  b:add(string.rep("─", width), "UatisHint")
+
+  local rows, dirs, commits = {}, {}, {}
+  for i = n, 1, -1 do
+    local c = pane.commits[i]
+    local here = i == pane.commit_idx
+    local head = " " .. (here and fold.open or fold.closed) .. " " .. c.short .. " "
+    local subject = clip(c.subject or "", math.max(inner - vim.fn.strdisplaywidth(head), 4))
+    local line = b:add(head .. subject)
+    commits[line] = i
+    b:hl(line, 0, #head, "UatisMeta")
+    if here then
+      b:hl(line, #head, -1, "UatisFileCur")
+      b:add(pad("    " .. names({ c.date, c.author }, inner - 4)), "UatisMeta")
+      if h.dir then
+        if #pane.files == 0 then
+          b:add(pad("    (nothing here)"), "UatisMeta")
+        end
+        local r, d = draw_tree(b, pane, inner, "    ")
+        rows, dirs = r, d
+      end
+    end
+  end
+  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs, commits = commits }
+end
+
+function M.build_list(pane, width)
+  if pane.history then
+    return history_list(pane, width)
+  end
+  local b = new_buf()
+  local inner = math.max(width - 2, 10)
 
   local function pad(text)
     return " " .. text
@@ -280,110 +472,10 @@ function M.build_list(pane, width)
 
   b:add(string.rep("─", width), "UatisHint")
 
-  -- What each directory is worth, summed over everything beneath it --
-  -- drawn only where the directory is shut. Open, every one of those
-  -- files is on screen carrying its own count one row below, and the
-  -- total restates them; shut, it is the whole of what the row has to
-  -- say and the reason you would open it again. Counted over every
-  -- prefix rather than rolled up from the children, since a file
-  -- already knows all of its own ancestors.
-  local dir_stat = {}
-  for _, f in ipairs(pane.files) do
-    local done = finished(pane, f)
-    for _, d in ipairs(M.dirs_of(M.shown(f))) do
-      local t = dir_stat[d] or { added = 0, removed = 0, files = 0, read = 0, left = 0 }
-      t.added = t.added + (f.added or 0)
-      t.removed = t.removed + (f.removed or 0)
-      t.left = t.left + (f.conflicts or 0)
-      t.files = t.files + 1
-      t.read = t.read + (done and 1 or 0)
-      dir_stat[d] = t
-    end
-  end
-
-  local rows, dirs = {}, {}
   if #pane.files == 0 then
     b:add(pad(pane.conflicts and "(no conflicts)" or "(no changes)"), "UatisMeta")
   end
-
-  -- Drawn from the fold exactly as the reader left it. Keeping the
-  -- current file's directories open is `pane.reveal`'s job and is done
-  -- on ARRIVAL: doing it again here, every render, quietly overrode the
-  -- reader instead of backing them up -- folding the directory you are
-  -- standing in did nothing at all, which in a repo whose files all live
-  -- under one top-level directory is every fold that matters.
-  for _, entry in ipairs(M.tree_rows(pane.files, pane.collapsed)) do
-    local indent = string.rep("  ", entry.depth)
-    if entry.kind == "dir" then
-      -- A shut directory takes the shape of a file row -- marker, name,
-      -- churn against the right edge -- because it is standing in for
-      -- the rows underneath it and has to be read the same way they
-      -- would be. An open one is just the name: its files are right
-      -- there, each with its own count.
-      local twisty = entry.collapsed and fold.closed or fold.open
-      local head_prefix = " " .. indent .. twisty .. " "
-      -- A directory whose every file is read is itself read. Shut, that
-      -- is the whole of what the row has to say -- and it is what makes
-      -- folding a finished directory away worth doing.
-      local t_all = dir_stat[entry.path]
-      local dir_read = t_all ~= nil and t_all.files > 0 and t_all.read == t_all.files
-      local line
-      if entry.collapsed then
-        local t = dir_stat[entry.path] or { added = 0, removed = 0, left = 0 }
-        local stat = pane.conflicts and left_text(t.left) or stat_text(t.added, t.removed)
-        -- Measured in display cells: the twisty is multi-byte, and
-        -- padding a row out by byte count leaves its churn column short.
-        local avail = math.max(inner - vim.fn.strdisplaywidth(head_prefix) - #stat, 6)
-        local shown = M.truncate_path(entry.name .. "/", avail)
-        local head = head_prefix .. shown
-          .. string.rep(" ", math.max(avail - vim.fn.strdisplaywidth(shown), 0)) .. " "
-        line = b:add(head .. stat)
-        b:hl(line, 0, #head, dir_read and "UatisRead" or "UatisDir")
-        if pane.conflicts then
-          b:hl(line, #head, -1, t.left > 0 and "UatisStatDel" or "UatisRead")
-        else
-          stat_hl(b, line, #head, t.added, t.removed)
-        end
-      else
-        line = b:add(head_prefix .. entry.name .. "/", dir_read and "UatisRead" or "UatisDir")
-      end
-      dirs[line] = entry.path
-    else
-      local f = pane.files[entry.index]
-      local stat = pane.conflicts and left_text(f.conflicts or 0)
-        or (f.binary and "bin" or stat_text(f.added, f.removed))
-      local head_prefix = " " .. indent .. f.status .. " "
-      local avail = math.max(inner - #head_prefix - #stat, 6)
-      local shown = M.truncate_path(entry.name, avail)
-      local head = head_prefix .. shown .. string.rep(" ", math.max(avail - #shown, 0)) .. " "
-      local line = b:add(head .. stat)
-      rows[line] = entry.index
-      if finished(pane, f) then
-        -- Read: status letter and name in one colour. The letter is how
-        -- a reader decides what to open next, and on a file they have
-        -- read there is nothing left to decide.
-        b:hl(line, 0, #head, "UatisRead")
-      else
-        b:hl(line, #indent + 1, #indent + 2,
-          "UatisStatus" .. (f.status:match("^[AMDRU]") and f.status or "M"))
-      end
-      -- Per-file churn, coloured the same way as everywhere else, read
-      -- or not: how much a file grew or shrank is a fact about the
-      -- file, and a column of counts that went green whenever a row did
-      -- would be a column the eye could no longer read down.
-      if pane.conflicts then
-        b:hl(line, #head, -1, (f.conflicts or 0) > 0 and "UatisStatDel" or "UatisRead")
-      elseif not f.binary then
-        stat_hl(b, line, #head, f.added, f.removed)
-      end
-      -- Last, so it wins the span it covers: where you are standing is
-      -- not something a colour for what you have done may take away.
-      if entry.index == pane.file_idx then
-        b:hl(line, #head_prefix, #head_prefix + #shown, "UatisFileCur")
-      end
-    end
-  end
-
+  local rows, dirs = draw_tree(b, pane, inner, "")
   return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs }
 end
 
@@ -410,7 +502,9 @@ end
 --- has nothing to measure but its files, so it is measured on those.
 function M.progress(pane, width)
   local n = #pane.files
-  if n == 0 then
+  -- A history is not read through to an end: the commits are the past,
+  -- visited in whatever order the question takes the reader.
+  if n == 0 or pane.history then
     return ""
   end
   -- A conflict review is measured in blocks: what is settled over

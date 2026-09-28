@@ -71,6 +71,7 @@ function M.render(pane)
 
   pane.list_rows = built.rows
   pane.list_dirs = built.dirs
+  pane.list_commits = built.commits or {}
   -- The foot of the pane: where the current file leaves you in the
   -- review. A window status line rather than a row of the buffer,
   -- because that is the one place in a window that is always at the
@@ -94,6 +95,14 @@ function M.sync_cursor(pane)
   end
   for line, idx in pairs(pane.list_rows or {}) do
     if idx == pane.file_idx then
+      pcall(vim.api.nvim_win_set_cursor, win, { line, 0 })
+      return
+    end
+  end
+  -- A history draws no file rows for one file, and then where you are is
+  -- the commit.
+  for line, idx in pairs(pane.list_commits or {}) do
+    if idx == pane.commit_idx then
       pcall(vim.api.nvim_win_set_cursor, win, { line, 0 })
       return
     end

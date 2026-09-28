@@ -2,6 +2,9 @@
 --
 --   :Uatis [<gitref>]         annotate this buffer against a revision
 --   :UatisShow [<rev>]        what one commit did, in a tab of its own
+--   :[range]UatisHistory [<path>]  every commit that touched a file,
+--                             a directory, or the lines in range
+--   :UatisAt [<rev>]          the project as it was at a revision
 --   :UatisColors              tune the colours against your scheme, live
 --   require("uatis").setup([opts])
 --   require("uatis").toggle_diff()
@@ -9,6 +12,8 @@
 --   require("uatis").toggle_pane() / open_pane() / close_pane()
 --   require("uatis").show_commit([rev])
 --   require("uatis").since_commit([rev])
+--   require("uatis").history([opts])
+--   require("uatis").at([rev])
 --   require("uatis").colors()
 --
 -- The command and the functions are not two ways to do one thing. A
@@ -337,6 +342,222 @@ function M.show_commit(rev)
   ask_revision("uatis: show commit", pane.show_commit)
 end
 
+--- The lines `a`..`b` of the buffer's text, as rows of the committed
+--- text `old` -- or nil where every one of them is still uncommitted.
+---
+--- `git log -L` counts lines in a commit, and the buffer is the working
+--- tree: an edit above the selection moves every row of it, and asked
+--- about by the buffer's numbers git would answer about some other
+--- lines. An end that sits on an uncommitted line is moved inwards to
+--- one that is not, since a line with no history cannot anchor one.
+local function committed_rows(old, new, a, b)
+  if old == new then
+    return a, b
+  end
+  local hunks = vim.diff(old .. "\n", new .. "\n",
+    { result_type = "indices", algorithm = "histogram" })
+  local function fresh(r)
+    for _, h in ipairs(hunks) do
+      if h[4] > 0 and r >= h[3] and r < h[3] + h[4] then
+        return true
+      end
+    end
+    return false
+  end
+  while a <= b and fresh(a) do
+    a = a + 1
+  end
+  while b >= a and fresh(b) do
+    b = b - 1
+  end
+  if a > b then
+    return nil
+  end
+  local function back(r)
+    local shift = 0
+    for _, h in ipairs(hunks) do
+      -- A pure deletion sits AFTER row h[3]; anything else ends on its
+      -- last new row.
+      local last = h[4] > 0 and (h[3] + h[4] - 1) or h[3]
+      if last < r then
+        shift = shift + h[4] - h[2]
+      end
+    end
+    return r - shift
+  end
+  return back(a), back(b)
+end
+
+--- Every commit that touched something, back to the one that made it.
+---
+--- `opts.path` names a file or a directory (relative to the working
+--- directory, as `:UatisHistory` is typed); without it, the file in this
+--- buffer. `opts.range` > 0 narrows that to the lines `opts.line1`..
+--- `opts.line2` -- what Visual mode hands the key -- and then the
+--- history is of those lines, followed through the edits that moved
+--- them, rather than of everything else that happened to the file.
+---
+--- A buffer holding a file as it was -- a commit on show, or the old
+--- side of a comparison -- is asked about AT that revision: its lines
+--- are that revision's lines, and a file since deleted has a history up
+--- to where it stands. The reader's own file is asked about at HEAD,
+--- its rows put back where HEAD has them first.
+function M.history(opts)
+  opts = opts or {}
+  local region = (opts.range or 0) > 0 and opts.line1 and opts.line2
+  local bufnr = vim.api.nvim_get_current_buf()
+
+  if opts.path and opts.path ~= "" then
+    local full = vim.fs.normalize(vim.fn.fnamemodify(vim.fn.expand(opts.path), ":p"))
+    local dir = vim.fn.isdirectory(full) == 1
+    git.root(full, function(root)
+      if not root then
+        vim.notify("uatis: " .. opts.path .. " is not inside a git repository",
+          vim.log.levels.ERROR)
+        return
+      end
+      local rel = full == vim.fs.normalize(root) and "" or view.relpath(root, full)
+      if not rel then
+        vim.notify("uatis: " .. opts.path .. " is not inside " .. root, vim.log.levels.ERROR)
+        return
+      end
+      pane.show_history({ root = root, path = rel, dir = dir })
+    end)
+    return
+  end
+
+  -- In the list, the row: what else "this" can mean there.
+  local list = pane.get()
+  if list and bufnr == list.list_buf then
+    pane.history_at_cursor(list)
+    return
+  end
+
+  local function go(root, rel, rev)
+    local subject = { root = root, path = rel, rev = rev }
+    if not region then
+      return pane.show_history(subject)
+    end
+    subject.from, subject.to = math.min(opts.line1, opts.line2), math.max(opts.line1, opts.line2)
+    if rev then
+      return pane.show_history(subject)
+    end
+    -- Not `git.blob`: its cache is keyed on the revision as spelled, and
+    -- HEAD is the one spelling that moves.
+    git.run(root, { "show", "HEAD:" .. rel }, function(ok, out)
+      if not ok then
+        vim.notify("uatis: " .. rel .. " has not been committed", vim.log.levels.INFO)
+        return
+      end
+      local new = vim.api.nvim_buf_is_valid(bufnr)
+        and table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n") or ""
+      local a, b = committed_rows((out:gsub("\n$", "")), new, subject.from, subject.to)
+      if not a then
+        vim.notify("uatis: those lines have not been committed", vim.log.levels.INFO)
+        return
+      end
+      subject.from, subject.to = a, b
+      pane.show_history(subject)
+    end)
+  end
+
+  local v = view.get(bufnr)
+  if v then
+    -- `at_commit` where the buffer is a commit's copy of the file.
+    return go(v.root, v.relpath, v.at_commit)
+  end
+  local old = require("uatis.oldside").view_for(bufnr)
+  if old then
+    return go(old.root, old.old_path or old.relpath, old.rev)
+  end
+  if vim.bo[bufnr].buftype ~= "" or vim.api.nvim_buf_get_name(bufnr) == "" then
+    vim.notify("uatis: not a file buffer", vim.log.levels.ERROR)
+    return
+  end
+  local file = vim.api.nvim_buf_get_name(bufnr)
+  git.root(file, function(root)
+    if not root then
+      vim.notify("uatis: " .. file .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    local rel = view.relpath(root, file)
+    if rel then
+      go(root, rel, nil)
+    end
+  end)
+end
+
+--- The project as it was at a revision -- a real checkout of it, in a
+--- tab of its own, with the file under the cursor opened as it was then.
+--- Not a comparison: the past to read, with everything that reading
+--- code in the present has, a language server included. See `at.lua`.
+---
+--- Without a rev it asks, over the same candidates `<leader>gA` does.
+--- The file is whichever this buffer is -- the reader's own, a commit's
+--- copy of it, the old side of a comparison, or a file of another
+--- checkout of the past -- and nothing where the buffer is not a file.
+function M.at(rev)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local at = require("uatis.at")
+
+  local function go(root, path)
+    local function open(r)
+      at.open(r, { root = root, path = path })
+    end
+    if rev and rev ~= "" then
+      return open(rev)
+    end
+    base.candidates(root, function(items)
+      prompt.open({ prompt = "uatis: the project at", items = items }, function(text)
+        if text and text ~= "" then
+          open(text)
+        end
+      end)
+    end)
+  end
+
+  local v = view.get(bufnr)
+  if v then
+    return go(v.root, v.relpath)
+  end
+  local old = require("uatis.oldside").view_for(bufnr)
+  if old then
+    return go(old.root, old.old_path or old.relpath)
+  end
+  local list = pane.get()
+  if list and bufnr == list.list_buf then
+    local f = (list.files or {})[list.file_idx or 0]
+    return go(list.root, f and f.path or nil)
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  -- A file of a checkout already open: the same repository, asked about
+  -- by its real root -- the checkout is a worktree of it, and a worktree
+  -- of a worktree is a second copy of the same objects for nothing.
+  local inside = at.owner_of(name)
+  if inside then
+    return go(inside.root, vim.fs.normalize(name):sub(#inside.dir + 2))
+  end
+  if vim.bo[bufnr].buftype == "" and name ~= "" then
+    return git.root(name, function(root)
+      if not root then
+        vim.notify("uatis: " .. name .. " is not inside a git repository",
+          vim.log.levels.ERROR)
+        return
+      end
+      go(root, view.relpath(root, name))
+    end)
+  end
+  base.root(function(root, path)
+    if not root then
+      vim.notify("uatis: " .. path .. " is not inside a git repository",
+        vim.log.levels.ERROR)
+      return
+    end
+    go(root, nil)
+  end)
+end
+
 --- Everything that has changed since a commit -- `:Uatis <rev>`, asked
 --- rather than typed.
 ---
@@ -481,7 +702,7 @@ end
 ---   added, removed   across all of them
 ---   file             the one the list is standing on, if any
 ---   window           true while the list has a window up
----   mode             "branch", "commit" or "conflicts"
+---   mode             "branch", "commit", "history" or "conflicts"
 ---   conflicts        in a conflict review: blocks left across the files
 ---   resolved         ...and blocks settled since the review began
 --- How many of a list's files the reader has marked read -- and still
@@ -513,7 +734,8 @@ function M.review()
     file = current and current.path or nil,
     tracks_base = list.tracks_base == true,
     window = list.list_win ~= nil and vim.api.nvim_win_is_valid(list.list_win),
-    mode = list.conflicts and "conflicts" or (list.commit and "commit" or "branch"),
+    mode = list.conflicts and "conflicts" or (list.history and "history")
+      or (list.commit and "commit" or "branch"),
     conflicts = list.conflicts and (list.stat_conflicts or 0) or nil,
     resolved = list.conflicts and (list.stat_resolved or 0) or nil,
   }
@@ -632,28 +854,44 @@ local function outside_cmdwin(fn)
 end
 
 local function setup_keymaps()
-  for _, lhs in ipairs(mapped) do
-    pcall(vim.keymap.del, "n", lhs)
+  for _, m in ipairs(mapped) do
+    pcall(vim.keymap.del, m[1], m[2])
   end
   mapped = {}
 
   local k = config.keys.global
   local mappings = {
-    { lhs = k.base_branch, rhs = M.set_base_branch, desc = "uatis: set the base branch" },
-    { lhs = k.toggle_diff, rhs = M.toggle_diff, desc = "uatis: toggle the diff view" },
-    { lhs = k.open_pane, rhs = M.open_pane, desc = "uatis: open the changed-file pane" },
+    { lhs = k.base_branch, rhs = M.set_base_branch, desc = "[G]it - Set review [B]ase branch and subtree" },
+    { lhs = k.toggle_diff, rhs = M.toggle_diff, desc = "[G]it - Toggle [u]atis diff view" },
+    { lhs = k.open_pane, rhs = M.open_pane, desc = "[G]it - Open changed files list" },
     { lhs = k.show_commit, rhs = function() M.show_commit() end,
-      desc = "uatis: show one commit, in a tab of its own" },
+      desc = "[G]it - Show one commit ([A]gainst its parent)" },
+    { lhs = k.at, rhs = function() M.at() end,
+      desc = "[G]it - Open project as it was at a revision ([w]orktree)" },
+    { lhs = k.history, rhs = function() M.history() end,
+      desc = "[G]it - [L]og of commits that touched this file" },
     { lhs = k.since_commit, rhs = function() M.since_commit() end,
-      desc = "uatis: review everything changed since a revision" },
+      desc = "[G]it - Review everything [S]ince a revision" },
     { lhs = k.conflicts, rhs = function() M.conflicts() end,
-      desc = "uatis: start or end a review of the merge's conflicts" },
+      desc = "[G]it - Toggle merge conflicts review" },
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then
       vim.keymap.set("n", m.lhs, outside_cmdwin(m.rhs), { silent = true, desc = m.desc })
-      table.insert(mapped, m.lhs)
+      table.insert(mapped, { "n", m.lhs })
     end
+  end
+
+  -- ...and the one key that means something over a selection: the
+  -- history of those lines. Read while Visual mode is still on, and the
+  -- mode left afterwards, as any key that acts on a selection does.
+  if k.history and k.history ~= "" then
+    vim.keymap.set("x", k.history, outside_cmdwin(function()
+      local a, b = vim.fn.line("v"), vim.fn.line(".")
+      vim.cmd([[execute "normal! \<Esc>"]])
+      M.history({ range = 2, line1 = math.min(a, b), line2 = math.max(a, b) })
+    end), { silent = true, desc = "[G]it - [L]og of commits that touched these lines" })
+    table.insert(mapped, { "x", k.history })
   end
 end
 
@@ -727,6 +965,21 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = group,
     callback = overlay.setup_highlights,
+  })
+  -- The tabs this plugin opened for itself go before the editor does.
+  -- `ExitPre` and not `VimLeavePre`: a session is saved on
+  -- `VimLeavePre`, and whoever registered theirs first runs first --
+  -- which, for a config that sets one up in `init.lua`, is before any
+  -- plugin has been loaded at all. `ExitPre` comes ahead of all of it.
+  -- It fires on an exit that is then refused over a modified buffer, and
+  -- the reviews are gone then too; they cost a key to open again, and
+  -- the file the reader was asked to save does not. How the tabs go
+  -- matters here -- see `pane.close_owned`.
+  vim.api.nvim_create_autocmd("ExitPre", {
+    group = group,
+    callback = function()
+      pcall(pane.close_owned)
+    end,
   })
 end
 

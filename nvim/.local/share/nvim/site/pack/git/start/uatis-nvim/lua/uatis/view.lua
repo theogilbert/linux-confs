@@ -655,7 +655,8 @@ end
 --- destination had not been opened yet, and a buffer that redraws for its
 --- own reasons in between must not take the cursor.
 land = function(view)
-  if not landing or landing.from == view.bufnr then
+  if not landing or landing.from == view.bufnr
+    or (landing.to and landing.to ~= view.bufnr) then
     return
   end
   -- ...and not before it has drawn. A view exists from the moment it is
@@ -673,6 +674,15 @@ land = function(view)
   if target then
     jump(view, target)
   end
+end
+
+--- The cursor on the first change in `bufnr`, once a view there has
+--- drawn -- for a file opened by something other than `]c`, which wants
+--- the same landing for the same reason. Aimed at that one buffer, so a
+--- file that never draws a change cannot hand it to the next one that
+--- does.
+function M.land_first(bufnr)
+  landing = { dir = 1, to = bufnr }
 end
 
 --- Next or previous changed file, from the buffer you are reading.
@@ -731,34 +741,34 @@ local function setup_keymaps(view)
   local k = config.keys.view
   view.saved_keys = keys.apply(view.bufnr, "n", {
     { lhs = k.hunk_next, rhs = function() step_hunk(view, 1) end,
-      opts = { desc = "uatis: next chunk" } },
+      opts = { desc = "Uatis - Next [c]hunk" } },
     { lhs = k.hunk_prev, rhs = function() step_hunk(view, -1) end,
-      opts = { desc = "uatis: previous chunk" } },
+      opts = { desc = "Uatis - Previous [c]hunk" } },
     { lhs = k.diff_mode, rhs = function() toggle_backend(view) end,
-      opts = { desc = "uatis: toggle line / structural diff" } },
+      opts = { desc = "[G]it - Toggle line / structural diff [m]ode" } },
     { lhs = k.layout, rhs = function() toggle_layout(view) end,
-      opts = { desc = "uatis: switch between in-place and side-by-side" } },
+      opts = { desc = "[G]it - Toggle [o]ld side in its own window" } },
     -- Required at call time: `pane` requires this module to open the
     -- files it lists, and asking for it at the top would be a cycle.
     { lhs = k.files, rhs = function() require("uatis.pane").toggle() end,
-      opts = { desc = "uatis: show or hide the files changed since this revision" } },
+      opts = { desc = "[G]it - Toggle changed [f]iles list" } },
     { lhs = k.file_next, rhs = function() step_file(1) end,
-      opts = { desc = "uatis: next changed file" } },
+      opts = { desc = "Uatis - Next changed [f]ile" } },
     { lhs = k.file_prev, rhs = function() step_file(-1) end,
-      opts = { desc = "uatis: previous changed file" } },
+      opts = { desc = "Uatis - Previous changed [f]ile" } },
     -- The same list, one size up: `]c` is the next change in this file,
     -- `]C` the next change to the branch.
     { lhs = k.commit_next, rhs = function() step_commit(1) end,
-      opts = { desc = "uatis: the review one commit forward" } },
+      opts = { desc = "Uatis - Next [C]ommit" } },
     { lhs = k.commit_prev, rhs = function() step_commit(-1) end,
-      opts = { desc = "uatis: the review one commit back" } },
+      opts = { desc = "Uatis - Previous [C]ommit" } },
     { lhs = k.commit_view, rhs = function() toggle_commits() end,
-      opts = { desc = "uatis: read the review one commit at a time" } },
+      opts = { desc = "[G]it - Toggle one commit at a time ([h]istory)" } },
     -- Off by default, and skipped when it is: `<leader>gu` already ends
     -- the review from anywhere, including from in here. Bound for anyone
     -- who sets `keys.view.quit` to a key of their own.
     { lhs = k.quit, rhs = function() M.stop(view) end,
-      opts = { desc = "uatis: stop reviewing" } },
+      opts = { desc = "Uatis - Stop reviewing" } },
   })
 end
 

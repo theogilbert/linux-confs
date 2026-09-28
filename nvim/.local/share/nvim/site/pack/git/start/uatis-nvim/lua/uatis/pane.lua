@@ -94,6 +94,30 @@ local function scoped_row(scope, row)
   return row
 end
 
+--- A commit's own diff as the list draws it: inside the subtree, and in
+--- the history of one file only that file's row -- the rest of what the
+--- commit did is another question. By the name the file had IN this
+--- commit, since a history follows a file across its renames.
+local function commit_rows(pane, commit, tracked)
+  local scope = pane.scope or ""
+  local only
+  if pane.history and not pane.history.dir then
+    only = commit.path or pane.history.path
+  end
+  local files = {}
+  for _, f in ipairs(tracked or {}) do
+    local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
+    if row and only and row.path ~= only and row.old_path ~= only then
+      row = nil
+    end
+    if row then
+      table.insert(files, row)
+    end
+  end
+  table.sort(files, function(a, b) return a.path < b.path end)
+  return files
+end
+
 local function compose(pane)
   local scope = pane.scope or ""
   local files, by_path = {}, {}
@@ -126,14 +150,7 @@ local function compose(pane)
   -- two sources that answer for the working tree are left out and the
   -- list is exactly the commit's own diff.
   if pane.commit then
-    for _, f in ipairs(pane.tracked or {}) do
-      local row = scoped_row(scope, vim.tbl_extend("force", {}, f))
-      if row then
-        table.insert(files, row)
-      end
-    end
-    table.sort(files, function(a, b) return a.path < b.path end)
-    return files
+    return commit_rows(pane, pane.commit, pane.tracked)
   end
   for _, f in ipairs(pane.tracked or {}) do
     -- Copied, because this runs again on every keystroke that moves a
@@ -416,6 +433,7 @@ end
 --- working tree rather than the commits: a file whose change is staged, or
 --- saved and not committed, is part of what this branch has done.
 local refresh_conflicts
+local prefetch_around
 local function refresh(pane, keep_path)
   if pane.conflicts then
     return refresh_conflicts(pane, keep_path)
@@ -471,6 +489,9 @@ local function refresh(pane, keep_path)
         filelist.render(pane)
       end
       follow_visible(pane)
+      if pane.commit then
+        prefetch_around(pane)
+      end
       -- Counted so a test can wait for a redraw rather than for a
       -- wall-clock guess, the same way the review's panes are.
       pane.renders = (pane.renders or 0) + 1
@@ -598,7 +619,15 @@ end
 --- it in the branch, and for the first one the revision the whole review
 --- measures from. `--first-parent` makes that walk linear, so the list
 --- itself answers this without asking git again.
+---
+--- Not in a history: the commits that touched one file are not a line of
+--- descent, and the one before it in the list is not what it was made
+--- on top of. Each is measured against its own parent, which `git.history`
+--- reads with it.
 local function parent_of(pane, idx)
+  if pane.history then
+    return pane.commits[idx].parent
+  end
   if idx > 1 then
     return pane.commits[idx - 1].sha
   end
@@ -638,6 +667,9 @@ local function keys_of(pane)
   if not pane.conflicts then
     add(k.mark_read, "mark this row read -- a directory and all under it, a selection as one")
   end
+  if not pane.conflicts then
+    add(k.history, "every commit that touched this file or directory")
+  end
   add(k.fold, "fold this directory")
   add(k.fold_close .. " " .. k.fold_open, "shut it / open it")
   add(k.fold_close_all .. " " .. k.fold_open_all, "fold everything / open everything")
@@ -664,7 +696,12 @@ local function keys_of(pane)
     add(g.toggle_diff, "start a review of the branch")
     return rows
   end
-  if pane.standalone then
+  if pane.history then
+    table.insert(rows, { head = "this history" })
+    add(k.select, "on a commit, put it on show")
+    add(k.commit_prev .. " " .. k.commit_next, "one commit older / newer")
+    add(k.commit_message, "the whole message of the commit under the cursor")
+  elseif pane.standalone then
     table.insert(rows, { head = "this commit" })
     add(k.commit_message, "its whole message")
   elseif pane.commit then
@@ -689,6 +726,8 @@ local function keys_of(pane)
   add(g.toggle_diff, "start or end a review")
   add(g.base_branch, "what am I reviewing")
   add(g.show_commit, "one commit, in a tab of its own")
+  add(g.history, "every commit that touched this file, or the lines selected")
+  add(g.at, "the project as it was at a revision, to read, with LSP")
   add(g.since_commit, "everything since a revision")
   add(g.open_pane, "open this list")
   return rows
@@ -815,6 +854,33 @@ function M.commit_float(commit, text, opts)
     "\n", { plain = true })) do
     table.insert(lines, l)
   end
+  -- ...and with `opts.files`, what it did to each file under the message:
+  -- `+N -M` in a column of its own, then the path. The churn first,
+  -- right-aligned, so the numbers read down as the list's do and a path
+  -- of any length cannot push them out of line.
+  local stats = {}
+  if opts.files and #opts.files > 0 then
+    table.insert(lines, "")
+    local wide_a, wide_r = 0, 0
+    for _, f in ipairs(opts.files) do
+      wide_a = math.max(wide_a, #tostring(f.added or 0))
+      wide_r = math.max(wide_r, #tostring(f.removed or 0))
+    end
+    for _, f in ipairs(opts.files) do
+      local plus = f.binary and "" or ("+" .. (f.added or 0))
+      local minus = f.binary and "" or ("-" .. (f.removed or 0))
+      local cell_a = string.rep(" ", wide_a + 1 - #plus) .. plus
+      local cell_r = string.rep(" ", wide_r + 1 - #minus) .. minus
+      local stat = f.binary and string.rep(" ", wide_a + wide_r) .. "bin"
+        or (cell_a .. " " .. cell_r)
+      local path = f.old_path and f.old_path ~= f.path
+        and (f.old_path .. " → " .. f.path) or f.path
+      table.insert(lines, stat .. "  " .. path)
+      if not f.binary then
+        table.insert(stats, { line = #lines, a = { 0, #cell_a }, r = { #cell_a + 1, #cell_a + 1 + #cell_r } })
+      end
+    end
+  end
 
   local width = 0
   for _, l in ipairs(lines) do
@@ -833,6 +899,12 @@ function M.commit_float(commit, text, opts)
     hl_group = "UatisMeta",
     hl_eol = true,
   })
+  for _, st in ipairs(stats) do
+    vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.a[1],
+      { end_col = st.a[2], hl_group = "UatisStatAdd" })
+    vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.r[1],
+      { end_col = st.r[2], hl_group = "UatisStatDel" })
+  end
   local place
   if opts.at_cursor then
     place = { relative = "cursor", row = 1, col = 0, focusable = false }
@@ -881,18 +953,39 @@ function M.commit_float(commit, text, opts)
   return win
 end
 
-function M.peek_commit(pane)
+--- `commit` is one the reader pointed at -- a row of a history, which
+--- lists more commits than the one on show -- and the one on show
+--- otherwise.
+function M.peek_commit(pane, commit)
   pane = pane or M.get()
-  if not pane or not pane.commit then
+  commit = commit or (pane and pane.commit)
+  if not pane or not commit then
     vim.notify("uatis: no commit on show", vim.log.levels.WARN)
     return
   end
-  local commit = pane.commit
-  git.commit_message(pane.root, commit.sha, function(text)
-    if panes[pane.tab] ~= pane or pane.commit ~= commit then
+  -- What it did to each file, under the message: the whole commit, not
+  -- only the part of it a history is about, since the rest of what it
+  -- touched is often the reason it touched this. Against the parent the
+  -- review measures it from -- a history's commit carries its own.
+  local parent = commit.parent or (commit == pane.commit and pane.rev) or nil
+  local function show(files)
+    git.commit_message(pane.root, commit.sha, function(text)
+      if panes[pane.tab] ~= pane then
+        return
+      end
+      M.commit_float(commit, text, { files = files })
+    end)
+  end
+  if not parent then
+    return show(nil)
+  end
+  git.diff_range(pane.root, parent, commit.sha, function(diff_text)
+    if panes[pane.tab] ~= pane then
       return
     end
-    M.commit_float(commit, text)
+    local files = patch.parse(diff_text or "")
+    table.sort(files, function(a, b) return a.path < b.path end)
+    show(files)
   end)
 end
 
@@ -907,7 +1000,14 @@ end
 --- revision, so a step lands somewhere rather than on an empty window.
 local function show(pane, idx, keep_path)
   local was = pane.rev
-  if idx then
+  if idx and pane.history then
+    -- Against its own parent, named the way `:UatisShow` names it.
+    local commit = pane.commits[idx]
+    pane.commit, pane.commit_idx = commit, idx
+    pane.target = commit.orphan and "nothing" or (commit.short .. "^")
+    pane.src = commit.short
+    pane.ref, pane.rev = pane.target, parent_of(pane, idx)
+  elseif idx then
     local commit = pane.commits[idx]
     pane.commit, pane.commit_idx = commit, idx
     pane.mode = "commit"
@@ -942,6 +1042,77 @@ local function show(pane, idx, keep_path)
     M.goto_file(p, at)
   end
   refresh(pane, keep_path)
+end
+
+--- The structural diff of the file a step to the commits either side of
+--- the one on show would open, started now and left in `diff.lua`'s
+--- cache for when the reader gets there.
+---
+--- difftastic takes seconds over a large, much-changed file, and a view
+--- waiting on it looks like a file with nothing in it. Stepping a
+--- history is the one place where what will be asked next is known:
+--- `[C` or `]C`, one commit either way. Each is done once per review,
+--- and a step that arrives before its answer joins the run already out
+--- rather than starting another (`inflight` in `diff.lua`).
+---
+--- The file is the one `goto_file` would land on -- the one being read
+--- where the neighbour touched it too, and its first row otherwise --
+--- measured exactly as the view will measure it, or the cache key would
+--- not match: the commit's blob as the new side, the parent's (under
+--- the old name, for a rename) as the old.
+local function prefetch(pane, idx, keep_path)
+  local commit = (pane.commits or {})[idx]
+  if not commit or config.diff.default_backend ~= "struct" then
+    return
+  end
+  pane.prefetched = pane.prefetched or {}
+  if pane.prefetched[commit.sha] then
+    return
+  end
+  pane.prefetched[commit.sha] = true
+  local parent = parent_of(pane, idx)
+  git.diff_range(pane.root, parent, commit.sha, function(text)
+    if panes[pane.tab] ~= pane or not text then
+      return
+    end
+    local rows = commit_rows(pane, commit, patch.parse(text))
+    local f = rows[1]
+    for _, r in ipairs(rows) do
+      if r.path == keep_path or r.old_path == keep_path then
+        f = r
+        break
+      end
+    end
+    if not f or f.binary or f.status == "D" then
+      return
+    end
+    git.blob(pane.root, parent, f.old_path or f.path, function(old)
+      git.blob(pane.root, commit.sha, f.path, function(new)
+        if panes[pane.tab] ~= pane or new == nil then
+          return
+        end
+        -- A file of bytes is never compared (see `view.lua`).
+        for _, t in ipairs({ old or "", new }) do
+          if t:sub(1, 8000):find("\0", 1, true) then
+            return
+          end
+        end
+        require("uatis.diff").compute(old or "", new,
+          { backend = "struct", path = f.path }, function() end)
+      end)
+    end)
+  end)
+end
+
+prefetch_around = function(pane)
+  local idx = pane.commit_idx
+  if not idx or #(pane.commits or {}) < 2 then
+    return
+  end
+  local cur = (pane.files or {})[pane.file_idx or 0]
+  local keep = cur and cur.path or nil
+  prefetch(pane, idx - 1, keep)
+  prefetch(pane, idx + 1, keep)
 end
 
 --- Runs `fn(pane)` once the branch's commits are known.
@@ -988,6 +1159,14 @@ function M.toggle_commits(pane)
     vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
     return true
   end
+  -- A history is commit by commit already, and there is no whole to go
+  -- back out to: what the commits did together is not what was asked.
+  if pane.history then
+    vim.notify("uatis: a history is read one commit at a time · "
+      .. config.keys.pane.commit_prev .. " " .. config.keys.pane.commit_next
+      .. " to step it", vim.log.levels.INFO)
+    return true
+  end
   -- Nowhere to go from a review that is one commit. Off, this key means
   -- "the whole branch against the working tree", and here that would be
   -- the commit's PARENT against the working tree -- a comparison nobody
@@ -1029,7 +1208,7 @@ function M.step_commit(pane, dir)
     vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
     return
   end
-  if pane.standalone then
+  if pane.standalone and not pane.history then
     vim.notify("uatis: this review is one commit", vim.log.levels.INFO)
     return
   end
@@ -1044,11 +1223,13 @@ function M.step_commit(pane, dir)
   local n = #(pane.commits or {})
   local to = pane.commit_idx + dir
   if to < 1 then
-    vim.notify("uatis: first commit of this review", vim.log.levels.INFO)
+    vim.notify(pane.history and "uatis: the oldest commit in this history"
+      or "uatis: first commit of this review", vim.log.levels.INFO)
     return
   end
   if to > n then
-    vim.notify("uatis: last commit of this review", vim.log.levels.INFO)
+    vim.notify(pane.history and "uatis: the newest commit in this history"
+      or "uatis: last commit of this review", vim.log.levels.INFO)
     return
   end
   show(pane, to, current_path(pane))
@@ -1153,7 +1334,9 @@ end
 function M.rescope(root, dir)
   dir = dir or ""
   for _, pane in pairs(panes) do
-    if pane.root == root and (pane.scope or "") ~= dir then
+    -- A history's scope is its subject, and choosing what the branch
+    -- review is about has not changed which directory was asked about.
+    if pane.root == root and not pane.history and (pane.scope or "") ~= dir then
       local cur = pane.files[pane.file_idx]
       pane.scope = dir
       pane.collapsed = {}
@@ -1657,13 +1840,32 @@ function M.goto_file(pane, idx)
       -- past on a buffer that belongs to the present -- one whose view
       -- the review of your own branch, in the tab you came from, owns.
       in_code_win(pane, win, function()
+        -- Either way the cursor goes to what the commit did, not to the
+        -- top of the file: a commit is read for its change, and a file
+        -- opened out of one at line 1 has the reader pressing `]c` before
+        -- anything else, every time. Answered by the view once it has
+        -- drawn, since where the first change is is its to say.
         if not pane.standalone and text ~= nil and text == live_text(pane.root, f.path) then
           vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+          view_mod.land_first(vim.api.nvim_get_current_buf())
           view_mod.open(pane.ref, pinned(pane, f))
           return
         end
         local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
         vim.api.nvim_win_set_buf(win, buf)
+        -- A history of lines is about one place in the file, and the
+        -- commit may have touched others: the lines asked about, where
+        -- `-L` said they stood in this commit. Set on the buffer at once
+        -- -- it is the commit's own text, and the marks the view draws
+        -- over it add no rows.
+        local row = pane.history and commit.row
+        if row then
+          vim.api.nvim_win_set_cursor(win,
+            { math.max(1, math.min(row, vim.api.nvim_buf_line_count(buf))), 0 })
+          vim.cmd("normal! zz")
+        else
+          view_mod.land_first(buf)
+        end
         view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
           root = pane.root,
           path = f.path,
@@ -1900,13 +2102,13 @@ function lend_keys(pane, bufnr)
   if view_mod.get(bufnr) == nil then
     vim.list_extend(lend, {
       { lhs = k.file_next, rhs = function() M.step_file(pane, 1) end,
-        opts = { desc = "uatis: next changed file" } },
+        opts = { desc = "Uatis - Next changed [f]ile" } },
       { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
-        opts = { desc = "uatis: previous changed file" } },
+        opts = { desc = "Uatis - Previous changed [f]ile" } },
       { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
-        opts = { desc = "uatis: the review one commit forward" } },
+        opts = { desc = "Uatis - Next [C]ommit" } },
       { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
-        opts = { desc = "uatis: the review one commit back" } },
+        opts = { desc = "Uatis - Previous [C]ommit" } },
       -- The toggle is NOT lent. This one is a bare `C` -- affordable in
       -- the list, which is a scratch buffer of rows, and not in somebody
       -- else's file, where it is `c$`. `keys.view.commit_view` is the way
@@ -1926,7 +2128,7 @@ function lend_keys(pane, bufnr)
   -- press the key that means "done".
   if pane.owns_tab and k.quit and k.quit ~= "" then
     table.insert(lend, { lhs = k.quit, rhs = function() M.close(pane) end,
-      opts = { desc = "uatis: close this commit" } })
+      opts = { desc = "Uatis - Close this commit" } })
   end
   if #lend == 0 then
     return
@@ -1980,7 +2182,7 @@ local function name_tab(pane)
   if not var or var == "" or not pane.owns_tab then
     return
   end
-  vim.api.nvim_tabpage_set_var(pane.tab, var, pane.commit.short)
+  vim.api.nvim_tabpage_set_var(pane.tab, var, pane.tab_name or pane.commit.short)
   vim.cmd("redrawtabline")
 end
 
@@ -2019,6 +2221,88 @@ function M.close(pane)
   end
 end
 
+--- Every review in a tab of its own, closed tab and all -- on the way
+--- out of the editor.
+---
+--- Those tabs are this plugin's, not the reader's layout: a commit or a
+--- history, read in `uatis://` buffers that exist nowhere but this
+--- session. A session saved on exit keeps the tab and none of what was
+--- in it, and the next start opens on an empty one the reader never
+--- made. Where every tab is a review's, a blank one is put up to keep,
+--- since nvim will not close its last tab.
+---
+--- The window the quit was asked from is MOVED out, not closed. `:qa`
+--- checks after `ExitPre` that the window it started in is still there,
+--- and refuses to quit when an autocommand closed it -- so a review tab
+--- closed from under the cursor left nvim running, the quit silently
+--- dropped. Emptied first and moved into a tab being kept, the window
+--- survives, its tab goes with the rest, and a session drops it: a
+--- scratch buffer is not something `:mksession` writes.
+function M.close_owned()
+  local at = require("uatis.at")
+  local owned = {}
+  for _, pane in ipairs(M.all()) do
+    if pane.owns_tab and vim.api.nvim_tabpage_is_valid(pane.tab) then
+      owned[pane.tab] = pane
+    end
+  end
+  -- ...and the checkouts of the past (`at.lua`), which are tabs of this
+  -- plugin's as much as any review's are.
+  for _, tab in ipairs(at.all()) do
+    if vim.api.nvim_tabpage_is_valid(tab) then
+      owned[tab] = owned[tab] or true
+    end
+  end
+  if next(owned) == nil then
+    return
+  end
+  local here = vim.api.nvim_get_current_win()
+  local keep
+  for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+    if not owned[tab] then
+      keep = tab
+      break
+    end
+  end
+  if not keep then
+    vim.cmd("tabnew")
+    keep = vim.api.nvim_get_current_tabpage()
+  end
+  if owned[vim.api.nvim_win_get_tabpage(here)] then
+    local scratch = vim.api.nvim_create_buf(false, true)
+    vim.bo[scratch].bufhidden = "wipe"
+    -- A tab's last window cannot be moved out of it, and a checkout's
+    -- tab (`at.lua`) is often one window: a second is put up beside it
+    -- first, to be closed with the tab.
+    if #vim.tbl_filter(function(w)
+      return vim.api.nvim_win_get_config(w).relative == ""
+    end, vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(here))) == 1 then
+      local spare = vim.api.nvim_create_buf(false, true)
+      vim.bo[spare].bufhidden = "wipe"
+      vim.api.nvim_open_win(spare, false, { split = "right", win = here })
+    end
+    vim.api.nvim_win_set_buf(here, scratch)
+    vim.api.nvim_win_set_config(here,
+      { split = "left", win = vim.api.nvim_tabpage_list_wins(keep)[1] })
+    -- ...and no longer the list's to close, where it was the list.
+    for _, pane in pairs(owned) do
+      if type(pane) == "table" and pane.list_win == here then
+        pane.list_win = nil
+      end
+    end
+  end
+  -- The checkouts first, and waited for: a removal still running when
+  -- the editor goes is killed half done.
+  at.release_all()
+  for tab, pane in pairs(owned) do
+    if type(pane) == "table" then
+      M.close(pane)
+    elseif vim.api.nvim_tabpage_is_valid(tab) and #vim.api.nvim_list_tabpages() > 1 then
+      pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(tab))
+    end
+  end
+end
+
 local function create_buf(tab)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
@@ -2031,20 +2315,52 @@ local function create_buf(tab)
   return buf
 end
 
+--- The history of the row under the list's cursor: a file row's file,
+--- a directory row's directory. Nothing on a row that is neither.
+function M.history_at_cursor(pane)
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  local idx = (pane.list_rows or {})[line]
+  local dir = (pane.list_dirs or {})[line]
+  -- From the commit on show where there is one: the file may be gone
+  -- from HEAD, and its history up to that commit is the one the reader
+  -- is standing in.
+  local rev = pane.commit and pane.commit.sha or nil
+  if idx and pane.files[idx] then
+    M.show_history({ root = pane.root, path = pane.files[idx].path, rev = rev })
+    return true
+  elseif dir then
+    -- Drawn relative to the review's subtree; asked about in full.
+    local scope = pane.scope or ""
+    M.show_history({ root = pane.root, dir = true, rev = rev,
+      path = scope == "" and dir or (scope .. "/" .. dir) })
+    return true
+  end
+  return false
+end
+
 local function setup_keymaps(pane)
   local k = config.keys.pane
   keys.apply(pane.list_buf, "n", {
     { lhs = k.select, rhs = function()
       local line = vim.api.nvim_win_get_cursor(0)[1]
       local idx = (pane.list_rows or {})[line]
-      if idx then
+      local at = (pane.list_commits or {})[line]
+      if at then
+        -- A commit row of a history: that commit on show, or -- where it
+        -- already is -- its file opened again.
+        if at ~= pane.commit_idx then
+          show(pane, at, current_path(pane))
+        elseif #pane.files > 0 then
+          M.goto_file(pane, pane.file_idx)
+        end
+      elseif idx then
         M.goto_file(pane, idx)
       else
         -- On a directory row there is nothing else for "open this" to
         -- mean, so it means the fold.
         set_fold(pane, (pane.list_dirs or {})[line])
       end
-    end, opts = { desc = "uatis: open file under cursor" } },
+    end, opts = { desc = "Uatis - Open file under cursor" } },
     { lhs = k.mark_read, rhs = function()
       local line = vim.api.nvim_win_get_cursor(0)[1]
       local idx = (pane.list_rows or {})[line]
@@ -2053,10 +2369,10 @@ local function setup_keymaps(pane)
       else
         M.toggle_read_dir(pane, (pane.list_dirs or {})[line])
       end
-    end, opts = { desc = "uatis: mark the row under the cursor read" } },
+    end, opts = { desc = "Uatis - Mark row read" } },
     { lhs = k.fold, rhs = function()
       set_fold(pane, fold_target(pane))
-    end, opts = { desc = "uatis: fold the directory under the cursor" } },
+    end, opts = { desc = "Uatis - Toggle directory fold" } },
     { lhs = k.fold_close, rhs = function()
       local path = fold_target(pane)
       -- Already shut, so what `zc` is being asked to close is the fold
@@ -2067,36 +2383,41 @@ local function setup_keymaps(pane)
         path = up[#up]
       end
       set_fold(pane, path, true)
-    end, opts = { desc = "uatis: fold the directory under the cursor shut" } },
+    end, opts = { desc = "Uatis - Close directory fold" } },
     { lhs = k.fold_open, rhs = function()
       set_fold(pane, fold_target(pane), false)
-    end, opts = { desc = "uatis: open the directory under the cursor" } },
-    { lhs = k.commit_message, rhs = function() M.peek_commit(pane) end,
-      opts = { desc = "uatis: the whole message of the commit on show" } },
+    end, opts = { desc = "Uatis - Open directory fold" } },
+    { lhs = k.commit_message, rhs = function()
+      local line = vim.api.nvim_win_get_cursor(0)[1]
+      local at = (pane.list_commits or {})[line]
+      M.peek_commit(pane, at and pane.commits[at] or nil)
+    end, opts = { desc = "Uatis - Show commit message" } },
+    { lhs = k.history, rhs = function() M.history_at_cursor(pane) end,
+      opts = { desc = "Uatis - [L]og of commits that touched this row" } },
     { lhs = k.help, rhs = function() M.peek_keys(pane) end,
-      opts = { desc = "uatis: every key that does something from here" } },
+      opts = { desc = "Uatis - Show keys" } },
     { lhs = k.fold_close_all, rhs = function() set_all(pane, true) end,
-      opts = { desc = "uatis: fold every directory shut" } },
+      opts = { desc = "Uatis - Close all directory folds" } },
     { lhs = k.fold_open_all, rhs = function() set_all(pane, false) end,
-      opts = { desc = "uatis: open every directory" } },
+      opts = { desc = "Uatis - Open all directory folds" } },
     { lhs = k.file_next, rhs = function() M.step_file(pane, 1) end,
-      opts = { desc = "uatis: next changed file" } },
+      opts = { desc = "Uatis - Next changed [f]ile" } },
     { lhs = k.file_prev, rhs = function() M.step_file(pane, -1) end,
-      opts = { desc = "uatis: previous changed file" } },
+      opts = { desc = "Uatis - Previous changed [f]ile" } },
     { lhs = k.commit_next, rhs = function() M.step_commit(pane, 1) end,
-      opts = { desc = "uatis: the review one commit forward" } },
+      opts = { desc = "Uatis - Next [C]ommit" } },
     { lhs = k.commit_prev, rhs = function() M.step_commit(pane, -1) end,
-      opts = { desc = "uatis: the review one commit back" } },
+      opts = { desc = "Uatis - Previous [C]ommit" } },
     { lhs = k.commit_view, rhs = function() M.toggle_commits(pane) end,
-      opts = { desc = "uatis: read the review one commit at a time" } },
+      opts = { desc = "Uatis - Toggle one [C]ommit at a time" } },
     { lhs = k.refresh, rhs = function() M.refresh(pane) end,
-      opts = { desc = "uatis: re-read the changed-file list" } },
+      opts = { desc = "Uatis - [R]efresh changed files list" } },
     { lhs = k.focus_code, rhs = function()
       local win = target_win(pane)
       if win then
         vim.api.nvim_set_current_win(win)
       end
-    end, opts = { desc = "uatis: focus the file" } },
+    end, opts = { desc = "Uatis - Focus the file" } },
     -- In a tab this review opened, `q` means the tab: nothing else was
     -- ever in it, and putting the list down would leave an empty tab
     -- and a review with nothing on the screen. Anywhere else it means
@@ -2108,14 +2429,14 @@ local function setup_keymaps(pane)
       else
         M.hide(pane)
       end
-    end, opts = { desc = "uatis: close the changed-file list" } },
+    end, opts = { desc = "Uatis - Close changed files list" } },
     -- The key that put this window up, taking it down again. Opening
     -- focuses the list, so without this the second press of a toggle
     -- would land in the one buffer that had nothing bound to it. Routed
     -- through `toggle` rather than straight to `hide`, so the rule about
     -- what the key means lives in one place.
     { lhs = k.files, rhs = function() M.toggle() end,
-      opts = { desc = "uatis: close the changed-file list" } },
+      opts = { desc = "[G]it - Close changed [f]iles list" } },
   })
   -- ...and over a selection. The range is read while Visual mode is
   -- still on -- `v` is the other end of it -- and the mode is left
@@ -2126,7 +2447,7 @@ local function setup_keymaps(pane)
       local b = vim.fn.getpos(".")[2]
       vim.cmd([[execute "normal! \<Esc>"]])
       M.toggle_read_rows(pane, math.min(a, b), math.max(a, b))
-    end, opts = { desc = "uatis: mark the selected rows read" } },
+    end, opts = { desc = "Uatis - Mark selected rows read" } },
   })
 end
 
@@ -2400,10 +2721,25 @@ local function build(tab, root, ref, rev, relpath, opts, tracks_base)
   -- working tree and again a subprocess later.
   if opts.commit then
     pane.standalone = true
-    pane.commits = { opts.commit }
-    pane.commit, pane.commit_idx = opts.commit, 1
+    pane.commits = opts.commits or { opts.commit }
+    pane.commit, pane.commit_idx = opts.commit, #pane.commits
     pane.mode = "commit"
     pane.src = opts.commit.short
+  end
+
+  -- ...and a history is that, with a walk longer than one: the commits
+  -- that touched one file, one directory or a run of lines, each against
+  -- its own parent. Everything that makes a lone commit read as the past
+  -- -- its own buffers, no watchers on the tree -- holds for all of them.
+  -- A directory is the review's subtree while it lasts, which is what
+  -- draws its paths relative to it and leaves the rest of each commit
+  -- out.
+  if opts.history then
+    pane.history = opts.history
+    pane.mode = "history"
+    pane.scope = opts.history.dir and opts.history.path or ""
+    pane.tab_name = vim.fs.basename(opts.history.path ~= "" and opts.history.path
+      or root) .. (opts.history.dir and "/" or "") .. " log"
   end
 
   -- A conflict review: the files the index calls unmerged, each
@@ -2647,6 +2983,67 @@ function M.show_commit(rev, opts)
       M.open({ focus = false })
       return pane
     end)
+  end)
+end
+
+--- Every commit that touched a file, a directory or a run of lines in a
+--- file, back to the one that made it -- listed, and each of them
+--- readable the way `:UatisShow` reads one.
+---
+--- `subject` is { root, path, dir, from, to, rev }, as `git.history`
+--- takes it. The list is the commits, newest at the top, and the one on
+--- show is the newest: "what happened here last" is what the question
+--- usually is, and the rest are one `[C` or one row away. Its own tab,
+--- for the reason `show_commit` has one.
+function M.show_history(subject, opts)
+  opts = opts or {}
+  local root = subject.root
+  git.history(root, subject, function(commits, err)
+    local what = subject.path ~= "" and subject.path or "this repository"
+    if subject.from then
+      what = string.format("%s:%d-%d", what, subject.from, subject.to)
+    end
+    if not commits then
+      vim.notify("uatis: no history of " .. what .. ": " .. (err or ""):match("^[^\r\n]*"),
+        vim.log.levels.ERROR)
+      return
+    end
+    if #commits == 0 then
+      vim.notify("uatis: no commit has touched " .. what, vim.log.levels.INFO)
+      return
+    end
+    local own_tab = opts.tab
+    if own_tab == nil then
+      own_tab = config.show.tab
+    end
+    if own_tab then
+      vim.cmd("tabnew")
+    end
+    local tab = vim.api.nvim_get_current_tabpage()
+    if panes[tab] then
+      M.close(panes[tab])
+    end
+    local newest = commits[#commits]
+    local pane = build(tab, root, newest.orphan and "nothing" or (newest.short .. "^"),
+      newest.parent, nil, {
+        commit = newest,
+        commits = commits,
+        history = subject,
+        owns_tab = own_tab,
+        on_ready = function(p)
+          if panes[p.tab] ~= p then
+            return
+          end
+          if #p.files > 0 then
+            M.goto_file(p, 1)
+          end
+          if opts.on_ready then
+            opts.on_ready(p)
+          end
+        end,
+      }, false)
+    M.open({ focus = false })
+    return pane
   end)
 end
 

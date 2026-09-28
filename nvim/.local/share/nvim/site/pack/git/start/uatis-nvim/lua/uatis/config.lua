@@ -48,6 +48,12 @@ return {
       show_commit = "<leader>gA",
       -- Everything since a revision you pick, in your own buffers.
       since_commit = "<leader>gS",
+      -- Every commit that touched this file -- or, from Visual mode,
+      -- these lines -- in a tab of its own.
+      history = "<leader>gL",
+      -- The project as it was at a revision you pick: a real checkout,
+      -- read-only, in a tab of its own, with language servers.
+      at = "<leader>gw",
       -- Start or end a review of the files a merge stopped on.
       conflicts = "<leader>gx",
     },
@@ -84,6 +90,9 @@ return {
       -- body -- in a float. `K` because that is already "tell me more
       -- about this" everywhere else in the editor.
       commit_message = "K",
+      -- Every commit that touched the file or directory on the current
+      -- row. A bare letter, so it is bound in the list only.
+      history = "L",
       -- Every key that does anything from here, in a float. `g?` is
       -- vim's own spelling of "explain this".
       help = "g?",
@@ -159,7 +168,7 @@ return {
   },
 
   show = {
-    -- Open `<leader>gA` / `:UatisShow` in a new tab.
+    -- Open `<leader>gA` / `:UatisShow`, and a history, in a new tab.
     tab = true,
   },
 
@@ -170,8 +179,9 @@ return {
   },
 
   tab = {
-    -- The tab variable `:UatisShow` names the tab it opens in --
-    -- `t:tabname` -- for a tabline that shows one. `false` for none.
+    -- The tab variable `:UatisShow` and a history name the tab they
+    -- open in -- `t:tabname` -- for a tabline that shows one. `false`
+    -- for none.
     name = "tabname",
   },
 

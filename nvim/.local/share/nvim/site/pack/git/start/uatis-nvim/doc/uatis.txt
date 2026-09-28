@@ -138,6 +138,20 @@ with nothing changed. Both are remembered per repository between sessions
                         its diff on a file five commits younger describes
                         neither.
 
+                                                              *:UatisHistory*
+:[range]UatisHistory [{path}]
+                        Every commit that touched {path} -- a file or a
+                        directory -- back to the one that made it, in a tab
+                        of its own. With no {path}, the current file; with a
+                        [range], only the commits that touched those lines.
+                        See |uatis-history|.
+
+                                                                  *:UatisAt*
+:UatisAt [{rev}]        The project as it was at {rev} -- not a comparison, a
+                        read-only checkout -- in a tab of its own, on the
+                        current file. With no argument it asks. See
+                        |uatis-at|.
+
                                                              *:UatisConflicts*
 :UatisConflicts         Start, or end, a review of the files a merge, rebase
                         or cherry-pick stopped on. See |uatis-conflicts|.
@@ -163,6 +177,10 @@ press a buffer-local key in. >
     <leader>gB      what am I reviewing: base and subtree, in one panel
     <leader>gA      one commit against its parent, in a tab of its own
     <leader>gS      everything since a revision you pick
+    <leader>gL      every commit that touched this file; in Visual mode,
+                    that touched the lines selected |uatis-history|
+    <leader>gw      the project as it was at a revision you pick, to read
+                    with a language server |uatis-at|
     <leader>gx      start or end a review of the conflicts a merge left
 <
 IN A REVIEWED FILE                                       *uatis-mappings-view*
@@ -190,7 +208,11 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
     <CR>            open the file on this row
     x               mark this row read, or unread -- a directory and all
                     under it, a Visual selection as one
-    K               the whole message of the commit on show
+    K               the whole message of the commit on show -- in a
+                    history, of the commit under the cursor -- and the
+                    +N -M of every file it touched
+    L               every commit that touched the file or directory on
+                    this row |uatis-history|
     ]f  [f          next / previous file
     za zc zo        fold this directory
     zM  zR          fold everything / open everything
@@ -199,9 +221,10 @@ IN THE FILE LIST                                         *uatis-mappings-pane*
     [C  ]C          move within it
     <C-t>l          jump to the window the file is open in
     q               hide the window -- the review stays on
-                    (in a tab |:UatisShow| opened: close the commit,
-                    tab and all, from anywhere in that tab)
+                    (in a tab |:UatisShow| or a history opened: close
+                    it, tab and all, from anywhere in that tab)
 <
+In a history the rows are commits: `<CR>` on one puts it on show.
 `g?` is the one worth remembering: the header carries it and nothing else,
 and it lists this list's keys, the ones a reviewed file binds, and the
 global ones -- leaving out anything that has nowhere to go, so a review of a
@@ -487,11 +510,17 @@ macro -- and `q` in the list still means only the list |uatis-mappings-pane|.
 There the review is ended with `<leader>gu`, which leaves your tab as it
 found it.
 
+Quitting nvim closes every tab uatis opened for itself (|uatis-at| too)
+before anything is saved, so a session written on the way out does not
+bring one back empty: the `uatis://` buffers in it exist only for as long
+as the editor does.
+
                                                               *uatis-tab-name*
 Neovim has no name for a tab, only a number; a tabline that shows one reads
 it off a tab variable. The tab |:UatisShow| opens is named the commit's
 short sha in `t:tabname` -- nothing else is ever in that tab, so the sha is
-what the tab is. A review running in a tab of your own names nothing: that
+what the tab is. A history's tab is named for what it is the history of,
+`calc.lua log`. A review running in a tab of your own names nothing: that
 tab holds your own work too, and may already carry a name you gave it.
 `tab = { name = "..." }` picks the variable your tabline reads; `false`
 leaves tabs alone.
@@ -506,7 +535,54 @@ than a field that is simply not there.
 `K` in the list opens the whole message -- subject and body -- in a float,
 drawn the same way: the naming row greyed, the message at full strength. The
 body is the half that says why, and a review is exactly the activity that
-wants it. `q` or `<Esc>` closes it.
+wants it. Under the message, every file the commit touched with its `+N -M`
+-- the whole commit, even in the history of one file, since what else it
+touched is often why it touched this one. `q` or `<Esc>` closes it.
+
+                                                               *uatis-history*
+`<leader>gL` (|:UatisHistory|) lists every commit that touched one file, back
+to the one that made it -- and from Visual mode, every commit that touched the
+lines selected. `L` on a row of the file list does the same for that row's
+file, or on a directory row, for everything under it. Each commit reads the
+way |:UatisShow| reads one: against its own parent, its files as they were
+at that commit, in a tab of its own (`show.tab`).
+
+The list is the commits, newest at the top, and the newest is on show. Its
+date and author open under its row; for a directory, so do the files it
+touched in there, drawn relative to it. `<CR>` on another row puts that one
+on show, `[C` and `]C` step one older or newer from anywhere in the tab, and
+`K` on a row opens that commit's whole message. The commits either side of
+the one on show are compared in the background while you read, so a step
+usually arrives already drawn -- a structural diff of a large file takes
+seconds, and the file looks unchanged until it answers.
+
+A file is followed across renames, each commit read under the name the file
+had then. Lines are followed by `git log -L`, through the edits that moved
+them, and each commit opens with the cursor on them. Lines of your own file
+are asked about as HEAD has them: an uncommitted edit above the selection
+does not shift the question, and lines that exist only in your buffer have
+no history to show. From a file shown as it was -- a commit on show, the
+old-revision window -- the history runs back from THAT revision.
+
+                                                                    *uatis-at*
+`<leader>gw` (|:UatisAt|) opens the project as it was at a revision -- not
+compared with anything, just the code as it stood -- in a tab of its own,
+on the file you were in. With no revision given it asks, over the same
+candidates |:UatisShow| offers.
+
+It is a real checkout: `git worktree add --detach` into the cache, and the
+tab's own working directory (`:tcd`) set to it. So everything that reads
+code in the present reads it there too -- a language server attaches and
+jumps to definitions within that revision, your explorer and fuzzy finder
+browse it, a relative `:edit` opens a file of it. Every file in it is
+read-only, and the winbar says which revision you are looking at. Files
+git never tracked -- a virtualenv, `node_modules` -- are not in it, which
+a language server may notice.
+
+Closing the tab removes the checkout and stops the language servers
+started for it; so does quitting nvim, before a session is saved. Two tabs
+on one revision share a checkout. |uatis-history| and |:UatisShow| work
+from inside it, reading back from that revision.
 
 ==============================================================================
 12. CONFLICTS                                                *uatis-conflicts*
@@ -676,8 +752,9 @@ comment on each saying what it controls. The commonly-changed ones: >lua
         remember_read = true, -- ...and the marks outlive the session
       },
       tab = {
-        name = "tabname",     -- the tab variable :UatisShow names its tab
-                              -- in, see |uatis-tab-name|; false for none
+        name = "tabname",     -- the tab variable :UatisShow and a history
+                              -- name their tab in, see |uatis-tab-name|;
+                              -- false for none
       },
       conflict = {
         quiet_diagnostics = true, -- no diagnostics while a file has blocks
@@ -696,6 +773,8 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           base_branch = "<leader>gB",
           show_commit = "<leader>gA",
           since_commit = "<leader>gS",
+          history = "<leader>gL",
+          at = "<leader>gw",
           conflicts = "<leader>gx",
         },
         view = { layout = "<leader>go", diff_mode = "<leader>gm" },
@@ -714,6 +793,8 @@ The functions behind the mappings, for binding yourself: >lua
     require("uatis").toggle_pane()
     require("uatis").show_commit([rev])
     require("uatis").since_commit([rev])
+    require("uatis").history([{ path, range, line1, line2 }])
+    require("uatis").at([rev])
     require("uatis").conflicts()
     require("uatis").colors()
 <
@@ -759,7 +840,7 @@ A buffer in a conflict review has no comparison in it, and answers with
     file                the one the list is standing on, if any
     tracks_base         as above
     window              true while the list has a window up
-    mode                "branch", "commit" or "conflicts"
+    mode                "branch", "commit", "history" or "conflicts"
     conflicts           in a conflict review, blocks left across the files
     resolved            ...and blocks settled since it began
 <

@@ -161,8 +161,8 @@ displayed in the panel:
     header      `name`                
 
 Sections found inside another section are shown as its children, except
-for SQL, Lucene, MongoDB and Cypher where sections are always a flat
-list. Sections marked as private can be hidden with the `p` key
+for SQL, Lucene, PromQL, MongoDB and Cypher where sections are always a
+flat list. Sections marked as private can be hidden with the `p` key
 (|sections-keymap-private|).
 
 The examples below show a source snippet, followed by what the panel
@@ -255,6 +255,20 @@ SQL and Lucene (`.lucene`, grannos parser):~
     SELECT * FROM customers WHERE active;
 <   Panel: >
      Customers
+<
+*sections-promql*
+PromQL (`.promql`, grannos parser):~
+- Same banner as SQL, written with `#`: a line of three or more `#`,
+  followed directly by a `# name #` line. Only this first line is used as
+  the section name, so further `# ... #` lines can hold a description.
+  Other comments are ignored. >
+    ##################
+    # Errors         #
+    # 5xx rate per job #
+    ##################
+    sum by (job) (rate(http_requests_total{code=~"5.."}[5m]))
+<   Panel: >
+     Errors
 <
 *sections-mongo* *sections-cypher*
 MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`), grannos parsers:~

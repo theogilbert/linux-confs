@@ -21,6 +21,7 @@ sections-lua	sections.txt	/*sections-lua*
 sections-lucene	sections.txt	/*sections-lucene*
 sections-markdown	sections.txt	/*sections-markdown*
 sections-mongo	sections.txt	/*sections-mongo*
+sections-promql	sections.txt	/*sections-promql*
 sections-python	sections.txt	/*sections-python*
 sections-queries	sections.txt	/*sections-queries*
 sections-requirements	sections.txt	/*sections-requirements*

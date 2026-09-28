@@ -86,6 +86,10 @@ end
 ---Close the current tab, remembering its name, windows and buffers so that
 ---M.reopen_closed_tab() can bring it back.
 function M.close_current_tab()
+    if vim.fn.tabpagenr("$") == 1 then
+        vim.notify("Cannot close the last tab", vim.log.levels.ERROR)
+        return
+    end
     table.insert(closed, {
         name = vim.t.tabname,
         layout = snapshot(vim.fn.winlayout()),

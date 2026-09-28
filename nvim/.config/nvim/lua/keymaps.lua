@@ -11,7 +11,21 @@ vim.keymap.set("n", "<C-Left>",  "<Cmd>vertical resize -1<CR>", { silent = true 
 vim.keymap.set("n", "<C-Right>", "<Cmd>vertical resize +1<CR>", { silent = true })
 
 local tabs = require("utilities.tabs")
-vim.keymap.set("n", "<C-w>Q", tabs.close_current_tab, { silent = true, desc = "Close tab" })
+vim.keymap.set("n", "<C-w>Q", function()
+	local count = #vim.tbl_filter(function(win)
+		return vim.api.nvim_win_get_config(win).relative == ""
+	end, vim.api.nvim_tabpage_list_wins(0))
+	-- Skip the prompt when there is nothing to confirm or the close will fail anyway
+	if count == 1 or vim.fn.tabpagenr("$") == 1 then
+		tabs.close_current_tab()
+		return
+	end
+	vim.ui.select({ "No", "Yes" }, { prompt = count .. " windows will be closed" }, function(choice)
+		if choice == "Yes" then
+			tabs.close_current_tab()
+		end
+	end)
+end, { silent = true, desc = "Close tab" })
 vim.keymap.set("n", "<C-w>U", tabs.reopen_closed_tab, { silent = true, desc = "Reopen last closed tab" })
 
 vim.keymap.set("n", "<C-w>N", function()

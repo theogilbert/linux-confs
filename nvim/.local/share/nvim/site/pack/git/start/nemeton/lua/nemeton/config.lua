@@ -668,8 +668,24 @@ return {
     -- says where the file stops. `false` for the two bands to meet.
     quote_rule = "─",
 
+    -- What the comments window rules between two threads, with where
+    -- the one under it sits written into the rule -- `src/app.lua:3`,
+    -- or "on the merge request". Each thread is drawn whole in there,
+    -- answers and quoted code, and the rule is where one conversation
+    -- stops and the next starts. `false` for the place alone.
+    thread_rule = "─",
+
     -- Which colour the ground under a conversation leans towards.
     accent = "Normal",
+
+    -- ...and which colour a *resolved* one leans towards instead, and
+    -- how far, on the 0-to-1 scale. Its own colour rather than the
+    -- accent's, because "this is over" is the one thing about a thread
+    -- read off a column of them before a word of any: green, at the
+    -- lightness the ground already had, so what is written on it reads
+    -- the same. `nil` for the accent's lean, `false` for none.
+    settled_accent = "NemetonResolved",
+    settled_lean = 0.5,
 
     -- ...and which colour that band leans towards, which need not be
     -- the one the ground under it leans towards -- and is not.
@@ -938,7 +954,7 @@ return {
       -- or a `:Nemeton` verb typed once in a review, which is about as
       -- often as any of them is wanted. Give one a string to have it on
       -- a key as well; nothing else has to change.
-      notes = false, -- `c` on <leader>md -- every comment, one line each
+      notes = false, -- `c` on <leader>md -- every thread, whole
       approve = false, -- `a` there -- approve it, or take it back
       jobs = false, -- `p` there -- what CI did, job by job
       publish = false, -- `s` there -- send every comment kept unsent
@@ -1031,7 +1047,7 @@ return {
       -- two things you come to this window to *do*, and a review is
       -- approved and sent in the same breath as often as not.
       publish = "s", -- send every comment kept unsent
-      comments = "c", -- every comment on it, one line each
+      comments = "c", -- every thread on it, whole
       pipeline = "p", -- what CI did, job by job
       browser = "o",
       refresh = "r",

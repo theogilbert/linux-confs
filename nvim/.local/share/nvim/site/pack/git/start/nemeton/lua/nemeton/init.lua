@@ -3,7 +3,7 @@
 --   :Nemeton                open the merge request list
 --   :Nemeton open 42        check !42 out and load its threads
 --   :Nemeton description    what it says it is for
---   :Nemeton notes          every comment on it, one line each
+--   :Nemeton notes          every thread on it, whole
 --   :Nemeton comment        a new thread on the line under the cursor
 --   :Nemeton reply          a reply into the thread under the cursor
 --
@@ -664,10 +664,9 @@ M.description = with_session(function()
   require("nemeton.overview").open()
 end)
 
---- Every comment on the merge request, one line each, in a window with
---- the keys to answer them. The opening note of each thread and no
---- reply to it: an index of the argument, not a transcript of it --
---- `:Nemeton conversation` is the transcript.
+--- Every thread on the merge request, whole, in a window with the keys
+--- to answer them and to start a new one. `:Nemeton conversation` is
+--- the same threads by file.
 M.notes = with_session(function()
   require("nemeton.notes").open()
 end)

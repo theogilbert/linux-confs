@@ -114,7 +114,10 @@ local grounded = {}
 --- difference you cannot miss, and it is the right way round -- an
 --- argument still going on stands off the page, one that is over sinks
 --- back towards it. Which is what "resolved" means: there, and no
---- longer asking anything of you.
+--- longer asking anything of you. Unless `comments.settled_accent`
+--- gives it a colour of its own, which it does by default: then it is
+--- as far off as an open one and the hue is the whole difference,
+--- pushed far enough that it is not one you have to look for.
 ---
 --- Without true colour there is nothing to mix: 16 or 256 fixed colours
 --- have no "a seventh of the way", and CursorLine is what an editor has
@@ -157,7 +160,10 @@ local function ground()
 
   --- `share` is how much of the ground this one gets: the whole of it
   --- for a conversation still going on, half for one that is over.
-  local function tint(name, from, share)
+  --- `pick` and `lean` are a colour of its own to lean towards and how
+  --- far, for a ground that says its state in a hue rather than in the
+  --- shared accent.
+  local function tint(name, from, share, pick, lean)
     -- Linked to Normal rather than cleared: `default` is what leaves a
     -- `:hi` of your own standing, and a cleared group cannot be set
     -- with it. Normal's background is the file's own, which is a band
@@ -166,7 +172,7 @@ local function ground()
       vim.api.nvim_set_hl(0, name, { link = "Normal", default = true })
       return
     end
-    local accent = accent_of(from)
+    local accent = accent_of(from, pick)
     if not (vim.o.termguicolors and normal.bg and normal.fg) then
       vim.api.nvim_set_hl(0, name, { link = "CursorLine", default = true })
       return
@@ -182,12 +188,20 @@ local function ground()
     -- way to the colour behind it.
     local bg = mix(normal.bg, normal.fg, lift * share)
     vim.api.nvim_set_hl(0, name, {
-      bg = accent and at_lum(mix(bg, accent, 0.14 * share), lum(bg)) or bg,
+      bg = accent and at_lum(mix(bg, accent, lean or 0.14 * share), lum(bg)) or bg,
       default = true,
     })
   end
+  -- A settled conversation leans towards the resolved colour whatever
+  -- the open ones lean towards: "this is over" is read off a column of
+  -- threads before a word of any of them, and a ground that has only
+  -- sunk half-way back to the page says it to nobody who is not
+  -- comparing two side by side. `settled_accent` is which colour, and
+  -- `settled_lean` how far.
+  local settled = config.comments.settled_accent
+  local settled_lean = settled ~= nil and config.comments.settled_lean or nil
   tint("NemetonInline", "NemetonSignOpen", 1)
-  tint("NemetonSettled", "NemetonResolved", 0.5)
+  tint("NemetonSettled", "NemetonResolved", settled_lean and 1 or 0.5, settled, settled_lean)
   -- ...and the same ground out on the code, under the lines the
   -- conversation being read was written against |nemeton-reading|. The
   -- same colour on purpose: the block in the pane and the lines out
@@ -210,7 +224,13 @@ local function ground()
   -- every line of the answer rather than on the first.
   local answer = config.comments.reply_ground or 1
   tint("NemetonReply", "NemetonSignOpen", answer)
-  tint("NemetonReplySettled", "NemetonResolved", answer * 0.5)
+  tint(
+    "NemetonReplySettled",
+    "NemetonResolved",
+    answer * (settled_lean and 1 or 0.5),
+    settled,
+    settled_lean
+  )
   -- ...and the band the head of each note sits on. A note is two things
   -- read two ways -- who said it and when, which is skimmed, and what
   -- they said, which is read -- and in a thread with four answers in it

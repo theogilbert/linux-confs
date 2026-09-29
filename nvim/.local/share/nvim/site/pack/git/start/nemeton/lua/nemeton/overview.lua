@@ -116,7 +116,7 @@ function M.open()
         instead(function()
           require("nemeton.notes").open()
         end),
-        "every comment on the merge request, one line each",
+        "every thread on the merge request, whole",
       },
       {
         k.pipeline,

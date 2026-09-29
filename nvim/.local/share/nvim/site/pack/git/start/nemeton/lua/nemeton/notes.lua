@@ -1,22 +1,25 @@
--- Every conversation on the merge request, one line each, and the keys
--- to answer them.
+-- Every conversation on the merge request, and the keys to answer
+-- them.
 --
--- An index rather than a transcript: the opening note of each thread
--- and nothing else, because what this window is for is deciding which
--- argument to be in. Where a thread sits, whether it is settled and how
--- many answers it has are on the same line as who wrote it, so the
--- whole review is a column you scan rather than a page you read.
+-- Each thread whole -- every answer in it, and the code it is about
+-- quoted above the first note -- under a rule naming where it sits.
+-- An index of opening notes was quicker to scan and useless to act
+-- on: whether an argument is worth being in is decided by the answers
+-- to it, and a reply written from here was a reply to a thread whose
+-- end you could not see. The rule is what the index was for: where
+-- one conversation stops and the next starts, and what line it is on,
+-- read down the left edge without reading a word of either.
 --
 -- Both kinds, because a review is both. Not every comment is about
 -- code -- "this needs a changelog entry", "let us do this after the
 -- release" -- and those hang off the merge request as a whole with no
 -- line in any buffer to draw them next to; this is the only window
--- they have. The ones that are about code are here too, saying which
--- line, because "what has been said" is one question and answering it
--- twice in two windows made you ask it twice.
+-- they have. The ones that are about code are here too, because "what
+-- has been said" is one question and answering it twice in two
+-- windows made you ask it twice.
 --
--- `:Nemeton conversation` is the transcript: the same threads with
--- every answer in them, to read rather than to scan.
+-- `:Nemeton conversation` is the same threads by file, with no keys
+-- for writing a new one.
 
 local compose = require("nemeton.compose")
 local config = require("nemeton.config")
@@ -24,7 +27,6 @@ local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
-local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 local who = require("nemeton.who")
 
@@ -32,14 +34,16 @@ local M = {}
 
 M.win = nil
 M.buf = nil
--- Line number (1-based) -> the thread drawn on it.
+-- Line number (1-based) -> the thread drawn on it, and the note of it,
+-- for the keys that act on what is under the cursor.
 local rows = {}
+local noted = {}
 
 function M.close()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win, M.buf, rows = nil, nil, {}
+  M.win, M.buf, rows, noted = nil, nil, {}, {}
 end
 
 --- Every thread, in reading order: the ones on code by file and line,
@@ -63,33 +67,63 @@ local function everything()
   )
 end
 
+--- The rule a thread is drawn under: where it sits, across the
+--- window. The line it is on for one on code -- the file alone where
+--- it is on none any more -- and "on the merge request" for the rest.
+local function rule(t, width)
+  local where, hl
+  if t.path then
+    where = t.line and ("%s:%d"):format(t.path, t.line) or t.path
+    hl = "NemetonPath"
+  else
+    where, hl = "on the merge request", "NemetonMeta"
+  end
+  local line = config.comments.thread_rule
+  if not line or line == "" then
+    return { { where, hl } }
+  end
+  local lead = line:rep(2) .. " "
+  local rest = width - vim.fn.strdisplaywidth(lead .. where) - 1
+  return {
+    { lead, "NemetonMeta" },
+    { where, hl },
+    { " " .. line:rep(math.max(rest, 0)), "NemetonMeta" },
+  }
+end
+
 local function render()
-  if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
+  if not (M.buf and vim.api.nvim_buf_is_valid(M.buf) and session.current) then
     return
   end
-  local lines, hls, map, refs = {}, {}, {}, {}
   local list = everything()
-  if #list == 0 then
-    lines = { "nothing has been said on this merge request yet." }
-  else
-    for i, t in ipairs(list) do
-      if i > 1 then
-        table.insert(lines, "")
-      end
-      local text, painted, pointed = marks.shade_lines(
-        threads.render(t, { summary = true }),
-        #lines,
-        t.resolved and "settled" or "open"
-      )
-      vim.list_extend(lines, text)
-      vim.list_extend(hls, painted)
-      vim.list_extend(refs, pointed)
-      for row = #lines - #text + 1, #lines do
-        map[row] = t
-      end
+  -- Measured rather than taken from the window's width: the quoted code
+  -- and a suggestion are drawn to it, and a line one column too long
+  -- wraps back to column zero, outside the rail.
+  local width = vim.api.nvim_win_is_valid(M.win or -1) and vim.api.nvim_win_get_width(M.win)
+    or math.min(math.floor(vim.o.columns * 0.7), 100)
+  local draw = require("nemeton.conversation").reader(session.current.root, width)
+  local chunks, map, notes, ground = {}, {}, {}, {}
+  for i, t in ipairs(list) do
+    if i > 1 then
+      table.insert(chunks, {})
+    end
+    -- The rule belongs to the thread under it, so that the cursor on it
+    -- is on that thread: it is the line <CR> is pressed on, having read
+    -- where the thread is.
+    table.insert(chunks, rule(t, width))
+    map[#chunks] = t
+    for _, line in ipairs(draw(t)) do
+      table.insert(chunks, line)
+      map[#chunks] = t
+      notes[#chunks] = line.note
+      ground[#chunks] = t.resolved and "settled" or "open"
     end
   end
-  rows = map
+  if #chunks == 0 then
+    chunks = { { { "nothing has been said on this merge request yet.", "NemetonMeta" } } }
+  end
+  local lines, hls, refs = marks.shade_lines(chunks, 0, ground)
+  rows, noted = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
@@ -110,6 +144,16 @@ local function thread_at()
     end
   end
   return nil
+end
+
+--- ...and which note of it the cursor is on, where it is on one: with
+--- every answer drawn, "the comment here" is the one being pointed at
+--- rather than one picked out of a list.
+local function note_at()
+  if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
+    return nil
+  end
+  return noted[vim.api.nvim_win_get_cursor(M.win)[1]]
 end
 
 --- Writes one, and puts the window back with it in.
@@ -190,20 +234,21 @@ function M.add(kind)
   end)
 end
 
---- Rewrites one of the comments in the thread under the cursor.
+--- Rewrites the comment under the cursor, or one of the thread's where
+--- the cursor is on none of them -- the rule, the quoted code.
 ---
 --- The window goes away for the same reason it does when writing a
 --- reply: the composer is a split, this is a float over the middle of
 --- the editor, and one is in the way of the other.
 function M.edit()
-  local thread = thread_at()
+  local thread, note = thread_at(), note_at()
   if not thread then
     session.notify("no thread here", vim.log.levels.WARN)
     return
   end
   local mr = session.current
   M.close()
-  require("nemeton.edit").thread(thread)
+  require("nemeton.edit").thread(thread, nil, note)
   -- The composer posts and refreshes on its own; the window comes back
   -- when it does, which is what `write` does for the other two keys.
   vim.api.nvim_create_autocmd("BufWipeout", {
@@ -263,7 +308,7 @@ function M.open(focus)
   M.close()
 
   local width = math.min(math.floor(vim.o.columns * 0.7), 100)
-  local height = math.max(4, math.floor(vim.o.lines * 0.5))
+  local height = math.max(4, math.floor(vim.o.lines * 0.6))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
   who.attach(M.buf)
@@ -323,10 +368,10 @@ function M.open(focus)
       "close",
     },
     -- Into the code for a thread on a line, and into the pane for one
-    -- on none: this window is one line per conversation, and half of
-    -- what it lists has no code to be read beside -- so that is read
-    -- where the ones on code are, with the same keys to answer it,
-    -- and in a window that stays up while the composer is open.
+    -- on none: half of what this window lists has no code to be read
+    -- beside, and this window closes to let the composer in -- so that
+    -- is read where the ones on code are, with the same keys to answer
+    -- it, and in a window that stays up while the composer is open.
     {
       k.code,
       function()
@@ -368,20 +413,17 @@ function M.open(focus)
           -- stays up over the comment that has just gone, and a list
           -- you have to refetch by hand to believe is a list you stop
           -- believing.
-          require("nemeton.edit").delete(thread, render)
+          require("nemeton.edit").delete(thread, render, note_at())
         end
       end,
       "delete a comment in the thread here",
     },
-    -- To the thread's opening note: that is the one line of it this
-    -- window draws, and a link to a thread is a link to where it
-    -- starts.
     {
       k.link,
       function()
-        follow.copy_note(thread_at())
+        follow.copy_note(thread_at(), note_at())
       end,
-      "copy a link to the thread here",
+      "copy a link to the comment under the cursor",
     },
     {
       k.refresh,

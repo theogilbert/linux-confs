@@ -494,7 +494,7 @@ there is and how much of it is yours and unsent.
 
     a               approve it, or take the approval back
     s               send every comment kept unsent
-    c               every comment on it, one line each
+    c               every thread on it, whole
     p               what CI did, job by job
     o               open it on GitLab
     r               refetch the approvals and the diff
@@ -513,8 +513,8 @@ then the ones that are about no line at all.
     r               reply to it
     a               write a comment on the merge request
     t               write one people can reply to
-    e               edit one of its comments
-    d               delete one, after asking
+    e               edit the comment under the cursor
+    d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
     K               who gave the reaction under the cursor
     <leader>mL      a link to it, on the clipboard
@@ -525,19 +525,25 @@ The same keys as the every-thread window below, because it is the same
 threads read at a different depth. `<CR>` on a thread that is about a
 line goes to that line, with the pane on the thread. On one that is
 about no line -- a comment on the merge request itself -- it opens the
-pane on that thread instead, and puts the cursor there: this window is
-one line per conversation and closes to let the composer in, and a
-reply written to a thread you cannot see is a reply to what you
-remember of it. The pane is a split, stays up beside the composer, and
+pane on that thread instead, and puts the cursor there: this window
+closes to let the composer in, and a reply written to a thread you
+cannot see is a reply to what you remember of it. The pane is a split, stays up beside the composer, and
 has the same keys to answer with |nemeton-pane-window|.
 
-An index rather than a transcript. Each thread is its opening note and
-nothing else, on two lines: who wrote it and when, and what they said.
-The first line carries what a list has to say and a block does not --
-where the thread sits, as `path:line`, for the ones that sit anywhere;
-`✓ resolved` when the argument is over; `unsent` when it is yours and
-has not gone; and `+2` for the answers under it that are not on the
-screen. |:Nemeton| `conversation` is where those are read.
+Each thread is drawn whole, as the every-thread window draws it: every
+answer in it, and for one on code the lines it is about quoted above
+the first note, read out of the buffer where the file is open and off
+the disk where it is not. A rule runs over each, naming where it sits:
+>
+    ── src/app.lua:3 ───────────────────────────
+    ── on the merge request ────────────────────
+<
+which is where one conversation stops and the next starts, read down
+the left edge without reading either. `comments.thread_rule` is the
+character it is drawn in; `false` leaves the place alone on the line. A
+resolved thread is on |hl-NemetonSettled|, leant green. `e`, `d` and
+`<leader>mL` act on the comment under the cursor, and ask which of the
+thread's where the cursor is on none of them.
 
 GitLab will not take a reply to a comment that was posted on its own;
 nemeton says so rather than failing the post, and `t` is how you start
@@ -1670,6 +1676,9 @@ COMMENTS                                             *nemeton-config-comments*
       quote_ground = 3,      -- ...and the code a thread is about
       quote_numbers = true,  -- ...under its line numbers
       quote_rule = "─",      -- ...and ruled off from the first note
+      thread_rule = "─",     -- the rule between two threads in `c`
+      settled_accent = "NemetonResolved", -- where a resolved one leans
+      settled_lean = 0.5,    -- ...and how far
       head_band = true,      -- a band under the head of a note as well
       heading_accent = true, -- ...leaning towards the thread's own colour
       heading = 0.06,        -- how far it leans
@@ -1799,9 +1808,12 @@ above it rather than by being a colour. `true` leans each ground towards
 the colour of the thread it is under, an open thread's or a resolved
 one's, which says the most and costs the most.
 
-Whatever it is set to, a settled conversation still sinks back towards
-the page: the lift is halved for it, and the rail and the tick say what
-state a thread is in outright.
+A settled conversation leans somewhere else: towards `settled_accent`
+-- `NemetonResolved`, green -- by `settled_lean` (0.5), and as far off
+the page as an open one, because which arguments are over is read off a
+column of them before a word of any. `settled_accent = false` leans it
+nowhere; `nil` gives it `accent`'s lean at half the lift, which sinks
+back towards the page instead. See |hl-NemetonSettled|.
 
 `reply_ground` is how far the ground under an *answer* stands off, as a
 multiple of `ground`. Above 1 and a reply is a step further off the page
@@ -2295,12 +2307,13 @@ of that. `false` for no band, where the rail and the dimmed text carry
 it alone.
 
 `NemetonSettled` is the ground under a conversation that is resolved:
-half as far off the page, and towards the resolved colour instead where
-there is an accent to lean towards at all. Whether a thread is
-still owed an answer is the thing you want to know before reading a word
-of it, and a block has a colour before it has anything else -- so an
-argument still going on stands off the page, and one that is over sinks
-back towards it.
+as far off the page, and leant towards `comments.settled_accent`
+(`NemetonResolved`, green) by `comments.settled_lean`. Whether a thread
+is still owed an answer is the thing you want to know before reading a
+word of it, and a block has a colour before it has anything else -- so
+the colour says it. With `settled_accent = nil` it is half as far off
+and leans where `accent` does, so that one that is over sinks back
+towards the page instead.
 >
     :hi NemetonInline guibg=#20242c     " pick another
     :hi link NemetonInline Normal       " take it away

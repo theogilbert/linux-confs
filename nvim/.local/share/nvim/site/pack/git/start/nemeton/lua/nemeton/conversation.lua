@@ -1,9 +1,9 @@
 -- Every thread on the merge request, read as conversation.
 --
--- The quickfix list answers "where do I have to go" and the comments
--- window answers "what is there" -- an opening note per line, to scan.
--- This is the one that answers "what was actually said": every note of
--- every thread, in order, so a reviewer coming back to a merge request
+-- The quickfix list answers "where do I have to go". This and the
+-- comments window answer "what was actually said": every note of every
+-- thread, in order -- here by file, with no keys for starting a new
+-- one -- so a reviewer coming back to a merge request
 -- can read the argument without their file windows being taken away
 -- and replaced one jump at a time.
 --
@@ -54,17 +54,16 @@ local function everything(mr)
   return inline, vim.list_extend(vim.list_slice(mr.overview or {}), mr.draft_overview or {})
 end
 
-local function render()
-  if not (M.buf and vim.api.nvim_buf_is_valid(M.buf) and session.current) then
-    return
-  end
-  local inline, overall = everything(session.current)
-  -- `ground` is which lines are a conversation and which are this
-  -- window's own furniture -- a file name, a line number, the blank
-  -- between two threads. The furniture stays on the window's
-  -- background, so that what is on a ground is what somebody said.
-  local chunks, map, notes, ground = {}, {}, {}, {}
-
+--- The drawing of one thread, as the every-thread window draws it:
+--- every note in it, and the code it is about quoted above the first.
+--- `width` is the window's own. What it reads of the files is read
+--- once per file however many threads are drawn with it, so one of
+--- these is made per redraw rather than per thread.
+---
+--- Shared with the comments window, which reads the same threads in
+--- another order and with other keys, and would otherwise be a second
+--- copy of how a thread read with no file open finds its code.
+function M.reader(root, width)
   -- What a suggestion would replace, read out of the file it is about.
   --
   -- Out of the buffer where the file is open -- that is what is on the
@@ -73,7 +72,6 @@ local function render()
   -- file windows open at all, which is half of why it exists. Without
   -- it a suggestion here is the green half of a diff: what the code
   -- would become, and no sign of what it is now.
-  local root = session.current.root
   local on_disk = {}
   local function file_lines(path)
     local full = root .. "/" .. path
@@ -130,26 +128,11 @@ local function render()
     return all and syntax.painter_of(all, syntax.of_path(t.path)) or nil
   end
 
-  local function heading(text)
-    if #chunks > 0 then
-      table.insert(chunks, {})
-    end
-    table.insert(chunks, { { text, "NemetonAuthor" } })
-  end
-
-  -- This window is a real buffer with `wrap` on, so nothing here is
-  -- lost at the right-hand edge -- but a wrapped line comes back at
-  -- column zero, outside the rail, and a rail that only reaches half of
-  -- its own thread has stopped being an edge. Wrapping it here keeps
-  -- every line inside it.
-  local width = vim.api.nvim_win_is_valid(M.win or -1) and vim.api.nvim_win_get_width(M.win)
-    or math.min(math.floor(vim.o.columns * 0.7), 100)
-
   local context = config.comments.context or 0
 
-  local function thread(t)
+  return function(t)
     local replaced = replaced_in(t)
-    local drawn = threads.render(t, {
+    return threads.render(t, {
       replaced = replaced,
       original = function(above, below)
         return session.original(t, above, below)
@@ -171,7 +154,38 @@ local function render()
       -- yourself from in here.
       was = replaced and session.quoted(t, file_lines(t.path), context, t.line) or nil,
     })
-    for _, line in ipairs(drawn) do
+  end
+end
+
+local function render()
+  if not (M.buf and vim.api.nvim_buf_is_valid(M.buf) and session.current) then
+    return
+  end
+  local inline, overall = everything(session.current)
+  -- `ground` is which lines are a conversation and which are this
+  -- window's own furniture -- a file name, a line number, the blank
+  -- between two threads. The furniture stays on the window's
+  -- background, so that what is on a ground is what somebody said.
+  local chunks, map, notes, ground = {}, {}, {}, {}
+
+  local function heading(text)
+    if #chunks > 0 then
+      table.insert(chunks, {})
+    end
+    table.insert(chunks, { { text, "NemetonAuthor" } })
+  end
+
+  -- This window is a real buffer with `wrap` on, so nothing here is
+  -- lost at the right-hand edge -- but a wrapped line comes back at
+  -- column zero, outside the rail, and a rail that only reaches half of
+  -- its own thread has stopped being an edge. Wrapping it here keeps
+  -- every line inside it.
+  local width = vim.api.nvim_win_is_valid(M.win or -1) and vim.api.nvim_win_get_width(M.win)
+    or math.min(math.floor(vim.o.columns * 0.7), 100)
+
+  local draw = M.reader(session.current.root, width)
+  local function thread(t)
+    for _, line in ipairs(draw(t)) do
       table.insert(chunks, line)
       map[#chunks] = t
       notes[#chunks] = line.note

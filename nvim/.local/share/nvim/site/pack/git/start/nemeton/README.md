@@ -32,9 +32,10 @@ same ground as this file, with tags.
 - posts a new thread against the line under the cursor, with the position
   GitLab needs (the three diff shas, the path on both sides, the line);
 - replies into an existing thread, and resolves or reopens one;
-- gathers every comment on the merge request into one window, an
-  opening note per line — where it sits, whether it is settled, how many
-  answers it has — to read them in, answer them from, and add your own.
+- gathers every comment on the merge request into one window, each
+  thread whole under a rule saying where it sits, with the code it is
+  about quoted above it — to read them in, answer them from, and add
+  your own.
 
 The markers are extmarks, not signs: you edit the file while you review
 it, and a marker that does not follow its line points at the wrong code.
@@ -54,8 +55,11 @@ else paints these lines: a diff plugin's red and green sit on the code
 above and below, and a ground a whisper away from the file's own reads
 as one more band of that. `comments.ground` (0.15, or `false` for no
 band at all) is how far. A settled conversation gets `NemetonSettled`
-instead — half as far, towards the resolved colour, so an argument still
-going on stands off the page and one that is over sinks back towards it.
+instead — as far off, but leant towards `comments.settled_accent`
+(`NemetonResolved`, green) by `comments.settled_lean` (0.5), so which
+arguments are over is read off a column of them before a word of any.
+`settled_accent = false` leans it nowhere; `nil` gives it the old
+treatment, half as far towards `accent`.
 Both grounds are used under the code where the conversations are
 expanded *and* inside the three windows that draw one — `:Nemeton
 notes`, `:Nemeton conversation` and the peek float — where a block on a
@@ -125,7 +129,7 @@ rest.
 | `:Nemeton resolve` | resolve or reopen it |
 | `:Nemeton note` | an overall comment, on the MR rather than a line |
 | `:Nemeton publish` | send every comment kept unsent |
-| `:Nemeton notes` | every comment, one line each, in a window that answers them |
+| `:Nemeton notes` | every thread, whole, in a window that answers them |
 | `:Nemeton threads` | every thread on the merge request, in the quickfix list |
 | `:Nemeton conversation` | the same threads, to read rather than to walk |
 | `:Nemeton approve` | approve the open merge request |
@@ -271,16 +275,16 @@ count, `✓2/2` or `◌0/1`; who has approved it is a name, and names are
 
 In the comments window: `<CR>` reads the thread under the cursor —
 beside its code for one on a line, and in the pane for one on the merge
-request itself, which has no code to be read beside and is otherwise
-only ever seen as its opening line; the pane stays up while the reply
-is written. `r` replies to it, `a` writes a comment on the merge
-request, `t` writes one people can reply to, `e` edits one of its
-comments, `d` deletes one, `K` says who gave the reaction under the
-cursor, `<leader>mL` copies a link to it, `R` refetches, `q` closes.
-Every thread is
-there, the ones on code saying which line they sit on, and each is its
-opening note and nothing else — the answers to it are what
-`:Nemeton conversation` is for.
+request itself, which has no code to be read beside; the pane stays up
+while the reply is written. `r` replies to it, `a` writes a comment on
+the merge request, `t` writes one people can reply to, `e` edits the
+comment under the cursor, `d` deletes it, `K` says who gave the
+reaction under the cursor, `<leader>mL` copies a link to it, `R`
+refetches, `q` closes. Every thread is there whole — every answer, and
+for one on code the lines it is about quoted above the first note —
+under a rule naming where it sits: `── src/app.lua:3 ──`, or `── on the
+merge request ──` (`comments.thread_rule`, "─"; `false` for the place
+alone). A resolved one is on a green ground.
 
 `<C-]>` follows what is under the cursor — there, in the pane and in the
 every-thread window. It is vim's own key for "go to the thing under the
@@ -1301,6 +1305,15 @@ the repository root, both runnable by hand:
 ```
 luacheck lua plugin tests
 stylua --check lua plugin tests/run.lua
+```
+
+`./tests/check.sh` runs all of it the way CI does — the suite on your
+`nvim` and again on the oldest one in CI's matrix, downloaded once into
+`~/.cache/nemeton/` (Linux x86-64 only) — and `.githooks/pre-push` runs
+that before every push, once it is turned on:
+
+```
+git config core.hooksPath .githooks
 ```
 
 ## What is not done

@@ -1,7 +1,7 @@
 -- Every thread on the merge request, in one list.
 --
 -- The gutter answers "is there a comment on this line" and the comments
--- window answers "what has been said, in one line each". Neither
+-- window answers "what has been said". Neither
 -- answers the question a reviewer asks on the way back in: what is
 -- still open, and where. That question wants a list of places, and
 -- Neovim already has one -- the quickfix list, with `:cnext` on it, the

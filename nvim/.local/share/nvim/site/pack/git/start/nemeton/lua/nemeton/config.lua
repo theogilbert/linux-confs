@@ -21,20 +21,19 @@ return {
 
     -- Whether the rows say what CI made of each merge request.
     --
-    -- On, and it costs one API call per open row: GitLab's merge
-    -- request list carries no pipeline, so the only way to fill that
-    -- column is to ask per merge request. The calls go out together
-    -- and each row is redrawn as its answer lands, so the list is
-    -- usable throughout -- but on a slow forge, or a queue of thirty,
-    -- this is the switch.
+    -- GitLab's merge request list carries no pipeline, so it is asked
+    -- for -- in the one GraphQL call that carries `stats` and
+    -- `approvals` too, for the whole page of open rows at once.
     ci = true,
 
     -- Whether the rows say how far each merge request has got through
     -- its approvals.
     --
-    -- On, and it costs one API call per open row: GitLab's list
-    -- carries no approvals either. The glyph and the count only -- who
-    -- has been in is `<leader>md`, or the pane under the list.
+    -- GitLab's list carries no approvals either; they are in the same
+    -- GraphQL call as `ci`. The glyph and the count only -- who has
+    -- been in is `<leader>md`, or the pane under the list. The count
+    -- is the paid edition's: on the free one there is no number of
+    -- approvals required, and a row says only whether anybody has.
     approvals = true,
 
     -- Whether the rows say how many comments you have written on each
@@ -48,21 +47,19 @@ return {
     -- told about it.
     drafts = true,
 
-    -- How many of the per-row calls above are allowed to be in flight
-    -- at once. Each is a process that starts, authenticates and opens
-    -- its own connection: thirty together are slower end to end than
-    -- six at a time, and take the machine down with them while they
-    -- run. One number for both questions rather than one each, or a
-    -- queue of thirty rows is twelve processes rather than six.
+    -- How many of the per-row calls above -- `drafts`, the one GraphQL
+    -- has nothing for -- are allowed to be in flight at once. Each is a
+    -- process that starts, authenticates and opens its own connection:
+    -- thirty together are slower end to end than six at a time, and
+    -- take the machine down with them while they run.
     concurrency = 6,
 
     -- Whether the rows say how much each merge request changes.
     --
-    -- One call for the open rows, through GraphQL -- the only GraphQL
-    -- in this plugin, and worth the exception: REST publishes no line
-    -- totals anywhere, so the REST way to put "+120 −34" on thirty rows
-    -- is to fetch thirty entire diffs. Off is one line, and a GitLab
-    -- whose GraphQL will not answer leaves the column empty by itself.
+    -- In the same GraphQL call as `ci` and `approvals`: REST publishes
+    -- no line totals anywhere, so the REST way to put "+120 −34" on
+    -- thirty rows is to fetch thirty entire diffs. A GitLab whose
+    -- GraphQL will not answer leaves the three columns empty by itself.
     stats = true,
 
     -- Rows of the pane under the list -- the changelog, or the
@@ -400,9 +397,10 @@ return {
     -- hover on the web page and a line of usernames in here, and a
     -- review is read for what people wrote.
     --
-    -- `false` is one GraphQL call fewer on every refresh: the whole of
-    -- this is one request beside the discussions, and none of it is
-    -- needed to read or write a comment. See `glab.reactions`, which
+    -- `false` is a lighter GraphQL call on every refresh: the whole of
+    -- this is one request beside the discussions -- the approvals ride
+    -- in it too -- and none of it is needed to read or write a comment.
+    -- See `glab.review_facts`, which
     -- fails quietly for the same reason -- an instance too old for the
     -- field, or a token without `read_api`, is a review drawn without
     -- pictures rather than an error after every post.
@@ -1025,7 +1023,7 @@ return {
       edit = "e", -- rewrite one of the comments in this thread
       delete = "d", -- delete one of them, after asking
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who gave the reaction under the cursor
+      who = "K", -- who gave the reaction, or when the comment was written
       -- A link to the thread under the cursor on the clipboard. The
       -- same key as on a line of code, because it is the same gesture
       -- -- a link to what the cursor is on -- and the one key in these
@@ -1062,7 +1060,7 @@ return {
       edit = "e",
       delete = "d",
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who gave the reaction under the cursor
+      who = "K", -- who gave the reaction, or when the comment was written
       link = "<leader>mL", -- a link to the comment under the cursor, copied
       refresh = "R",
       quit = "q",
@@ -1104,8 +1102,10 @@ return {
       -- that read.
       react = "+",
       -- ...and who gave the one under the cursor, in a float the next
-      -- move takes away. Vim's own key for "what is this", and the same
-      -- answer the cursor resting on it gives (`comments.hover`).
+      -- move takes away -- or, on the head of a note, exactly when it
+      -- was written and when its commit was made. Vim's own key for
+      -- "what is this", and the same answer the cursor resting on it
+      -- gives (`comments.hover`).
       who = "K",
       -- A link to the comment under the cursor, on the clipboard: what
       -- the forge's own "copy link" on a comment gives you, from the

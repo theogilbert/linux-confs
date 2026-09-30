@@ -692,11 +692,23 @@ end)
 --- resolve key on a thread. Which way it goes is read from
 --- `user_has_approved`; a GitLab too old to send it is assumed not to
 --- have your approval yet, and `:Nemeton unapprove` says so outright.
+---
+--- Asked of the forge at the keypress rather than read off what this
+--- editor last heard: an approval withdrawn on the web page -- or taken
+--- away by a push, on a project that resets approvals -- is still on
+--- the screen here, and a toggle that trusted it would withdraw an
+--- approval that is not there instead of giving the one you meant to.
+--- Where the forge will not say, what was last heard decides.
 M.approve = with_session(function(want, cb)
   local mr = session.current
-  local approval = require("nemeton.detail").approval(mr.approvals)
   if want == nil then
-    want = not (approval and approval.mine)
+    session.refresh_approvals(function()
+      if session.current == mr then
+        local approval = require("nemeton.detail").approval(mr.approvals)
+        M.approve(not (approval and approval.mine), cb)
+      end
+    end)
+    return
   end
   glab.approve(mr.root, mr.iid, want, function(data, err)
     if not data then
@@ -707,6 +719,19 @@ M.approve = with_session(function(want, cb)
       return
     end
     session.notify(want and ("approved !" .. mr.iid) or ("approval withdrawn from !" .. mr.iid))
+    -- Both endpoints answer with the approvals as they now stand, which
+    -- is what a second call would fetch. Asked for anyway where the
+    -- answer is something else -- a forge that sends nothing back.
+    if type(data) == "table" and data.user_has_approved ~= nil then
+      if session.current == mr then
+        mr.approvals = data
+        session.redraw_all()
+      end
+      if cb then
+        cb(data)
+      end
+      return
+    end
     session.refresh_approvals(cb)
   end)
 end)

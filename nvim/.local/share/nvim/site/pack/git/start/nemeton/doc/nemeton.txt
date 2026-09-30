@@ -500,6 +500,10 @@ there is and how much of it is yours and unsent.
     r               refetch the approvals and the diff
     q               close
 
+Which way `a` goes is asked of the forge when it is pressed, not read
+off what this window last showed: an approval withdrawn on the web page,
+or reset by a push, is given back rather than withdrawn again.
+
 The threads that are on the code are not here: they are read where the
 code is -- in the gutter, on `]m`, in the quickfix list.
 
@@ -516,7 +520,7 @@ then the ones that are about no line at all.
     e               edit the comment under the cursor
     d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
-    K               who gave the reaction under the cursor
+    K               who gave the reaction, or when the comment was written
     <leader>mL      a link to it, on the clipboard
     R               refetch
     q               close
@@ -558,7 +562,7 @@ EVERY THREAD                                     *nemeton-conversation-window*
     e               edit the comment under the cursor
     d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
-    K               who gave the reaction under the cursor
+    K               who gave the reaction, or when the comment was written
     <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               close
@@ -656,7 +660,7 @@ enough.
     x               resolve the thread, or reopen it
     <C-]>           follow what is under the cursor |nemeton-follow|
     +               react to the comment under the cursor
-    K               who gave the reaction under the cursor
+    K               who gave the reaction, or when the comment was written
     <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               fold the conversations away
@@ -1165,14 +1169,27 @@ Nothing to close and nothing left open over the prose. Resting is
 a few hundred milliseconds in most configs, where it is what makes a
 hover a hover. `comments.hover = false` leaves only the key.
 
-All of it is one GraphQL call beside the discussions on every refresh.
+The head of a note is a hover too. It says `2d` and eight digits of a
+sha, which is what a head has room for; resting on it, or `K` on it,
+says both exactly -- the day, the date and the time to the second, in
+your own zone:
+>
+    written Thursday 27 August 2026, 12:00:00 CEST
+    commit  a1b2c3d4 · Wednesday 26 August 2026, 18:40:12 CEST
+<
+The commit's time is the clone's (`git show`), and where the clone has
+not got it, when it was pushed to the merge request, as `pushed`.
+
+All of it is one GraphQL call beside the discussions on every refresh,
+the same call that brings the approvals and says whose token this is.
 REST publishes reactions one note at a time, so the REST answer to
 "what has been reacted to in this review" is a request per comment --
 forty subprocesses to draw a row of thumbs. It fails quietly: an
 instance too old for the field, a token without `read_api`, GraphQL
 turned off, all of them are a review drawn without pictures rather than
-an error after every post. `comments.reactions = false` is that on
-purpose, and one call fewer.
+an error after every post -- and the approvals are asked of REST
+instead. `comments.reactions = false` is that on purpose, and a lighter
+query.
 
                                                               *nemeton-drafts*
 KEEPING IS THE DEFAULT. A comment you write becomes a GitLab draft note:
@@ -1568,9 +1585,11 @@ was the same lines read twice. The widest of them says how far up it
 reaches.
 
 That code is read out of the checkout with `git show`, not from the
-forge: the commit the note was written against is one this repository
-already has. A commit that is not here -- force-pushed away -- is asked
-about once and then left alone, and the quotation is drawn plain, since
+forge: the commit the note was written against is usually one this
+repository already has. One it has not got -- the target branch before
+your last pull, a push since rebased away -- is fetched by its sha from
+the project's remote, once per session. One the forge will not hand
+over either is left alone, and the quotation is drawn plain, since
 there is nothing to compare it against.
 
 The same revision is the one a suggestion's red half is read out of:
@@ -1601,19 +1620,27 @@ LIST                                                     *nemeton-config-list*
       ci = true,              -- does each row say what CI made of it
       approvals = true,       -- ...and how far its approvals have got
       drafts = true,          -- ...and what you have not sent on it
-      concurrency = 6,        -- how many per-row calls at once
+      concurrency = 6,        -- how many `drafts` calls at once
       stats = true,           -- does each row say how much it changes
       preview_height = 14,    -- rows of the pane under the list
       remember = true,        -- write down what is open, for the prompt
       remember_path = nil,    -- nil: $XDG_STATE_HOME/nemeton/merge-requests.json
     }
 <
-`ci`, `approvals` and `drafts` cost one API call each per row: GitLab's
-merge request list carries no pipeline, no approvals, and a draft note
-is yours and is in no list payload at all. The calls share one queue, a
-few at a time, and each row is redrawn as its own answer lands, so the
-list is readable throughout -- but on a slow forge, or a queue of
-thirty, these are the switches.
+GitLab's merge request list carries no pipeline, no approvals and no
+line totals, and a draft note is yours and is in no list payload at
+all. `ci`, `approvals` and `stats` are one GraphQL call for the whole
+page of open rows. `drafts` is one call per row, because GraphQL does
+not publish draft notes: those go out a few at a time (`concurrency`),
+and each row is redrawn as its own answer lands, so the list is
+readable throughout -- but on a slow forge, or a queue of thirty, it is
+the switch.
+
+The count of approvals a row needs is the paid edition's. The free
+one's GraphQL has no such field, and refuses a query that asks for one
+whole, so the forge is asked which it is (`api/version`, once) and on
+the free one a row says only whether anybody has approved it -- which
+is all its REST says too.
 
 `ci`, `approvals` and `stats` ask about the open rows only. What CI did
 to a merge request that is merged, and who approved it before it was,
@@ -1625,9 +1652,8 @@ rather than in this editor: it is still there tomorrow, and on a machine
 you are not sitting at, and this queue is the only place you would ever
 be told about it.
 
-`stats` is one GraphQL call for all the open rows, and the only GraphQL
-in the plugin. REST publishes no line totals anywhere. An instance whose
-GraphQL will not answer leaves the column empty by itself.
+An instance whose GraphQL will not answer leaves those three columns
+empty by itself.
 
 COMMENTS                                             *nemeton-config-comments*
 >
@@ -2340,8 +2366,8 @@ where the tick and the dimmed text carry it alone.
     itself, and never printed into a buffer you are about to paste into
     an issue);
   - the GitLab version, against the 15.10 that draft notes need;
-  - whether the GraphQL endpoint answers, which is what the size column
-    in the list needs;
+  - whether the GraphQL endpoint answers, which is what the size, CI and
+    approvals columns in the list need;
   - where the log is being written.
 
 ==============================================================================

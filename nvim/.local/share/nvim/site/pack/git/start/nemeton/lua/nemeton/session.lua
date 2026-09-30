@@ -312,21 +312,34 @@ function M.refresh(cb)
     done()
   end)
 
-  -- ...and the reactions, in one call for the whole review. Quietly
-  -- too, and for a softer reason than the drafts below: this is
-  -- decoration, and a forge that will not answer for it is a review
-  -- drawn without pictures.
-  if not config.comments.reactions then
-    done()
-  else
-    glab.me(mr.root, function(who)
-      mr.me = who and who.username or nil
-      glab.reactions(mr.root, mr.iid, function(given)
-        mr.reactions = given
+  -- ...and the reactions, the approvals and whose token this is, in
+  -- one call for the whole review. Quietly, and for a softer reason
+  -- than the drafts below: the reactions are decoration, and a forge
+  -- whose GraphQL will not answer is a review drawn without pictures.
+  -- What cannot be done without -- the approvals, and who you are --
+  -- is asked of REST instead.
+  glab.review_facts(
+    mr.root,
+    mr.iid,
+    { reactions = config.comments.reactions, approvals = true },
+    function(facts)
+      if facts then
+        mr.me = facts.me
+        mr.reactions = facts.reactions or {}
+        if facts.approvals and M.current == mr then
+          mr.approvals = facts.approvals
+        end
+        done()
+        return
+      end
+      mr.reactions = {}
+      M.refresh_approvals()
+      glab.me(mr.root, function(who)
+        mr.me = who and who.username or nil
         done()
       end)
-    end)
-  end
+    end
+  )
 
   -- ...and the pushes, for the commit in the head of each note.
   -- Quietly as well: a forge that will not list them leaves the
@@ -378,6 +391,10 @@ end
 -- refresh; emptied when the session closes, because a review of another
 -- merge request is another set of files.
 local blobs = {}
+-- sha -> true once the checkout has been asked to fetch it: once per
+-- session, whatever came of it, so a commit the forge will not hand
+-- over is not asked for on every redraw.
+local fetching = {}
 
 --- A file as it was at `sha`, or nil while that is not known yet.
 ---
@@ -392,6 +409,13 @@ local blobs = {}
 --- own. Remembered either way: a blob this checkout does not have --
 --- the commit was force-pushed away -- is asked about once rather than
 --- on every redraw for the rest of the session.
+---
+--- ...except when the checkout does not have the commit at all, which
+--- is not rare: a thread written against the target branch as it was
+--- before your last pull, or a push the branch has since been rebased
+--- past. git says the same thing for that as for a file the commit does
+--- not contain, so the commit is asked about, and a missing one is
+--- fetched from the remote and the file asked for again.
 local function blob(root, sha, path)
   local key = sha .. ":" .. path
   local have = blobs[key]
@@ -404,6 +428,18 @@ local function blob(root, sha, path)
   vim.system(cmd, { text = true, cwd = root }, function(res)
     done(res.code, res.stderr)
     if res.code ~= 0 then
+      if not fetching[sha] then
+        vim.schedule(function()
+          M.fetch_commit(root, sha, function(got)
+            if got then
+              blobs[key] = nil
+              if M.current then
+                M.redraw_all()
+              end
+            end
+          end)
+        end)
+      end
       return
     end
     local lines = vim.split(res.stdout or "", "\n", { plain = true })
@@ -814,6 +850,44 @@ local function address(url)
   return host and (host .. "/" .. path) or nil
 end
 
+local function git_in(root, args, next)
+  local cmd = vim.list_extend({ "git" }, args)
+  local done = log.exec(cmd, { cwd = root })
+  vim.system(cmd, { text = true, cwd = root }, function(res)
+    done(res.code, res.stderr)
+    vim.schedule(function()
+      next(res)
+    end)
+  end)
+end
+
+--- The remote the merge request's project is: the one whose URL names
+--- it -- a fork's remote has merge requests of its own under the same
+--- numbers -- then `origin`, then any. `cb(nil)` for a checkout with no
+--- remote at all.
+local function remote_for(root, mr, cb)
+  local project = mr
+    and mr.web_url
+    and address((mr.web_url:match("^(.-)/%-/merge_requests/") or ""))
+  git_in(root, { "config", "--get-regexp", "^remote\\..*\\.url$" }, function(all)
+    local remote, first = nil, nil
+    for line in (all.stdout or ""):gmatch("[^\n]+") do
+      local name, url = line:match("^remote%.(.+)%.url%s+(%S+)")
+      if name then
+        first = first or name
+        if name == "origin" and not remote then
+          remote = name
+        end
+        if project and address(url) == project then
+          remote = name
+          break
+        end
+      end
+    end
+    cb(remote or first)
+  end)
+end
+
 --- Checks the merge request's head out by the ref the forge keeps for
 --- it, for a merge request whose branch is gone.
 ---
@@ -838,32 +912,9 @@ end
 --- itself is what failed, which is a different sentence.
 function M.checkout_ref(root, mr, cb)
   local function git(args, next)
-    local cmd = vim.list_extend({ "git" }, args)
-    local done = log.exec(cmd, { cwd = root })
-    vim.system(cmd, { text = true, cwd = root }, function(res)
-      done(res.code, res.stderr)
-      vim.schedule(function()
-        next(res)
-      end)
-    end)
+    git_in(root, args, next)
   end
-  local project = mr.web_url and address((mr.web_url:match("^(.-)/%-/merge_requests/") or ""))
-  git({ "config", "--get-regexp", "^remote\\..*\\.url$" }, function(all)
-    local remote, first = nil, nil
-    for line in (all.stdout or ""):gmatch("[^\n]+") do
-      local name, url = line:match("^remote%.(.+)%.url%s+(%S+)")
-      if name then
-        first = first or name
-        if name == "origin" and not remote then
-          remote = name
-        end
-        if project and address(url) == project then
-          remote = name
-          break
-        end
-      end
-    end
-    remote = remote or first
+  remote_for(root, mr, function(remote)
     if not remote then
       cb(false, "no remote to fetch from")
       return
@@ -880,6 +931,38 @@ function M.checkout_ref(root, mr, cb)
           return
         end
         cb(true)
+      end)
+    end)
+  end)
+end
+
+--- Fetches one commit this checkout has not got: `cb(true)` once it is
+--- here, `cb(false)` where it was here all along or could not be got.
+---
+--- By its sha, which GitLab serves for anything it still keeps --
+--- branches, the merge request's own refs, and the keep-around refs it
+--- holds for every push a merge request has had -- so this works for
+--- the target branch you have not pulled and for a push since rebased
+--- away alike. Quietly: what depends on it is a quotation of the code a
+--- thread was written against, and the thread is drawn without one.
+function M.fetch_commit(root, sha, cb)
+  if fetching[sha] then
+    cb(false)
+    return
+  end
+  fetching[sha] = true
+  git_in(root, { "cat-file", "-e", sha .. "^{commit}" }, function(have)
+    if have.code == 0 then
+      cb(false)
+      return
+    end
+    remote_for(root, M.current, function(remote)
+      if not remote then
+        cb(false)
+        return
+      end
+      git_in(root, { "fetch", "--no-tags", "--quiet", remote, sha }, function(res)
+        cb(res.code == 0)
       end)
     end)
   end)
@@ -980,7 +1063,6 @@ function M.open(iid, opts)
       draft_replies = {},
       mode = "signs",
     }
-    M.refresh_approvals()
     M.refresh_changes()
     M.refresh(function()
       local n = #(M.current.inline or {})
@@ -1360,7 +1442,7 @@ function M.close()
     return
   end
   M.current = nil
-  blobs = {}
+  blobs, fetching = {}, {}
   require("nemeton.pane").close()
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     marks.clear(bufnr)

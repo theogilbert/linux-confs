@@ -278,13 +278,13 @@ beside its code for one on a line, and in the pane for one on the merge
 request itself, which has no code to be read beside; the pane stays up
 while the reply is written. `r` replies to it, `a` writes a comment on
 the merge request, `t` writes one people can reply to, `e` edits the
-comment under the cursor, `d` deletes it, `K` says who gave the
-reaction under the cursor, `<leader>mL` copies a link to it, `R`
-refetches, `q` closes. Every thread is there whole — every answer, and
-for one on code the lines it is about quoted above the first note —
-under a rule naming where it sits: `── src/app.lua:3 ──`, or `── on the
-merge request ──` (`comments.thread_rule`, "─"; `false` for the place
-alone). A resolved one is on a green ground.
+comment under the cursor, `d` deletes it, `K` says who gave the reaction
+under the cursor, or when the comment was written, `<leader>mL` copies a
+link to it, `R` refetches, `q` closes. Every thread is there whole —
+every answer, and for one on code the lines it is about quoted above the
+first note — under a rule naming where it sits: `── src/app.lua:3 ──`,
+or `── on the merge request ──` (`comments.thread_rule`, "─"; `false`
+for the place alone). A resolved one is on a green ground.
 
 `<C-]>` follows what is under the cursor — there, in the pane and in the
 every-thread window. It is vim's own key for "go to the thing under the
@@ -371,9 +371,12 @@ the buffer again.
 `<leader>md` is where a merge request is looked at and acted on: what
 it is for, how big it is, what CI made of it, who has approved it, how
 much conversation is on it and how much of that is yours and unsent.
-In it: `a` approves it or takes the approval back, `s` sends every
+In it: `a` approves it or takes the approval back — whichever the forge,
+asked at the keypress, says it is not, so an approval withdrawn on the
+web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
-pipeline's jobs, `o` opens it in a browser, `r` refetches, `q` closes. None of them is a key you read with — it is a window of
+pipeline's jobs, `o` opens it in a browser, `r` refetches, `q` closes.
+None of them is a key you read with — it is a window of
 prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
 on `]m`, in the quickfix list.
@@ -406,8 +409,8 @@ the review starts on the new one, discussions and all.
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `K` says who gave the reaction under the
-cursor, `<leader>mL` copies a link to the comment under the cursor,
-`R` refetches, `q` closes.
+cursor, or when the comment was written, `<leader>mL` copies a link to
+the comment under the cursor, `R` refetches, `q` closes.
 
 The pane's own header is the one line of it that does not scroll, so it
 carries what stays true while the conversation is read: its state, in
@@ -424,18 +427,18 @@ block are trimmed the same way, in their own order: the commit first,
 then the date, and the name of who said it only when dropping both was
 not enough.
 
-In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the code
-the thread being read is about, landing the way `]m` lands, with the
-whole span of a comment written over a selection in the middle of the
-window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says who
-gave the reaction under the cursor, `<leader>mL` copies a link to the
-comment under the cursor, `R` refetches — and `q`
-folds the conversations away rather than only closing
-the window, because while it is open the pane *is* what expanded means.
-Closing it any other way says the same thing: the mode follows the
-window. `]m` and `[m` work in there too: out in the code they move the
-cursor and the pane follows, and in the pane they move the cursor of the
-window it was opened from, so the walk happens without your reading
+In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the
+code the thread being read is about, landing the way `]m` lands, with
+the whole span of a comment written over a selection in the middle of
+the window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says
+who gave the reaction under the cursor, or when the comment was written,
+`<leader>mL` copies a link to the comment under the cursor, `R`
+refetches — and `q` folds the conversations away rather than only
+closing the window, because while it is open the pane *is* what expanded
+means. Closing it any other way says the same thing: the mode follows
+the window. `]m` and `[m` work in there too: out in the code they move
+the cursor and the pane follows, and in the pane they move the cursor of
+the window it was opened from, so the walk happens without your reading
 position leaving the prose. A thread on the merge request itself can be
 read in it too — `<CR>` on one in the comments window puts it there,
 headed `on the merge request`, with nothing to quote and the same keys
@@ -605,11 +608,13 @@ conversations on one line are two conversations about one piece of
 code, and the second copy between them was the same lines read twice.
 The widest of them says how far up it reaches.
 
-The old lines are read out of the checkout
-with `git show`, not from the forge — the commit the note was written
-against is one the repository already has — and a commit that is not
-there any more is asked about once and then left alone, with the
-quotation drawn plain since there is nothing to compare it to.
+The old lines are read out of the checkout with `git show`, not from
+the forge — the commit the note was written against is usually one the
+repository already has. One it has not got — the target branch before
+your last pull, a push since rebased away — is fetched by its sha from
+the project's remote, once. One the forge will not hand over either is
+left alone, with the quotation drawn plain since there is nothing to
+compare it to.
 
 `<leader>mx` expands the conversations into a pane, and
 `comments.expand` says which side it opens on: `"right"` or `"bottom"`.
@@ -981,6 +986,12 @@ takes it away. Resting is `CursorHold`, which is `updatetime` — four
 seconds as Neovim ships, a few hundred milliseconds in most configs.
 `comments.hover = false` leaves only the key.
 
+The head of a note — `reviewer · 2d · a1b2c3d4` — is a hover too:
+resting on it, or `K`, says exactly when the comment was written and
+when its commit was made, as `Thursday 27 August 2026, 12:00:00 CEST`.
+The commit's time is the clone's; where the clone has not got it, it is
+when that commit was pushed to the merge request.
+
 That list is short on purpose and it is not the limit.
 `vim.ui.select` is a numbered list unless you have replaced it, and a
 numbered list of all 258 names `emoji.lua` knows is a wall rather than
@@ -1011,8 +1022,10 @@ The whole of it is one
 GraphQL call beside the discussions — REST publishes reactions one note
 at a time, which would be a request per comment — and it fails quietly,
 because an instance too old for the field is a review drawn without
-pictures rather than an error after every post.
-`comments.reactions = false` turns it off and saves the call.
+pictures rather than an error after every post. The same call brings
+the approvals and says whose token this is, so opening a review is two
+calls fewer than asking REST for each. `comments.reactions = false`
+leaves the reactions out of it.
 
 In the composer: `<C-s>` or `:w` **keeps** the comment for the review
 you are writing, `<C-p>` posts it to the merge request there and then,
@@ -1244,7 +1257,8 @@ lua/nemeton/
                  under the list and in the merge request's own window
   overview.lua   that window: the description, and the keys to act on it
   peek.lua       one thread, in a float
-  who.lua        who gave a reaction, in a float the next move closes
+  who.lua        who gave a reaction, or when a note was written, in a
+                 float the next move closes
   notes.lua      the comments about the merge request rather than about
                  a line of it -- read, answered, written
   conversation.lua  every thread at once, to read rather than to walk

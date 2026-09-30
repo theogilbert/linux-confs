@@ -233,48 +233,6 @@ end
 -- iid -> { at = updated_at, stats = ... }, for the life of the editor.
 local stats_cache = {}
 
---- How much each open row changes, in one call for all of them.
----
---- One call, so there is no pool and no ordering to think about: it is
---- either known for every row a moment after the window is up, or not
---- known at all -- on a GitLab whose GraphQL will not answer, the
---- column simply stays empty.
----
---- `from` is how many rows have already been asked about: a page
---- arriving asks about the page, not about the whole queue again.
-local function fetch_stats(root, from)
-  if not config.list.stats then
-    return
-  end
-  local wanted, at_row = {}, {}
-  for i = (from or 0) + 1, #rows do
-    local mr = rows[i]
-    local hit = stats_cache[mr.iid]
-    if not live(mr) then -- luacheck: ignore
-      -- nothing to ask: a merged merge request is not going to change
-    elseif hit and hit.at == mr.updated_at then
-      mr.diff_stats = hit.stats
-      redraw_row(i)
-    else
-      table.insert(wanted, mr.iid)
-      at_row[mr.iid] = i
-    end
-  end
-  if #wanted == 0 then
-    return
-  end
-  glab.diff_summaries(root, wanted, function(data)
-    for iid, stats in pairs(data or {}) do
-      local i = at_row[iid]
-      if i and rows[i] and rows[i].iid == iid then
-        stats_cache[iid] = { at = rows[i].updated_at, stats = stats }
-        rows[i].diff_stats = stats
-        redraw_row(i)
-      end
-    end
-  end)
-end
-
 -- iid -> { at = updated_at, pipeline = ... }, for as long as the editor
 -- lives. Keyed on `updated_at` as well as the number: a merge request
 -- that has been pushed to since we asked is a merge request whose
@@ -287,29 +245,101 @@ function M.forget_pipelines()
   stats_cache = {}
 end
 
---- The questions a row of GitLab's list cannot answer, asked one row at
---- a time.
+--- What a row of GitLab's list cannot say about itself, for every open
+--- row in one call: how much it changes, what CI made of the branch,
+--- and how far the approvals have got. See `glab.row_facts`, which is
+--- one GraphQL request where REST wanted three per row.
 ---
---- Three of them. What CI made of the branch and how far the approvals
---- have got, neither of which a list payload carries -- both asked
---- only of the rows that are still open, because on a merged one they
---- are history and this is a queue of what is left to do; and how many
---- comments you wrote on it and have not sent, because a draft note is
---- yours and is in nobody's list payload either. The last is the one
---- worth the wait: an unsent comment lives on the forge rather than in
---- this editor, so it is still there tomorrow, on a machine you are
---- not sitting at, and the queue is the only place you would ever be
---- told.
+--- Only of the rows that are still open, because on a merged one they
+--- are history and this is a queue of what is left to do. The line
+--- counts and the pipeline are kept against `updated_at` and not asked
+--- again while it has not moved; the approvals are asked every time,
+--- because an approval arrives without the merge request itself being
+--- touched and `updated_at` -- the only thing there is to key a cache
+--- on -- has not moved either.
 ---
---- One queue for both, a few at a time, in row order, each row redrawn
---- as its own answer lands: the list is readable the moment it opens
---- and fills in underneath you. One queue rather than two, because
---- every one of these is a process that starts, authenticates and
---- opens a connection of its own -- two pools of six is twelve of them
---- at once, and thirty together are slower end to end than six at a
---- time and take the machine down with them while they run. In row
---- order because the top of the list is what is being read while the
---- rest fills in.
+--- One call, so there is no pool and no ordering to think about: it is
+--- either known for every row a moment after the window is up, or not
+--- known at all -- on a GitLab whose GraphQL will not answer, the
+--- columns simply stay empty.
+---
+--- `from` is how many rows have already been asked about: a page
+--- arriving asks about the page, not about the whole queue again.
+local function fetch_facts(root, from)
+  local want = {
+    stats = config.list.stats and true or false,
+    ci = config.list.ci and true or false,
+    approvals = config.list.approvals and true or false,
+  }
+  local wanted, at_row = {}, {}
+  for i = (from or 0) + 1, #rows do
+    local mr = rows[i]
+    if live(mr) then
+      local asks = want.approvals
+      local stats = stats_cache[mr.iid]
+      if want.stats and stats and stats.at == mr.updated_at then
+        mr.diff_stats = stats.stats
+      elseif want.stats then
+        asks = true
+      end
+      local ci = pipeline_cache[mr.iid]
+      if want.ci and ci and ci.at == mr.updated_at then
+        mr.head_pipeline = ci.pipeline
+      elseif want.ci and not detail.ci(mr) then
+        asks = true
+      end
+      redraw_row(i)
+      if asks then
+        table.insert(wanted, mr.iid)
+        at_row[mr.iid] = i
+      end
+    end
+  end
+  if #wanted == 0 then
+    return
+  end
+  glab.row_facts(root, wanted, want, function(data)
+    for iid, facts in pairs(data or {}) do
+      local i = at_row[iid]
+      local mr = i and rows[i]
+      if mr and mr.iid == iid then
+        if facts.stats then
+          stats_cache[iid] = { at = mr.updated_at, stats = facts.stats }
+          mr.diff_stats = facts.stats
+        end
+        if facts.pipeline and not detail.ci(mr) then
+          -- The page's own address, which GraphQL gives without the
+          -- host in front: the host is the merge request's.
+          local host = (mr.web_url or ""):match("^(%a+://[^/]+)")
+          facts.pipeline.web_url = host and facts.pipeline.path and (host .. facts.pipeline.path)
+            or nil
+          pipeline_cache[iid] = { at = mr.updated_at, pipeline = facts.pipeline }
+          mr.head_pipeline = facts.pipeline
+        end
+        if facts.approvals then
+          mr.approvals = facts.approvals
+        end
+        redraw_row(i)
+      end
+    end
+  end)
+end
+
+--- The one question a row cannot have answered for the whole list at
+--- once: how many comments you wrote on it and have not sent. A draft
+--- note is yours and is in nobody's list payload, and GraphQL does not
+--- publish them at all, so it is one call per row. Worth the wait: an
+--- unsent comment lives on the forge rather than in this editor, so it
+--- is still there tomorrow, on a machine you are not sitting at, and
+--- the queue is the only place you would ever be told.
+---
+--- A few at a time, in row order, each row redrawn as its own answer
+--- lands: the list is readable the moment it opens and fills in
+--- underneath you. A few, because every one of these is a process that
+--- starts, authenticates and opens a connection of its own, and thirty
+--- together are slower end to end than six at a time and take the
+--- machine down with them while they run. In row order because the top
+--- of the list is what is being read while the rest fills in.
 local function fetch_rows(root, from)
   local queue = {}
 
@@ -330,47 +360,9 @@ local function fetch_rows(root, from)
   end
 
   for i = (from or 0) + 1, #rows do
-    local mr = rows[i]
-    if config.list.ci and live(mr) then
-      local hit = pipeline_cache[mr.iid]
-      if hit and hit.at == mr.updated_at then
-        mr.head_pipeline = hit.pipeline
-        redraw_row(i)
-      elseif not detail.ci(mr) then
-        local updated = mr.updated_at
-        for_row(i, function(iid, answered)
-          glab.mr_pipelines(root, iid, function(data)
-            local latest = type(data) == "table" and data[1]
-            if not latest then
-              answered(function() end)
-              return
-            end
-            pipeline_cache[iid] = { at = updated, pipeline = latest }
-            answered(function(row)
-              row.head_pipeline = latest
-            end)
-          end)
-        end)
-      end
-    end
-    -- Not cached, unlike the pipeline: an approval arrives without the
-    -- merge request itself being touched, so `updated_at` -- the only
-    -- thing there is to key a cache on -- has not moved either.
-    -- Quietly: approvals are a paid feature and the endpoint 404s
-    -- where they are not enabled, which is an empty column rather than
-    -- an error on every row.
-    if config.list.approvals and live(mr) then
-      for_row(i, function(iid, answered)
-        glab.approvals(root, iid, function(data)
-          answered(function(row)
-            row.approvals = type(data) == "table" and data or nil
-          end)
-        end)
-      end)
-    end
-    -- Not cached either, and for a nearer reason: what you have
-    -- written and not sent changes because *you* changed it, and it
-    -- changes without the merge request being touched at all. Quietly,
+    -- Not cached, and for a nearer reason than the approvals: what you
+    -- have written and not sent changes because *you* changed it, and
+    -- it changes without the merge request being touched at all. Quietly,
     -- too -- draft notes are GitLab 15.10 and the endpoint 404s on
     -- anything older, where the right answer is "you have none" rather
     -- than an error on every row.
@@ -927,7 +919,7 @@ function M.more()
     local from = #rows
     add_rows(mrs)
     fetch_rows(root, from)
-    fetch_stats(root, from)
+    fetch_facts(root, from)
   end, asked)
 end
 
@@ -983,7 +975,7 @@ function M.open()
     end
     set_rows(mrs)
     fetch_rows(root)
-    fetch_stats(root)
+    fetch_facts(root)
 
     if mode then
       M.toggle_preview(mode)

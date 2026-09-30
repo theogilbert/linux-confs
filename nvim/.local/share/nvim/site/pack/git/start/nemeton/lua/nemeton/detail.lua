@@ -532,8 +532,8 @@ end
 --- The window under the list and the merge request's own window are
 --- meant to be the same window, and a row carries about half of what
 --- that window says: no approvals, and nothing about the conversation.
---- So the missing half is asked for here -- three calls at once, once
---- per merge request, cached with the rendering they go into -- rather
+--- So the missing half is asked for here -- up to three calls at once,
+--- once per merge request, cached with the rendering they go into -- rather
 --- than leaving the pane a poorer version of the thing it is showing.
 ---
 --- `mr list` carries the description itself on the GitLab versions that
@@ -572,11 +572,17 @@ local function facts(root, mr, cb)
   -- Both quietly: approvals are a paid feature and the endpoint 404s
   -- where they are not enabled, and a forge that will not answer either
   -- of these leaves its row out rather than putting an error in a
-  -- window somebody is reading a description in.
-  glab.approvals(root, mr.iid, function(data)
-    whole.approvals = data
+  -- window somebody is reading a description in. Not asked at all where
+  -- the row already has them: the queue asks for a page's approvals in
+  -- one call, and this is the same answer a moment later.
+  if mr.approvals ~= nil then
     done()
-  end)
+  else
+    glab.approvals(root, mr.iid, function(data)
+      whole.approvals = data
+      done()
+    end)
+  end
   glab.discussions(root, mr.iid, function(data)
     if type(data) == "table" then
       local parsed = threads.parse(data)

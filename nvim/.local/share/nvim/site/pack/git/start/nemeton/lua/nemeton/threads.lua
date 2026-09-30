@@ -354,7 +354,11 @@ function M.attach_commits(list, versions)
   local pushes = {}
   for _, v in ipairs(versions or {}) do
     if v.head_commit_sha and v.created_at then
-      table.insert(pushes, { at = v.created_at:sub(1, 19), sha = v.head_commit_sha })
+      table.insert(pushes, {
+        at = v.created_at:sub(1, 19),
+        sha = v.head_commit_sha,
+        pushed = v.created_at,
+      })
     end
   end
   table.sort(pushes, function(a, b)
@@ -362,12 +366,12 @@ function M.attach_commits(list, versions)
   end)
   for _, t in ipairs(list or {}) do
     for _, note in ipairs(t.notes or {}) do
-      note.commit = nil
+      note.commit, note.pushed_at = nil, nil
       if t.path and note.created_at then
         local at = note.created_at:sub(1, 19)
         for _, push in ipairs(pushes) do
           if push.at <= at then
-            note.commit = push.sha
+            note.commit, note.pushed_at = push.sha, push.pushed
           end
         end
       end
@@ -378,7 +382,7 @@ end
 --- Puts the reactions on the notes they were given to.
 ---
 --- `given` is `{ [note_id] = { { name, user }, ... } }` -- what
---- `glab.reactions` fetched for the whole review in one call -- and
+--- `glab.review_facts` fetched for the whole review in one call -- and
 --- `me` is the username whose reactions are yours. In place, and safe
 --- to run again: a note keeps whatever the last refresh said and
 --- nothing accumulates, because the threads themselves are rebuilt from
@@ -800,6 +804,51 @@ function M.line_end(path, line, file, side)
     new_line = line,
     old_line = (was ~= nil and was ~= true) and was or nil,
   }
+end
+
+--- Seconds since the epoch for one of GitLab's timestamps, or nil for
+--- anything that is not one. UTC unless it says otherwise: the REST API
+--- writes a `Z`, and GraphQL and a self-hosted forge sometimes an
+--- offset.
+function M.epoch(iso)
+  if type(iso) ~= "string" then
+    return nil
+  end
+  local y, mo, d, h, mi, sec, rest = iso:match("^(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)(.*)$")
+  if not y then
+    return nil
+  end
+  -- `os.time` reads the fields as local time, which they are not; the
+  -- difference between local and UTC at about that moment is what it
+  -- is wrong by, asked of that moment rather than of now so that a
+  -- summer timestamp read in winter is not an hour out.
+  local guess = os.time({
+    year = tonumber(y),
+    month = tonumber(mo),
+    day = tonumber(d),
+    hour = tonumber(h),
+    min = tonumber(mi),
+    sec = tonumber(sec),
+  })
+  -- The UTC fields read back as local, with that moment's daylight
+  -- saving: without it `os.time` takes them as standard time and the
+  -- offset comes out an hour short all summer.
+  local utc = os.date("!*t", guess)
+  utc.isdst = os.date("*t", guess).isdst
+  local at = guess + os.difftime(guess, os.time(utc))
+  local sign, oh, om = rest:match("([+-])(%d%d):?(%d%d)$")
+  if sign then
+    local off = (tonumber(oh) * 60 + tonumber(om)) * 60
+    at = sign == "+" and at - off or at + off
+  end
+  return at
+end
+
+--- An instant the way a person says one: the day of the week, the
+--- date, the time to the second, and the zone it is in -- yours, since
+--- "10:00 UTC" is a sum to do before it is a time.
+function M.when(epoch)
+  return epoch and os.date("%A %-d %B %Y, %H:%M:%S %Z", epoch) or nil
 end
 
 --- "2d", "4h", "12 Mar" -- how long ago a note was written.
@@ -1655,6 +1704,20 @@ function M.render(thread, opts)
       if over > 0 then
         local room = vim.fn.strdisplaywidth(head[2][1]) - over
         head[2][1] = room > 0 and fit(head[2][1], room) or ""
+      end
+    end
+    -- The whole head is one thing to rest the cursor on: what it says in
+    -- a word -- "2d", eight digits of a sha -- is said exactly in the
+    -- float `who.lua` opens over it.
+    if note.created_at or sha then
+      local stamp = {
+        kind = "stamp",
+        written = note.created_at,
+        sha = sha,
+        pushed = sha and sha == note.commit and note.pushed_at or nil,
+      }
+      for _, chunk in ipairs(head) do
+        chunk.ref = stamp
       end
     end
     table.insert(out, head)

@@ -30,6 +30,10 @@ local cached_env = nil
 -- function writing to two globals of the same name.
 local forge_version = nil
 local trims_ranges = false
+-- ...and whether it is the paid edition, which says what its GraphQL
+-- will answer: a field the free one does not have fails the whole
+-- query, not just the field.
+local forge_ee = false
 
 -- A token typed into the prompt below. It lives here, in this variable,
 -- for as long as the editor does: not written to `config`, not written
@@ -122,7 +126,7 @@ function M.reset_credentials()
   whoami = {}
   -- ...and so is what the forge is and what its API will take: a
   -- different host is a different GitLab, of a different age.
-  forge_version, trims_ranges = nil, false
+  forge_version, trims_ranges, forge_ee = nil, false, false
 end
 
 --- What is configured, without the token itself -- for `:checkhealth`,
@@ -820,75 +824,13 @@ function M.me(root, cb)
   end)
 end
 
---- Every reaction on every note of a merge request, as
---- `{ [note_id] = { { name, user }, ... } }`.
----
---- The second GraphQL in this plugin, and for the same kind of reason
---- as the first. REST publishes reactions one note at a time --
---- `/notes/:id/award_emoji` -- so the REST answer to "what has been
---- reacted to in this review" is one request per comment, forty
---- subprocesses to draw a row of thumbs. GraphQL hands over the whole
---- of it beside the notes it belongs to, in one.
----
---- A hundred discussions and a hundred notes in each, which is the page
---- GraphQL gives without being asked and more than a merge request
---- anybody is reviewing in an editor has. Past that the reactions on
---- the tail of the thread are missing, which is a row of pictures
---- missing and not a comment missing.
----
---- Quietly: this is decoration. A forge too old for the field, a token
---- without `read_api`, an instance with GraphQL turned off -- none of
---- them is a reason to put an error on the screen after every refresh,
---- and none of them stops a single comment being read or written. The
---- callback gets an empty table and the review is drawn without them.
-function M.reactions(root, iid, cb)
-  M.project_path(root, function(path)
-    if not path then
-      cb({})
-      return
-    end
-    local query = (
-      '{ project(fullPath: "%s") { mergeRequest(iid: "%d") { discussions { nodes '
-      .. "{ notes { nodes { id awardEmoji { nodes { name user { username } } } } } } } } } }"
-    ):format(path, iid)
-    json({ "api", "graphql", "--raw-field", "query=" .. query }, { cwd = root }, function(data)
-      local nodes =
-        vim.tbl_get(data or {}, "data", "project", "mergeRequest", "discussions", "nodes")
-      if type(nodes) ~= "table" then
-        cb({})
-        return
-      end
-      local out = {}
-      for _, discussion in ipairs(nodes) do
-        for _, note in ipairs(vim.tbl_get(discussion, "notes", "nodes") or {}) do
-          -- GraphQL names a note `gid://gitlab/DiscussionNote/1234`;
-          -- everything else in this plugin knows it as 1234.
-          local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
-          local given = vim.tbl_get(note, "awardEmoji", "nodes") or {}
-          if id and #given > 0 then
-            local list = {}
-            for _, award in ipairs(given) do
-              table.insert(list, {
-                name = award.name,
-                user = vim.tbl_get(award, "user", "username"),
-              })
-            end
-            out[id] = list
-          end
-        end
-      end
-      cb(out)
-    end)
-  end)
-end
-
 --- Reacts to a note, and takes it back.
 ---
 --- Two calls because GitLab has two: the name goes in as a query
 --- parameter on the way in, and what comes back out is named by the id
 --- of the reaction rather than by the emoji -- so taking one back means
---- reading that note's reactions first, which `M.reactions` above does
---- for the whole review but without the ids REST needs.
+--- reading that note's reactions first, which `M.review_facts` does for
+--- the whole review but without the ids REST needs.
 function M.award(root, iid, note_id, name, cb)
   json({
     "api",
@@ -903,7 +845,7 @@ function M.award(root, iid, note_id, name, cb)
 end
 
 --- The reactions on one note, as REST tells them -- with the ids that
---- `M.unaward` needs and `M.reactions` does not have.
+--- `M.unaward` needs and `M.review_facts` does not have.
 function M.note_awards(root, iid, note_id, cb)
   json(
     { "api", ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji"):format(iid, note_id) },
@@ -921,74 +863,6 @@ function M.unaward(root, iid, note_id, award_id, cb)
   }, { cwd = root }, function(ok, out, err)
     cb(ok, vim.trim(err ~= "" and err or out))
   end)
-end
-
---- How many lines each of `iids` adds and removes, in one call.
----
---- GraphQL, and the only GraphQL in this plugin, for a reason worth the
---- exception: REST publishes no line totals anywhere, so the REST
---- answer to this question is to fetch every merge request's entire
---- diff -- thirty diffs to put a number on thirty rows. `diffStatsSummary`
---- is the number itself, for the whole list, in one request.
-function M.diff_summaries(root, iids, cb)
-  if #iids == 0 then
-    cb({})
-    return
-  end
-  M.project_path(root, function(path)
-    if not path then
-      cb(nil, "could not read the project's path")
-      return
-    end
-    local quoted = {}
-    for _, iid in ipairs(iids) do
-      table.insert(quoted, ('"%d"'):format(iid))
-    end
-    local query = (
-      '{ project(fullPath: "%s") { mergeRequests(iids: [%s]) '
-      .. "{ nodes { iid diffStatsSummary { additions deletions fileCount } } } } }"
-    ):format(path, table.concat(quoted, ", "))
-    -- `--raw-field`, not `--field`: the query starts with a brace, and
-    -- --field parses anything starting with one as JSON.
-    json({ "api", "graphql", "--raw-field", "query=" .. query }, { cwd = root }, function(data, err)
-      if not data then
-        cb(nil, err)
-        return
-      end
-      local nodes = vim.tbl_get(data, "data", "project", "mergeRequests", "nodes")
-      if type(nodes) ~= "table" then
-        cb(nil, "the forge answered without any merge requests in it")
-        return
-      end
-      local out = {}
-      for _, node in ipairs(nodes) do
-        local summary = node.diffStatsSummary
-        if summary then
-          out[tonumber(node.iid)] = {
-            added = summary.additions or 0,
-            removed = summary.deletions or 0,
-            files = summary.fileCount or 0,
-          }
-        end
-      end
-      cb(out)
-    end)
-  end)
-end
-
---- The pipelines a merge request has run, newest first.
----
---- One call per merge request, which is what it costs: the list
---- endpoint sends no pipeline with its rows on any GitLab this has been
---- pointed at, and the alternative -- one page of the project's
---- pipelines, matched back to branches -- is one call that is wrong
---- about forks and about anything older than the page.
-function M.mr_pipelines(root, iid, cb)
-  json(
-    { "api", ("projects/:fullpath/merge_requests/%d/pipelines?per_page=1"):format(iid) },
-    { cwd = root },
-    cb
-  )
 end
 
 --- Every job of a pipeline, in the order GitLab returns them -- which
@@ -1179,7 +1053,236 @@ local function version(root, cb)
     -- asked yet", and asking again on every comment is a round trip for
     -- a question already answered with a shrug.
     forge_version = major and { tonumber(major), tonumber(minor) } or false
+    forge_ee = type(data) == "table" and data.enterprise == true
     cb(forge_version)
+  end)
+end
+
+--- A GraphQL pipeline as the REST one it stands in for: the number
+--- rather than the global id, and the status in the lower case every
+--- REST payload spells it in. `path` is the page's, without the host,
+--- which is the caller's to put in front.
+local function rest_pipeline(p)
+  if type(p) ~= "table" then
+    return nil
+  end
+  return {
+    id = tonumber(tostring(p.id or ""):match("(%d+)$")),
+    iid = tonumber(p.iid),
+    status = type(p.status) == "string" and p.status:lower() or nil,
+    path = p.path,
+  }
+end
+
+--- GraphQL's approvals as the REST approvals endpoint's payload, which
+--- is the shape everything that draws one reads. `me` is whose token
+--- this is: REST says outright whether you have approved, GraphQL only
+--- who has.
+local function rest_approvals(node, me)
+  local by, mine = {}, false
+  for _, user in ipairs(vim.tbl_get(node, "approvedBy", "nodes") or {}) do
+    table.insert(by, { user = { username = user.username, name = user.name } })
+    mine = mine or (me ~= nil and user.username == me)
+  end
+  return {
+    approved = node.approved,
+    approved_by = by,
+    user_has_approved = mine,
+    user_can_approve = vim.tbl_get(node, "userPermissions", "canApprove"),
+    approvals_required = node.approvalsRequired,
+    approvals_left = node.approvalsLeft,
+  }
+end
+
+--- The GraphQL fields `rest_approvals` reads. A function, because
+--- which they are depends on the edition, which is not known until
+--- `version` has been asked: the counts are the paid edition's alone,
+--- the free one has no `approvalsRequired` in its schema, and a query
+--- that names a field the schema lacks is refused whole.
+local function approval_fields()
+  return "approved approvedBy { nodes { username name } } userPermissions { canApprove }"
+    .. (forge_ee and " approvalsRequired approvalsLeft" or "")
+end
+
+--- What a row of the queue says that `mr list` does not send, for a
+--- page of rows in one call: how much each changes, what CI made of
+--- it, and how far its approvals have got.
+---
+--- One GraphQL request where REST wants three per row -- no line
+--- totals anywhere, a pipeline per merge request, approvals per merge
+--- request -- so a queue of thirty was ninety processes, each starting,
+--- authenticating and opening a connection of its own. `want` says
+--- which of the three: `{ stats, ci, approvals }`.
+---
+--- The approval counts are the paid edition's alone. The free one has
+--- no `approvalsRequired` in its schema, and a query that asks for a
+--- field that is not there is refused whole; so the forge is asked what
+--- it is first -- once per session, and kept -- and they are asked for
+--- only where they exist, as they are only sent over REST there too.
+---
+--- `cb({ [iid] = { stats, pipeline, approvals } })`, a key missing
+--- where it was not asked for and `pipeline = false` for a merge
+--- request never built; or `cb(nil, err)` for a forge whose GraphQL
+--- would not answer, whose rows keep their columns empty.
+function M.row_facts(root, iids, want, cb)
+  if #iids == 0 then
+    cb({})
+    return
+  end
+  M.project_path(root, function(path)
+    if not path then
+      cb(nil, "could not read the project's path")
+      return
+    end
+    local function ask()
+      local quoted, fields = {}, { "iid" }
+      for _, iid in ipairs(iids) do
+        table.insert(quoted, ('"%d"'):format(iid))
+      end
+      if want.stats then
+        table.insert(fields, "diffStatsSummary { additions deletions fileCount }")
+      end
+      if want.ci then
+        table.insert(fields, "headPipeline { id iid status path }")
+      end
+      if want.approvals then
+        table.insert(fields, approval_fields())
+      end
+      local query = ('{ %sproject(fullPath: "%s") { mergeRequests(iids: [%s]) { nodes { %s } } } }'):format(
+        want.approvals and "currentUser { username } " or "",
+        path,
+        table.concat(quoted, ", "),
+        table.concat(fields, " ")
+      )
+      -- `--raw-field`, not `--field`: the query starts with a brace, and
+      -- --field parses anything starting with one as JSON.
+      json(
+        { "api", "graphql", "--raw-field", "query=" .. query },
+        { cwd = root },
+        function(data, err)
+          local nodes = vim.tbl_get(data or {}, "data", "project", "mergeRequests", "nodes")
+          if type(nodes) ~= "table" then
+            cb(nil, err or "the forge answered without any merge requests in it")
+            return
+          end
+          local me = vim.tbl_get(data, "data", "currentUser", "username")
+          local out = {}
+          for _, node in ipairs(nodes) do
+            local row = {}
+            local summary = node.diffStatsSummary
+            if want.stats and summary then
+              row.stats = {
+                added = summary.additions or 0,
+                removed = summary.deletions or 0,
+                files = summary.fileCount or 0,
+              }
+            end
+            if want.ci then
+              row.pipeline = rest_pipeline(node.headPipeline) or false
+            end
+            if want.approvals then
+              row.approvals = rest_approvals(node, me)
+            end
+            out[tonumber(node.iid)] = row
+          end
+          cb(out)
+        end
+      )
+    end
+    if want.approvals then
+      version(root, ask)
+    else
+      ask()
+    end
+  end)
+end
+
+--- What a review needs besides its discussions, in one GraphQL call:
+--- every reaction on every note, how far the approvals have got, and
+--- whose token this is. `want` is `{ reactions, approvals }`.
+---
+--- Reactions because REST publishes them one note at a time --
+--- `/notes/:id/award_emoji` -- so the REST answer to "what has been
+--- reacted to in this review" is one request per comment, forty
+--- subprocesses to draw a row of thumbs. The approvals and the user,
+--- because they were two more processes on every open for what this
+--- request carries for nothing.
+---
+--- A hundred discussions and a hundred notes in each, which is the page
+--- GraphQL gives without being asked and more than a merge request
+--- anybody is reviewing in an editor has. Past that the reactions on
+--- the tail of the thread are missing, which is a row of pictures
+--- missing and not a comment missing.
+---
+--- `cb({ me, reactions, approvals })` -- `reactions` as
+--- `{ [note_id] = { { name, user }, ... } }`, `approvals` in the REST
+--- endpoint's shape -- or `cb(nil)` for a forge whose GraphQL would not
+--- answer: too old for a field, a token without `read_api`, GraphQL
+--- turned off. Quietly, because none of those is a reason to put an
+--- error on the screen after every refresh; the caller asks REST for
+--- what it cannot do without.
+function M.review_facts(root, iid, want, cb)
+  M.project_path(root, function(path)
+    if not path then
+      cb(nil)
+      return
+    end
+    local function ask()
+      local fields = {}
+      if want.approvals then
+        table.insert(fields, approval_fields())
+      end
+      if want.reactions then
+        table.insert(
+          fields,
+          "discussions { nodes { notes { nodes { id awardEmoji { nodes { name user { username } } } } } } }"
+        )
+      end
+      local query = ('{ currentUser { username } project(fullPath: "%s") { mergeRequest(iid: "%d") { %s } } }'):format(
+        path,
+        iid,
+        #fields > 0 and table.concat(fields, " ") or "iid"
+      )
+      json({ "api", "graphql", "--raw-field", "query=" .. query }, { cwd = root }, function(data)
+        local mr = vim.tbl_get(data or {}, "data", "project", "mergeRequest")
+        if type(mr) ~= "table" then
+          cb(nil)
+          return
+        end
+        local me = vim.tbl_get(data, "data", "currentUser", "username")
+        local out = { me = me }
+        if want.approvals then
+          out.approvals = rest_approvals(mr, me)
+        end
+        if want.reactions then
+          out.reactions = {}
+          for _, discussion in ipairs(vim.tbl_get(mr, "discussions", "nodes") or {}) do
+            for _, note in ipairs(vim.tbl_get(discussion, "notes", "nodes") or {}) do
+              -- GraphQL names a note `gid://gitlab/DiscussionNote/1234`;
+              -- everything else in this plugin knows it as 1234.
+              local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
+              local given = vim.tbl_get(note, "awardEmoji", "nodes") or {}
+              if id and #given > 0 then
+                local list = {}
+                for _, award in ipairs(given) do
+                  table.insert(list, {
+                    name = award.name,
+                    user = vim.tbl_get(award, "user", "username"),
+                  })
+                end
+                out.reactions[id] = list
+              end
+            end
+          end
+        end
+        cb(out)
+      end)
+    end
+    if want.approvals then
+      version(root, ask)
+    else
+      ask()
+    end
   end)
 end
 

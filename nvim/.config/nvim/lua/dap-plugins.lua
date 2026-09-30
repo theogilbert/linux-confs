@@ -20,17 +20,6 @@ dap.listeners.before.exceptionInfo["strip_note"] = function(_, _, response)
     end
 end
 
--- The eol virtual text is easy to miss (or truncated on long lines), so also
--- announce the exception in the message area.
-dap.listeners.after.exceptionInfo["notify"] = function(_, err, response)
-    if err or not response then
-        return
-    end
-    local details = response.details or {}
-    local name = details.typeName or response.exceptionId or "Exception"
-    local msg = details.message or response.description
-    vim.notify(msg and (name .. ": " .. msg) or name, vim.log.levels.ERROR)
-end
 
 vim.fn.sign_define('DapBreakpoint', {text='🛑', texthl='', linehl='', numhl=''})
 vim.fn.sign_define('DapBreakpointCondition', {text='🟡', texthl='', linehl='', numhl=''})

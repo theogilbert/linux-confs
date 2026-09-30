@@ -155,6 +155,12 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 			300,
 			0,
 			vim.schedule_wrap(function()
+				-- Selecting an entry inserts its text, which fires TextChangedI.
+				-- Re-triggering completion then would reset the menu and drop the
+				-- selection, making <CR> do nothing. cmp already filters an open menu.
+				if cmp.visible() then
+					return
+				end
 				cmp.complete({ reason = cmp.ContextReason.Auto })
 			end)
 		)

@@ -6,6 +6,7 @@
 
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
+local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
@@ -92,7 +93,7 @@ function M.open()
   local k = config.keys.jobs
   vim.wo[M.win].winbar = detail.hint({
     { k.log, "log" },
-    { k.browser, "browser" },
+    { k.browser, follow.browse_hint() },
     { k.refresh, "refresh" },
     { k.quit, "quit" },
   })
@@ -142,7 +143,7 @@ function M.open()
         local job = job_at()
         local url = (job and job.web_url) or pipeline.url
         if url then
-          vim.ui.open(url)
+          follow.browse(url)
         end
       end,
       "open the job under the cursor on GitLab",

@@ -267,6 +267,10 @@ comment kept unsent has no page yet, and says so.
 Where "copied" puts it is `clipboard` |nemeton-config-clipboard|: the
 `+` register, or a function of yours.
 
+The `o` that opens a page on GitLab -- the merge request in the queue
+and in its description, a job, a commit -- opens it or copies its link
+as `browser` |nemeton-config-browser| says.
+
 `:Nemeton history` |nemeton-history-window| is global for the same
 reason -- a question about the file in front of you, asked of the
 checkout rather than of the forge -- and unbound by default:
@@ -1962,6 +1966,20 @@ per kind of link. >lua
       require("vim.ui.clipboard.osc52").copy("+")({ text })
     end
 <
+BROWSER                                               *nemeton-config-browser*
+>
+    browser = nil,           -- nil: open, or copy | "copy" | fun(url)
+<
+What `o` does with a page on GitLab, in every window that has the key:
+the queue |nemeton-list-window|, the description, the jobs, a job's log
+and a file's history. `nil` opens it with `vim.ui.open`, and copies the
+link where that has nothing to open it with. `"copy"` always copies:
+for the editor at the far end of an ssh session, where a browser opened
+is one opened on a desktop nobody is at. A copy goes through `clipboard`
+|nemeton-config-clipboard| and says so, and the hint under each window
+reads `copy link` rather than `browser`. A function is yours, called
+with the URL.
+
 KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,

@@ -176,6 +176,15 @@ the wrong machine, `clipboard = function(text) ... end` is where OSC 52
 goes, once, and every link this plugin copies (this key, and what
 `<C-]>` falls back to) goes through it.
 
+The `o` that opens a page on GitLab in a window here — the merge
+request in the queue and in its description, a job, a commit — is
+`browser` in the config. `nil` opens it with `vim.ui.open`, and copies
+the link instead where that has nothing to open it with; `browser =
+"copy"` always copies, for the editor at the far end of an ssh session,
+where a browser opened is one opened on a desktop nobody is at; and a
+function is called with the URL. A copy goes through `clipboard` above,
+and the hint under each window says `copy link` rather than `browser`.
+
 `:Nemeton history` is global for the same reason — it is a question
 about the file in front of you, and it is asked of the checkout rather
 than of the forge — and unbound by default; `keys.global.history` puts

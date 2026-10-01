@@ -9,6 +9,7 @@
 
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
+local follow = require("nemeton.follow")
 local session = require("nemeton.session")
 
 local M = {}
@@ -81,7 +82,7 @@ function M.open()
     { k.publish, "send" },
     { k.comments, "comments" },
     { k.pipeline, "jobs" },
-    { k.browser, "browser" },
+    { k.browser, follow.browse_hint() },
     { k.refresh, "refetch" },
     { k.quit, "quit" },
   })
@@ -129,7 +130,7 @@ function M.open()
         k.browser,
         function()
           if mr.web_url then
-            vim.ui.open(mr.web_url)
+            follow.browse(mr.web_url)
           end
         end,
         "open it on GitLab",

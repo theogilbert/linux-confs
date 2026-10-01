@@ -12,6 +12,7 @@
 
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
+local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local session = require("nemeton.session")
 
@@ -121,7 +122,11 @@ function M.open(job)
     status and status.hl or "NemetonMeta",
     status and status.glyph or "",
     status and status.word or "",
-    detail.hint({ { k.refresh, "refresh" }, { k.browser, "browser" }, { k.quit, "quit" } })
+    detail.hint({
+      { k.refresh, "refresh" },
+      { k.browser, follow.browse_hint() },
+      { k.quit, "quit" },
+    })
   )
 
   local function load()
@@ -154,7 +159,7 @@ function M.open(job)
       k.browser,
       function()
         if job.web_url then
-          vim.ui.open(job.web_url)
+          follow.browse(job.web_url)
         end
       end,
       "open this job on GitLab",

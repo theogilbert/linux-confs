@@ -25,6 +25,7 @@
 
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
+local follow = require("nemeton.follow")
 local log = require("nemeton.log")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
@@ -221,7 +222,7 @@ local function browse(c)
       )
       return
     end
-    vim.ui.open(project .. "/-/commit/" .. c.sha)
+    follow.browse(project .. "/-/commit/" .. c.sha)
   end)
 end
 
@@ -318,7 +319,7 @@ local function show(i)
     detail.hint({
       { k.older, "older" },
       { k.newer, "newer" },
-      { k.browser, "browser" },
+      { k.browser, follow.browse_hint() },
       { k.quit, "quit" },
     })
   )
@@ -375,7 +376,7 @@ function M.open(bufnr, first, last)
   local k = config.keys.history
   vim.wo[M.win].winbar = detail.hint({
     { k.show, "patch" },
-    { k.browser, "browser" },
+    { k.browser, follow.browse_hint() },
     { k.quit, "quit" },
   })
 

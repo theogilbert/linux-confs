@@ -12,6 +12,7 @@
 
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
+local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
@@ -579,7 +580,7 @@ local function set_hint()
       { k.state, next_state() },
       { k.create, "new" },
       { k.refresh, "refresh" },
-      { k.browser, "browser" },
+      { k.browser, follow.browse_hint() },
       { k.quit, "quit" },
     }
     -- Only while there might be another page: a key offered for
@@ -850,7 +851,7 @@ local function open_window()
   vim.keymap.set("n", keys.browser, function()
     local mr = current()
     if mr and mr.web_url then
-      vim.ui.open(mr.web_url)
+      follow.browse(mr.web_url)
     end
   end, { buffer = M.buf, desc = "nemeton: open on GitLab" })
   for _, pane in ipairs({

@@ -372,6 +372,40 @@ function M.copy(text)
   pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', text)
 end
 
+--- What the `o` keys do with a page on the forge: `config.browser`.
+---
+--- Opened by default, and copied where there is nothing to open it
+--- with -- the editor at the far end of an ssh session, which has no
+--- browser and whose `vim.ui.open` says so -- rather than an error for
+--- a key that has a perfectly good link in hand. `"copy"` copies
+--- always, for the machine where an opener exists and opens a browser
+--- nobody is sitting in front of.
+function M.browse(url)
+  if not url then
+    return
+  end
+  local how = config.browser
+  if type(how) == "function" then
+    how(url)
+    return
+  end
+  if how ~= "copy" then
+    local ok, opened = pcall(vim.ui.open, url)
+    if ok and opened then
+      return
+    end
+  end
+  M.copy(url)
+  require("nemeton.session").notify(
+    (how == "copy" and "link copied — " or "no browser to open it in — link copied: ") .. url
+  )
+end
+
+--- ...and what the hint under a window calls that key.
+function M.browse_hint()
+  return config.browser == "copy" and "copy link" or "browser"
+end
+
 --- Which merge request is open, or nil for none.
 local function mine()
   local session = require("nemeton.session")

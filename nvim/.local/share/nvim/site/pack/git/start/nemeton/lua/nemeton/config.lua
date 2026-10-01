@@ -888,6 +888,15 @@ return {
   -- goes, once, rather than once per kind of link.
   clipboard = nil,
 
+  -- What `o` does with the page it is on -- the merge request in the
+  -- queue and in the description, a job, a commit. Nil opens it with
+  -- `vim.ui.open`, and copies it (through `clipboard` above) where
+  -- that has nothing to open it with. `"copy"` always copies: for the
+  -- editor at the far end of an ssh session, where a browser opened
+  -- is one opened on a desktop nobody is at. A function is yours,
+  -- called with the URL.
+  browser = nil,
+
   keys = {
     -- Global, for the one thing you do before there is a session to
     -- have buffer-local keys in.

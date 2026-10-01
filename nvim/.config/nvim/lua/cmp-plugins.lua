@@ -119,7 +119,7 @@ cmp.setup({
                     entry_filter = filter_out_private_python_attributes,
                     max_item_count = 20,
                 },
-		{ name = "path", max_item_count = 10 },
+		{ name = "path", max_item_count = 10, option = { trailing_slash = true } },
 		{ name = "grannos" },
 	}),
 	completion = {

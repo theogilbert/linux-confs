@@ -32,6 +32,31 @@ vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	end,
 })
 
+-- Highlight traceback frames that belong to the project (under cwd, outside any
+-- site-packages), plus the source line printed below each of them.
+vim.api.nvim_set_hl(0, "TracebackUserFrame", { link = "DiffChange", default = true })
+local traceback_ns = vim.api.nvim_create_namespace("traceback_user_frames")
+
+local function highlight_user_frames(bufnr)
+    local root = vim.fs.normalize(vim.fn.getcwd()) .. "/"
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    for i, line in ipairs(lines) do
+        local path = line:match('File "([^"]+)", line %d+')
+        if path then
+            path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+            if vim.startswith(path, root) and not path:find("/site%-packages/") then
+                local last = i -- also cover the source line, if it follows
+                if lines[i + 1] and not lines[i + 1]:match('File "') then
+                    last = i + 1
+                end
+                for l = i, last do
+                    vim.api.nvim_buf_set_extmark(bufnr, traceback_ns, l - 1, 0, { line_hl_group = "TracebackUserFrame" })
+                end
+            end
+        end
+    end
+end
+
 vim.keymap.set("n", "K", function()
     local buf = vim.api.nvim_get_current_buf()
     local cursor = vim.api.nvim_win_get_cursor(0)
@@ -51,7 +76,8 @@ vim.keymap.set("n", "K", function()
         for _, diag in ipairs(diagnostics) do
             table.insert(contents, " " .. diag.message) -- warning icon (nerdfont required)
         end
-        vim.lsp.util.open_floating_preview(contents, "markdown", { border = "rounded" })
+        local float_buf = vim.lsp.util.open_floating_preview(contents, "markdown", { border = "rounded" })
+        highlight_user_frames(float_buf)
     end
 end, { silent = true })
 

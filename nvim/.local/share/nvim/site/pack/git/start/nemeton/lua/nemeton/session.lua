@@ -257,45 +257,47 @@ local function index(mr)
   mr.by_file = threads.index(all)
 end
 
-function M.refresh(cb)
-  if not M.current then
-    return
-  end
-  local mr = M.current
+--- Puts what `gather` brought in together: the drafts, reactions and
+--- pushes onto the threads, and the threads into the index the
+--- buffers are drawn from.
+local function settle(mr)
+  -- The unsent replies go back into the threads they answer before
+  -- anything is drawn from them; the threads themselves are rebuilt
+  -- from the forge on every refresh, so this cannot double up.
+  threads.attach_drafts(mr.inline, mr.draft_replies)
+  threads.attach_drafts(mr.overview, mr.draft_replies)
+  -- ...and the reactions onto the notes they were given to. After the
+  -- drafts, for the same reason they are after the threads: what is
+  -- unsent has never been reacted to, and has no id on the forge to
+  -- have been reacted to by.
+  threads.attach_reactions(mr.inline, mr.reactions, mr.me)
+  threads.attach_reactions(mr.overview, mr.reactions, mr.me)
+  -- ...and the push each was written on, which the note's own
+  -- position stopped saying the first time the branch moved.
+  threads.attach_commits(mr.inline, mr.versions)
+  -- ...and whatever is still in flight, which the refresh that
+  -- carries it home is the one to take away: a comment that vanished
+  -- for the length of a round trip and then came back is a comment
+  -- that flickered.
+  mr.sending = vim.tbl_filter(function(one)
+    return not one.landed
+  end, mr.sending or {})
+  mr.fetched = true
+  index(mr)
+end
+
+--- Asks the forge for everything a review is drawn from, onto `mr`,
+--- and `cb(ok)` once all of it is in. Draws nothing and does not need
+--- `mr` to be the open review yet: `M.open` sends it out while the
+--- branch is still being checked out.
+local function gather(mr, cb)
   -- All at once. The drafts are a second round trip and a refresh runs
   -- after everything that posts anything, so they go out together and
   -- the buffers are redrawn once, when all four are in.
   local pending, ok = 4, true
   local function done()
     pending = pending - 1
-    if pending > 0 or M.current ~= mr then
-      return
-    end
-    -- The unsent replies go back into the threads they answer before
-    -- anything is drawn from them; the threads themselves are rebuilt
-    -- from the forge on every refresh, so this cannot double up.
-    threads.attach_drafts(mr.inline, mr.draft_replies)
-    threads.attach_drafts(mr.overview, mr.draft_replies)
-    -- ...and the reactions onto the notes they were given to. After the
-    -- drafts, for the same reason they are after the threads: what is
-    -- unsent has never been reacted to, and has no id on the forge to
-    -- have been reacted to by.
-    threads.attach_reactions(mr.inline, mr.reactions, mr.me)
-    threads.attach_reactions(mr.overview, mr.reactions, mr.me)
-    -- ...and the push each was written on, which the note's own
-    -- position stopped saying the first time the branch moved.
-    threads.attach_commits(mr.inline, mr.versions)
-    -- ...and whatever is still in flight, which the refresh that
-    -- carries it home is the one to take away: a comment that vanished
-    -- for the length of a round trip and then came back is a comment
-    -- that flickered.
-    mr.sending = vim.tbl_filter(function(one)
-      return not one.landed
-    end, mr.sending or {})
-    mr.fetched = true
-    index(mr)
-    M.redraw_all()
-    if cb then
+    if pending == 0 then
       cb(ok)
     end
   end
@@ -326,14 +328,23 @@ function M.refresh(cb)
       if facts then
         mr.me = facts.me
         mr.reactions = facts.reactions or {}
-        if facts.approvals and M.current == mr then
+        if facts.approvals then
           mr.approvals = facts.approvals
         end
         done()
         return
       end
       mr.reactions = {}
-      M.refresh_approvals()
+      -- Not waited for, as it was not when it rode in the query: the
+      -- review is drawn without them, and again when they land.
+      glab.approvals(mr.root, mr.iid, function(data)
+        if data then
+          mr.approvals = data
+          if M.current == mr then
+            M.redraw_all()
+          end
+        end
+      end)
       glab.me(mr.root, function(who)
         mr.me = who and who.username or nil
         done()
@@ -362,6 +373,23 @@ function M.refresh(cb)
     mr.draft_overview = parsed.overview
     mr.draft_replies = parsed.replies
     done()
+  end)
+end
+
+function M.refresh(cb)
+  local mr = M.current
+  if not mr then
+    return
+  end
+  gather(mr, function(ok)
+    if M.current ~= mr then
+      return
+    end
+    settle(mr)
+    M.redraw_all()
+    if cb then
+      cb(ok)
+    end
   end)
 end
 
@@ -979,7 +1007,9 @@ end
 ---
 --- What is *not* parallel is the drawing: the threads are drawn onto
 --- buffers the checkout is about to change under us, so nothing is
---- drawn until both have landed.
+--- drawn until both have landed. The threads themselves are asked for
+--- the moment the merge request is in, and are usually back before
+--- the checkout is.
 function M.open(iid, opts)
   opts = opts or {}
   local root = M.root()
@@ -1025,8 +1055,12 @@ function M.open(iid, opts)
     end
   end
 
-  local function loaded()
-    M.current = {
+  --- The review, built as soon as the merge request is in rather than
+  --- once the branch is: what it is drawn from is asked for then, and
+  --- the checkout -- the longer of the two halves -- is waited out
+  --- with those calls in flight instead of in front of them.
+  local function review()
+    return {
       root = root,
       iid = mr.iid,
       title = mr.title,
@@ -1063,32 +1097,41 @@ function M.open(iid, opts)
       draft_replies = {},
       mode = "signs",
     }
+  end
+
+  -- ...and whether what it is drawn from is in: nil until it is, then
+  -- whether all of it came.
+  local staged, gathered = nil, nil
+
+  local function loaded()
+    M.current = staged
     M.refresh_changes()
-    M.refresh(function()
-      local n = #(M.current.inline or {})
-      said()
+    settle(staged)
+    M.redraw_all()
+    local n = #(staged.inline or {})
+    said()
+    notify(
+      ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
+    )
+    if detached then
       notify(
-        ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
+        ("its branch %s is gone from the remote — checked out detached at the merge request's head"):format(
+          mr.source_branch or "?"
+        ),
+        vim.log.levels.WARN
       )
-      if detached then
-        notify(
-          ("its branch %s is gone from the remote — checked out detached at the merge request's head"):format(
-            mr.source_branch or "?"
-          ),
-          vim.log.levels.WARN
-        )
-      end
-      if opts.on_open then
-        opts.on_open()
-      end
-    end)
+    end
+    if opts.on_open then
+      opts.on_open()
+    end
     if opts.checkout ~= false then
       M.check_head(root, mr)
       M.track(root, mr)
     end
   end
 
-  --- Called by each of the two; the second one through does the work.
+  --- Called by each of the three -- the merge request, the checkout,
+  --- what the review is drawn from; the last one through does the work.
   ---
   --- A checkout glab gave up on is not the end of it. The branch of a
   --- merged merge request is usually deleted with the merge, and the
@@ -1120,7 +1163,7 @@ function M.open(iid, opts)
       end
       return
     end
-    if not checked_out then
+    if not checked_out or gathered == nil then
       return
     end
     loaded()
@@ -1132,6 +1175,11 @@ function M.open(iid, opts)
       return
     end
     mr = data
+    staged = review()
+    gather(staged, function(ok)
+      gathered = ok
+      ready()
+    end)
     ready()
   end)
 

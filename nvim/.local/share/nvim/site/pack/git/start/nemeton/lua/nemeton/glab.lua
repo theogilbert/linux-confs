@@ -48,7 +48,8 @@ local session_token = nil
 -- the second failure must not put a second prompt on the screen.
 local generation = 0
 
--- root -> the project, as GitLab's own object, resolved once. GraphQL
+-- root -> the project, as GitLab's own object or as the two fields of
+-- it a merge request already said (`learn`), resolved once. GraphQL
 -- wants the path spelled out and glab's `:fullpath` placeholder only
 -- fills in a REST endpoint; a link to a line wants the project's page
 -- when there is no merge request open to read it off. So it is asked
@@ -551,6 +552,28 @@ function M.sync(args)
   return res
 end
 
+--- Writes down the project a merge request says it is on, so that
+--- `projects/:fullpath` is not asked for it (see `project` below).
+---
+--- A merge request carries its project's path in `references.full`
+--- and its page at the front of its own `web_url`, both as the forge
+--- spells them now, moved or not -- which is what that call is asked
+--- for -- and those two are all that is ever read off the project.
+--- That call is the slowest GET in the log, two seconds where the
+--- others take a third of one, and it stood in front of the GraphQL
+--- that a review and a queue both wait on.
+local function learn(root, mr)
+  if projects[root] or type(mr) ~= "table" then
+    return
+  end
+  local path = type(mr.references) == "table"
+    and tostring(mr.references.full or ""):match("^(.-)!%d+$")
+  local url = tostring(mr.web_url or ""):match("^(.-)/%-/merge_requests/")
+  if path and path ~= "" and url then
+    projects[root] = { path_with_namespace = path, web_url = url }
+  end
+end
+
 --- Merge requests on the project this repository points at, in `state`
 --- -- "opened", "merged", "closed" or "all". Nil for the configured
 --- one, which is what a queue opens on.
@@ -580,7 +603,12 @@ function M.mr_list(root, state, cb, page)
   elseif state == "all" then
     table.insert(args, "--all")
   end
-  json(args, { cwd = root }, cb)
+  json(args, { cwd = root }, function(data, err)
+    if type(data) == "table" then
+      learn(root, data[1])
+    end
+    cb(data, err)
+  end)
 end
 
 --- Everybody who can be mentioned on this project.
@@ -713,7 +741,14 @@ end
 --- to carry base_sha/start_sha/head_sha, and those three are the whole
 --- reason for this call.
 function M.mr_get(root, iid, cb)
-  json({ "api", ("projects/:fullpath/merge_requests/%d"):format(iid) }, { cwd = root }, cb)
+  json(
+    { "api", ("projects/:fullpath/merge_requests/%d"):format(iid) },
+    { cwd = root },
+    function(data, err)
+      learn(root, data)
+      cb(data, err)
+    end
+  )
 end
 
 --- The commits a merge request carries -- its changelog.

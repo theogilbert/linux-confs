@@ -1104,8 +1104,8 @@ return {
       -- ...and who gave the one under the cursor, in a float the next
       -- move takes away -- or, on the head of a note, exactly when it
       -- was written and when its commit was made. Vim's own key for
-      -- "what is this", and the same answer the cursor resting on it
-      -- gives (`comments.hover`).
+      -- "what is this", and on a reaction the same answer the cursor
+      -- resting on it gives (`comments.hover`).
       who = "K",
       -- A link to the comment under the cursor, on the clipboard: what
       -- the forge's own "copy link" on a comment gives you, from the

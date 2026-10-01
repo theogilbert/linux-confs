@@ -986,9 +986,11 @@ takes it away. Resting is `CursorHold`, which is `updatetime` — four
 seconds as Neovim ships, a few hundred milliseconds in most configs.
 `comments.hover = false` leaves only the key.
 
-The head of a note — `reviewer · 2d · a1b2c3d4` — is a hover too:
-resting on it, or `K`, says exactly when the comment was written and
-when its commit was made, as `Thursday 27 August 2026, 12:00:00 CEST`.
+The head of a note — `reviewer · 2d · a1b2c3d4` — answers `K` the
+same way, in the pane and in the comments and conversation windows:
+exactly when the comment was written and when its commit was made, as
+`Thursday 27 August 2026, 12:00:00 CEST`. The key only, not the rest:
+the head is the line the cursor crosses on the way into every note.
 The commit's time is the clone's; where the clone has not got it, it is
 when that commit was pushed to the merge request.
 

@@ -1169,16 +1169,17 @@ Nothing to close and nothing left open over the prose. Resting is
 a few hundred milliseconds in most configs, where it is what makes a
 hover a hover. `comments.hover = false` leaves only the key.
 
-The head of a note is a hover too. It says `2d` and eight digits of a
-sha, which is what a head has room for; resting on it, or `K` on it,
-says both exactly -- the day, the date and the time to the second, in
-your own zone:
+The head of a note answers `K` too. It says `2d` and eight digits of a
+sha, which is what a head has room for; `K` on it says both exactly --
+the day, the date and the time to the second, in your own zone:
 >
     written Thursday 27 August 2026, 12:00:00 CEST
     commit  a1b2c3d4 · Wednesday 26 August 2026, 18:40:12 CEST
 <
 The commit's time is the clone's (`git show`), and where the clone has
-not got it, when it was pushed to the merge request, as `pushed`.
+not got it, when it was pushed to the merge request, as `pushed`. The
+key only, not the cursor resting there: the head is the line the cursor
+crosses on the way into every note.
 
 All of it is one GraphQL call beside the discussions on every refresh,
 the same call that brings the approvals and says whose token this is.

@@ -12,8 +12,10 @@
 -- And when, on the head of a note. The head says "2d" and eight digits
 -- of a sha, which is what a head has room for and not what is wanted
 -- the moment the question is "was this before or after the push on
--- Tuesday": the same float, resting on the head, says both exactly --
--- to the second and with the day of the week.
+-- Tuesday": the same float, on `K` over the head, says both exactly --
+-- to the second and with the day of the week. The key only: the head
+-- is the line the cursor crosses on the way into every note, and a
+-- float that rose on each of them was one over the words being read.
 
 local config = require("nemeton.config")
 local log = require("nemeton.log")
@@ -105,12 +107,16 @@ end
 --- it was written. Nothing at all on
 --- anything else: this runs on every rest of the cursor in a window of
 --- prose, and a window that says "no" every time the cursor stops was
---- a window to read past.
-function M.show()
+--- a window to read past. `resting` is the hover asking rather than
+--- the key, and a rest answers for a reaction only.
+function M.show(resting)
   local buf = vim.api.nvim_get_current_buf()
   local pos = vim.api.nvim_win_get_cursor(0)
   local ref = follow.under(buf, pos[1] - 1, pos[2])
-  if not (ref and (ref.kind == "reaction" or ref.kind == "stamp")) then
+  if resting and ref and ref.kind == "stamp" and shown == ref then
+    return M.win
+  end
+  if not (ref and (ref.kind == "reaction" or (ref.kind == "stamp" and not resting))) then
     M.close()
     return nil
   end
@@ -181,7 +187,8 @@ end
 --- Puts the hover on `buf`: `CursorHold`, which is the cursor resting
 --- for `updatetime` -- four seconds as Neovim ships, and a few hundred
 --- milliseconds in most configs, where it is what makes a hover a
---- hover. `comments.hover = false` leaves only the key.
+--- hover. `comments.hover = false` leaves only the key. The head of a
+--- note is the key's alone (see the top of this file).
 function M.attach(buf)
   if not config.comments.hover then
     return
@@ -189,7 +196,7 @@ function M.attach(buf)
   vim.api.nvim_create_autocmd("CursorHold", {
     buffer = buf,
     callback = function()
-      M.show()
+      M.show(true)
     end,
   })
 end

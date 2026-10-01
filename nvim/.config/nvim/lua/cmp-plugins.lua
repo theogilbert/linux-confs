@@ -76,6 +76,11 @@ end
 -- setlocal completeopt=menuone,popup,noinsert
 cmp.setup({
 	enabled = function()
+                -- Buffers with their own completion opt out with b:completion = false
+                -- (e.g. the uatis revision prompt, which drives the native menu itself).
+                if vim.b.completion == false then
+                    return false
+                end
                 return vim.bo[0].buftype ~= "prompt" or require("cmp_dap").is_dap_buffer()
 	end,
         formatting = {
@@ -176,7 +181,8 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 				-- selection, making <CR> do nothing. cmp already filters an open menu.
 				local just_confirmed = text_before_cursor() == confirmed_before_cursor
 				confirmed_before_cursor = nil
-				if just_confirmed or cmp.visible() then
+				-- cmp.complete() does not check `enabled` itself.
+				if just_confirmed or cmp.visible() or not require("cmp.config").enabled() then
 					return
 				end
 				cmp.complete({ reason = cmp.ContextReason.Auto })

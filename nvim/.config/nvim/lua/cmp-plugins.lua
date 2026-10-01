@@ -145,6 +145,22 @@ cmp.setup({
 })
 
 
+local function text_before_cursor()
+	if vim.fn.mode() == "c" then
+		return vim.fn.getcmdline():sub(1, vim.fn.getcmdpos() - 1)
+	end
+	return vim.api.nvim_get_current_line():sub(1, vim.api.nvim_win_get_cursor(0)[2])
+end
+
+-- Confirming an entry edits the buffer, which fires TextChangedI. The timer below
+-- would then re-open the menu on the word just accepted, with nothing selected,
+-- making the confirm look like it did nothing. Remember where the confirm left
+-- the cursor so that this one auto-complete is skipped.
+local confirmed_before_cursor = nil
+cmp.event:on("confirm_done", function()
+	confirmed_before_cursor = text_before_cursor()
+end)
+
 -- define a timer to activate delayed auto-complete after 300ms
 local cmp_timer = vim.uv.new_timer()
 vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
@@ -158,7 +174,9 @@ vim.api.nvim_create_autocmd({ "TextChangedI", "CmdlineChanged" }, {
 				-- Selecting an entry inserts its text, which fires TextChangedI.
 				-- Re-triggering completion then would reset the menu and drop the
 				-- selection, making <CR> do nothing. cmp already filters an open menu.
-				if cmp.visible() then
+				local just_confirmed = text_before_cursor() == confirmed_before_cursor
+				confirmed_before_cursor = nil
+				if just_confirmed or cmp.visible() then
 					return
 				end
 				cmp.complete({ reason = cmp.ContextReason.Auto })

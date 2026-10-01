@@ -301,6 +301,21 @@ own old selves. Two tests four rows apart both opened on
 lost its before-image, because every token of the row it used to be was found
 on the second, which nobody touched.
 
+### `intact` / `moved_to` — `overlay.lua`
+
+Per row, after the hunk as a whole is found to have removed something: a
+removed row whose partner is byte-identical is still on screen, and so is one
+that reads exactly like a row of the **same hunk** that difft paired with
+nothing (`moved_to`) — a docstring that grew lays its old sentences beside the
+new ones in order, and the last comes out against unrelated text while its
+twin sits four rows down drawn as new. Those rows are left out of the
+before-image when they are most of it.
+
+Same hunk only. A function moved to the top of the file and rewritten keeps
+half its body; the new copy is another hunk, and its lines once excused the
+same lines out of the old copy — the before-image lost its signature and the
+rest hung under the function above, reading as part of it.
+
 ### `collapsed_span` — `overlay.lua`
 
 Where several old rows were folded onto one, draw the whole construct rather

@@ -1633,13 +1633,22 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- never touched. And a row difftastic paired with nothing is a row it
   -- could not place: finding the old line's exact text sitting on one is
   -- as strong as the pairing it did not make.
+  --
+  -- Per hunk, and only the removed row's own. The slip this answers is
+  -- inside one changed node, so the twin is a few rows away in the same
+  -- hunk. A twin in ANOTHER hunk is a different statement: a function
+  -- moved to the top of the file and rewritten keeps half its body, and
+  -- those lines in the new copy excused the same lines out of the old
+  -- one -- the before-image lost its signature and what was left of it
+  -- hung under the function above, reading as that function's.
   local moved_to = {}
   if result.pairs then
-    for row in pairs(claimed_by) do
+    for row, idx in pairs(claimed_by) do
       if not result.pairs[row + 1] then
         local text = line_text(row)
         if text:match("%S") then
-          moved_to[text] = true
+          moved_to[idx] = moved_to[idx] or {}
+          moved_to[idx][text] = true
         end
       end
     end
@@ -2411,7 +2420,7 @@ function M.render(bufnr, win, result, old_lines, opts)
           local at = result.anchor[old_row]
           if (at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
             and line_text(at - 1) == old_lines[old_row])
-            or moved_to[old_lines[old_row] or ""] then
+            or (moved_to[hidx] or {})[old_lines[old_row] or ""] then
             intact[old_row] = true
           end
         end

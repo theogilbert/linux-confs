@@ -5,6 +5,21 @@ vim.g.loaded_netrwPlugin = 1
 -- Disable Python provider for rplugins:
 -- I do not use Python rplugins, and the provider takes a long time to load.
 vim.g.loaded_python3_provider = 0
+
+-- One ShaDa file per working directory, so concurrent instances in different
+-- projects do not write (and corrupt) the same file.
+-- Must be set before ShaDa is read, which happens after init.lua is sourced.
+local shada_dir = vim.fn.stdpath('state') .. '/shada/'
+vim.o.shadafile = shada_dir .. vim.fn.sha256(vim.fn.getcwd()) .. '.shada'
+
+-- Remove stale temp files left by failed ShaDa writes: once .tmp.a to .tmp.z
+-- all exist, nvim can no longer write the ShaDa file (E138).
+for _, tmp in ipairs(vim.fn.glob(shada_dir .. '*.shada.tmp.*', true, true)) do
+    local stat = vim.uv.fs_stat(tmp)
+    if stat and os.time() - stat.mtime.sec > 24 * 3600 then
+        os.remove(tmp)
+    end
+end
 vim.g.bytes_info_statusline = false
 
 vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff', 'xml', 'yaml', 'yml=yaml'}

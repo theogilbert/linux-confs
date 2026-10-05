@@ -52,7 +52,11 @@ function M.try_load_session()
         return
     end
 
-    vim.cmd("source " .. get_session_path())
+    -- a broken session (e.g. corrupted ShaDa) must not abort startup
+    local ok, err = pcall(vim.cmd, "source " .. vim.fn.fnameescape(session_path))
+    if not ok then
+        vim.notify("Failed to load session: " .. err, vim.log.levels.ERROR)
+    end
     vim.defer_fn(function()
         reload_all_file_buffers()
     end, 50)

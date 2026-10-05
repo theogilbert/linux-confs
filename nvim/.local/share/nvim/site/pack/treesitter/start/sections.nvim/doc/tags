@@ -26,6 +26,7 @@ sections-python	sections.txt	/*sections-python*
 sections-queries	sections.txt	/*sections-queries*
 sections-requirements	sections.txt	/*sections-requirements*
 sections-sql	sections.txt	/*sections-sql*
+sections-subsections	sections.txt	/*sections-subsections*
 sections-usage	sections.txt	/*sections-usage*
 sections-xml	sections.txt	/*sections-xml*
 sections-yaml	sections.txt	/*sections-yaml*

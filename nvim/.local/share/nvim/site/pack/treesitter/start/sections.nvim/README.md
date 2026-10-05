@@ -108,9 +108,10 @@ See `:help sections-languages` for an example of each.
 | JSON | Object keys, nested | header |
 | YAML | Mapping keys, nested | header |
 | XML | Elements, including self-closing, nested | header |
-| SQL, Lucene | Banner comments (see below) | header |
+| SQL, Lucene | Banner comments, block comment banners in SQL (see below) | header |
 | PromQL | Banner `#` comments (see below) | header |
-| MongoDB, Cypher | Banner block comments (see below) | header |
+| MongoDB, Cypher | Banner block or `//` comments (see below) | header |
+| SQL, Lucene, PromQL, MongoDB, Cypher | Subsections, nested by level (see below) | header |
 
 SQL and Lucene (`.lucene`) sections are declared with a banner comment. Only the first inner line
 is used as the section name; any following lines can hold a description:
@@ -131,13 +132,32 @@ PromQL (`.promql`) uses the same banner, written with `#`:
 ##################
 ```
 
-MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`) sections use the same idea with a block comment:
+MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`) sections use the same idea with a block comment
+(also accepted in SQL), or with `//` comments:
 
 ```
 /******************
  * Orders         *
  * Open orders only *
  ******************/
+
+//////////////////
+// Orders       //
+//////////////////
+```
+
+A banner is a level 1 section. Within it, a line comment starting with two or more `#` is a
+subsection whose level is the number of `#`, as in Markdown: `-- ## name` (SQL, Lucene),
+`# ## name` (PromQL), `// ## name` (MongoDB, Cypher).
+
+```sql
+------------------
+-- Customers --
+------------------
+-- ## Active
+SELECT * FROM customers WHERE active;
+-- ### By region
+SELECT region, count(*) FROM customers WHERE active GROUP BY region;
 ```
 
 ## Extending Language Support
@@ -159,11 +179,14 @@ Example query for functions:
 - `@section.name` - The section name
 - `@section.param` - Function parameters (optional)
 - `@section.type_annotation` - Type annotations (optional)
+- `@section.level` - Section level, from the length of its (usually `#gsub!`-rewritten) text (optional)
 
 ### Query Metadata
 
 - `(#set! type "function"|"class"|"attribute"|"header")` - Section type
 - `(#set! private "true")` - Mark section as private
+- `(#set! level "1")` - Section level: nest under the closest preceding section of a lower level
+- `(#sections-banner? @rule @name)` - `@rule` opens a banner of line comments, with `@name` on the next line
 
 ## License
 

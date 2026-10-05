@@ -103,18 +103,39 @@ end)
 describe("parsing lua sections", function()
     local parser = require("sections.parser")
 
-    local function build_function(name, line, params)
+    local function build_function(name, line, params, private)
         return {
             name = name,
             type = "function",
             position = { line, 0 },
             children = {},
             parameters = params,
-            private = false,
+            private = private or false,
         }
     end
 
-    it("should parse subsequent functions", function()
+    local function build_private_function(name, line, params)
+        return build_function(name, line, params, true)
+    end
+
+    it("should parse module functions as public", function()
+        local buf = create_buf_with_text(
+            [[
+local M = {}
+function M.setup(opts) end
+        ]],
+            "lua"
+        )
+
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_function("M.setup", 2, { "opts" }),
+        }, root_nodes)
+    end)
+
+    it("should parse non-module functions as private", function()
         local buf = create_buf_with_text(
             [[
 function1 = function() end
@@ -127,8 +148,8 @@ function function2() end
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_function("function1", 1),
-            build_function("function2", 2),
+            build_private_function("function1", 1),
+            build_private_function("function2", 2),
         }, root_nodes)
     end)
 
@@ -159,8 +180,8 @@ function function2(p3, p4, p5) end
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_function("function1", 1, { "p1", "p2" }),
-            build_function("function2", 2, { "p3", "p4", "p5" }),
+            build_private_function("function1", 1, { "p1", "p2" }),
+            build_private_function("function2", 2, { "p3", "p4", "p5" }),
         }, root_nodes)
     end)
 
@@ -176,7 +197,7 @@ function Pane:clear_filter() end
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_function("Pane:clear_filter", 1),
+            build_private_function("Pane:clear_filter", 1),
         }, root_nodes)
     end)
 end)
@@ -776,5 +797,176 @@ sum by (job) (up)
             build_header("First section", 1),
             build_header("Second section", 10),
         }, root_nodes)
+    end)
+end)
+
+describe("should parse alternate banners and subsections of query languages", function()
+    local parser = require("sections.parser")
+
+    local function build_header(name, line, children)
+        return {
+            name = name,
+            type = "header",
+            position = { line, 0 },
+            children = children or {},
+            private = false,
+        }
+    end
+
+    local function parse(text, lang)
+        return drop_node_id(parser.parse_sections(create_buf_with_text(text, lang)))
+    end
+
+    it("parse sql block comment banners", function()
+        assert.are.same(
+            { build_header("Orders", 1) },
+            parse(
+                [[
+/******************
+ * Orders         *
+ * Open orders only *
+ ******************/
+SELECT 1;
+
+/* regular comment */
+SELECT 2;
+]],
+                "sql"
+            )
+        )
+    end)
+
+    for _, lang in ipairs({ "mongo", "cypher" }) do
+        it("parse " .. lang .. " line comment banners", function()
+            assert.are.same(
+                { build_header("First section", 1), build_header("Second section", 7) },
+                parse(
+                    [[
+//////////////////
+// First section //
+// some description //
+//////////////////
+
+// regular comment //
+//////////////////
+// Second section //
+//////////////////
+]],
+                    lang
+                )
+            )
+        end)
+    end
+
+    local subsection_texts = {
+        sql = [[
+------------------
+-- First --
+------------------
+-- ## Sub A
+SELECT 1;
+-- ### Sub A.1
+SELECT 2;
+-- ## Sub B
+-- # not a section
+-- regular ## comment
+------------------
+-- Second --
+------------------
+-- ### Deep
+]],
+        lucene = [[
+------------------
+-- First --
+------------------
+-- ## Sub A
+logs | a
+-- ### Sub A.1
+logs | b
+-- ## Sub B
+-- # not a section
+-- regular ## comment
+------------------
+-- Second --
+------------------
+-- ### Deep
+]],
+        promql = [[
+##################
+# First #
+##################
+# ## Sub A
+up
+# ### Sub A.1
+up
+# ## Sub B
+# # not a section
+# regular ## comment
+##################
+# Second #
+##################
+# ### Deep
+]],
+        mongo = [[
+/******************
+ * First
+ ******************/
+// ## Sub A
+{"find": "a"}
+// ### Sub A.1
+{"find": "b"}
+// ## Sub B
+// # not a section
+// regular ## comment
+//////////////////
+// Second //
+//////////////////
+// ### Deep
+]],
+    }
+    subsection_texts.cypher = subsection_texts.mongo:gsub('{"find": "%a"}', "MATCH (n) RETURN n;")
+
+    for lang, text in pairs(subsection_texts) do
+        it("nest " .. lang .. " subsections by level under banners", function()
+            assert.are.same({
+                build_header("First", 1, {
+                    build_header("Sub A", 4, { build_header("Sub A.1", 6) }),
+                    build_header("Sub B", 8),
+                }),
+                -- A level 3 subsection without a level 2 parent nests directly under the banner
+                build_header("Second", 11, { build_header("Deep", 14) }),
+            }, parse(text, lang))
+        end)
+    end
+
+    it("not open a banner on a closing rule or across blank lines", function()
+        assert.are.same(
+            { build_header("First", 1), build_header("Second", 5) },
+            parse(
+                [[
+------------------
+-- First --
+------------------
+-- regular comment --
+------------------
+-- Second --
+------------------
+
+-- another comment --
+------------------
+
+-- Not a banner --
+------------------
+]],
+                "sql"
+            )
+        )
+    end)
+
+    it("list subsections before any banner at the top level", function()
+        assert.are.same(
+            { build_header("Sub", 1, { build_header("Deeper", 2) }) },
+            parse("-- ## Sub\n-- ### Deeper\nSELECT 1;\n", "sql")
+        )
     end)
 end)

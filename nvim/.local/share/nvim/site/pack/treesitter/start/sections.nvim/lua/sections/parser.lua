@@ -3,7 +3,36 @@ local ts = vim.treesitter
 
 local M = {}
 
-local SUPPORTED_CAPTURES = { "section.name", "section.type_annotation" }
+local SUPPORTED_CAPTURES = { "section.name", "section.type_annotation", "section.level" }
+
+-- A banner rule is a comment made of a single repeated character, e.g. `------`
+local function is_rule(node, source)
+    local text = ts.get_node_text(node, source)
+    return #text >= 3 and text:match("^%p") ~= nil and text == text:sub(1, 1):rep(#text)
+end
+
+-- `(#sections-banner? @rule @name)`: @rule opens a line comment banner whose
+-- name line @name follows on the next row. Banners being closed by the same
+-- rule they open with, @rule is an opener when an even number of rules
+-- precede it in its run of consecutive comment lines.
+ts.query.add_predicate("sections-banner?", function(match, _, source, predicate)
+    local rule, name = match[predicate[2]][1], match[predicate[3]][1]
+    if name:start() ~= rule:end_() + 1 then
+        return false
+    end
+
+    local rules_before = 0
+    local node = rule
+    local prev = node:prev_sibling()
+    while prev ~= nil and prev:type() == rule:type() and prev:end_() + 1 == node:start() do
+        if is_rule(prev, source) then
+            rules_before = rules_before + 1
+        end
+        node, prev = prev, prev:prev_sibling()
+    end
+
+    return rules_before % 2 == 0
+end, { force = true, all = true })
 
 local function build_section(match, metadata, query_info, buf_id)
     local current_section = { children = {} }
@@ -39,6 +68,10 @@ local function build_section(match, metadata, query_info, buf_id)
             end
         end
     end
+
+    -- A level is set statically (`#set! level`) or by the length of the
+    -- @section.level text, e.g. `##` is level 2
+    current_section.level = tonumber(metadata.level) or (current_section.level and #current_section.level)
 
     return current_section
 end
@@ -100,7 +133,13 @@ end
 local function find_parent_section(child, section_stack)
     for i = #section_stack, 1, -1 do
         local candidate = section_stack[i]
-        if is_descendant(child, candidate) then
+        if child.level ~= nil and candidate.level ~= nil then
+            -- Leveled sections (e.g. comment banners) are siblings in the tree:
+            -- they nest under the closest preceding section of a lower level
+            if candidate.level < child.level then
+                return i
+            end
+        elseif is_descendant(child, candidate) then
             return i
         end
     end
@@ -118,6 +157,7 @@ local function cleanup_internal_data_from_sections(sections)
     for i = 1, #sections do
         sections[i].node_id = sections[i].node:id()
         sections[i].node = nil
+        sections[i].level = nil
         sections[i].children = cleanup_internal_data_from_sections(sections[i].children)
     end
     return sections

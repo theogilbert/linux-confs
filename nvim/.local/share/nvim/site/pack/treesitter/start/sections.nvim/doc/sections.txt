@@ -160,10 +160,11 @@ displayed in the panel:
     attribute   `name: type`          󰠲
     header      `name`                
 
-Sections found inside another section are shown as its children, except
-for SQL, Lucene, PromQL, MongoDB and Cypher where sections are always a
-flat list. Sections marked as private can be hidden with the `p` key
-(|sections-keymap-private|).
+Sections found inside another section are shown as its children. SQL,
+Lucene, PromQL, MongoDB and Cypher sections are comments, which never
+contain one another: they are nested by level instead, see
+|sections-subsections|. Sections marked as private can be hidden with the
+`p` key (|sections-keymap-private|).
 
 The examples below show a source snippet, followed by what the panel
 displays.
@@ -244,10 +245,11 @@ XML:~
 <
 *sections-sql* *sections-lucene*
 SQL and Lucene (`.lucene`, grannos parser):~
-- Banner comments: a line of three or more dashes, followed directly by a
-  `-- name --` line. Only this first line is used as the section name, so
-  any further `-- ... --` lines can hold a description. Other comments
-  are ignored. Example (SQL): >sql
+- Banner comments: a line of three or more dashes, followed on the next
+  line by a `-- name --` line. Only this first line is used as the section
+  name, so any further `-- ... --` lines can hold a description. The line
+  of dashes closing a banner never opens another one. Other comments are
+  ignored. Example (SQL): >sql
     ------------------
     -- Customers --
     -- Active customers only --
@@ -256,12 +258,15 @@ SQL and Lucene (`.lucene`, grannos parser):~
 <   Panel: >
      Customers
 <
+- SQL only: the block comment banner of |sections-mongo| works too.
+- Subsections: `-- ## name`, see |sections-subsections|.
+
 *sections-promql*
 PromQL (`.promql`, grannos parser):~
 - Same banner as SQL, written with `#`: a line of three or more `#`,
-  followed directly by a `# name #` line. Only this first line is used as
-  the section name, so further `# ... #` lines can hold a description.
-  Other comments are ignored. >
+  followed on the next line by a `# name #` line. Only this first line is
+  used as the section name, so further `# ... #` lines can hold a
+  description. Other comments are ignored. >
     ##################
     # Errors         #
     # 5xx rate per job #
@@ -270,13 +275,14 @@ PromQL (`.promql`, grannos parser):~
 <   Panel: >
      Errors
 <
+- Subsections: `# ## name`, see |sections-subsections|.
 *sections-mongo* *sections-cypher*
 MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`), grannos parsers:~
 - Banner block comments: a `/*` followed by two or more stars, then
   ` * ` lines, closed by a line of stars ending in `*/`. Only the first
   inner line is used as the section name (the trailing `*` is optional),
   so further lines can hold a description. Other comments are ignored.
-  As with SQL, sections are a flat list. Example (Mongo): >
+  Example (Mongo): >
     /******************
      * Orders         *
      * Open orders only *
@@ -284,6 +290,39 @@ MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`), grannos parsers:~
     {"find": "orders", "filter": {"status": "open"}}
 <   Panel: >
      Orders
+<
+- The SQL banner, written with `//`: a line of three or more `/`, followed
+  on the next line by a `// name //` line. >
+    //////////////////
+    // Orders       //
+    //////////////////
+<
+- Subsections: `// ## name`, see |sections-subsections|.
+
+*sections-subsections*
+Subsections (SQL, Lucene, PromQL, MongoDB, Cypher):~
+A banner is a level 1 section. A single line comment starting with two or
+more `#` is a subsection, whose level is the number of `#`, as for
+Markdown headers. A section is nested under the closest section above it
+with a lower level; one with no such section is shown at the top level.
+The comment marker before the `#` is the language's own: `--` for SQL and
+Lucene, `#` for PromQL, `//` for MongoDB and Cypher. The `#` must be
+followed by a space, so comments such as `-- #1 fix` are ignored.
+Example (SQL): >sql
+    ------------------
+    -- Customers --
+    ------------------
+    -- ## Active
+    SELECT * FROM customers WHERE active;
+    -- ### By region
+    SELECT region, count(*) FROM customers WHERE active GROUP BY region;
+    -- ## Churned
+    SELECT * FROM customers WHERE churned_at IS NOT NULL;
+<   Panel: >
+     Customers
+       Active
+         By region
+       Churned
 <
 To add support for additional languages, create Tree-sitter query files
 in the `queries/<language>/sections.scm` directory. See |sections-queries|.
@@ -347,10 +386,22 @@ Queries should capture nodes with the following captures:
 - `@section.param` - Section parameters (optional)
   Currently, parameters are only compatible with section types `function` and `class`.
 - `@section.type_annotation` - Type annotations, displayed after `:` (optional)
+- `@section.level` - Sets the section level to the length of its text, so
+  it is usually rewritten with `#gsub!` first, e.g. to `##` (optional)
 
 Metadata:~
 - `(#set! type "function"|"class"|"attribute"|"header")` - Section type
 - `(#set! private "true")` - Mark section as private
+- `(#set! level "1")` - Section level. A section with a level is nested
+  under the closest preceding section with a lower level, instead of the
+  section whose node contains it. Used for sections that never contain one
+  another, such as comments (see |sections-subsections|)
+
+Predicates:~
+- `(#sections-banner? @rule @name)` - `@rule` opens a banner of line
+  comments: `@name` is on the next line, and `@rule` is not the rule
+  closing a previous banner. A rule is a comment made of one repeated
+  punctuation character, such as `------`
 
 Example query for functions:~
 >query

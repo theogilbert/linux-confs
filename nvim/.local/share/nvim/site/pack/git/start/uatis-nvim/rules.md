@@ -350,6 +350,29 @@ scrolls the old window to the old one, and the notes go at the end of a row,
 since a virtual line in one window and not the other puts every row below it
 out of step.
 
+### A definition moved to another file — `xmoves.lua`
+
+A move between files is in two comparisons that cannot see each other, so it
+is found by the review: once per read of the list, from git's chunks, which
+say which rows of every file went and came. Files with enough of either are
+parsed — old text at the revision, new text off the disk, git's rows being the
+disk's — and definitions are paired across files by the rules above. A pair
+inside one file is made too and dropped: it is the view's, and making it keeps
+a lookalike in another file from claiming either half.
+
+With a commit on show both sides come out of git, the commit and its parent,
+and an index is keyed by the revision and the commit (`across_key`): stepping
+`]C` re-reads the list, and the commit just left must not draw on the next.
+
+Each view then finds its own end again in what it draws (`apply`) — by name or
+content in the buffer, which may be ahead of the disk — and rewrites its drawn
+answer with it: `kind = "out"` takes the old copy out and leaves one line;
+`kind = "in"` compares the new copy against the other file's old one, whose
+lines are appended past the end of this file's (`drawn.old_lines`) so the
+spliced hunks can point at them. Each end is a stop and a read mark in its own
+file, and `<C-]>` lands on the end THAT file's view drew, not the index's
+guess: the two files are compared separately and may place it a row apart.
+
 ### `collapsed_span` — `overlay.lua`
 
 Where several old rows were folded onto one, draw the whole construct rather

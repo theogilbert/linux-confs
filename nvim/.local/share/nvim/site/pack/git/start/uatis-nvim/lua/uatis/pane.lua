@@ -489,6 +489,9 @@ local function refresh(pane, keep_path)
         filelist.render(pane)
       end
       follow_visible(pane)
+      -- Which definitions went from one file to another: a question
+      -- about the whole list, and so asked of it, once per read.
+      require("uatis.xmoves").build(pane)
       if pane.commit then
         prefetch_around(pane)
       end
@@ -1978,8 +1981,15 @@ function M.goto_file(pane, idx)
   -- buffer that holds five commits' worth.
   if pane.commit then
     local commit = pane.commit
+    -- Only the latest open is the reader's: two asked in quick succession
+    -- -- the review opening its first file and the reader opening one
+    -- too, a `]f` pressed twice -- each wait on a `git show`, and the one
+    -- that answers second is not always the one asked second. Answered
+    -- out of order, the earlier file was put back over the later one.
+    pane.open_gen = (pane.open_gen or 0) + 1
+    local asked = pane.open_gen
     git.blob(pane.root, commit.sha, f.path, function(text)
-      if panes[pane.tab] ~= pane or pane.commit ~= commit then
+      if panes[pane.tab] ~= pane or pane.commit ~= commit or pane.open_gen ~= asked then
         return
       end
       if not vim.api.nvim_win_is_valid(win) then

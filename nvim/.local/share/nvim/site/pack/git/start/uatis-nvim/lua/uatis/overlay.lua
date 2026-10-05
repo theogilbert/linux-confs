@@ -1433,7 +1433,7 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- buffer opens an 'signcolumn=auto' column, and the before-images are
   -- padded to the width the gutter has.
   for _, mv in ipairs(result.moves or {}) do
-    for row = mv.new.first, math.min(mv.new.last, line_count) do
+    for row = mv.new and mv.new.first or 1, mv.new and math.min(mv.new.last, line_count) or 0 do
       vim.api.nvim_buf_set_extmark(bufnr, M.ns, row - 1, 0, {
         sign_text = config.marker.move,
         sign_hl_group = "UatisMove",
@@ -3017,18 +3017,30 @@ function M.render(bufnr, win, result, old_lines, opts)
   end
   for _, mv in ipairs(result.moves or {}) do
     local what = mv.name and (mv.name .. " ") or ""
-    local changes = mv.changes == 0 and "unchanged"
-      or (mv.changes == 1 and "1 change" or (mv.changes .. " changes"))
-    -- Each end points at the other.
-    local down = mv.new.first >= mv.at
-    note(mv.new.first - 1, down and "⇡" or "⇣",
-      ("%smoved from line %d · %s"):format(what, mv.old.first, changes), true)
-    local below = mv.at > line_count
-    local at = math.min(mv.at, line_count)
-    note(math.max(at - 1, 0), down and "⇣" or "⇡",
-      ("%smoved to line %d · %s"):format(what, mv.new.first, changes), not below)
-    table.insert(anchors, mv.new.first)
-    table.insert(anchors, math.max(at, 1))
+    -- How much it changed is known where the two copies were compared,
+    -- which for a move out of this file is the other file's view.
+    local changes = mv.changes and (mv.changes == 0 and " · unchanged"
+      or (mv.changes == 1 and " · 1 change" or (" · " .. mv.changes .. " changes"))) or ""
+    local below = mv.at ~= nil and mv.at > line_count
+    local at = mv.at and math.max(math.min(mv.at, line_count), 1)
+    if mv.kind == "in" then
+      note(mv.new.first - 1, "↤",
+        ("%smoved from %s:%d%s"):format(what, mv.from.path, mv.from.first, changes), true)
+      table.insert(anchors, mv.new.first)
+    elseif mv.kind == "out" then
+      note(at - 1, "↦", ("%smoved to %s:%d%s"):format(what, mv.to.path, mv.to.first, changes),
+        not below)
+      table.insert(anchors, at)
+    else
+      -- Each end points at the other.
+      local down = mv.new.first >= mv.at
+      note(mv.new.first - 1, down and "⇡" or "⇣",
+        ("%smoved from line %d%s"):format(what, mv.old.first, changes), true)
+      note(at - 1, down and "⇣" or "⇡",
+        ("%smoved to line %d%s"):format(what, mv.new.first, changes), not below)
+      table.insert(anchors, mv.new.first)
+      table.insert(anchors, at)
+    end
   end
 
   -- `]c` stops where there is something to look at.

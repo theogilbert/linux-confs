@@ -255,6 +255,18 @@ return {
       similarity = 0.6,
       -- ...and two with the same name.
       named_similarity = 0.2,
+      -- Look for definitions moved from one file of a branch review to
+      -- another, among this many of its files...
+      across = true,
+      -- Languages (tree-sitter names) never looked at between files.
+      -- Moves inside one file are found in every language.
+      across_skip = { "markdown", "markdown_inline", "toml", "ini", "json", "jsonc",
+        "yaml", "csv", "xml", "html" },
+      -- ...or, set to a list, the only languages that are.
+      across_only = false,
+      across_files = 60,
+      -- ...comparing at most this many pairs of definitions.
+      across_pairs = 4000,
     },
 
     -- Mark the leading whitespace a line gained when a block was

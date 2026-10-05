@@ -146,8 +146,20 @@ end
 --- The move whose new copy holds `row`, or whose old copy holds `line`.
 local function move_of(view, row, line)
   for _, mv in ipairs(view.moves or {}) do
-    if (row and row >= mv.new.first and row <= mv.new.last)
-      or (line and line >= mv.old.first and line <= mv.old.last) then
+    if not mv.kind and ((row and row >= mv.new.first and row <= mv.new.last)
+      or (line and line >= mv.old.first and line <= mv.old.last)) then
+      return mv
+    end
+  end
+  return nil
+end
+
+--- The move whose old copy is this window's `line`: one inside the
+--- file, or one out of it to another. A move INTO the file has its old
+--- copy elsewhere, and nothing here.
+local function held(view, line)
+  for _, mv in ipairs(view.moves or {}) do
+    if mv.kind ~= "in" and line >= mv.old.first and line <= mv.old.last then
       return mv
     end
   end
@@ -610,16 +622,19 @@ function M.refresh(view)
   -- removed -- and says where it went, the way the new side says where
   -- it came from. Its bar is in the number column (`number`).
   for _, mv in ipairs(view.moves or {}) do
-    local row = row_of(mv.old.first)
+    local row = mv.kind ~= "in" and row_of(mv.old.first) or -1
     if row >= 0 and row < count then
-      local changes = mv.changes == 0 and "unchanged"
-        or (mv.changes == 1 and "1 change" or (mv.changes .. " changes"))
+      local changes = mv.changes and (mv.changes == 0 and " · unchanged"
+        or (mv.changes == 1 and " · 1 change" or (" · " .. mv.changes .. " changes"))) or ""
+      local what = mv.name and (mv.name .. " ") or ""
+      local text = mv.kind == "out"
+        and ("  ↦ %smoved to %s:%d%s"):format(what, mv.to.path, mv.to.first, changes)
+        or ("  %s %smoved to line %d%s"):format(mv.new.first < mv.at and "⇡" or "⇣",
+          what, mv.new.first, changes)
       -- At the end of the row: a line of its own would put this window
       -- a row out of step with yours below it.
       vim.api.nvim_buf_set_extmark(old.buf, M.ns, row, 0, {
-        virt_text = { { ("  %s %smoved to line %d · %s"):format(
-          mv.new.first < mv.at and "⇡" or "⇣", mv.name and (mv.name .. " ") or "",
-          mv.new.first, changes), "UatisMove" } },
+        virt_text = { { text, "UatisMove" } },
         virt_text_pos = "eol",
         priority = 100,
       })
@@ -753,12 +768,15 @@ local function setup_keymaps(view, buf)
   map(config.keys.view.move_jump, function()
     local row = vim.api.nvim_win_get_cursor(0)[1]
     local line = view.old_of_row and view.old_of_row[row] or (not view.align and row) or nil
-    local mv = line and move_of(view, nil, line)
+    local mv = line and held(view, line)
     if not mv or not (view.win and vim.api.nvim_win_is_valid(view.win)) then
       return
     end
     vim.cmd("normal! m'")
     vim.api.nvim_set_current_win(view.win)
+    if mv.kind == "out" then
+      return require("uatis.view").open_at(view, mv.to.path, mv.to.first, mv)
+    end
     put_cursor(view.win, view.bufnr, M.new_row(view, row))
   end, "Uatis - Other end of a moved definition")
 end
@@ -893,7 +911,7 @@ function M.number()
   -- for both to land in the same column: a status column with no
   -- highlight item in it is drawn a column left of the string, and one
   -- with an item is drawn as written.
-  if n and move_of(view, nil, n) then
+  if n and held(view, n) then
     return string.format("%" .. math.max(width - 2, 1) .. "d ", n) .. "%#UatisMove#"
       .. config.marker.move .. "%*"
   end

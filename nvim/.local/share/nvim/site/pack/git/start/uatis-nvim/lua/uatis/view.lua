@@ -38,6 +38,43 @@ local landing
 --- that knows a view has finished drawing, and it is defined first.
 local land
 
+--- Where a jump to the other end of a move between files is going:
+--- `{ root, path, name, kind }`, the end being the one THAT file's view
+--- draws. By path and not by buffer: with a commit on show the file is
+--- opened a git call later, into a buffer that does not exist yet.
+--- The two files were compared separately and each places its end by
+--- its own answer, so the row the review's index guessed can be a row
+--- off the line the reader is aiming for.
+local move_landing
+
+--- The cursor onto `view`'s end of the move `move_landing` is after, if
+--- it is aimed here and the view has drawn that move.
+local function land_move(view)
+  local aim = move_landing
+  -- Spent after a few seconds: the review's index or a commit's text can
+  -- be slow, but a jump the reader has moved on from must not take the
+  -- cursor on some later redraw of that file.
+  if aim and vim.uv.now() > aim.till then
+    move_landing, aim = nil, nil
+  end
+  if not aim or aim.root ~= view.root or aim.path ~= view.relpath then
+    return
+  end
+  for _, mv in ipairs(view.moves or {}) do
+    if mv.kind == aim.kind and mv.name == aim.name then
+      move_landing = nil
+      local count = vim.api.nvim_buf_line_count(view.bufnr)
+      local row = mv.kind == "in" and mv.new.first or math.max(math.min(mv.at, count), 1)
+      local win = vim.fn.bufwinid(view.bufnr)
+      if win ~= -1 then
+        vim.api.nvim_win_set_cursor(win, { row, 0 })
+        vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+      end
+      return
+    end
+  end
+end
+
 function M.get(bufnr)
   local v = views[bufnr]
   if v and not vim.api.nvim_buf_is_valid(bufnr) then
@@ -158,127 +195,145 @@ local function render(view)
       backend = view.backend,
       path = view.relpath,
       bufnr = view.bufnr,
-    }, function(result)
+    }, function(answer)
       if not current() then
         return
       end
-      local added, removed = 0, 0
-      for _, h in ipairs(result.hunks or {}) do
-        added = added + h.count_b
-        removed = removed + h.count_a
-      end
-      local moved = view.added ~= added or view.removed ~= removed
-      view.added, view.removed = added, removed
-      view.pending = false
-      view.engine, view.dropped = result.engine, result.dropped
-      -- Structural was asked for and difftastic could not answer. Said in
-      -- the header rather than notified: this is a fact about what is on
-      -- screen, and it would otherwise be a message per keystroke.
-      view.unavailable = result.unavailable
-      -- ...and difftastic answering with no parser for this file, which
-      -- is a different thing and reads differently: what it compared were
-      -- words, so the marks are word-precise and no more. Said in the
-      -- header for the same reason, and because a reader who is not told
-      -- reads a line-shaped answer as the structural one.
-      view.prose = result.prose
-      view.fallback = result.fallback
-      view.pieces = result.pieces
-      -- Kept for the old-revision window: it is the text this render was
-      -- measured against, and the hunks are what tell it which line
-      -- answers to which. Held on the view rather than fetched again so
-      -- the two windows can never be describing different revisions.
-      view.old_text, view.hunks = old_text, result.hunks or {}
-      -- ...and the backend's row alignment where it has one, which is a
-      -- better answer than the hunk shapes for "which line answers to
-      -- this one" -- and the same one the rendering used.
-      view.pairs, view.anchor = result.pairs, result.anchor
-      -- ...and the definitions it read as moved, for the key that goes
-      -- from one end of a move to the other.
-      view.moves = result.drawn and result.drawn.moves or nil
-      -- ...and what it said about the OLD side, for the window that shows
-      -- it: difftastic tints the tokens it called changed and leaves the
-      -- rest of a removed line alone, which is a statement only it can
-      -- make. `vim.diff` has none to make, so there is nothing to store
-      -- and the old window falls back to marking whole lines.
-      view.precise = result.precise
-      -- What the old window marks is what the new side draws: where a
-      -- definition moved, that is the answer `moves.lua` made, with its
-      -- old copy no longer removed. Its rows still line up by the
-      -- backend's own alignment above -- the rewritten one is out of
-      -- order, which a side-by-side layout cannot be.
-      local shown = result.drawn or result
-      view.del_hunks = shown.hunks or {}
-      local dels = {}
-      for _, span in ipairs(shown.spans or {}) do
-        if span.kind == "delete" then
-          dels[span.line] = dels[span.line] or {}
-          table.insert(dels[span.line], span)
+      -- ...and what the review knows that this file cannot: definitions
+      -- that came here from another file, or went from here to one.
+      require("uatis.xmoves").apply(view, answer, old_text, new_text, function(result)
+        if not current() then
+          return
         end
-      end
-      view.del_spans = result.precise and dels or nil
-      -- ...minus the rows of a changed node that did not themselves
-      -- change. The new side stops marking those (`quiet_unchanged` in
-      -- `overlay.lua`), and this window is the same edit seen in the
-      -- other layout: a docstring with one line reworded cannot come
-      -- back solid red here beside a new side that marks the one row.
-      --
-      -- Dropped HERE rather than out of `result.spans`, because over
-      -- there they are not paint: they are what says a row was removed
-      -- at all, and the before-image picks the rows it draws out of
-      -- them.
-      if view.del_spans then
-        local was = vim.split(old_text, "\n", { plain = true })
-        for new_row, old_row in pairs(shown.pairs or {}) do
-          local now = vim.api.nvim_buf_get_lines(view.bufnr, new_row - 1, new_row, false)[1]
-          if now ~= nil and was[old_row] == now then
-            view.del_spans[old_row] = nil
+        local added, removed = 0, 0
+        for _, h in ipairs(result.hunks or {}) do
+          added = added + h.count_b
+          removed = removed + h.count_a
+        end
+        local moved = view.added ~= added or view.removed ~= removed
+        view.added, view.removed = added, removed
+        view.pending = false
+        view.engine, view.dropped = result.engine, result.dropped
+        -- Structural was asked for and difftastic could not answer. Said in
+        -- the header rather than notified: this is a fact about what is on
+        -- screen, and it would otherwise be a message per keystroke.
+        view.unavailable = result.unavailable
+        -- ...and difftastic answering with no parser for this file, which
+        -- is a different thing and reads differently: what it compared were
+        -- words, so the marks are word-precise and no more. Said in the
+        -- header for the same reason, and because a reader who is not told
+        -- reads a line-shaped answer as the structural one.
+        view.prose = result.prose
+        view.fallback = result.fallback
+        view.pieces = result.pieces
+        -- Kept for the old-revision window: it is the text this render was
+        -- measured against, and the hunks are what tell it which line
+        -- answers to which. Held on the view rather than fetched again so
+        -- the two windows can never be describing different revisions.
+        view.old_text, view.hunks = old_text, result.hunks or {}
+        -- ...and the backend's row alignment where it has one, which is a
+        -- better answer than the hunk shapes for "which line answers to
+        -- this one" -- and the same one the rendering used.
+        view.pairs, view.anchor = result.pairs, result.anchor
+        -- ...and the definitions it read as moved, for the key that goes
+        -- from one end of a move to the other.
+        view.moves = result.drawn and result.drawn.moves or nil
+        -- ...and what it said about the OLD side, for the window that shows
+        -- it: difftastic tints the tokens it called changed and leaves the
+        -- rest of a removed line alone, which is a statement only it can
+        -- make. `vim.diff` has none to make, so there is nothing to store
+        -- and the old window falls back to marking whole lines.
+        view.precise = result.precise
+        -- What the old window marks is what the new side draws: where a
+        -- definition moved, that is the answer `moves.lua` made, with its
+        -- old copy no longer removed. Its rows still line up by the
+        -- backend's own alignment above -- the rewritten one is out of
+        -- order, which a side-by-side layout cannot be.
+        local shown = result.drawn or result
+        view.del_hunks = shown.hunks or {}
+        local dels = {}
+        for _, span in ipairs(shown.spans or {}) do
+          if span.kind == "delete" then
+            dels[span.line] = dels[span.line] or {}
+            table.insert(dels[span.line], span)
           end
         end
-      end
-      -- ...and the same question asked of the old side, which the old
-      -- window draws: `render` is where the two blocks are compared, so
-      -- it is where the answer is.
-      local refit
-      view.anchors, view.del_fine, refit = overlay.render(view.bufnr, view.win, result,
-        vim.split(old_text, "\n", { plain = true }),
-        -- Side by side, the old revision is a window of its own: drawing
-        -- it here too would say everything twice.
-        { before = view.layout ~= "side" })
-      -- ...including the rows whose old side the render MEASURED rather
-      -- than read off the backend, where the backend had paired them
-      -- with a line they were never the old version of and reported the
-      -- whole row as gone. The old window draws from `del_spans`, so it
-      -- is told here too: one edit cannot be two answers because it is
-      -- being looked at in two layouts. Written into this render's own
-      -- table and never into the result, which is cached.
-      if view.del_spans then
-        for line, spans in pairs(refit or {}) do
-          if #spans > 0 then
-            view.del_spans[line] = spans
+        view.del_spans = result.precise and dels or nil
+        -- ...minus the rows of a changed node that did not themselves
+        -- change. The new side stops marking those (`quiet_unchanged` in
+        -- `overlay.lua`), and this window is the same edit seen in the
+        -- other layout: a docstring with one line reworded cannot come
+        -- back solid red here beside a new side that marks the one row.
+        --
+        -- Dropped HERE rather than out of `result.spans`, because over
+        -- there they are not paint: they are what says a row was removed
+        -- at all, and the before-image picks the rows it draws out of
+        -- them.
+        if view.del_spans then
+          local was = vim.split(old_text, "\n", { plain = true })
+          for new_row, old_row in pairs(shown.pairs or {}) do
+            local now = vim.api.nvim_buf_get_lines(view.bufnr, new_row - 1, new_row, false)[1]
+            if now ~= nil and was[old_row] == now then
+              view.del_spans[old_row] = nil
+            end
           end
         end
-      end
-      oldside.refresh(view)
-      -- Counted so a test can wait for a redraw to have happened rather
-      -- than for a wall-clock guess, the same way the review's panes do.
-      view.renders = (view.renders or 0) + 1
-      -- ...and the cursor, where this view is one `]c` stepped into: the
-      -- anchors it was aimed at have just been worked out.
-      land(view)
-      -- The list measures what this view measures, and only this view can
-      -- see an edit that has not been saved: `git diff` reads the disk.
-      -- Told rather than polled, and only when the numbers actually moved,
-      -- so a burst of keystrokes redraws the list once.
-      if moved or view.renders == 1 then
-        require("uatis.pane").recount(view)
-      end
-      -- ...and which chunks it drew nothing for, on every render: the
-      -- counts can stand still while the backend's reading of the file
-      -- changes under them -- a toggle to line mode, for one.
-      require("uatis.pane").set_aside(view)
-      vim.cmd("redrawstatus")
+        -- ...and the same question asked of the old side, which the old
+        -- window draws: `render` is where the two blocks are compared, so
+        -- it is where the answer is.
+        local refit
+        -- The old lines a move from another file brought with it ride past
+        -- the end of this file's own, where the drawn answer points at them.
+        view.anchors, view.del_fine, refit = overlay.render(view.bufnr, view.win, result,
+          result.drawn and result.drawn.old_lines or vim.split(old_text, "\n", { plain = true }),
+          -- Side by side, the old revision is a window of its own: drawing
+          -- it here too would say everything twice.
+          { before = view.layout ~= "side" })
+        -- ...including the rows whose old side the render MEASURED rather
+        -- than read off the backend, where the backend had paired them
+        -- with a line they were never the old version of and reported the
+        -- whole row as gone. The old window draws from `del_spans`, so it
+        -- is told here too: one edit cannot be two answers because it is
+        -- being looked at in two layouts. Written into this render's own
+        -- table and never into the result, which is cached.
+        if view.del_spans then
+          for line, spans in pairs(refit or {}) do
+            if #spans > 0 then
+              view.del_spans[line] = spans
+            end
+          end
+        end
+        oldside.refresh(view)
+        -- Counted so a test can wait for a redraw to have happened rather
+        -- than for a wall-clock guess, the same way the review's panes do.
+        view.renders = (view.renders or 0) + 1
+        -- ...and the cursor, where this view is one `]c` stepped into: the
+        -- anchors it was aimed at have just been worked out.
+        land(view)
+        land_move(view)
+        -- The list measures what this view measures, and only this view can
+        -- see an edit that has not been saved: `git diff` reads the disk.
+        -- Told rather than polled, and only when the numbers actually moved,
+        -- so a burst of keystrokes redraws the list once.
+        if moved or view.renders == 1 then
+          require("uatis.pane").recount(view)
+        end
+        -- ...and which chunks it drew nothing for, on every render: the
+        -- counts can stand still while the backend's reading of the file
+        -- changes under them -- a toggle to line mode, for one.
+        require("uatis.pane").set_aside(view)
+        vim.cmd("redrawstatus")
+      end)
     end)
   end)
+end
+
+--- Draws `view` again, now: for a fact about the file that arrived from
+--- somewhere else -- the review's index of moves between files.
+function M.redraw(view)
+  if views[view.bufnr] == view then
+    render(view)
+  end
 end
 
 --- Coalesces a burst of buffer changes into one redraw.
@@ -531,13 +586,19 @@ function M.stops(view)
     table.insert(out, { lo = lo, hi = hi, key = key(text) })
   end
   local count = vim.api.nvim_buf_line_count(view.bufnr)
+  -- A move between files has its one end here: the new copy of one
+  -- that came in, the old end of one that went out.
   for _, mv in ipairs(view.moves or {}) do
-    local copy = vim.api.nvim_buf_get_lines(view.bufnr, mv.new.first - 1, mv.new.last, false)
-    table.insert(out, { lo = mv.new.first, hi = mv.new.last,
-      key = key(vim.list_extend({ "\0moved to" }, copy)) })
-    local at = math.max(math.min(mv.at, count), 1)
-    table.insert(out, { lo = at, hi = at, old = mv.old,
-      key = key(vim.list_extend({ "\0moved from" }, vim.list_slice(old_lines, mv.old.first, mv.old.last))) })
+    if mv.new then
+      local copy = vim.api.nvim_buf_get_lines(view.bufnr, mv.new.first - 1, mv.new.last, false)
+      table.insert(out, { lo = mv.new.first, hi = mv.new.last,
+        key = key(vim.list_extend({ "\0moved to" }, copy)) })
+    end
+    if mv.kind ~= "in" then
+      local at = math.max(math.min(mv.at, count), 1)
+      table.insert(out, { lo = at, hi = at, old = mv.old,
+        key = key(vim.list_extend({ "\0moved from" }, vim.list_slice(old_lines, mv.old.first, mv.old.last))) })
+    end
   end
   table.sort(out, function(a, b)
     if a.lo ~= b.lo then
@@ -804,19 +865,69 @@ end
 --- old end is the row its line hangs above and the new end is any row
 --- of the definition -- the one with the bar. The old end is asked
 --- first: it is one exact row, and may sit inside another move.
+---
+--- Returns the row, and the file it is in where that is another one: a
+--- move between files has its other end in the file it came from or
+--- went to.
 function M.move_target(view, row)
   local count = vim.api.nvim_buf_line_count(view.bufnr)
   for _, mv in ipairs(view.moves or {}) do
-    if row == math.max(math.min(mv.at, count), 1) then
+    if mv.at and row == math.max(math.min(mv.at, count), 1) then
+      if mv.kind == "out" then
+        return mv.to.first, mv.to.path, mv
+      end
       return mv.new.first
     end
   end
   for _, mv in ipairs(view.moves or {}) do
-    if row >= mv.new.first and row <= mv.new.last then
+    if mv.new and row >= mv.new.first and row <= mv.new.last then
+      if mv.kind == "in" then
+        return mv.from.at, mv.from.file, mv
+      end
       return math.max(math.min(mv.at, count), 1)
     end
   end
   return nil
+end
+
+--- Opens `path` of the review `view` is part of, at `row`, in the window
+--- the reader is in -- through the list, so the file is annotated as
+--- part of the same review and the list's row follows.
+---
+--- `mv`, where given, is the move being followed: the cursor then goes
+--- on to that file's own end of it, once its view has drawn.
+function M.open_at(view, path, row, mv)
+  local pane = require("uatis.pane")
+  local function go(list)
+    for i, f in ipairs(list.files or {}) do
+      if f.path == path then
+        if mv then
+          move_landing = { root = view.root, path = path, name = mv.name,
+            kind = mv.kind == "in" and "out" or "in", till = vim.uv.now() + 5000 }
+        end
+        pane.goto_file(list, i)
+        -- Opened at once where the file is the working tree's; a commit's
+        -- arrives later, and its view lands the cursor when it draws.
+        local win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_win_get_buf(win)
+        local there = views[buf]
+        if there and there.relpath == path then
+          vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(row, vim.api.nvim_buf_line_count(buf))), 0 })
+          vim.cmd("normal! zz")
+          if (there.renders or 0) > 0 then
+            land_move(there)
+          end
+        end
+        return
+      end
+    end
+    vim.notify("uatis: " .. path .. " is not in this review", vim.log.levels.INFO)
+  end
+  local list = pane.get()
+  if list and (list.renders or 0) > 0 then
+    return go(list)
+  end
+  pane.list({ on_ready = go })
 end
 
 --- Identifier nodes that are not spelled `*identifier` in their grammar.
@@ -863,15 +974,21 @@ end
 --- run, or the key itself.
 local function move_jump(view, prev)
   local win = vim.api.nvim_get_current_win()
-  local to
+  local to, path, mv
   if vim.api.nvim_win_get_buf(win) == view.bufnr then
     local row, col = unpack(vim.api.nvim_win_get_cursor(win))
-    to = not on_symbol(view.bufnr, row, col) and M.move_target(view, row)
+    if not on_symbol(view.bufnr, row, col) then
+      to, path, mv = M.move_target(view, row)
+    end
   end
   if to then
     vim.schedule(function()
       vim.cmd("normal! m'")
-      jump(view, to)
+      if path then
+        M.open_at(view, path, to, mv)
+      else
+        jump(view, to)
+      end
     end)
     return ""
   end

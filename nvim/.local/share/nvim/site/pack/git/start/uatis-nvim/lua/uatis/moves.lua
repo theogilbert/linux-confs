@@ -328,16 +328,27 @@ end
 --- and its inner comparison (`inners[k]`, the backend over just the two
 --- nodes) spliced in at the new copy. `moves` gains `changes`, the
 --- number of places the definition was edited.
+---
+--- A move across files has one end here (`xmoves.lua`): `kind = "out"`
+--- is an old copy with no new one and no comparison, and `kind = "in"`
+--- a new copy whose old one is not this file's -- its `old` rows are
+--- past the end of `old_text`, where the caller appended them, and are
+--- not taken out of anything. `result` may already be a drawn answer;
+--- the moves it carries are kept.
 function M.rewrite(result, moves, inners, old_text, new_text)
   local old_lines = vim.split(old_text, "\n", { plain = true })
   local new_lines = vim.split(new_text, "\n", { plain = true })
   local gone, came = covered(result.hunks, "a"), covered(result.hunks, "b")
   local drop_a, drop_b = {}, {}
   for _, mv in ipairs(moves) do
-    local a1, a2 = with_blanks(mv.old, old_lines, gone)
-    local b1, b2 = with_blanks(mv.new, new_lines, came)
-    for r = a1, a2 do drop_a[r] = true end
-    for r = b1, b2 do drop_b[r] = true end
+    if mv.old and mv.kind ~= "in" then
+      local a1, a2 = with_blanks(mv.old, old_lines, gone)
+      for r = a1, a2 do drop_a[r] = true end
+    end
+    if mv.new then
+      local b1, b2 = with_blanks(mv.new, new_lines, came)
+      for r = b1, b2 do drop_b[r] = true end
+    end
   end
 
   local hunks = carve(result.hunks, drop_a, drop_b)
@@ -364,6 +375,9 @@ function M.rewrite(result, moves, inners, old_text, new_text)
 
   for k, mv in ipairs(moves) do
     local inner = inners[k]
+    if not inner then
+      goto next_move
+    end
     local da, db = mv.old.first - 1, mv.new.first - 1
     mv.changes = #(inner.hunks or {})
     -- Kept for the side-by-side window, which lines the two copies up
@@ -408,6 +422,7 @@ function M.rewrite(result, moves, inners, old_text, new_text)
         anchor_of[na + da] = nb + db
       end
     end
+    ::next_move::
   end
 
   table.sort(hunks, function(x, y)
@@ -418,8 +433,13 @@ function M.rewrite(result, moves, inners, old_text, new_text)
   end)
   return vim.tbl_extend("force", result, {
     hunks = hunks, spans = spans, pairs = pairs_of, anchor = anchor_of,
-    moves = moves, drawn = false,
+    moves = vim.list_extend(vim.list_extend({}, result.moves or {}), moves), drawn = false,
   })
 end
+
+M.candidates = candidates
+M.likeness = likeness
+M.hangs_at = hangs_at
+M.blank = blank
 
 return M

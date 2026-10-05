@@ -483,6 +483,18 @@ once both are. The old end stands on whatever git reported where the
 definition used to be -- git does not see a move, and its chunks there have
 no row in your buffer -- so reading only the new copy leaves those unread.
 
+A definition moved to ANOTHER file of the review is drawn the same way, one
+end in each file: `↦ name moved to b.lua:12` where it went from, and in the
+file it went to the bar, `↤ name moved from a.lua:40`, and the edit of its old
+self. The review finds these once per read of the list, over the files git
+says removed or added enough to hold one (`diff.move.across`), in the
+languages it is told to look at -- prose and data are skipped by default
+(`across_skip`, or `across_only` to name the languages instead); `<C-]>` opens
+the other file at its end of the move. In a branch review the new side is
+the files on disk; with a commit on show -- commit by commit, |:UatisShow|,
+a history of a directory -- it is that commit, and both sides are read out
+of git.
+
 Side by side, the old copy carries the same bar and note, and only what was
 removed from it is red. Each copy stands opposite blank rows -- the two
 windows keep one order -- so while the cursor is in the new copy the old
@@ -813,6 +825,11 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           min_lines = 3,              -- shortest definition read as moved
           similarity = 0.6,           -- how alike two unnamed ones must be
           named_similarity = 0.2,     -- ...and two of the same name
+          across = true,              -- between files of a review
+          across_skip = { "markdown", "toml", "json", "yaml", ... },
+          across_only = false,        -- or a list: only these languages
+          across_files = 60,          -- how many files, biggest first
+          across_pairs = 4000,        -- how many pairs are compared
         },
       },
       keys = {

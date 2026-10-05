@@ -245,4 +245,44 @@ describe("Expression", function()
 			)
 		end)
 	end)
+
+	describe("build() on a Series", function()
+		it("sorts values without passing a column name", function()
+			local b = Expression:new("s")
+			b:toggle_sort("0", false)
+			assert.equals([[(s).sort_values(ascending=True)]], b:build(true))
+		end)
+
+		it("sorts the index with sort_index", function()
+			local b = Expression:new("s")
+			b:toggle_sort("", true)
+			b:toggle_sort("", true)
+			assert.equals([[(s).sort_index(ascending=False)]], b:build(true))
+		end)
+
+		it("chains index and value sorts, primary sort last", function()
+			local b = Expression:new("s")
+			b:toggle_sort("0", false)
+			b:toggle_sort("", true)
+			assert.equals([[((s).sort_index(ascending=True)).sort_values(ascending=True)]], b:build(true))
+		end)
+
+		it("filters values through a boolean mask instead of .query()", function()
+			local b = Expression:new("s")
+			b:set_filter("0", false, "> 5")
+			assert.equals(
+				[[(lambda s: s[s.to_frame(name='_dapdf_value').eval("`_dapdf_value` > 5", engine='python')])(s)]],
+				b:build(true)
+			)
+		end)
+
+		it("filters the index through the index resolver", function()
+			local b = Expression:new("s")
+			b:set_filter("", true, "< 3")
+			assert.equals(
+				[[(lambda s: s[s.to_frame(name='_dapdf_value').eval("`index` < 3", engine='python')])(s)]],
+				b:build(true)
+			)
+		end)
+	end)
 end)

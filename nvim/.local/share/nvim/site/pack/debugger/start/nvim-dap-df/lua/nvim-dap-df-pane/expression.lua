@@ -139,59 +139,87 @@ local function py_str(s)
 	return '"' .. escaped .. '"'
 end
 
+--- Column name given to a Series' values when it is temporarily turned into a
+--- DataFrame to evaluate filters (Series has no .query()).
+local SERIES_VALUE_COL = "_dapdf_value"
+
+--- Wrap expr so that it is filtered by the given query clause.
+--- @param expr string
+--- @param clause string A pandas query clause
+--- @param is_series boolean
+--- @return string
+local function apply_filter(expr, clause, is_series)
+	if not is_series then
+		return "(" .. expr .. ").query(" .. py_str(clause) .. ", engine='python')"
+	end
+	-- Evaluate the clause into a boolean mask; the lambda avoids evaluating
+	-- expr twice and keeps the Series (and its name) intact.
+	return "(lambda s: s[s.to_frame(name='" .. SERIES_VALUE_COL .. "').eval("
+		.. py_str(clause)
+		.. ", engine='python')])("
+		.. expr
+		.. ")"
+end
+
+--- Wrap expr with a sort on a single column or on the index.
+--- @param expr string
+--- @param sort table { col_name, is_index, ascending }
+--- @param is_series boolean
+--- @return string
+local function apply_sort(expr, sort, is_series)
+	local dir = sort.ascending and "True" or "False"
+	if sort.is_index then
+		return "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
+	elseif is_series then
+		-- Series.sort_values takes no column: its first positional arg is axis.
+		return "(" .. expr .. ").sort_values(ascending=" .. dir .. ")"
+	end
+	return "(" .. expr .. ").sort_values(" .. py_str(sort.col_name) .. ", ascending=" .. dir .. ")"
+end
+
 --- Build the effective expression to evaluate. The base expression is wrapped
---- with .query(...) calls for every active filter, and optionally with a
+--- with a filter for every active filter, and optionally with a
 --- sort_values / sort_index call.
+--- @param is_series boolean|nil Whether the base expression is a pd.Series
+---        rather than a pd.DataFrame. Defaults to false.
 --- @return string expr
-function Expression:build()
+function Expression:build(is_series)
+	is_series = is_series or false
 	local expr = self.base
 
 	for col_name, condition in pairs(self._filters) do
 		local col_ref = "`" .. col_name .. "`"
+		if is_series and col_name ~= "index" then
+			col_ref = "`" .. SERIES_VALUE_COL .. "`"
+		end
 		local clause = build_query_clause(col_ref, condition)
-		expr = "(" .. expr .. ").query(" .. py_str(clause) .. ", engine='python')"
+		expr = apply_filter(expr, clause, is_series)
 	end
 
-	if #self._sorts == 1 then
-		local s = self._sorts[1]
-		local dir = s.ascending and "True" or "False"
+	local all_columns = true
+	for _, s in ipairs(self._sorts) do
 		if s.is_index then
-			expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
-		else
-			expr = "(" .. expr .. ").sort_values(\"" .. s.col_name .. "\", ascending=" .. dir .. ")"
+			all_columns = false
+			break
 		end
-	elseif #self._sorts > 1 then
-		local all_columns = true
-		for _, s in ipairs(self._sorts) do
-			if s.is_index then
-				all_columns = false
-				break
-			end
-		end
+	end
 
-		if all_columns then
-			local cols, dirs = {}, {}
-			for _, s in ipairs(self._sorts) do
-				table.insert(cols, "\"" .. s.col_name .. "\"")
-				table.insert(dirs, s.ascending and "True" or "False")
-			end
-			expr = "(" .. expr .. ").sort_values(["
-				.. table.concat(cols, ", ")
-				.. "], ascending=["
-				.. table.concat(dirs, ", ")
-				.. "])"
-		else
-			-- Mixed index + column sorts: apply in reverse priority order so that
-			-- the primary sort (sorts[1]) is applied last and becomes dominant.
-			for i = #self._sorts, 1, -1 do
-				local s = self._sorts[i]
-				local dir = s.ascending and "True" or "False"
-				if s.is_index then
-					expr = "(" .. expr .. ").sort_index(ascending=" .. dir .. ")"
-				else
-					expr = "(" .. expr .. ").sort_values(\"" .. s.col_name .. "\", ascending=" .. dir .. ")"
-				end
-			end
+	if #self._sorts > 1 and all_columns and not is_series then
+		local cols, dirs = {}, {}
+		for _, s in ipairs(self._sorts) do
+			table.insert(cols, py_str(s.col_name))
+			table.insert(dirs, s.ascending and "True" or "False")
+		end
+		expr = "(" .. expr .. ").sort_values(["
+			.. table.concat(cols, ", ")
+			.. "], ascending=["
+			.. table.concat(dirs, ", ")
+			.. "])"
+	else
+		-- Apply in reverse priority order so that the primary sort (sorts[1])
+		-- is applied last and becomes dominant.
+		for i = #self._sorts, 1, -1 do
+			expr = apply_sort(expr, self._sorts[i], is_series)
 		end
 	end
 

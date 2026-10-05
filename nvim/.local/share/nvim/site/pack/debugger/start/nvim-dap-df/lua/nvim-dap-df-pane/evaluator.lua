@@ -255,7 +255,6 @@ function ExpressionEvaluator:evaluate(expression, limit, on_result, use_cache)
 		use_cache = true
 	end
 
-	local expr = expression:build()
 	local base_expr = expression:get_base()
 	local filters = expression:get_filters()
 
@@ -287,6 +286,8 @@ function ExpressionEvaluator:evaluate(expression, limit, on_result, use_cache)
 		end
 
 		self.state = state
+
+		local expr = expression:build(type == Types.Series)
 
 		-- Data depends on sort, filter, and limit, so it's always fetched fresh.
 		evaluate_df_data(state, expr, limit, session)

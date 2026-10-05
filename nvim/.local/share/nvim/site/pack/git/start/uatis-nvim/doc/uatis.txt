@@ -192,6 +192,7 @@ IN A REVIEWED FILE                                       *uatis-mappings-view*
     <leader>gm      switch backend: structural <-> line
     <leader>gh      read the branch one commit at a time
     [C  ]C          move within the commit on show
+    <C-]>           on a moved definition, off a symbol: its other end
 <
 `]c` off the last change of a file steps into the next file the list names and
 lands on the first change in it (`pane.chunk_spill`).
@@ -458,6 +459,36 @@ new. Only where a hunk sits directly above the run -- which is what a
 wrapper is -- so a reformatted file does not light up every row it
 moved. Turn it off with `diff.indent_marks`.
 
+                                                           *uatis-marks-move*
+A definition that moved within the file -- taken out in one place, put back
+in another -- is a removal and an addition to both backends. It is drawn as
+a move instead: one line where it was (`⇣ name moved to line N`), and at its
+new place a bar in the sign column, a line saying where it came from, and
+the function compared against its OLD SELF -- so what is marked inside it is
+what was edited, not everything it holds. `]c` stops at both ends.
+
+`<C-]>` goes from one end to the other (`keys.view.move_jump`): from any row
+of the moved definition, or from the row its old place is marked above. Only
+where it could not have meant a symbol: on a keyword, a bracket, a string,
+indentation or a blank row. On an identifier -- or on any word, where the file
+has no tree-sitter parser to tell them apart -- it is go-to-definition, or
+whatever the key did before.
+
+Matched by name where the tree gives one, by content where it does not;
+needs a tree-sitter parser for the file. Set under `diff.move`. The list's
+counts are still git's: a removal and an addition.
+
+Each end is a stop of its own, and is read when it is left: the move is read
+once both are. The old end stands on whatever git reported where the
+definition used to be -- git does not see a move, and its chunks there have
+no row in your buffer -- so reading only the new copy leaves those unread.
+
+Side by side, the old copy carries the same bar and note, and only what was
+removed from it is red. Each copy stands opposite blank rows -- the two
+windows keep one order -- so while the cursor is in the new copy the old
+window scrolls to the old one, row for row. `<CR>` and `<C-]>` on the old
+copy go to the row it became.
+
                                                           *uatis-marks-binary*
 A file of bytes is not compared at all. Both backends would answer --
 difftastic compares words where it has no parser, and `vim.diff` will split a
@@ -702,6 +733,7 @@ preserve.
     UatisDeleteBandDim  the part of it that survived
     UatisFiller         the rows that hold the two windows level
     UatisSign           the `-` in the gutter of a removed row
+    UatisMove           a moved definition's bar and the lines naming its ends
     UatisHeader         the list's identity line
     UatisMeta           dates, authors, counts
     UatisHint           key hints
@@ -775,6 +807,12 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           bin = "difft",
           graph_limit = nil,          -- difftastic's ceilings, see
           parse_error_limit = nil,    -- |uatis-degraded|
+        },
+        move = {                      -- see |uatis-marks-move|
+          enabled = true,
+          min_lines = 3,              -- shortest definition read as moved
+          similarity = 0.6,           -- how alike two unnamed ones must be
+          named_similarity = 0.2,     -- ...and two of the same name
         },
       },
       keys = {

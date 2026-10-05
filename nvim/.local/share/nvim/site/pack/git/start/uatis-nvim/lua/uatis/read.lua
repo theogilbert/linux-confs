@@ -64,6 +64,8 @@ function M.chunks(f)
       removed = removed,
       start = h.new_start,
       count = h.new_count,
+      old_start = h.old_start,
+      old_count = h.old_count,
     })
   end
   if #out == 0 then
@@ -78,34 +80,51 @@ function M.chunks(f)
   return out
 end
 
---- The chunks of `f` that overlap new-side rows `lo..hi` -- the git
---- chunks a view hunk stands on. difftastic's hunks and git's do not
---- line up one to one: a lone unchanged row between two changes is one
---- node to difftastic and two chunks to git, so a stop `]c` makes can
---- cover several marks, and the count has to be taken in the same unit
---- the stop is.
-function M.covering(f, lo, hi)
+--- Whether stop `s` stands on chunk `c`: by where both sit on the new
+--- side -- or, for the stop where a moved definition USED to be, by
+--- where both sit on the OLD side (`s.old`), since that end has no rows
+--- on the new side to stand on. git does not see a move: what it
+--- reports there is whatever its own diff made of the rows, and the
+--- old copy is the one place those chunks are certain to be.
+local function on(s, c)
+  if s.old then
+    if not c.old_start then
+      return false
+    end
+    local cs = c.old_count > 0 and c.old_start or c.old_start + 1
+    local ce = cs + math.max(c.old_count, 1) - 1
+    return cs <= s.old.last and ce >= s.old.first
+  end
+  local cs, ce = c.start, c.start + math.max(c.count, 1) - 1
+  return cs <= s.hi and ce >= s.lo
+end
+
+--- The chunks of `f` stop `s` stands on -- the git chunks a view hunk
+--- covers. difftastic's hunks and git's do not line up one to one: a
+--- lone unchanged row between two changes is one node to difftastic and
+--- two chunks to git, so a stop `]c` makes can cover several marks, and
+--- the count has to be taken in the same unit the stop is.
+function M.covering(f, s)
   local out = {}
   for _, c in ipairs(f.chunks or M.chunks(f)) do
-    local s, e = c.start, c.start + math.max(c.count, 1) - 1
-    if s <= hi and e >= lo then
+    if on(s, c) then
       table.insert(out, c)
     end
   end
   return out
 end
 
---- The chunks of `f` no hunk in `hunks` stands on: what the backend
---- that produced `hunks` drew nothing for. A set of fingerprints.
-function M.hidden(f, hunks)
+--- The chunks of `f` no stop in `stops` stands on: what the backend
+--- that drew them drew nothing for. A set of fingerprints. Takes the
+--- view's stops, or its hunks (`start_b`/`count_b`) as they are.
+function M.hidden(f, stops)
   local out = {}
   for _, c in ipairs(f.chunks or M.chunks(f)) do
-    local s, e = c.start, c.start + math.max(c.count, 1) - 1
     local covered = false
-    for _, h in ipairs(hunks or {}) do
-      local lo = h.start_b
-      local hi = lo + math.max(h.count_b, 1) - 1
-      if s <= hi and e >= lo then
+    for _, h in ipairs(stops or {}) do
+      local s = h.lo and h
+        or { lo = h.start_b, hi = h.start_b + math.max(h.count_b, 1) - 1 }
+      if on(s, c) then
         covered = true
         break
       end
@@ -140,12 +159,15 @@ function M.leave(left, stops, idx, f, target)
     left[s.key] = true
   end
   local out = {}
-  for _, c in ipairs(M.covering(f, s.lo, s.hi)) do
+  for _, c in ipairs(M.covering(f, s)) do
     local cs, ce = c.start, c.start + math.max(c.count, 1) - 1
-    if not (target and target >= cs and target <= ce) then
+    -- Going INTO the chunk is arriving at it -- on the side the stop
+    -- being left measures it on: the old end of a move stands on its
+    -- chunks by their old rows, which say nothing about the cursor.
+    if s.old or not (target and target >= cs and target <= ce) then
       local all = true
       for _, o in ipairs(stops) do
-        if o.lo <= ce and o.hi >= cs and not left[o.key] then
+        if on(o, c) and not left[o.key] then
           all = false
           break
         end
@@ -169,9 +191,14 @@ function M.stops_read(pane, f, stops)
   for _, s in ipairs(stops or {}) do
     total = total + 1
     local all = left[s.key] == true
-    if not all then
+    -- A stop standing on no chunk has no mark to have been read by: it
+    -- is read once it has been left, and not before. Counted the other
+    -- way, the old end of a move -- where git, not seeing a move, may
+    -- have put no chunk -- was read before the reader had moved.
+    local under = M.covering(f, s)
+    if not all and #under > 0 then
       all = true
-      for _, c in ipairs(M.covering(f, s.lo, s.hi)) do
+      for _, c in ipairs(under) do
         if not M.chunk_read(pane, f, c) then
           all = false
           break

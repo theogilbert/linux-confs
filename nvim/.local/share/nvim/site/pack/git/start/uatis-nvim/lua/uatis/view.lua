@@ -145,6 +145,7 @@ local function render(view)
       view.added, view.removed, view.pending = 0, 0, false
       view.old_text, view.hunks, view.anchors = old_text or "", {}, {}
       view.pairs, view.anchor, view.del_spans, view.del_fine = nil, nil, nil, nil
+      view.moves, view.del_hunks = nil, nil
       oldside.refresh(view)
       view.renders = (view.renders or 0) + 1
       require("uatis.pane").recount(view)
@@ -191,14 +192,24 @@ local function render(view)
       -- better answer than the hunk shapes for "which line answers to
       -- this one" -- and the same one the rendering used.
       view.pairs, view.anchor = result.pairs, result.anchor
+      -- ...and the definitions it read as moved, for the key that goes
+      -- from one end of a move to the other.
+      view.moves = result.drawn and result.drawn.moves or nil
       -- ...and what it said about the OLD side, for the window that shows
       -- it: difftastic tints the tokens it called changed and leaves the
       -- rest of a removed line alone, which is a statement only it can
       -- make. `vim.diff` has none to make, so there is nothing to store
       -- and the old window falls back to marking whole lines.
       view.precise = result.precise
+      -- What the old window marks is what the new side draws: where a
+      -- definition moved, that is the answer `moves.lua` made, with its
+      -- old copy no longer removed. Its rows still line up by the
+      -- backend's own alignment above -- the rewritten one is out of
+      -- order, which a side-by-side layout cannot be.
+      local shown = result.drawn or result
+      view.del_hunks = shown.hunks or {}
       local dels = {}
-      for _, span in ipairs(result.spans or {}) do
+      for _, span in ipairs(shown.spans or {}) do
         if span.kind == "delete" then
           dels[span.line] = dels[span.line] or {}
           table.insert(dels[span.line], span)
@@ -217,7 +228,7 @@ local function render(view)
       -- them.
       if view.del_spans then
         local was = vim.split(old_text, "\n", { plain = true })
-        for new_row, old_row in pairs(result.pairs or {}) do
+        for new_row, old_row in pairs(shown.pairs or {}) do
           local now = vim.api.nvim_buf_get_lines(view.bufnr, new_row - 1, new_row, false)[1]
           if now ~= nil and was[old_row] == now then
             view.del_spans[old_row] = nil
@@ -499,7 +510,14 @@ end
 function M.stops(view)
   local out = {}
   local old_lines = vim.split(view.old_text or "", "\n", { plain = true })
-  for _, h in ipairs(view.hunks or {}) do
+  local function key(parts)
+    return vim.fn.sha256(table.concat(parts, "\n"))
+  end
+  -- What `]c` steps through: where a definition moved, the rewritten
+  -- answer's hunks -- the edits inside it -- and a stop at each of its
+  -- two ends, the old one standing on git's chunks by their old rows.
+  -- Each end is left on its own, so a move is read once both are.
+  for _, h in ipairs(view.moves and view.del_hunks or view.hunks or {}) do
     local lo = h.start_b
     local hi = lo + math.max(h.count_b, 1) - 1
     local text = {}
@@ -510,8 +528,23 @@ function M.stops(view)
     local news = vim.api.nvim_buf_get_lines(view.bufnr, math.max(lo - 1, 0),
       math.max(lo - 1, 0) + h.count_b, false)
     vim.list_extend(text, news)
-    table.insert(out, { lo = lo, hi = hi, key = vim.fn.sha256(table.concat(text, "\n")) })
+    table.insert(out, { lo = lo, hi = hi, key = key(text) })
   end
+  local count = vim.api.nvim_buf_line_count(view.bufnr)
+  for _, mv in ipairs(view.moves or {}) do
+    local copy = vim.api.nvim_buf_get_lines(view.bufnr, mv.new.first - 1, mv.new.last, false)
+    table.insert(out, { lo = mv.new.first, hi = mv.new.last,
+      key = key(vim.list_extend({ "\0moved to" }, copy)) })
+    local at = math.max(math.min(mv.at, count), 1)
+    table.insert(out, { lo = at, hi = at, old = mv.old,
+      key = key(vim.list_extend({ "\0moved from" }, vim.list_slice(old_lines, mv.old.first, mv.old.last))) })
+  end
+  table.sort(out, function(a, b)
+    if a.lo ~= b.lo then
+      return a.lo < b.lo
+    end
+    return (a.old and 1 or 0) < (b.old and 1 or 0)
+  end)
   return out
 end
 
@@ -528,9 +561,21 @@ local function leave_chunk(view, cur, target)
   if not idx then
     return
   end
+  -- ...and every other stop the cursor is inside. Stops nest where a
+  -- definition moved -- the move's own spans the whole of it, the
+  -- edits inside it are stops too -- and the outer one is only ever
+  -- left from a row of an inner one.
+  local leaving = { idx }
+  for i, s in ipairs(stops) do
+    if i ~= idx and s.lo <= cur and cur <= s.hi then
+      table.insert(leaving, i)
+    end
+  end
   local pane = require("uatis.pane")
   local function mark(list)
-    pane.leave_stop(list, view.relpath, stops, idx, target)
+    for _, i in ipairs(leaving) do
+      pane.leave_stop(list, view.relpath, stops, i, target)
+    end
   end
   local list = pane.get()
   if list and (list.renders or 0) > 0 then
@@ -754,8 +799,107 @@ local function toggle_commits()
   })
 end
 
+--- The other end of the move under `row`, or nil. The two lines naming
+--- a move's ends are virtual and the cursor never stands on one, so the
+--- old end is the row its line hangs above and the new end is any row
+--- of the definition -- the one with the bar. The old end is asked
+--- first: it is one exact row, and may sit inside another move.
+function M.move_target(view, row)
+  local count = vim.api.nvim_buf_line_count(view.bufnr)
+  for _, mv in ipairs(view.moves or {}) do
+    if row == math.max(math.min(mv.at, count), 1) then
+      return mv.new.first
+    end
+  end
+  for _, mv in ipairs(view.moves or {}) do
+    if row >= mv.new.first and row <= mv.new.last then
+      return math.max(math.min(mv.at, count), 1)
+    end
+  end
+  return nil
+end
+
+--- Identifier nodes that are not spelled `*identifier` in their grammar.
+local SYMBOLS = { name = true, constant = true, word = true, variable_name = true }
+
+--- Whether `<C-]>` at this position could have meant a symbol -- and so
+--- belongs to go-to-definition, not to us. Asked of the tree: only an
+--- identifier can be a definition's name, and a keyword, a bracket, a
+--- string or a number cannot, so `function`, `def`, `end` and `return`
+--- are as free as the indentation. Without a tree, any word is taken to
+--- be a symbol, which errs towards the key the reader already had.
+local function on_symbol(bufnr, row, col)
+  local line = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
+  if vim.fn.match(line, "\\%" .. (col + 1) .. "c\\k") < 0 then
+    return false
+  end
+  -- The filetype the buffer has, or the one its name says, as the
+  -- comparison itself asks for a parser.
+  local ft = vim.bo[bufnr].filetype
+  if ft == "" then
+    ft = vim.filetype.match({ buf = bufnr })
+  end
+  local lang = require("uatis.syntax").lang_of(ft)
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
+  if not lang or not ok or not parser then
+    return true
+  end
+  local range = { row - 1, col, row - 1, col + 1 }
+  local parsed = pcall(parser.parse, parser, { row - 1, row })
+  local tree = parsed and parser:language_for_range(range):tree_for_range(range)
+  local node = tree and tree:root():descendant_for_range(row - 1, col, row - 1, col)
+  if not node then
+    return true
+  end
+  local t = node:type()
+  return node:named() and (t:match("identifier$") ~= nil or SYMBOLS[t] == true)
+end
+
+--- `<C-]>` belongs to whoever had it -- in 0.12 the language server, by
+--- way of 'tagfunc' -- and a moved definition is all symbols, its
+--- signature the one go-to-definition is most wanted on. So the key is
+--- taken only where it could not have meant a symbol (`on_symbol`), on
+--- a row a move answers for. Elsewhere the mapping found before ours is
+--- run, or the key itself.
+local function move_jump(view, prev)
+  local win = vim.api.nvim_get_current_win()
+  local to
+  if vim.api.nvim_win_get_buf(win) == view.bufnr then
+    local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+    to = not on_symbol(view.bufnr, row, col) and M.move_target(view, row)
+  end
+  if to then
+    vim.schedule(function()
+      vim.cmd("normal! m'")
+      jump(view, to)
+    end)
+    return ""
+  end
+  if prev and prev.callback then
+    local out = prev.callback()
+    return prev.expr == 1 and (out or "") or ""
+  elseif prev and prev.rhs and prev.rhs ~= "" then
+    if prev.expr == 1 then
+      return vim.api.nvim_eval(prev.rhs)
+    end
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(prev.rhs, true, true, true),
+      prev.noremap == 1 and "n" or "m", false)
+    return ""
+  end
+  return vim.api.nvim_replace_termcodes(config.keys.view.move_jump, true, true, true)
+end
+
 local function setup_keymaps(view)
   local k = config.keys.view
+  -- What `move_jump` stood for before, read before it is shadowed:
+  -- buffer-local or global, whichever was in effect here.
+  local prev
+  if k.move_jump then
+    vim.api.nvim_buf_call(view.bufnr, function()
+      local m = vim.fn.maparg(k.move_jump, "n", false, true)
+      prev = (m.lhs and m.lhs ~= "") and m or nil
+    end)
+  end
   view.saved_keys = keys.apply(view.bufnr, "n", {
     { lhs = k.hunk_next, rhs = function() step_hunk(view, 1) end,
       opts = { desc = "Uatis - Next [c]hunk" } },
@@ -781,6 +925,9 @@ local function setup_keymaps(view)
       opts = { desc = "Uatis - Previous [C]ommit" } },
     { lhs = k.commit_view, rhs = function() toggle_commits() end,
       opts = { desc = "[G]it - Toggle one commit at a time ([h]istory)" } },
+    { lhs = k.move_jump, rhs = function() return move_jump(view, prev) end,
+      opts = { expr = true, replace_keycodes = false,
+        desc = "Uatis - Other end of a moved definition" } },
     -- Off by default, and skipped when it is: `<leader>gu` already ends
     -- the review from anywhere, including from in here. Bound for anyone
     -- who sets `keys.view.quit` to a key of their own.

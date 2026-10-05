@@ -300,6 +300,10 @@ function M.setup_highlights()
     and { bg = del_band }
     or { link = "UatisDelete" })
   vim.api.nvim_set_hl(0, "UatisSign", { link = "DiffDelete" })
+  -- A moved definition's bar and the two lines naming its ends. Neither
+  -- added nor removed, so neither of those colours: the scheme's own
+  -- colour for a warning, which schemes make yellow.
+  vim.api.nvim_set_hl(0, "UatisMove", { link = "DiagnosticWarn", default = true })
 
   -- The part of a before-image that did NOT go away. Present for
   -- context, so it steps back towards the editor's background the same
@@ -1422,6 +1426,21 @@ function M.render(bufnr, win, result, old_lines, opts)
   end
 
   local line_count = vim.api.nvim_buf_line_count(bufnr)
+  -- A definition that moved is drawn from the answer `moves.lua` made of
+  -- it: the old copy taken out, the new one an edit of its old self.
+  result = result.drawn or result
+  -- Its bar goes in before the gutter is measured: the first sign in a
+  -- buffer opens an 'signcolumn=auto' column, and the before-images are
+  -- padded to the width the gutter has.
+  for _, mv in ipairs(result.moves or {}) do
+    for row = mv.new.first, math.min(mv.new.last, line_count) do
+      vim.api.nvim_buf_set_extmark(bufnr, M.ns, row - 1, 0, {
+        sign_text = config.marker.move,
+        sign_hl_group = "UatisMove",
+        priority = 100,
+      })
+    end
+  end
   result = quiet_unchanged(result, old_lines, function(row)
     return vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] or ""
   end)
@@ -2970,6 +2989,46 @@ function M.render(bufnr, win, result, old_lines, opts)
         })
       end
     end
+  end
+
+  -- A move says so at both ends, and `]c` stops at both: where the
+  -- definition was -- one line, not its body in red, since nothing of
+  -- it was removed -- and where it is now, above the edit of its old
+  -- self that the rewritten answer has already drawn.
+  --
+  -- Side by side, at the end of the row rather than on a line of its
+  -- own: a virtual line in one window and not the other puts every row
+  -- below it a row out of step with its partner.
+  local function note(row, arrow, text, above)
+    if show_old then
+      vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
+        virt_lines = { { { arrow .. pad, "UatisMove" }, { text, "UatisMove" } } },
+        virt_lines_above = above,
+        virt_lines_leftcol = true,
+        priority = 100,
+      })
+    else
+      vim.api.nvim_buf_set_extmark(bufnr, M.ns, row, 0, {
+        virt_text = { { "  " .. arrow .. " " .. text, "UatisMove" } },
+        virt_text_pos = "eol",
+        priority = 100,
+      })
+    end
+  end
+  for _, mv in ipairs(result.moves or {}) do
+    local what = mv.name and (mv.name .. " ") or ""
+    local changes = mv.changes == 0 and "unchanged"
+      or (mv.changes == 1 and "1 change" or (mv.changes .. " changes"))
+    -- Each end points at the other.
+    local down = mv.new.first >= mv.at
+    note(mv.new.first - 1, down and "⇡" or "⇣",
+      ("%smoved from line %d · %s"):format(what, mv.old.first, changes), true)
+    local below = mv.at > line_count
+    local at = math.min(mv.at, line_count)
+    note(math.max(at - 1, 0), down and "⇣" or "⇡",
+      ("%smoved to line %d · %s"):format(what, mv.new.first, changes), not below)
+    table.insert(anchors, mv.new.first)
+    table.insert(anchors, math.max(at, 1))
   end
 
   -- `]c` stops where there is something to look at.

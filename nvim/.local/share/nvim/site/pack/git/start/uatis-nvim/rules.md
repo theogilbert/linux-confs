@@ -316,6 +316,40 @@ half its body; the new copy is another hunk, and its lines once excused the
 same lines out of the old copy — the before-image lost its signature and the
 rest hung under the function above, reading as part of it.
 
+### A moved definition — `moves.lua`
+
+Before any of the above: difftastic aligns in order and so does `vim.diff`,
+so a definition moved within the file comes back as a removal and an
+addition, its whole body red in one place and green in the other. A
+tree-sitter node lying wholly inside one side's removed rows, paired with one
+wholly inside the other side's added rows — same node type, same name and a
+little alike (`diff.move.named_similarity`), or no name and alike enough
+(`similarity`) — is a move, provided something that stayed sits between the
+two places; otherwise it is a rewrite in place, which the backend had right.
+
+The answer to DRAW (`result.drawn`) then has both copies carved out — with
+the blank separators that went with them — and the backend's comparison of
+the two copies spliced in at the new one. Every rule below runs on that
+answer, so inside a moved function they see an ordinary edit. The overlay
+adds a line at each end and a `]c` stop at each. The counts keep the
+backend's own answer: git sees a removal and an addition.
+
+Read marks go by the stops `]c` makes (`view.stops`): the edits inside the
+moved definition, and its two ends. The old end has no row on the new side,
+so it stands on git's chunks by their OLD rows (`stop.old`), and is read when
+it is left -- each end on its own, the move once both are. Stops nest here,
+the move's spanning the edits inside it, so a step leaves every stop the
+cursor is inside, not only the nearest. A stop standing on no chunk is read
+only once left: counted read for having nothing under it, the old end was
+read before the reader had moved.
+
+Side by side, the old window MARKS from the rewritten answer and LINES UP by
+the backend's, since one layout has one order and the rewritten answer is out
+of it. Each copy stands opposite blank rows; the cursor inside the new copy
+scrolls the old window to the old one, and the notes go at the end of a row,
+since a virtual line in one window and not the other puts every row below it
+out of step.
+
 ### `collapsed_span` — `overlay.lua`
 
 Where several old rows were folded onto one, draw the whole construct rather

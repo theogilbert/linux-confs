@@ -143,7 +143,42 @@ local function sides(view)
   return view.side_cache.old, view.side_cache.new
 end
 
+--- The move whose new copy holds `row`, or whose old copy holds `line`.
+local function move_of(view, row, line)
+  for _, mv in ipairs(view.moves or {}) do
+    if (row and row >= mv.new.first and row <= mv.new.last)
+      or (line and line >= mv.old.first and line <= mv.old.last) then
+      return mv
+    end
+  end
+  return nil
+end
+
+--- Across a move, the line on the other copy: the comparison of the two
+--- copies is what says which row of one is which row of the other, and
+--- it is the same comparison the marks were drawn from. `forward` goes
+--- from the new copy to the old.
+local function across(view, mv, n, forward)
+  local old_lines, new_lines = sides(view)
+  local of, to = forward and mv.new or mv.old, forward and mv.old or mv.new
+  local i = n - of.first + 1
+  local inner = mv.inner or { hunks = {} }
+  local said = forward and inner.pairs or (not forward and inner.anchor) or nil
+  local j = said and said[i]
+  if not j then
+    j = map_row(inner.hunks, i, forward,
+      vim.list_slice(forward and new_lines or old_lines, of.first, of.last),
+      vim.list_slice(forward and old_lines or new_lines, to.first, to.last))
+  end
+  return math.max(math.min(to.first + j - 1, to.last), to.first)
+end
+
 --- The old-side line answering to `row` on the new side, and back again.
+---
+--- Inside a moved definition, its OLD copy: lined up by the alignment it
+--- stands opposite blank rows, since the two copies are not in the same
+--- order as the rest and a side-by-side layout has only the one order.
+--- So the copy is reached by asking, not by looking across.
 ---
 --- The backend's own alignment first, where it has one. difftastic aligns
 --- the two files row by row and says which old row each new row answers
@@ -151,6 +186,11 @@ end
 --- from, so the cursor lands where the rendering says it should. Working
 --- it out from hunk shapes is what to do when nobody has said.
 function M.old_row(view, row)
+  local mv = move_of(view, row, nil)
+  if mv then
+    local line = across(view, mv, row, true)
+    return view.old_at_line and view.old_at_line[line] or line
+  end
   -- Laid out, the answer is a row of this buffer and the buffer IS the
   -- alignment: row N of it stands for alignment row N, whether that is a
   -- line of the revision or a blank standing in for one of yours.
@@ -166,6 +206,11 @@ function M.old_row(view, row)
 end
 
 function M.new_row(view, row)
+  local line = view.old_of_row and view.old_of_row[row] or (not view.align and row) or nil
+  local mv = line and move_of(view, nil, line)
+  if mv then
+    return across(view, mv, line, false)
+  end
   -- Laid out, `row` is an alignment row: the line across from it, or --
   -- where that side has none -- the next line it does have, which is
   -- where a reader pressing "take me to now" expects to arrive.
@@ -548,7 +593,7 @@ function M.refresh(view)
   else
     -- A line backend knows lines and nothing finer, so the line is what
     -- it marks.
-    for _, h in ipairs(view.hunks or {}) do
+    for _, h in ipairs(view.del_hunks or view.hunks or {}) do
       for i = 0, h.count_a - 1 do
         local row = row_of(h.start_a + i)
         if row >= 0 and row < count then
@@ -558,6 +603,26 @@ function M.refresh(view)
           })
         end
       end
+    end
+  end
+
+  -- A definition that moved is not red here -- nothing of it was
+  -- removed -- and says where it went, the way the new side says where
+  -- it came from. Its bar is in the number column (`number`).
+  for _, mv in ipairs(view.moves or {}) do
+    local row = row_of(mv.old.first)
+    if row >= 0 and row < count then
+      local changes = mv.changes == 0 and "unchanged"
+        or (mv.changes == 1 and "1 change" or (mv.changes .. " changes"))
+      -- At the end of the row: a line of its own would put this window
+      -- a row out of step with yours below it.
+      vim.api.nvim_buf_set_extmark(old.buf, M.ns, row, 0, {
+        virt_text = { { ("  %s %smoved to line %d · %s"):format(
+          mv.new.first < mv.at and "⇡" or "⇣", mv.name and (mv.name .. " ") or "",
+          mv.new.first, changes), "UatisMove" } },
+        virt_text_pos = "eol",
+        priority = 100,
+      })
     end
   end
 
@@ -681,6 +746,21 @@ local function setup_keymaps(view, buf)
     vim.api.nvim_set_current_win(view.win)
     put_cursor(view.win, view.bufnr, M.new_row(view, row))
   end, "Uatis - Jump to matching line")
+  -- The other end of a move, from its old copy -- where `<CR>` would
+  -- take you too, and the key that does it in your own buffer. Nothing
+  -- is shadowed: this buffer is a revision, with no language server and
+  -- no tags of its own.
+  map(config.keys.view.move_jump, function()
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local line = view.old_of_row and view.old_of_row[row] or (not view.align and row) or nil
+    local mv = line and move_of(view, nil, line)
+    if not mv or not (view.win and vim.api.nvim_win_is_valid(view.win)) then
+      return
+    end
+    vim.cmd("normal! m'")
+    vim.api.nvim_set_current_win(view.win)
+    put_cursor(view.win, view.bufnr, M.new_row(view, row))
+  end, "Uatis - Other end of a moved definition")
 end
 
 local function fill(view, text)
@@ -761,6 +841,14 @@ function M.sync(view, row)
     lnum = M.old_row(view, row)
     topline = M.old_row(view, here.topline)
   end
+  -- Inside a moved definition the alignment has blank rows opposite
+  -- the cursor, and the old copy is elsewhere. That copy is brought
+  -- level with the cursor instead, for as long as the cursor is in the
+  -- definition; leaving it puts the aligned scroll back.
+  if move_of(view, row, nil) then
+    local screen = vim.api.nvim_win_call(view.win, vim.fn.winline)
+    topline = lnum - screen + 1
+  end
   lnum, topline = clamp(view.old.buf, lnum), clamp(view.old.buf, topline)
 
   -- One view change, not two. Moving the cursor and then correcting the
@@ -799,6 +887,15 @@ function M.number()
   local n = view.old_of_row and view.old_of_row[vim.v.lnum] or nil
   if not view.old_of_row then
     n = vim.v.lnum -- not laid out: rows are lines
+  end
+  -- A row of a moved definition carries its bar against the code. The
+  -- number is a column further left in the string than the plain one's
+  -- for both to land in the same column: a status column with no
+  -- highlight item in it is drawn a column left of the string, and one
+  -- with an item is drawn as written.
+  if n and move_of(view, nil, n) then
+    return string.format("%" .. math.max(width - 2, 1) .. "d ", n) .. "%#UatisMove#"
+      .. config.marker.move .. "%*"
   end
   return n and string.format("%" .. (width - 1) .. "d ", n)
     or string.rep(" ", width)

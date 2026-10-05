@@ -405,7 +405,7 @@ function M.set_aside(view)
     if pane.root == view.root and pane.rev == view.rev then
       local f = patch.find(pane.files, view.relpath)
       if f then
-        local now = read.hidden(f, view.hunks)
+        local now = read.hidden(f, require("uatis.view").stops(view))
         pane.hidden = pane.hidden or {}
         local was = pane.hidden[view.relpath] or {}
         local same = vim.tbl_count(was) == vim.tbl_count(now)
@@ -717,6 +717,7 @@ local function keys_of(pane)
   table.insert(rows, { head = "in a file being reviewed" })
   add(v.hunk_next .. " " .. v.hunk_prev, "next / previous change")
   add(v.file_next .. " " .. v.file_prev, "next / previous changed file")
+  add(v.move_jump, "on a moved definition, its other end")
   add(v.layout, "inline, or the old side in its own window")
   add(v.diff_mode, "structural or line backend")
   add(v.files, "toggle this list")

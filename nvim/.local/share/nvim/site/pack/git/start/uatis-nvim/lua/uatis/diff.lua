@@ -1494,12 +1494,47 @@ end
 
 local BACKENDS = { line = line_compute, struct = struct_compute }
 
+--- Reads `result` again for definitions that moved (`moves.lua`), and
+--- where there are any hangs the answer to DRAW on it as `result.drawn`:
+--- each moved definition compared against its old self by the same
+--- backend, spliced in where the backend saw only an addition. Worked
+--- out once per answer -- difftastic's are cached, and `drawn` with them.
+local function with_moves(result, old_text, new_text, opts, backend, cb)
+  if result.drawn ~= nil or not opts.path then
+    return cb(result)
+  end
+  local moves = require("uatis.moves")
+  local ft = (opts.bufnr and vim.api.nvim_buf_is_valid(opts.bufnr) and vim.bo[opts.bufnr].filetype ~= ""
+    and vim.bo[opts.bufnr].filetype) or vim.filetype.match({ filename = opts.path })
+  local found = moves.find(result, old_text, new_text, require("uatis.syntax").lang_of(ft))
+  if not found then
+    result.drawn = false
+    return cb(result)
+  end
+  local old_lines = vim.split(old_text, "\n", { plain = true })
+  local new_lines = vim.split(new_text, "\n", { plain = true })
+  local inners, pending = {}, #found
+  for k, mv in ipairs(found) do
+    backend(table.concat(old_lines, "\n", mv.old.first, mv.old.last),
+      table.concat(new_lines, "\n", mv.new.first, mv.new.last), { path = opts.path }, function(inner)
+        inners[k] = inner
+        pending = pending - 1
+        if pending == 0 then
+          result.drawn = moves.rewrite(result, found, inners, old_text, new_text)
+          cb(result)
+        end
+      end)
+  end
+end
+
 function M.compute(old_text, new_text, opts, cb)
   opts = opts or {}
   local backend = BACKENDS[opts.backend or "line"] or line_compute
   backend(old_text, new_text, opts, function(result)
-    vim.schedule(function()
-      cb(result)
+    with_moves(result, old_text, new_text, opts, backend, function()
+      vim.schedule(function()
+        cb(result)
+      end)
     end)
   end)
 end

@@ -111,6 +111,10 @@ return {
       commit_next = "]C",
       file_next = "]f",
       file_prev = "[f",
+      -- On a moved definition, or the row its old place is marked
+      -- above, with the cursor on no identifier: go to the other end.
+      -- On an identifier, or anywhere else, it does what it did.
+      move_jump = "<C-]>",
       -- Inline, or the old side in a window of its own.
       layout = "<leader>go",
       -- End the review from inside it. Off by default;
@@ -239,6 +243,20 @@ return {
       emphasis_ratio = 0.5,
     },
 
+    -- A definition taken out in one place and added in another is drawn
+    -- as a move: one line where it was, and at its new place an edit of
+    -- its old self. Needs a tree-sitter parser for the file.
+    move = {
+      enabled = true,
+      -- Fewest rows a definition must span to be read as moved.
+      min_lines = 3,
+      -- How alike (0..1, share of lines matched) two definitions with no
+      -- shared name must be to be one moved...
+      similarity = 0.6,
+      -- ...and two with the same name.
+      named_similarity = 0.2,
+    },
+
     -- Mark the leading whitespace a line gained when a block was
     -- reindented around it -- wrapping a body in a guard, say. The code
     -- on the line is left alone; only the new columns at its front are
@@ -325,5 +343,7 @@ return {
   marker = {
     -- Drawn in the gutter of a removed row, left of the number column.
     delete = "-",
+    -- Drawn in the sign column along a definition that moved.
+    move = "▎",
   },
 }

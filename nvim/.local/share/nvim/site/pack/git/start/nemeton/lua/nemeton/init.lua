@@ -736,6 +736,123 @@ M.approve = with_session(function(want, cb)
   end)
 end)
 
+--- What the forge answered a change of state with, kept: the merge
+--- request as it now stands, so the window that asked can say so
+--- without asking again.
+local function took(mr, data)
+  if type(data) ~= "table" then
+    return
+  end
+  mr.state = data.state or mr.state
+  if data.merge_when_pipeline_succeeds ~= nil then
+    mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
+  end
+end
+
+--- Merges it when its pipeline succeeds -- or, where that is already
+--- set, takes it back. Asked about first either way: `m` in a window
+--- of prose is one stray keypress from a merge nobody meant.
+M.merge = with_session(function(cb)
+  local mr = session.current
+  if mr.state ~= "opened" then
+    session.notify(("!%d is %s"):format(mr.iid, mr.state or "not open"), vim.log.levels.WARN)
+    return
+  end
+  local confirm = require("nemeton.edit").confirm
+  if mr.merge_when_pipeline_succeeds then
+    confirm(("Take back the merge of !%d waiting on its pipeline"):format(mr.iid), function(yes)
+      if not yes then
+        return
+      end
+      glab.cancel_merge(mr.root, mr.iid, function(data, err)
+        if not data then
+          session.notify("could not take the merge back: " .. tostring(err), vim.log.levels.ERROR)
+          return
+        end
+        took(mr, data)
+        mr.merge_when_pipeline_succeeds = false
+        session.notify(("!%d will not merge on its own"):format(mr.iid))
+        if cb then
+          cb()
+        end
+      end)
+    end, "Take it back")
+    return
+  end
+  -- Said as the forge will do it: a pipeline still going is waited
+  -- for, and one that is over -- or none at all -- is no reason to
+  -- wait, so the merge happens on the answer. A question that says
+  -- "when it succeeds" and merges at once has asked about something
+  -- else.
+  local pipeline = mr.head_pipeline or {}
+  local waits = vim.tbl_contains({
+    "created",
+    "waiting_for_resource",
+    "preparing",
+    "pending",
+    "running",
+    "scheduled",
+  }, pipeline.status)
+  confirm(
+    ("Merge !%d into %s %s"):format(
+      mr.iid,
+      mr.target_branch or "?",
+      waits and "when its pipeline succeeds" or "now"
+    ),
+    function(yes)
+      if not yes then
+        return
+      end
+      glab.merge(mr.root, mr.iid, (mr.diff_refs or {}).head_sha, function(data, err)
+        if not data then
+          session.notify("could not merge: " .. tostring(err), vim.log.levels.ERROR)
+          return
+        end
+        took(mr, data)
+        session.notify(
+          mr.state == "merged" and ("merged !" .. mr.iid)
+            or ("!%d will merge when its pipeline succeeds"):format(mr.iid)
+        )
+        if cb then
+          cb()
+        end
+      end)
+    end,
+    "Merge"
+  )
+end)
+
+--- Closes it, or reopens it where it is closed. Asked about first: a
+--- close is a notification to everybody watching the merge request.
+M.close_or_reopen = with_session(function(cb)
+  local mr = session.current
+  if mr.state == "merged" or mr.state == "locked" then
+    session.notify(("!%d is %s"):format(mr.iid, mr.state), vim.log.levels.WARN)
+    return
+  end
+  local event = mr.state == "closed" and "reopen" or "close"
+  require("nemeton.edit").confirm(
+    ("%s !%d: %s"):format(event == "close" and "Close" or "Reopen", mr.iid, mr.title or ""),
+    function(yes)
+      if not yes then
+        return
+      end
+      glab.set_state(mr.root, mr.iid, event, function(data, err)
+        if not data then
+          session.notify(("could not %s: %s"):format(event, tostring(err)), vim.log.levels.ERROR)
+          return
+        end
+        took(mr, data)
+        session.notify(("%s !%d"):format(event == "close" and "closed" or "reopened", mr.iid))
+        if cb then
+          cb()
+        end
+      end)
+    end,
+    event == "close" and "Close" or "Reopen"
+  )
+end)
+
 --- What CI did, job by job, in a float.
 M.jobs = with_session(function()
   require("nemeton.jobs").open()
@@ -1056,6 +1173,9 @@ local SUBCOMMANDS = {
   description = M.description,
   notes = M.notes,
   threads = M.threads,
+  merge = function()
+    M.merge()
+  end,
   approve = function()
     M.approve(true)
   end,

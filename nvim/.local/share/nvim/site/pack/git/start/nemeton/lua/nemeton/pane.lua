@@ -61,8 +61,14 @@ M.at = nil
 local rows = {}
 local said = {}
 
+--- Open, and still the pane: a window that is showing something else
+--- now -- a file opened in it -- is somebody's window and not this.
 local function valid()
-  return M.win and vim.api.nvim_win_is_valid(M.win)
+  return M.win
+    and vim.api.nvim_win_is_valid(M.win)
+    and M.buf
+    and vim.api.nvim_buf_is_valid(M.buf)
+    and vim.api.nvim_win_get_buf(M.win) == M.buf
 end
 
 function M.is_open()
@@ -608,12 +614,12 @@ local function moved_on()
 end
 
 function M.close()
-  local win, source = M.win, M.source
+  local win, buf, source = M.win, M.buf, M.source
   M.win, M.buf, M.source, M.at = nil, nil, nil, nil
   rows = {}
   marks.clear_current()
   pcall(vim.api.nvim_clear_autocmds, { group = "NemetonPane" })
-  if win and vim.api.nvim_win_is_valid(win) then
+  if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
     -- Back where the key was pressed. `nvim_win_close` hands the cursor
     -- to the first window of the layout, which on a split screen is not
     -- the one the pane was opened from.
@@ -838,6 +844,44 @@ function M.open(at)
       callback = moved_on,
     })
   end
+  -- A file opened in it -- `<C-o>` back through the jumps, `gf` on a
+  -- path in a comment, `:e` -- is a file somebody wants to read, and
+  -- the pane is the one window that is not for that. It goes where the
+  -- code is read, and the pane comes back on what it was showing: left
+  -- where it landed, the window is the pane to everything in here and
+  -- a file to whoever is looking at it, and the next <leader>mx draws
+  -- into a buffer that went with the pane's.
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    callback = function(ev)
+      local pane_win, showing = M.win, M.at
+      if ev.buf == M.buf or vim.api.nvim_get_current_win() ~= pane_win then
+        return
+      end
+      vim.schedule(function()
+        if not (vim.api.nvim_win_is_valid(pane_win) and session.current) then
+          return
+        end
+        local buf = vim.api.nvim_win_get_buf(pane_win)
+        local cursor = vim.api.nvim_win_get_cursor(pane_win)
+        local target = M.source
+        if target and vim.api.nvim_win_is_valid(target) and target ~= pane_win then
+          vim.api.nvim_win_set_buf(target, buf)
+          pcall(vim.api.nvim_win_set_cursor, target, cursor)
+          M.close()
+          vim.api.nvim_win_close(pane_win, true)
+        else
+          -- Nowhere else to put it: the window is the file's now, and
+          -- the pane is split off it afresh.
+          M.win = nil
+          M.close()
+          target = pane_win
+        end
+        vim.api.nvim_set_current_win(target)
+        M.open(showing)
+      end)
+    end,
+  })
   -- Closed by hand -- `:q` in it, or the window it was split from going
   -- away with it. The mode follows the window: the conversations are
   -- not expanded any more, whatever the session last recorded.

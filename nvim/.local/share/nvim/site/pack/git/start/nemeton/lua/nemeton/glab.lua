@@ -1588,6 +1588,51 @@ function M.approve(root, iid, approved, cb)
   )
 end
 
+--- Closes the merge request, or opens it again: `event` is GitLab's
+--- `state_event`, "close" or "reopen". Answers with the merge request
+--- as it now stands.
+function M.set_state(root, iid, event, cb)
+  send(
+    "PUT",
+    root,
+    ("projects/:fullpath/merge_requests/%d"):format(iid),
+    { state_event = event },
+    cb
+  )
+end
+
+--- Merges it once its pipeline succeeds -- at once, where it already
+--- has, or has none to wait for.
+---
+--- `sha` is the head that was reviewed: a branch pushed to since is
+--- refused by the forge rather than merged with commits nobody read.
+--- Both spellings of the flag, because GitLab has both: `auto_merge`
+--- since 17.11, and `merge_when_pipeline_succeeds` before it and still
+--- honoured after; an older forge drops the one it does not know.
+function M.merge(root, iid, sha, cb)
+  send("PUT", root, ("projects/:fullpath/merge_requests/%d/merge"):format(iid), {
+    sha = sha,
+    auto_merge = true,
+    merge_when_pipeline_succeeds = true,
+  }, cb)
+end
+
+--- Takes back a merge waiting on its pipeline.
+function M.cancel_merge(root, iid, cb)
+  post(
+    root,
+    ("projects/:fullpath/merge_requests/%d/cancel_merge_when_pipeline_succeeds"):format(iid),
+    nil,
+    cb
+  )
+end
+
+--- Runs a job again. Answers with the new job, which is a job of the
+--- same pipeline.
+function M.retry_job(root, job_id, cb)
+  post(root, ("projects/:fullpath/jobs/%s/retry"):format(job_id), nil, cb)
+end
+
 --- Marks a thread resolved, or puts it back.
 function M.resolve(root, iid, discussion_id, resolved, cb)
   json({

@@ -445,6 +445,10 @@ function M.description_chunks(mr)
   local state = mr.state
   if state == "merged" or state == "closed" or state == "locked" then
     fact(facts, "State", { { state, state == "merged" and "NemetonOk" or "NemetonMeta" } })
+  elseif mr.merge_when_pipeline_succeeds then
+    -- ...and one that is not over yet but will be by itself: the next
+    -- green pipeline merges it, which is worth knowing before a push.
+    fact(facts, "State", { { "merges when the pipeline succeeds", "NemetonOk" } })
   end
   if ci then
     fact(facts, "CI", { { ci.glyph .. " " .. ci.word, ci.hl } })

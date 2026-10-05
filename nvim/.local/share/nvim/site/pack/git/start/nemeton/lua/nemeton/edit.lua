@@ -94,9 +94,13 @@ end
 --- every day, and a modal on the command line is the one window in
 --- this plugin that would not look like the rest of their editor.
 --- "Cancel" is first, so the reflex answer is the harmless one.
-function M.confirm(question, done)
-  vim.ui.select({ "Cancel", "Delete" }, { prompt = question }, function(choice)
-    done(choice == "Delete")
+---
+--- `verb` is the other answer, "Delete" unless said: the merge request
+--- window asks the same way before it merges or closes anything.
+function M.confirm(question, done, verb)
+  verb = verb or "Delete"
+  vim.ui.select({ "Cancel", verb }, { prompt = question }, function(choice)
+    done(choice == verb)
   end)
 end
 

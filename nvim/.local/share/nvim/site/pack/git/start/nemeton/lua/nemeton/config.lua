@@ -1056,6 +1056,11 @@ return {
       publish = "s", -- send every comment kept unsent
       comments = "c", -- every thread on it, whole
       pipeline = "p", -- what CI did, job by job
+      -- The two that end it, each asked about before it is done: a
+      -- merge cannot be taken back, and a close is a message to
+      -- everybody watching the merge request.
+      merge = "m", -- merge when the pipeline succeeds, or take that back
+      close = "x", -- close it, or reopen a closed one
       browser = "o",
       refresh = "r",
       quit = "q",
@@ -1134,6 +1139,7 @@ return {
     jobs = {
       log = "<CR>", -- what the job under the cursor printed, in a tab
       browser = "o", -- the job under the cursor, on GitLab
+      retry = "R", -- run the job under the cursor again, after asking
       refresh = "r",
       quit = "q",
     },

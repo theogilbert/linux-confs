@@ -134,6 +134,7 @@ rest.
 | `:Nemeton conversation` | the same threads, to read rather than to walk |
 | `:Nemeton approve` | approve the open merge request |
 | `:Nemeton unapprove` | take the approval back |
+| `:Nemeton merge` | merge it when its pipeline succeeds, after asking |
 | `:Nemeton refresh` | refetch the discussions |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
@@ -392,7 +393,12 @@ In it: `a` approves it or takes the approval back — whichever the forge,
 asked at the keypress, says it is not, so an approval withdrawn on the
 web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
-pipeline's jobs, `o` opens it in a browser, `r` refetches, `q` closes.
+pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
+`o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
+first, Cancel being the first answer. A merge waits for a pipeline
+still running and happens at once otherwise; pressed again while it
+waits, `m` takes it back. It merges the head you reviewed and no other:
+a branch pushed to since is refused by the forge.
 None of them is a key you read with — it is a window of
 prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
@@ -462,7 +468,8 @@ headed `on the merge request`, with nothing to quote and the same keys
 to answer with — and the next `]m` turns the pane back to the code.
 
 In the pipeline's jobs: `<CR>` opens what the job under the cursor
-printed, `o` opens the job on GitLab, `r` refetches, `q` closes.
+printed, `R` runs it again (after asking), `o` opens the job on GitLab,
+`r` refetches, `q` closes.
 
 A job's log opens in a **tab** rather than a float — a build log is
 thousands of lines read by searching them, and it is the one thing here
@@ -693,6 +700,8 @@ over a selection is anchored to the last of its lines and only that one
 carries a marker, but every line under the band is inside it. Pressed
 on the conversation already being read, on a line inside none, or from
 inside the pane itself, it is the toggle it has always been.
+A file opened in the pane's window — `<C-o>`, `gf`, `:e` — opens in
+the code window instead, and the pane stays a pane.
 
 It is also where the review is answered: `r` replies, `x` resolves the
 thread or reopens it, `e` edits the comment the cursor is on, `d`

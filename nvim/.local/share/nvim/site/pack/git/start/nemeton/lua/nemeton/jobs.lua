@@ -93,6 +93,7 @@ function M.open()
   local k = config.keys.jobs
   vim.wo[M.win].winbar = detail.hint({
     { k.log, "log" },
+    { k.retry, "retry" },
     { k.browser, follow.browse_hint() },
     { k.refresh, "refresh" },
     { k.quit, "quit" },
@@ -136,6 +137,36 @@ function M.open()
         end
       end,
       "what this job printed",
+    },
+    -- Asked about first, as everything here that spends somebody's
+    -- runner is; and the list fetched again after, because the job
+    -- that runs is a new one with a number of its own.
+    {
+      k.retry,
+      function()
+        local job = job_at()
+        if not job then
+          return
+        end
+        require("nemeton.edit").confirm(
+          ("Run %s again (%s)"):format(job.name or ("job " .. job.id), job.status or "?"),
+          function(yes)
+            if not yes then
+              return
+            end
+            glab.retry_job(mr.root, job.id, function(data, err)
+              if not data then
+                session.notify("could not retry: " .. tostring(err), vim.log.levels.ERROR)
+                return
+              end
+              session.notify(("%s is running again"):format(job.name or ("job " .. job.id)))
+              load()
+            end)
+          end,
+          "Retry"
+        )
+      end,
+      "run the job under the cursor again, after asking",
     },
     {
       k.browser,

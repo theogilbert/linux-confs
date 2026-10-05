@@ -1134,6 +1134,11 @@ function M.open(iid, opts)
       source_branch = mr.source_branch,
       target_branch = mr.target_branch,
       web_url = mr.web_url,
+      -- Opened, closed, merged -- and whether it is waiting on its
+      -- pipeline to merge itself. What the keys that end a merge
+      -- request ask before they offer to.
+      state = mr.state,
+      merge_when_pipeline_succeeds = mr.merge_when_pipeline_succeeds,
       -- What CI last said about the branch. Kept whole rather than as
       -- a status string: the pipeline's own URL is the next thing you
       -- want after "failed".
@@ -1601,6 +1606,13 @@ function M.toggle_expanded()
   end
   local pane = require("nemeton.pane")
   if M.current.mode == "expanded" and pane.switch() then
+    return M.current.mode
+  end
+  -- Expanded with no pane on the screen is a pane that went away
+  -- without saying so, and the key is being pressed to get it back.
+  if M.current.mode == "expanded" and not pane.is_open() then
+    pane.open()
+    M.redraw_all()
     return M.current.mode
   end
   M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"

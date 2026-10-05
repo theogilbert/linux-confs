@@ -223,6 +223,9 @@ A review, end to end:
 
 :Nemeton unapprove      Take the approval back.
 
+:Nemeton merge          Merge it when its pipeline succeeds, after
+                        asking. |nemeton-detail-window|
+
 :Nemeton refresh        Refetch the discussions. The forge is the source
                         of truth; this is how you pick up what somebody
                         else said while you were reading.
@@ -506,6 +509,8 @@ there is and how much of it is yours and unsent.
     s               send every comment kept unsent
     c               every thread on it, whole
     p               what CI did, job by job
+    m               merge it, after asking; again to take that back
+    x               close it, or reopen it, after asking
     o               open it on GitLab
     r               refetch the approvals and the diff
     q               close
@@ -513,6 +518,16 @@ there is and how much of it is yours and unsent.
 Which way `a` goes is asked of the forge when it is pressed, not read
 off what this window last showed: an approval withdrawn on the web page,
 or reset by a push, is given back rather than withdrawn again.
+
+`m` merges when the pipeline succeeds: a pipeline still running is
+waited for, and one that is over -- or none at all -- is no reason to
+wait, so the merge happens on the answer. The question says which.
+While it waits the window says "merges when the pipeline succeeds" and
+`m` takes it back. What is merged is the head that was reviewed: the
+sha goes with the request, and a branch pushed to since is refused by
+the forge rather than merged with commits nobody read. `x` closes it,
+or reopens one that is closed. Both ask first, through the same
+question a delete asks, with Cancel the first answer.
 
 The threads that are on the code are not here: they are read where the
 code is -- in the gutter, on `]m`, in the quickfix list.
@@ -723,6 +738,10 @@ in the prose.
 leaving the session saying they are open. Closing the window any other
 way says the same thing.
 
+A file opened in the pane's window -- `<C-o>` back through the jumps,
+`gf`, `:edit` -- opens in the window the code is read in instead, and
+the pane stays where it was, on what it was showing.
+
                                                           *nemeton-sending*
 
 WHILE IT IS ON ITS WAY. Posting a comment is a keypress and then a round
@@ -786,6 +805,7 @@ THE PIPELINE                                             *nemeton-jobs-window*
 pipeline, its stage, its status and how long it took.
 
     <CR>            what the job under the cursor printed
+    R               run it again, after asking
     o               open the job under the cursor on GitLab
     r               refetch
     q               close

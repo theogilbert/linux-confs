@@ -175,13 +175,52 @@ local function spawn(args, opts, cb)
     -- glab still needs PATH, HOME (its config), and whatever keyring
     -- socket the desktop session put there.
     env = e,
-    timeout = config.glab.timeout * 1000,
+    timeout = opts.timeout * 1000,
   }, function(res)
     done(res.code, res.stderr)
     vim.schedule(function()
-      cb(res.code == 0, res.stdout or "", res.stderr or "")
+      -- 124 is what `vim.system` makes of a process it killed for
+      -- running out of time.
+      cb(res.code == 0, res.stdout or "", res.stderr or "", res.code == 124)
     end)
   end)
+end
+
+--- How long `args` is given, try by try: the whole of
+--- `glab.timeout` where that is a list and the call only reads, and
+--- the last of it otherwise.
+---
+--- Every so often a call hangs -- the connection, not the forge -- and
+--- the same call sent again answers at once. Waiting out thirty
+--- seconds for that and then failing is the worst of both; giving up
+--- after five and asking again is what the person at the keyboard was
+--- going to do anyway. Only for a read: a POST that timed out may
+--- still have landed, and sending it again is the comment posted
+--- twice; and `mr checkout` killed half way through is git killed
+--- holding its index lock.
+local function timeouts(args, method)
+  local t = config.glab.timeout
+  local steps = type(t) == "table" and t or { t }
+  local reads = method == "GET" and not (args[1] == "mr" and args[2] == "checkout")
+  return reads and steps or { steps[#steps] }
+end
+
+--- `spawn`, asked again on a timeout while `steps` has a longer one.
+local function patiently(args, opts, steps, cb)
+  local function attempt(i)
+    spawn(args, vim.tbl_extend("force", opts, { timeout = steps[i] }), function(ok, out, err, late)
+      if late and steps[i + 1] then
+        log.note(("timed out after %ss, asking again"):format(steps[i]))
+        attempt(i + 1)
+        return
+      end
+      if late then
+        err = ("no answer from glab in %ss"):format(steps[i])
+      end
+      cb(ok, out, err)
+    end)
+  end
+  attempt(1)
 end
 
 --- Whether a failure was glab saying "I do not know who you are".
@@ -457,7 +496,8 @@ local function run(args, opts, cb)
     return
   end
   local sent_under = generation
-  spawn(args, opts, function(ok, out, err)
+  local steps = timeouts(args, method)
+  patiently(args, opts, steps, function(ok, out, err)
     -- `no_prompt` is for the calls whose *own* failure mode looks like
     -- an authentication one. GitLab answers a second approval on the
     -- same merge request with a 401, and asking for a token there would
@@ -474,7 +514,7 @@ local function run(args, opts, cb)
       return
     end
     local retry = function()
-      spawn(args, vim.tbl_extend("force", opts, { retried = true }), cb)
+      patiently(args, vim.tbl_extend("force", opts, { retried = true }), steps, cb)
     end
     -- The token has changed since this call went out: somebody has
     -- already been asked and answered, and this one only needs to run

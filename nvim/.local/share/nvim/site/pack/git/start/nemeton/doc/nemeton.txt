@@ -429,6 +429,12 @@ request's project, and checked out detached: a branch of the deleted
 one's name would be one nobody can push, and a review of history is
 read rather than written to. It says so once the review is open.
 
+A buffer open on a file the branch just checked out has not got -- two
+branches off main, and the one left behind added it -- is closed rather
+than left showing the other branch's copy, and its window goes back to
+what it showed before. One with unsaved edits in it stays: what was
+typed has nowhere else to be. Either way the files are named.
+
 `s` walks the queue through the four states GitLab has: the open ones a
 review queue is made of, then the merged, the closed, and all of them
 together. The window's title says which of the four is on the screen and
@@ -552,6 +558,13 @@ character it is drawn in; `false` leaves the place alone on the line. A
 resolved thread is on |hl-NemetonSettled|, leant green. `e`, `d` and
 `<leader>mL` act on the comment under the cursor, and ask which of the
 thread's where the cursor is on none of them.
+
+Each thread is a fold, from its rule to its last line, all open to
+begin with, and Vim's own fold commands act on them: `zc`, `zo` and
+`za` on the one under the cursor, `zM` and `zR` on every one. A shut
+one is drawn as its rule alone.
+What was shut stays shut through `R`, and through the window closing
+for a reply and coming back; a thread a link sends you to is opened.
 
 GitLab will not take a reply to a comment that was posted on its own;
 nemeton says so rather than failing the post, and `t` is how you start
@@ -1999,7 +2012,7 @@ GLAB                                                     *nemeton-config-glab*
 >
     glab = {
       bin = "glab",
-      timeout = 30,             -- seconds before a call is hung
+      timeout = { 5, 10, 30 },  -- seconds, try by try
       track = true,             -- fix the upstream after a checkout
       host = nil,               -- string | fun(): string | nil
       token = nil,              -- string | fun(): string | nil
@@ -2007,6 +2020,14 @@ GLAB                                                     *nemeton-config-glab*
     }
 <
 See |nemeton-credentials| for `host`, `token` and `prompt_for_token`.
+
+`timeout` is how long a call is given before it is called hung. A list
+is tries: a call that only reads is given the first and asked again
+with the next each time one runs out -- a call that hangs usually hangs
+on its connection, and the same call sent again answers at once. One
+that writes, and `glab mr checkout`, is given the last alone: a POST
+that timed out may still have landed, and sending it again posts it
+twice. A number is one try for every call. Each retry is in the log.
 
                                                              *nemeton-tracking*
 `track` is about what `glab mr checkout` leaves behind. It points the

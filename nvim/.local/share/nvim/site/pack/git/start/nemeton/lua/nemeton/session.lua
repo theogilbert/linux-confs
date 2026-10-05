@@ -996,6 +996,71 @@ function M.fetch_commit(root, sha, cb)
   end)
 end
 
+--- Puts the editor on the branch a checkout just left the disk on.
+---
+--- `checktime` alone does that for a file the branch changed, and for
+--- one it has not got at all says E211 over the top of the review
+--- being opened -- the ordinary case of two branches off the same
+--- main, one adding a file the other has never heard of. That buffer
+--- is the other branch's copy of a file this one does not have, and
+--- reading it as part of this review is reading the wrong code; so it
+--- is closed, its windows kept on whatever they showed before it. One
+--- with edits in it is the exception: what you typed has nowhere else
+--- to be, so it stays, and says why.
+function M.reload_buffers(root)
+  local prefix = vim.fs.normalize(root) .. "/"
+  local gone, kept = {}, {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if
+      vim.api.nvim_buf_is_loaded(buf)
+      and vim.bo[buf].buftype == ""
+      and name:sub(1, #prefix) == prefix
+    then
+      if vim.uv.fs_stat(name) then
+        vim.cmd.checktime(buf)
+      elseif vim.bo[buf].modified then
+        table.insert(kept, name:sub(#prefix + 1))
+      else
+        gone[buf] = name:sub(#prefix + 1)
+      end
+    end
+  end
+  local said = {}
+  for buf, path in pairs(gone) do
+    for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+      vim.api.nvim_win_call(w, function()
+        local alt = vim.fn.bufnr("#")
+        -- Not one whose file is missing too, kept or not: Vim says
+        -- E211 on entering that as well.
+        local name = alt > 0 and vim.api.nvim_buf_get_name(alt) or ""
+        if
+          alt > 0
+          and alt ~= buf
+          and vim.fn.buflisted(alt) == 1
+          and (name == "" or vim.bo[alt].buftype ~= "" or vim.uv.fs_stat(name))
+        then
+          vim.api.nvim_win_set_buf(w, alt)
+        else
+          vim.cmd("enew")
+        end
+      end)
+    end
+    pcall(vim.api.nvim_buf_delete, buf, {})
+    table.insert(said, path)
+  end
+  if #said > 0 then
+    table.sort(said)
+    notify("not on this branch, closed: " .. table.concat(said, ", "))
+  end
+  if #kept > 0 then
+    notify(
+      "not on this branch, kept for its unsaved changes: " .. table.concat(kept, ", "),
+      vim.log.levels.WARN
+    )
+  end
+end
+
 --- Opens a merge request: fetch it, check its branch out, fetch the
 --- threads, draw them.
 ---
@@ -1154,7 +1219,7 @@ function M.open(iid, opts)
             fail("checkout failed\n" .. (fetched and err or why))
             return
           end
-          vim.cmd("checktime")
+          M.reload_buffers(root)
           checked_out, detached = true, true
           ready()
         end)
@@ -1195,7 +1260,7 @@ function M.open(iid, opts)
         return
       end
       -- Neovim is still showing the files from the branch we left.
-      vim.cmd("checktime")
+      M.reload_buffers(root)
       checked_out = true
       ready()
     end)

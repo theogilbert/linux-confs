@@ -38,12 +38,45 @@ M.buf = nil
 -- for the keys that act on what is under the cursor.
 local rows = {}
 local noted = {}
+-- The threads folded shut, by id, for as long as the editor is up:
+-- this window closes for every reply written from it and is drawn
+-- afresh on every refetch, and a list you had folded down to the two
+-- arguments still open is a list that has to stay that way through
+-- both, or folding it was not worth the keys.
+local shut = {}
+
+--- Which of the drawn threads are folded, read off the window into
+--- `shut` before the window or its lines go away.
+local function remember()
+  if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
+    return
+  end
+  vim.api.nvim_win_call(M.win, function()
+    for row, t in pairs(rows) do
+      if t.id and rows[row - 1] ~= t then
+        shut[t.id] = vim.fn.foldclosed(row) == row or nil
+      end
+    end
+  end)
+end
 
 function M.close()
+  remember()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
   M.win, M.buf, rows, noted = nil, nil, {}, {}
+end
+
+--- `foldexpr`: a thread is a fold, from its rule to its last line, and
+--- the blank line between two belongs to neither -- so a list folded
+--- shut still reads as the rules alone, one under the next.
+function M.foldexpr(lnum)
+  local t = rows[lnum]
+  if not t then
+    return "0"
+  end
+  return rows[lnum - 1] == t and "1" or ">1"
 end
 
 --- Every thread, in reading order: the ones on code by file and line,
@@ -123,12 +156,25 @@ local function render()
     chunks = { { { "nothing has been said on this merge request yet.", "NemetonMeta" } } }
   end
   local lines, hls, refs = marks.shade_lines(chunks, 0, ground)
+  remember()
   rows, noted = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
   follow.set(M.buf, refs, M.close)
+  if vim.api.nvim_win_is_valid(M.win or -1) then
+    vim.api.nvim_win_call(M.win, function()
+      -- Replacing every line puts every fold back at `foldlevel`, open;
+      -- the ones that were shut are shut again by hand.
+      vim.cmd("normal! zx")
+      for row, t in pairs(map) do
+        if t.id and shut[t.id] and map[row - 1] ~= t then
+          vim.cmd(row .. "foldclose")
+        end
+      end
+    end)
+  end
 end
 
 local function thread_at()
@@ -336,6 +382,16 @@ function M.open(focus)
   vim.wo[M.win].wrap = true
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true
+  -- One fold a thread, all open: the window is for reading every one of
+  -- them, and folding is how the settled ones are put out of the way of
+  -- the ones still being argued. A closed fold is drawn as its first
+  -- line, highlights and all -- which is the rule, and the rule is
+  -- already what this window says a thread is in one line.
+  vim.wo[M.win].foldmethod = "expr"
+  vim.wo[M.win].foldexpr = "v:lua.require'nemeton.notes'.foldexpr(v:lnum)"
+  vim.wo[M.win].foldtext = ""
+  vim.wo[M.win].foldlevel = 99
+  vim.wo[M.win].foldenable = true
 
   local k = config.keys.notes
   -- In the order they are reached for: the two that are about the
@@ -449,7 +505,8 @@ function M.open(focus)
         -- conversation, and one opened at its last line is one you have
         -- to scroll back through to read.
         vim.api.nvim_win_call(M.win, function()
-          vim.cmd("normal! zt")
+          -- Opened if it was folded shut: it is the one asked for.
+          vim.cmd("normal! zvzt")
         end)
         break
       end

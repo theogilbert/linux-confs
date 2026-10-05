@@ -273,6 +273,11 @@ request's project, and checked out **detached**: a branch of the
 deleted one's name would be one nobody can push, and a review of history
 is read rather than written to. It says so once the review is open.
 
+A buffer open on a file the checked-out branch does not have — two
+branches off main, and the one you left added it — is closed rather
+than left showing the other branch's copy, its window kept on what it
+showed before; one with unsaved edits stays, and both are named.
+
 A row's CI, its approvals and how much it changes are three questions
 GitLab's list payload does not answer, asked one row at a time and drawn
 where the row stands as the answers land — and asked only about the
@@ -293,7 +298,10 @@ link to it, `R` refetches, `q` closes. Every thread is there whole —
 every answer, and for one on code the lines it is about quoted above the
 first note — under a rule naming where it sits: `── src/app.lua:3 ──`,
 or `── on the merge request ──` (`comments.thread_rule`, "─"; `false`
-for the place alone). A resolved one is on a green ground.
+for the place alone). A resolved one is on a green ground. Each thread
+is a fold: `zc`/`zo`/`za` shut the one under the cursor down to its
+rule and open it again, `zM`/`zR` all of them, and what was shut stays
+shut through a refetch or a reply written from the window.
 
 `<C-]>` follows what is under the cursor — there, in the pane and in the
 every-thread window. It is vim's own key for "go to the thing under the
@@ -1197,6 +1205,13 @@ effect, without printing the token.
   <branch>`, then `git branch --set-upstream-to`). Never for one from a
   fork, whose source branch is not on this remote at all. `false` leaves
   what glab wrote alone.
+- **`timeout`** (default `{ 5, 10, 30 }`) — seconds before a call is
+  given up on. A list is tries: a call that only reads gets five
+  seconds, then is asked again with ten, then thirty — a call that
+  hangs usually hangs on its connection, and the same call sent again
+  answers at once. One that writes, and `mr checkout`, gets the last
+  alone: a POST that timed out may have landed, and sending it again
+  posts it twice. A plain number is one try for every call.
 
 ## The log
 

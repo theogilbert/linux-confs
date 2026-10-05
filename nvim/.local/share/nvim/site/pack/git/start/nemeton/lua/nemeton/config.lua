@@ -1270,7 +1270,14 @@ return {
     -- Seconds before a call is considered hung. The forge is on the far
     -- side of a network and an editor that never answers is worse than
     -- one that says it gave up.
-    timeout = 30,
+    --
+    -- A list is tries: a call that only reads is given the first, asked
+    -- again with the next if that runs out, and so on -- because a call
+    -- that hangs usually hangs on its connection, and the same call sent
+    -- again answers at once. One that writes, and `mr checkout`, is
+    -- given the last alone: a POST that timed out may have landed, and
+    -- sending it again posts it twice. A number is one try for all.
+    timeout = { 5, 10, 30 },
 
     -- Which GitLab. Left nil, glab works it out for itself -- from the
     -- git remote of the repository you are in, then from `glab auth

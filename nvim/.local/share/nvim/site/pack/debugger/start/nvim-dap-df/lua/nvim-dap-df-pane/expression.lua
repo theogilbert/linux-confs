@@ -128,8 +128,15 @@ local function build_query_clause(col_ref, condition)
 	query_condition = query_condition:gsub("(and%s+)([=!<>])", "%1" .. col_ref .. " %2")
 	query_condition = query_condition:gsub("(or%s+)([=!<>])", "%1" .. col_ref .. " %2")
 	query_condition = query_condition:gsub("((%()%s*)([=!<>])", "%1" .. col_ref .. " %3")
-        query_condition = query_condition:gsub("\"", "'")
 	return col_ref .. " " .. query_condition
+end
+
+--- Quote a string as a double-quoted python string literal.
+--- @param s string
+--- @return string literal
+local function py_str(s)
+	local escaped = s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n")
+	return '"' .. escaped .. '"'
 end
 
 --- Build the effective expression to evaluate. The base expression is wrapped
@@ -142,7 +149,7 @@ function Expression:build()
 	for col_name, condition in pairs(self._filters) do
 		local col_ref = "`" .. col_name .. "`"
 		local clause = build_query_clause(col_ref, condition)
-		expr = "(" .. expr .. ").query(\"" .. clause .. "\", engine='python')"
+		expr = "(" .. expr .. ").query(" .. py_str(clause) .. ", engine='python')"
 	end
 
 	if #self._sorts == 1 then

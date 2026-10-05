@@ -35,6 +35,7 @@ end
 function Pane:update_truncation_indicator()
 	if not self:is_open() then return end
 	vim.api.nvim_buf_clear_namespace(self.buffer.buf_id, hl.TRUNCATION_NS_ID, 0, -1)
+	if self.dataview == nil then return end
 
 	local boundaries = self.dataview:get_column_boundaries()
 	if #boundaries == 0 then return end
@@ -240,7 +241,7 @@ end
 -- Scroll the pane window left or right, snapping to column boundaries.
 -- @param direction number  1 = right, -1 = left
 function Pane:scroll_columns(direction)
-	if not self:is_open() then
+	if not self:is_open() or self.dataview == nil then
 		return
 	end
 	local boundaries = self.dataview:get_column_boundaries()
@@ -363,6 +364,9 @@ function Pane:filter_column()
 
 	local virtual_col = vim.fn.virtcol(".")
         local col_name, _ = self.dataview:get_column_under_cursor(virtual_col)
+        if col_name == nil then
+                return
+        end
         local current = self.dataview:get_column_filter_under_cursor(virtual_col) or ""
 
 	vim.ui.input({ prompt = "Filter " .. col_name .. ": ", default = current }, function(condition)
@@ -444,6 +448,7 @@ end
 function Pane:refresh(use_cache, rollback_dataview)
     if self.dataview == nil then
         self.buffer:set_content("Press 'e' to enter an expression")
+        self:update_truncation_indicator()
         return
     end
 

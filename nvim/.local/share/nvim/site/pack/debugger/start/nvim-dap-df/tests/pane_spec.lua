@@ -44,6 +44,53 @@ describe("Pane", function()
 		end)
 	end)
 
+	describe("without a dataview", function()
+		it("scroll_columns() is a no-op", function()
+			pane:open()
+			assert.has_no.errors(function()
+				pane:scroll_columns(1)
+				pane:scroll_columns(-1)
+			end)
+		end)
+
+		it("update_truncation_indicator() clears stale indicators", function()
+			pane:open()
+			vim.api.nvim_buf_set_extmark(pane.buffer.buf_id, hl.TRUNCATION_NS_ID, 0, 0, {
+				virt_text = { { "▸", "DapDfTruncated" } },
+			})
+
+			pane:update_truncation_indicator()
+
+			local marks = vim.api.nvim_buf_get_extmarks(pane.buffer.buf_id, hl.TRUNCATION_NS_ID, 0, -1, {})
+			assert.equals(0, #marks)
+		end)
+	end)
+
+	describe("filter_column()", function()
+		local original_input
+
+		before_each(function()
+			original_input = vim.ui.input
+		end)
+
+		after_each(function()
+			vim.ui.input = original_input
+		end)
+
+		it("is a no-op when the cursor is not on a column", function()
+			local prompted = false
+			vim.ui.input = function() prompted = true end
+			pane.dataview = {
+				get_column_under_cursor = function() return nil end,
+			}
+
+			assert.has_no.errors(function()
+				pane:filter_column()
+			end)
+			assert.is_false(prompted)
+		end)
+	end)
+
 	describe("jump_to_column()", function()
 		--- Make the pane buffer wide enough that virtcol2col can resolve any
 		--- target column we test against.

@@ -482,6 +482,8 @@ Each end is a stop of its own, and is read when it is left: the move is read
 once both are. The old end stands on whatever git reported where the
 definition used to be -- git does not see a move, and its chunks there have
 no row in your buffer -- so reading only the new copy leaves those unread.
+`<C-]>` off an end leaves it the way `]c` does, in either window: the end you
+stood on is read, the one you arrive at is not until you leave it too.
 
 A definition moved to ANOTHER file of the review is drawn the same way, one
 end in each file: `↦ name moved to b.lua:12` where it went from, and in the

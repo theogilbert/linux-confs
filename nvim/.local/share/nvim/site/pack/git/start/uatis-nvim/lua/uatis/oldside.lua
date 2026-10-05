@@ -774,10 +774,17 @@ local function setup_keymaps(view, buf)
     end
     vim.cmd("normal! m'")
     vim.api.nvim_set_current_win(view.win)
+    -- The old copy is the move's old end, which in your buffer is the
+    -- row its note hangs on: that stop is the one left.
+    local count = vim.api.nvim_buf_line_count(view.bufnr)
+    local at = math.max(math.min(mv.at, count), 1)
     if mv.kind == "out" then
+      require("uatis.view").leave_move(view, at, nil)
       return require("uatis.view").open_at(view, mv.to.path, mv.to.first, mv)
     end
-    put_cursor(view.win, view.bufnr, M.new_row(view, row))
+    local to = M.new_row(view, row)
+    require("uatis.view").leave_move(view, at, to)
+    put_cursor(view.win, view.bufnr, to)
   end, "Uatis - Other end of a moved definition")
 end
 

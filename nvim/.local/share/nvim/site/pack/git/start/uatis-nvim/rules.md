@@ -341,7 +341,11 @@ it is left -- each end on its own, the move once both are. Stops nest here,
 the move's spanning the edits inside it, so a step leaves every stop the
 cursor is inside, not only the nearest. A stop standing on no chunk is read
 only once left: counted read for having nothing under it, the old end was
-read before the reader had moved.
+read before the reader had moved. `<C-]>` off an end leaves it as `]c` would
+— from the old window too, where the end left is the row the old copy's note
+hangs on in the buffer — and the mark goes to the list of the view's own
+review, not whichever list is in the current tab: the leave runs a tick
+later, and a review in another tab can list a file of the same name.
 
 Side by side, the old window MARKS from the rewritten answer and LINES UP by
 the backend's, since one layout has one order and the rewritten answer is out
@@ -363,6 +367,11 @@ a lookalike in another file from claiming either half.
 With a commit on show both sides come out of git, the commit and its parent,
 and an index is keyed by the revision and the commit (`across_key`): stepping
 `]C` re-reads the list, and the commit just left must not draw on the next.
+
+The end a definition moved OUT of counts what changed on the way too: the
+index keeps the new copy's lines as the review read them, and that end runs
+the same comparison for the count alone — the other file's view is the one
+that draws it.
 
 Each view then finds its own end again in what it draws (`apply`) — by name or
 content in the buffer, which may be ahead of the disk — and rewrites its drawn

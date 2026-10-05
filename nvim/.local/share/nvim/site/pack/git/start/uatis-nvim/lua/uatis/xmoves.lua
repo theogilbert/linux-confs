@@ -215,7 +215,7 @@ end
 
 --- The cross-file moves among `files` (as `build` gathers them, texts
 --- read): `{ name, from = { path, file, first, last, at, lines },
---- to = { path, first, last } }`. `from.path` is the name the file had
+--- to = { path, first, last, lines } }`. `from.path` is the name the file had
 --- at the revision, `from.file` the name it has now -- a renamed file is
 --- opened by the second and read at the revision by the first.
 function M.pair(files)
@@ -269,7 +269,7 @@ function M.pair(files)
           kind = n.c.kind,
           from = { path = fo.old_path or fo.path, file = fo.path, first = o.c.first,
             last = o.c.last, at = at_of(fo, o.c.first), lines = o.c.lines },
-          to = { path = fn.path, first = n.c.first, last = n.c.last },
+          to = { path = fn.path, first = n.c.first, last = n.c.last, lines = n.c.lines },
         })
       end
     end
@@ -342,7 +342,7 @@ function M.apply(view, result, old_text, new_text, cb)
     end
   end
 
-  local found_moves, inner_of = {}, {}
+  local found_moves, inner_of, counted_of = {}, {}, {}
 
   -- Out: the old copy is at the revision, which is the index's own, so
   -- its rows hold -- provided this render removed them too.
@@ -356,12 +356,20 @@ function M.apply(view, result, old_text, new_text, cb)
     end
     if whole then
       for r = e.from.first, e.from.last do gone[r] = nil end
-      table.insert(found_moves, {
+      local mv = {
         kind = "out", name = e.name,
         old = { first = e.from.first, last = e.from.last },
         at = moves.hangs_at(result, e.from.first),
         to = { path = e.to.path, first = e.to.first },
-      })
+      }
+      table.insert(found_moves, mv)
+      -- How much it changed on the way, which is the comparison the
+      -- other file's view draws: made here too, against the copy as the
+      -- review read it, for the count and nothing else.
+      counted_of[mv] = {
+        old = table.concat(vim.list_slice(old_lines, e.from.first, e.from.last), "\n"),
+        new = table.concat(e.to.lines or {}, "\n"),
+      }
     end
   end
 
@@ -410,15 +418,29 @@ function M.apply(view, result, old_text, new_text, cb)
   if #extra > 0 then
     all_old = old_text .. "\n" .. table.concat(extra, "\n")
   end
-  local inners, pending = {}, 1
+  local inners, counts, pending = {}, {}, 1
   local function done()
     pending = pending - 1
     if pending > 0 then
       return
     end
+    for mv, n in pairs(counts) do
+      mv.changes = n
+    end
     local drawn = moves.rewrite(base, found_moves, inners, all_old, new_text)
     drawn.old_lines = vim.split(all_old, "\n", { plain = true })
     cb(vim.tbl_extend("force", result, { drawn = drawn }))
+  end
+  for _, mv in ipairs(found_moves) do
+    local texts = counted_of[mv]
+    if texts then
+      pending = pending + 1
+      require("uatis.diff").compute(texts.old, texts.new,
+        { backend = view.backend, path = view.relpath }, function(inner)
+          counts[mv] = #(inner.hunks or {})
+          done()
+        end)
+    end
   end
   for k, mv in ipairs(found_moves) do
     local texts = inner_of[mv]

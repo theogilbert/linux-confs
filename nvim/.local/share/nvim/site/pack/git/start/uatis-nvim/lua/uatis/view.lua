@@ -638,11 +638,31 @@ local function leave_chunk(view, cur, target)
       pane.leave_stop(list, view.relpath, stops, i, target)
     end
   end
+  -- The list of THIS view's review, wherever it is: the one in the
+  -- current tab can be another review with a file of the same name,
+  -- and a leave that runs a tick later -- `<C-]>`'s does -- may run
+  -- after the tab has changed.
+  for _, list in ipairs(pane.all()) do
+    if list.root == view.root and list.rev == view.rev
+      and (list.standalone == true) == (view.standalone == true)
+      and (list.renders or 0) > 0 then
+      return mark(list)
+    end
+  end
   local list = pane.get()
   if list and (list.renders or 0) > 0 then
+    if list.root ~= view.root then
+      return
+    end
     return mark(list)
   end
   pane.list({ on_ready = mark })
+end
+
+--- The end of a move at `row` left for `target` (nil: for another
+--- file), from outside this view's own window -- the old revision's.
+function M.leave_move(view, row, target)
+  leave_chunk(view, row, target)
 end
 
 --- Shows whatever is drawn above line 1, where the window is at the top.
@@ -974,15 +994,22 @@ end
 --- run, or the key itself.
 local function move_jump(view, prev)
   local win = vim.api.nvim_get_current_win()
-  local to, path, mv
+  local to, path, mv, row
   if vim.api.nvim_win_get_buf(win) == view.bufnr then
-    local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+    local col
+    row, col = unpack(vim.api.nvim_win_get_cursor(win))
     if not on_symbol(view.bufnr, row, col) then
       to, path, mv = M.move_target(view, row)
     end
   end
   if to then
     vim.schedule(function()
+      -- The end of the move the reader stood on is left, the way `]c`
+      -- leaves a stop: read. Into another file there is no row here the
+      -- cursor is still inside. Scheduled with the jump: this is an
+      -- expression mapping, and marking redraws the list's buffer,
+      -- which nothing may touch while the expression is evaluated.
+      leave_chunk(view, row, not path and to or nil)
       vim.cmd("normal! m'")
       if path then
         M.open_at(view, path, to, mv)

@@ -114,6 +114,7 @@ vim.keymap.set("n", "<leader>q", lsp_settings.run_code_actions, { desc = "Open d
 
 vim.keymap.set("n", "<leader>sfd", fzflua.lsp_document_diagnostics, { desc = "[S]earch [F]ile [D]iagnostics" })
 vim.keymap.set("n", "<leader>sfs", fzflua.lsp_document_symbols, { desc = "[S]earch [F]ile [S]ymbols" })
+vim.keymap.set("n", "<leader>sfg", fzflua.grep_curbuf, { desc = "[S]earch [F]ile - [G]rep" })
 
 vim.keymap.set("n", "<leader>swd", fzflua.lsp_workspace_diagnostics, { desc = "[S]earch [W]orkspace [D]iagnostics" })
 vim.keymap.set("n", "<leader>sws", fzflua.lsp_live_workspace_symbols, { desc = "[S]earch [W]orkspace [S]ymbols" })

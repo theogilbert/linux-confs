@@ -245,37 +245,36 @@ XML:~
 <
 *sections-sql* *sections-lucene*
 SQL and Lucene (`.lucene`, grannos parser):~
-- Banner comments: a line of three or more dashes, followed on the next
-  line by a `-- name --` line. Only this first line is used as the section
-  name, so any further `-- ... --` lines can hold a description. The line
-  of dashes closing a banner never opens another one. Other comments are
+- Banner comments: a `-- name` line between two lines of three or more
+  dashes, on consecutive lines. Boxing the name (`-- name --`) is optional.
+  A description can follow in comments below the banner. The line of
+  dashes closing a banner never opens another one. Other comments are
   ignored. Example (SQL): >sql
     ------------------
-    -- Customers --
-    -- Active customers only --
+    -- Customers
     ------------------
+    -- Active customers only
     SELECT * FROM customers WHERE active;
 <   Panel: >
      Customers
 <
 - SQL only: the block comment banner of |sections-mongo| works too.
-- Subsections: `-- ## name`, see |sections-subsections|.
+- Headings: `-- # name`, `-- ## name`, see |sections-subsections|.
 
 *sections-promql*
 PromQL (`.promql`, grannos parser):~
-- Same banner as SQL, written with `#`: a line of three or more `#`,
-  followed on the next line by a `# name #` line. Only this first line is
-  used as the section name, so further `# ... #` lines can hold a
-  description. Other comments are ignored. >
+- Same banner as SQL, written with `#`: a `# name` line between two lines
+  of three or more `#`. Boxing the name (`# name #`) is optional. Other
+  comments are ignored. >
     ##################
-    # Errors         #
-    # 5xx rate per job #
+    # Errors
     ##################
+    # 5xx rate per job
     sum by (job) (rate(http_requests_total{code=~"5.."}[5m]))
 <   Panel: >
      Errors
 <
-- Subsections: `# ## name`, see |sections-subsections|.
+- Headings: `# # name`, `# ## name`, see |sections-subsections|.
 *sections-mongo* *sections-cypher*
 MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`), grannos parsers:~
 - Banner block comments: a `/*` followed by two or more stars, then
@@ -291,26 +290,29 @@ MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`), grannos parsers:~
 <   Panel: >
      Orders
 <
-- The SQL banner, written with `//`: a line of three or more `/`, followed
-  on the next line by a `// name //` line. >
+- The SQL banner, written with `//`: a `// name` line between two lines of
+  three or more `/`. Boxing the name (`// name //`) is optional. >
     //////////////////
-    // Orders       //
+    // Orders
     //////////////////
 <
-- Subsections: `// ## name`, see |sections-subsections|.
+- Headings: `// # name`, `// ## name`, see |sections-subsections|.
 
 *sections-subsections*
 Subsections (SQL, Lucene, PromQL, MongoDB, Cypher):~
-A banner is a level 1 section. A single line comment starting with two or
-more `#` is a subsection, whose level is the number of `#`, as for
-Markdown headers. A section is nested under the closest section above it
-with a lower level; one with no such section is shown at the top level.
-The comment marker before the `#` is the language's own: `--` for SQL and
-Lucene, `#` for PromQL, `//` for MongoDB and Cypher. The `#` must be
-followed by a space, so comments such as `-- #1 fix` are ignored.
+A banner is a level 1 section. A line comment alone on its line and
+starting with `#` is a heading, whose level is the number of `#`, as for
+Markdown headers: `-- # name` is a level 1 section like a banner,
+`-- ## name` a level 2 one. A section is nested under the closest section
+above it with a lower level; one with no such section is shown at the top
+level. The comment marker before the `#` is the language's own: `--` for
+SQL and Lucene, `#` for PromQL (`# # name`), `//` for MongoDB and Cypher.
+The `#` must be followed by a space, so comments such as `-- #1 fix` are
+ignored, and a comment trailing code, as in `SELECT 1; -- # note`, is
+never a heading.
 Example (SQL): >sql
     ------------------
-    -- Customers --
+    -- Customers
     ------------------
     -- ## Active
     SELECT * FROM customers WHERE active;

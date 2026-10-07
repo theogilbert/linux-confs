@@ -113,22 +113,21 @@ See `:help sections-languages` for an example of each.
 | MongoDB, Cypher | Banner block or `//` comments (see below) | header |
 | SQL, Lucene, PromQL, MongoDB, Cypher | Subsections, nested by level (see below) | header |
 
-SQL and Lucene (`.lucene`) sections are declared with a banner comment. Only the first inner line
-is used as the section name; any following lines can hold a description:
+SQL and Lucene (`.lucene`) sections are declared with a banner comment: the name line between two
+lines of dashes. Boxing the name (`-- Customers --`) is optional; a description can follow below:
 
 ```sql
 ------------------
--- Customers --
--- Active customers only --
+-- Customers
 ------------------
+-- Active customers only
 ```
 
 PromQL (`.promql`) uses the same banner, written with `#`:
 
 ```
 ##################
-# Errors         #
-# 5xx rate per job #
+# Errors
 ##################
 ```
 
@@ -142,17 +141,18 @@ MongoDB (`.mongo`) and Cypher (`.cypher`, `.cyp`) sections use the same idea wit
  ******************/
 
 //////////////////
-// Orders       //
+// Orders
 //////////////////
 ```
 
-A banner is a level 1 section. Within it, a line comment starting with two or more `#` is a
-subsection whose level is the number of `#`, as in Markdown: `-- ## name` (SQL, Lucene),
-`# ## name` (PromQL), `// ## name` (MongoDB, Cypher).
+A line comment alone on its line and starting with `#` is a heading whose level is the number
+of `#`, as in Markdown: `-- # name` is a level 1 section, like a banner, and `-- ## name` nests
+under it. The comment marker is the language's own: `--` (SQL, Lucene), `#` (PromQL, so
+`# # name`), `//` (MongoDB, Cypher). Comments trailing code are never headings.
 
 ```sql
 ------------------
--- Customers --
+-- Customers
 ------------------
 -- ## Active
 SELECT * FROM customers WHERE active;

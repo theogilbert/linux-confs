@@ -600,9 +600,9 @@ describe("should parse sql sections", function()
         local buf = create_buf_with_text(
             [[
 ------------------
--- First section --
--- some description --
+-- First section
 ------------------
+-- some description
 SELECT 1;
 
 -- regular comment --
@@ -731,9 +731,9 @@ describe("should parse lucene sections", function()
         local buf = create_buf_with_text(
             [[
 ------------------
--- First section --
--- some description --
+-- First section
 ------------------
+-- some description
 logs-* | level:error
 
 -- regular comment --
@@ -774,9 +774,9 @@ describe("should parse promql sections", function()
         local buf = create_buf_with_text(
             [[
 ##################
-# First section  #
-# some description #
+# First section
 ##################
+# some description
 rate(http_requests_total[5m])
 
 # regular comment #
@@ -843,9 +843,9 @@ SELECT 2;
                 parse(
                     [[
 //////////////////
-// First section //
-// some description //
+// First section
 //////////////////
+// some description
 
 // regular comment //
 //////////////////
@@ -868,7 +868,7 @@ SELECT 1;
 -- ### Sub A.1
 SELECT 2;
 -- ## Sub B
--- # not a section
+SELECT 3; -- # not a section
 -- regular ## comment
 ------------------
 -- Second --
@@ -884,7 +884,7 @@ logs | a
 -- ### Sub A.1
 logs | b
 -- ## Sub B
--- # not a section
+logs | c -- # not a section
 -- regular ## comment
 ------------------
 -- Second --
@@ -900,7 +900,7 @@ up
 # ### Sub A.1
 up
 # ## Sub B
-# # not a section
+up # # not a section
 # regular ## comment
 ##################
 # Second #
@@ -916,7 +916,7 @@ up
 // ### Sub A.1
 {"find": "b"}
 // ## Sub B
-// # not a section
+{"find": "c"} // # not a section
 // regular ## comment
 //////////////////
 // Second //
@@ -969,4 +969,67 @@ up
             parse("-- ## Sub\n-- ### Deeper\nSELECT 1;\n", "sql")
         )
     end)
+    it("require the closing rule right below the name line", function()
+        assert.are.same(
+            { build_header("Unboxed", 1), build_header("Boxed", 6) },
+            parse(
+                [[
+------------------
+-- Unboxed
+------------------
+-- description below the banner
+SELECT 1;
+------------------
+-- Boxed --
+------------------
+SELECT 2;
+------------------
+-- Old style, not a section --
+-- description inside the box --
+------------------
+SELECT 3;
+]],
+                "sql"
+            )
+        )
+    end)
+
+    it("strip a single trailing # box from promql names", function()
+        assert.are.same(
+            { build_header("Boxed", 1) },
+            parse("##########\n# Boxed #\n##########\nup\n", "promql")
+        )
+    end)
+
+    it("treat a single # comment alone on its line as a level 1 heading", function()
+        assert.are.same({
+            build_header("Banner", 1, { build_header("Sub", 4) }),
+            build_header("Heading", 5, { build_header("Sub", 6) }),
+            vim.tbl_extend("force", build_header("Indented", 8), { position = { 8, 2 } }),
+        }, parse(
+            [[
+------------------
+-- Banner
+------------------
+-- ## Sub
+-- # Heading
+-- ## Sub
+SELECT 1; -- # trailing, not a heading
+  -- # Indented
+-- #1 fix, not a heading
+]],
+            "sql"
+        ))
+    end)
+
+    for lang, text in pairs({
+        lucene = "-- # Heading\nlogs | a -- # trailing\n",
+        promql = "# # Heading\nup # # trailing\n## double hash comment\n",
+        mongo = '// # Heading\n{"find": "a"} // # trailing\n',
+        cypher = "// # Heading\nMATCH (n) RETURN n; // # trailing\n",
+    }) do
+        it("parse " .. lang .. " level 1 headings alone on their line", function()
+            assert.are.same({ build_header("Heading", 1) }, parse(text, lang))
+        end)
+    end
 end)

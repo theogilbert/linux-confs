@@ -11,13 +11,14 @@ local function is_rule(node, source)
     return #text >= 3 and text:match("^%p") ~= nil and text == text:sub(1, 1):rep(#text)
 end
 
--- `(#sections-banner? @rule @name)`: @rule opens a line comment banner whose
--- name line @name follows on the next row. Banners being closed by the same
--- rule they open with, @rule is an opener when an even number of rules
--- precede it in its run of consecutive comment lines.
+-- `(#sections-banner? @rule @name @close)`: @rule opens a line comment banner
+-- whose name line @name follows on the next row, and whose closing rule @close
+-- follows on the row after. Banners being closed by the same rule they open
+-- with, @rule is an opener when an even number of rules precede it in its run
+-- of consecutive comment lines.
 ts.query.add_predicate("sections-banner?", function(match, _, source, predicate)
-    local rule, name = match[predicate[2]][1], match[predicate[3]][1]
-    if name:start() ~= rule:end_() + 1 then
+    local rule, name, close = match[predicate[2]][1], match[predicate[3]][1], match[predicate[4]][1]
+    if name:start() ~= rule:end_() + 1 or close:start() ~= name:end_() + 1 then
         return false
     end
 
@@ -32,6 +33,19 @@ ts.query.add_predicate("sections-banner?", function(match, _, source, predicate)
     end
 
     return rules_before % 2 == 0
+end, { force = true, all = true })
+
+-- `(#sections-own-line? @node)`: @node is alone on its line, i.e. only
+-- whitespace precedes it, as opposed to a comment trailing some code.
+ts.query.add_predicate("sections-own-line?", function(match, _, source, predicate)
+    local row, col = match[predicate[2]][1]:start()
+    local line
+    if type(source) == "number" then
+        line = vim.api.nvim_buf_get_lines(source, row, row + 1, false)[1]
+    else
+        line = vim.split(source, "\n", { plain = true })[row + 1]
+    end
+    return line ~= nil and line:sub(1, col):match("^%s*$") ~= nil
 end, { force = true, all = true })
 
 local function build_section(match, metadata, query_info, buf_id)

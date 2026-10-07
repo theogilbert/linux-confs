@@ -744,8 +744,12 @@ local function took(mr, data)
     return
   end
   mr.state = data.state or mr.state
+  mr.title = data.title or mr.title
   if data.merge_when_pipeline_succeeds ~= nil then
     mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
+  end
+  if data.draft ~= nil or data.work_in_progress ~= nil then
+    mr.draft = data.draft or data.work_in_progress or false
   end
 end
 
@@ -851,6 +855,34 @@ M.close_or_reopen = with_session(function(cb)
     end,
     event == "close" and "Close" or "Reopen"
   )
+end)
+
+--- Makes it a draft, or marks a draft ready. Not asked about, unlike
+--- the two above it: either way is one keypress from undone, and
+--- nobody is told anything they cannot be told again.
+---
+--- By the title, which is how the forge has always read it -- and the
+--- prefix it read is taken off whatever it was spelled as, so that
+--- marking ready leaves the title its author meant.
+M.toggle_draft = with_session(function(cb)
+  local mr = session.current
+  if mr.state ~= "opened" then
+    session.notify(("!%d is %s"):format(mr.iid, mr.state or "not open"), vim.log.levels.WARN)
+    return
+  end
+  local bare = require("nemeton.create").undraft(mr.title or "")
+  local title = mr.draft and bare or ("Draft: " .. bare)
+  glab.retitle(mr.root, mr.iid, title, function(data, err)
+    if not data then
+      session.notify("could not change the title: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+    took(mr, data)
+    session.notify(("!%d is %s"):format(mr.iid, mr.draft and "a draft" or "ready"))
+    if cb then
+      cb()
+    end
+  end)
 end)
 
 --- What CI did, job by job, in a float.

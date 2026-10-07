@@ -347,7 +347,7 @@ end
 --- made on the web, and somebody who has done it a hundred times will
 --- do it here. The prefix is taken off and the switch is set instead:
 --- the same merge request either way, and the title stays the title.
-local function undraft(title)
+function M.undraft(title)
   local rest = title:match("^[Dd][Rr][Aa][Ff][Tt]:%s*(.*)$") or title:match("^WIP:%s*(.*)$")
   if rest then
     return rest, true
@@ -362,7 +362,7 @@ function edit.title()
     if text == nil then
       return
     end
-    local title, drafted = undraft(vim.trim(text))
+    local title, drafted = M.undraft(vim.trim(text))
     state.form.title = title
     state.form.draft = state.form.draft or drafted
     draw()
@@ -592,10 +592,7 @@ function M.open()
   vim.wo[M.win].winbar = detail.hint({
     { k.field, "change" },
     { k.submit, "open it" },
-    { k.refresh, "refetch" },
-    { k.discard, "discard" },
-    { k.quit, "close" },
-  })
+  }, k.help)
 
   local bindings = {
     {
@@ -636,11 +633,7 @@ function M.open()
       "close it, keeping what is typed",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  detail.bind(M.buf, bindings, k.help, " new merge request ")
 
   draw()
   facts()

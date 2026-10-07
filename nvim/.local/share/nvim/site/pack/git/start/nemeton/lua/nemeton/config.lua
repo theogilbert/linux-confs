@@ -18,6 +18,10 @@ return {
     -- The floating window, as a fraction of the editor.
     width = 0.7,
     height = 0.6,
+    -- ...and never more rows of merge requests than this, whatever the
+    -- fraction comes to: the rest are scrolled to. A queue is read a
+    -- screenful at a time, and the room under it is the pane's.
+    rows = 15,
 
     -- Whether the rows say what CI made of each merge request.
     --
@@ -69,7 +73,7 @@ return {
     -- than this. The list gives up rows of its own first, from the
     -- bottom, so that its top edge -- and the row you were reading --
     -- does not move.
-    preview_height = 14,
+    preview_height = 29,
 
     -- Whether the merge requests open on a project are written down, so
     -- that the prompt `:Nemeton open` puts up can be typed into before
@@ -356,6 +360,29 @@ return {
     -- a ruled table cannot wrap, because a rule that wraps is two
     -- rules.
     tables = true,
+
+    -- Whether a formula is drawn as the characters it would be printed
+    -- with: `$$…$$` and a ```math fence as a block, `$…$` and $`…`$ in
+    -- a sentence, all in `NemetonMath`. A substitution, not a
+    -- typesetter: `\alpha \le x^2` is `α ≤ x²` and a fraction is
+    -- `a/b` on one line, and a command it does not know is left as it
+    -- was written. `false` leaves the TeX.
+    math = true,
+
+    -- What a list item is drawn with in place of the `-`, `*` or `+` it
+    -- was typed with, one per level of nesting and round again past
+    -- the last: the disc, the circle and the square the page draws.
+    -- An item that wraps hangs under its own words rather than under
+    -- the bullet, and a numbered list is numbered the way the page
+    -- numbers it -- on from its first number, whatever the rest say,
+    -- since `1.` on every line is how most people write one. `false`
+    -- leaves the lists as they were typed.
+    bullets = { "•", "◦", "▪" },
+    -- ...and a task's box, open and done, for `- [ ]` and `- [x]`.
+    -- Text-presentation codepoints, for the reason `ci`'s are: U+2611,
+    -- the ticked box, is in Unicode's emoji set and comes out of an
+    -- emoji font in that font's colours and two cells wide.
+    tasks = { "☐", "✓" },
 
     -- What stands down the side of a citation -- the lines a note
     -- starts with `>` -- in place of the `>` on each of them.
@@ -1010,6 +1037,10 @@ return {
       refresh = "r",
       browser = "o",
       quit = "q",
+      -- ...and the list of all of them, which is what the bar across the
+      -- top says about the keys past the few reached for every time:
+      -- there are more of them than a winbar has room to name.
+      help = "g?",
       commits = "c", -- the changelog of the row under the cursor
       description = "d", -- what the row under the cursor says it is for
       -- ...and what CI made of it, job by job, in the same pane. The
@@ -1032,7 +1063,7 @@ return {
       edit = "e", -- rewrite one of the comments in this thread
       delete = "d", -- delete one of them, after asking
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who gave the reaction, or when the comment was written
+      who = "K", -- who reacted, when it was written, where a link goes
       -- A link to the thread under the cursor on the clipboard. The
       -- same key as on a line of code, because it is the same gesture
       -- -- a link to what the cursor is on -- and the one key in these
@@ -1040,6 +1071,7 @@ return {
       link = "<leader>mL",
       refresh = "R",
       quit = "q",
+      help = "g?", -- every key above, in a float
     },
     -- The merge request's own window: what it is for, what CI made of
     -- it, who has approved it, and the keys to act on all three.
@@ -1061,9 +1093,13 @@ return {
       -- everybody watching the merge request.
       merge = "m", -- merge when the pipeline succeeds, or take that back
       close = "x", -- close it, or reopen a closed one
+      -- Not asked about: a draft is marked ready and back again with
+      -- nothing lost either way, and the forge does it by the title.
+      draft = "d", -- mark it a draft, or ready
       browser = "o",
       refresh = "r",
       quit = "q",
+      help = "g?", -- every key above, in a float
     },
 
     -- Every thread on the merge request, read as conversation rather
@@ -1074,10 +1110,11 @@ return {
       edit = "e",
       delete = "d",
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who gave the reaction, or when the comment was written
+      who = "K", -- who reacted, when it was written, where a link goes
       link = "<leader>mL", -- a link to the comment under the cursor, copied
       refresh = "R",
       quit = "q",
+      help = "g?", -- every key above, in a float
     },
 
     -- The pane the conversations of one file are read in, beside the
@@ -1142,6 +1179,7 @@ return {
       retry = "R", -- run the job under the cursor again, after asking
       refresh = "r",
       quit = "q",
+      help = "g?", -- every key above, in a float
     },
     -- One job's log. A tab of its own rather than a float: a build log
     -- is thousands of lines that are read by searching, and a window
@@ -1151,6 +1189,7 @@ return {
       refresh = "R", -- a running job has more of it every second
       browser = "o",
       quit = "q", -- closes the tab
+      help = "g?", -- every key above, in a float
     },
 
     -- A file's history: the commits that have touched it, and then one
@@ -1165,6 +1204,7 @@ return {
       newer = "K", -- ...and the one after
       browser = "o", -- the commit, on GitLab
       quit = "q", -- close the list, or the patch's tab
+      help = "g?", -- every key above, in a float
     },
 
     -- The window a merge request of your own is written in. Nothing
@@ -1182,6 +1222,7 @@ return {
       -- pressed by accident.
       discard = "X", -- throw away what has been typed
       quit = "q", -- close it; what is typed is here again next time
+      help = "g?", -- every key above, in a float
     },
 
     -- The composer.

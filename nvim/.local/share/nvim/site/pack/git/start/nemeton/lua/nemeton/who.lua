@@ -16,11 +16,22 @@
 -- to the second and with the day of the week. The key only: the head
 -- is the line the cursor crosses on the way into every note, and a
 -- float that rose on each of them was one over the words being read.
+--
+-- And where, on a link. A link is drawn as the words it was given and
+-- not the URL behind them, which is the right trade until the question
+-- is "is that the docs, or somebody's fork of them": `K` on it says
+-- the address, whole. The key only again -- a link is in the middle of
+-- a sentence, and a float over the next line of it is in the way of
+-- the reading the link was shortened for.
+--
+-- `K` again, on any of the three, goes into the float: to scroll a
+-- long list of names, or to yank the URL out of it.
 
 local config = require("nemeton.config")
 local log = require("nemeton.log")
 local follow = require("nemeton.follow")
 local threads = require("nemeton.threads")
+local win = require("nemeton.win")
 
 local M = {}
 
@@ -28,12 +39,25 @@ M.win = nil
 -- Where the float was opened for, so that the hold that fires after
 -- `K` on the same reaction does not take it down to put it back up.
 local shown = nil
+-- The autocmd that takes it down on the next move, which going into it
+-- has to take away first.
+local dismiss = nil
 
 function M.close()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win, shown = nil, nil
+  M.win, shown, dismiss = nil, nil, nil
+end
+
+--- Where a link goes, whole: the address it was written with where that
+--- is one, and otherwise the page `follow` would open for it -- a path
+--- or a fragment is only half an address.
+local function address(ref)
+  if ref.href:match("^https?://") then
+    return ref.href
+  end
+  return follow.href(ref) or ref.href
 end
 
 --- The names as one line: whoever gave it, in the order the forge
@@ -103,8 +127,8 @@ local function stamp(ref)
   return out
 end
 
---- Says who gave the reaction under the cursor, or when the note under
---- it was written. Nothing at all on
+--- Says who gave the reaction under the cursor, when the note under it
+--- was written, or where the link under it goes. Nothing at all on
 --- anything else: this runs on every rest of the cursor in a window of
 --- prose, and a window that says "no" every time the cursor stops was
 --- a window to read past. `resting` is the hover asking rather than
@@ -116,11 +140,19 @@ function M.show(resting)
   if resting and ref and ref.kind == "stamp" and shown == ref then
     return M.win
   end
-  if not (ref and (ref.kind == "reaction" or (ref.kind == "stamp" and not resting))) then
+  local link = ref and ref.href ~= nil
+  if resting and link and shown == ref then
+    return M.win
+  end
+  if not (ref and (ref.kind == "reaction" or (not resting and (ref.kind == "stamp" or link)))) then
     M.close()
     return nil
   end
   if M.win and vim.api.nvim_win_is_valid(M.win) and shown == ref then
+    if not resting then
+      win.enter(M.win, dismiss, M.close)
+      dismiss = nil
+    end
     return M.win
   end
   M.close()
@@ -135,6 +167,8 @@ function M.show(resting)
       end_col = #picture,
       hl = ref.mine and "NemetonReactionMine" or "NemetonReaction",
     }
+  elseif link then
+    lines[1] = address(ref)
   else
     for i, pair in ipairs(stamp(ref)) do
       lines[i] = pair[1] .. pair[2]
@@ -145,8 +179,10 @@ function M.show(resting)
     end
   end
   -- Wider for a time than for names: a date that wraps is two halves
-  -- of one fact, where a list of names wraps between two of them.
-  local most = math.max(math.min(vim.o.columns - 10, ref.kind == "stamp" and 80 or 60), 20)
+  -- of one fact, where a list of names wraps between two of them. And
+  -- as wide as there is for an address, which is one word.
+  local most = link and vim.o.columns - 10 or ref.kind == "stamp" and 80 or 60
+  most = math.max(math.min(vim.o.columns - 10, most), 20)
   local widest, height = 1, 0
   for _, l in ipairs(lines) do
     widest = math.max(widest, vim.fn.strdisplaywidth(l))
@@ -168,6 +204,8 @@ function M.show(resting)
     height = height,
     style = "minimal",
     border = "rounded",
+    -- Not until the second `K` (`win.enter`), which is the way in: a
+    -- hover that `<C-w>w` stopped in on the way past is one in the way.
     focusable = false,
   })
   vim.wo[M.win].winhighlight = "NormalFloat:Normal"
@@ -176,7 +214,7 @@ function M.show(resting)
   -- Dismissed by moving, like the hover it is. Once, and on this
   -- buffer: a float over a window that has just been left is a float
   -- over nothing.
-  vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
+  dismiss = vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
     buffer = buf,
     once = true,
     callback = M.close,

@@ -3,25 +3,35 @@
 -- The counterpart to the pane: that is a window to read a conversation
 -- in and answer it from, while this shows one over the top and is gone
 -- on the next keystroke. A glance at what is on this line, without
--- opening anything.
+-- opening anything. The same key again goes into it, for a thread
+-- longer than the float is tall.
 
 local config = require("nemeton.config")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
+local win = require("nemeton.win")
 
 local M = {}
 
 M.win = nil
+local dismiss = nil
 
 function M.close()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win = nil
+  M.win, dismiss = nil, nil
 end
 
 function M.show(list)
+  -- Still up is still over the line it was opened on: the first move
+  -- takes it down. So this is the second press, and it goes in.
+  if M.win and vim.api.nvim_win_is_valid(M.win) and vim.api.nvim_get_current_win() ~= M.win then
+    win.enter(M.win, dismiss, M.close)
+    dismiss = nil
+    return M.win
+  end
   M.close()
   if not list or #list == 0 then
     return nil
@@ -94,7 +104,9 @@ function M.show(list)
     height = math.min(#lines, config.comments.peek_height),
     style = "minimal",
     border = "rounded",
-    focusable = true,
+    -- Until the second press (`win.enter`): a hover is not somewhere
+    -- `<C-w>w` should stop on the way past.
+    focusable = false,
   })
   -- The ground a conversation is drawn on is mixed out of `Normal`, and
   -- so is every band inside it -- the head of a note, the code it was
@@ -110,7 +122,7 @@ function M.show(list)
   -- Dismissed by moving, like a hover. Deliberately not by a keymap:
   -- there is no state to remember here, and a float that needs closing
   -- is a float that gets left open over the code.
-  vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
+  dismiss = vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
     once = true,
     callback = M.close,
   })

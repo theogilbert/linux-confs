@@ -394,25 +394,19 @@ function M.open(focus)
   vim.wo[M.win].foldenable = true
 
   local k = config.keys.notes
-  -- In the order they are reached for: the two that are about the
-  -- thread under the cursor, then the two that write a new one, then
-  -- the housekeeping.
+  -- The three reached for every time: reading the thread under the
+  -- cursor, answering it, and writing a new one. The rest are `g?`'s.
   vim.wo[M.win].winbar = require("nemeton.detail").hint({
     { k.code, "read" },
     { k.reply, "reply" },
     { k.add, "comment" },
-    { k.thread, "thread" },
-    { k.edit, "edit" },
-    { k.delete, "delete" },
-    { k.refresh, "refetch" },
-    { k.quit, "quit" },
-  })
+  }, k.help)
 
   local bindings = {
     -- What the word under the cursor points at -- a link, a commit, the
     -- person a comment is calling on. See `comments.follow`.
     { k.follow, follow.here, "follow what is under the cursor" },
-    { k.who, who.show, "who gave the reaction, or when the comment was written" },
+    { k.who, who.show, "who reacted, when it was written, where a link goes" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {
@@ -489,11 +483,7 @@ function M.open(focus)
       "refetch",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  require("nemeton.detail").bind(M.buf, bindings, k.help, " comments ")
 
   render()
   if focus then

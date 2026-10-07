@@ -1601,6 +1601,13 @@ function M.set_state(root, iid, event, cb)
   )
 end
 
+--- Gives the merge request a new title. How it is made a draft or
+--- ready: GitLab reads that off a `Draft:` in front of the title, on
+--- every version, where a field of its own came late.
+function M.retitle(root, iid, title, cb)
+  send("PUT", root, ("projects/:fullpath/merge_requests/%d"):format(iid), { title = title }, cb)
+end
+
 --- Merges it once its pipeline succeeds -- at once, where it already
 --- has, or has none to wait for.
 ---

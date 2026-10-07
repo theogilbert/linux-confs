@@ -124,9 +124,7 @@ function M.open(job)
     status and status.word or "",
     detail.hint({
       { k.refresh, "refresh" },
-      { k.browser, follow.browse_hint() },
-      { k.quit, "quit" },
-    })
+    }, k.help)
   )
 
   local function load()
@@ -165,11 +163,7 @@ function M.open(job)
       "open this job on GitLab",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  detail.bind(M.buf, bindings, k.help, " log ")
 
   load()
   return M.buf

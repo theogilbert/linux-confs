@@ -32,23 +32,20 @@ local function drawn()
   return require("nemeton.threads").flatten(detail.description_chunks(session.current), 0)
 end
 
--- Everything the window can do, in the order it is asked for: the two
--- verdicts you came to give -- approve it, and send what you wrote
--- about it -- then the windows this one leads to, then the two that
--- end it, then the housekeeping.
+-- The keys reached for every time, in the order they are asked for:
+-- the two verdicts you came to give -- approve it, and send what you
+-- wrote about it -- the thread window, and the merge the review was
+-- for. The rest are `g?`'s, read out of the bindings below: naming all
+-- ten across the top was a row cut off at the right-hand edge, and
+-- what fell off it was the keys that end a merge request.
 --
--- Reading every thread is not among them. `c` is already the window
--- for what has been said off the code, and the threads that are *on*
--- the code are read where the code is -- in the gutter, on `]m`, in
--- the quickfix list. A second key here that opened a window
--- containing what `c` contains would be one key too many; and `t` is
--- a motion, which is the other half of the rule this window keeps.
--- `:Nemeton conversation` still reads all of it at once.
+-- Reading every thread is not among the bindings. `c` is already the
+-- window for what has been said off the code, and the threads that are
+-- *on* the code are read where the code is -- in the gutter, on `]m`,
+-- in the quickfix list. `:Nemeton conversation` still reads all of it.
 --
--- Drawn again with the window, because two of the words change: a
--- merge waiting on its pipeline is taken back with the key that set
--- it, and a closed merge request is reopened with the one that closed
--- it.
+-- Drawn again with the window, because a word changes: a merge waiting
+-- on its pipeline is taken back with the key that set it.
 local function hint()
   local k, mr = config.keys.detail, session.current or {}
   local open = mr.state == nil or mr.state == "opened"
@@ -56,13 +53,8 @@ local function hint()
     { k.approve, "approve" },
     { k.publish, "send" },
     { k.comments, "comments" },
-    { k.pipeline, "jobs" },
     { open and k.merge, mr.merge_when_pipeline_succeeds and "unmerge" or "merge" },
-    { mr.state ~= "merged" and k.close, mr.state == "closed" and "reopen" or "close" },
-    { k.browser, follow.browse_hint() },
-    { k.refresh, "refetch" },
-    { k.quit, "quit" },
-  })
+  }, k.help)
 end
 
 --- Rewrites the float in place, for after something it shows changes.
@@ -104,6 +96,7 @@ function M.open()
     winbar = hint(),
     hls = hls,
     quit = k.quit,
+    help = k.help,
     keys = {
       {
         k.approve,
@@ -151,6 +144,13 @@ function M.open()
           require("nemeton").close_or_reopen(M.redraw)
         end,
         "close it, or reopen it, after asking",
+      },
+      {
+        k.draft,
+        function()
+          require("nemeton").toggle_draft(M.redraw)
+        end,
+        "mark it a draft, or ready",
       },
       {
         k.browser,

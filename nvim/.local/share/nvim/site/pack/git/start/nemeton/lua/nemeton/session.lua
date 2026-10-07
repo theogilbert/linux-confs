@@ -1139,6 +1139,9 @@ function M.open(iid, opts)
       -- request ask before they offer to.
       state = mr.state,
       merge_when_pipeline_succeeds = mr.merge_when_pipeline_succeeds,
+      -- ...and whether it is a draft, which nothing can merge.
+      -- `work_in_progress` is the same fact on a forge before 14.0.
+      draft = mr.draft or mr.work_in_progress or false,
       -- What CI last said about the branch. Kept whole rather than as
       -- a status string: the pipeline's own URL is the next thing you
       -- want after "failed".

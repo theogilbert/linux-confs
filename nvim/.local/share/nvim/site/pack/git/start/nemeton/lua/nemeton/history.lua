@@ -285,16 +285,7 @@ local function show(i)
       },
       { k.quit, close_patch, "close this patch" },
     }
-    for _, b in ipairs(bindings) do
-      if b[1] and b[1] ~= "" then
-        vim.keymap.set(
-          "n",
-          b[1],
-          b[2],
-          { buffer = M.patch, nowait = true, desc = "nemeton: " .. b[3] }
-        )
-      end
-    end
+    detail.bind(M.patch, bindings, k.help, " the patch ")
   else
     vim.api.nvim_set_current_win(patch_win())
   end
@@ -319,9 +310,7 @@ local function show(i)
     detail.hint({
       { k.older, "older" },
       { k.newer, "newer" },
-      { k.browser, follow.browse_hint() },
-      { k.quit, "quit" },
-    })
+    }, k.help)
   )
 end
 
@@ -376,9 +365,7 @@ function M.open(bufnr, first, last)
   local k = config.keys.history
   vim.wo[M.win].winbar = detail.hint({
     { k.show, "patch" },
-    { k.browser, follow.browse_hint() },
-    { k.quit, "quit" },
-  })
+  }, k.help)
 
   local bindings = {
     {
@@ -404,11 +391,7 @@ function M.open(bufnr, first, last)
       "open the commit under the cursor on GitLab",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  detail.bind(M.buf, bindings, k.help, " history ")
 
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, { "…" })
   vim.bo[M.buf].modifiable = false

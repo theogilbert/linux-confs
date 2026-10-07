@@ -451,6 +451,42 @@ function M.inline(text)
     table.insert(found, { from = from, to = to, text = drawn, hl = hl, ref = ref, code = code })
   end
 
+  --- A formula, claimed: what is inside one is TeX and not markdown --
+  --- `$x_1$` has no emphasis in it. Three spellings: $`…`$, which is
+  --- GitLab's own and cannot be mistaken; `$$…$$`; and `$…$`, which
+  --- can -- "$5 or $10" -- and so only where the page takes it too: no
+  --- space inside either `$`, and no digit straight after the closing
+  --- one.
+  local function formulas(spellings)
+    if not c.math then
+      return
+    end
+    local tex = require("nemeton.tex")
+    for _, spelling in ipairs(spellings) do
+      local at = 1
+      while true do
+        local from, to, src = text:find(spelling[1], at)
+        if not from then
+          break
+        end
+        at = to + 1
+        local fits = not spelling.loose
+          or (
+            not src:match("%s$")
+            and not text:sub(to + 1, to + 1):match("%d")
+            and text:sub(from - 1, from - 1) ~= "$"
+          )
+        if fits and src ~= "" then
+          claim(from, to, tex.render(src), "NemetonMath", nil, true)
+        end
+      end
+    end
+  end
+  -- GitLab's own spelling before the code spans, since it is made of
+  -- backticks; the other two after them, since a `$` in a code span is
+  -- a dollar sign.
+  formulas({ { "%$`(.-)`%$" } })
+
   -- `` `a_b` `` first, and before anything else looks at the line: what
   -- is inside a code span is text and not markup. A URL in one is not a
   -- link to be followed, an `@name` in one is not somebody to notify,
@@ -478,6 +514,7 @@ function M.inline(text)
       end
     end
   end
+  formulas({ { "%$%$(.-)%$%$" }, { "%$([^%s$][^$]-)%$", loose = true } })
 
   -- `[what it is called](where it goes)`, drawn as what it is called.
   --
@@ -539,6 +576,21 @@ function M.inline(text)
           href = url,
         })
       end
+    end
+  end
+
+  -- `<https://…>`, which is markdown's way of saying "this is a link"
+  -- about a URL that would be one anyway: drawn as the URL, without
+  -- the brackets, which were never part of the address.
+  if c.links then
+    local at = 1
+    while true do
+      local from, to, url = text:find("<(https?://[^>%s]+)>", at)
+      if not from then
+        break
+      end
+      at = to + 1
+      claim(from, to, url, "NemetonLink", { kind = where(url), text = url, href = url })
     end
   end
 
@@ -723,12 +775,25 @@ end
 ---   heading     `text`, `level`
 ---   citation    `blocks` -- what was quoted, read the same way
 ---   table       `rows` (the head first), `align`
+---   math        `lines`, the TeX between the `$$`s or in the fence
+---   item        `text`, `depth` (0 at the top), `marker` -- "-" or
+---               the number it is drawn with, "3." -- and `task`, nil
+---               or whether it is ticked; or, for an indented line
+---               that carries on the item above it, `text`, `depth`
+---               and `of`, the item it carries on
 ---   suggestion  `lines`, `above`, `below`, `fence`, `close`
 ---   code        `lines`, `fence`, `close`
 ---
 --- A fence nobody closed is applied anyway, with `close` nil -- which
 --- is what GitLab does with one, and what one looks like while it is
 --- still being typed.
+---
+--- `>>>` on a line of its own opens a citation too, GitLab's own, and
+--- the next `>>>` closes it: everything between is quoted, without a
+--- `>` on any of it.
+---
+--- `[[_TOC_]]` (or `[TOC]`) on a line of its own is the note's own
+--- headings, as the nested list the page draws them as.
 ---
 --- A citation is the lines that start with `>`, with the `>` taken off
 --- and the rest read again by this same function: what somebody quoted
@@ -740,13 +805,113 @@ end
 function M.blocks(lines)
   local c = config.comments
   local out, i = {}, 1
+  -- The lists open at this point, outermost first: the column each
+  -- one's markers stand in, whether it is numbered, the number it is
+  -- on, and the last item in it. A line at a column between two of
+  -- them belongs to the inner one, the way markdown reads it, and a
+  -- line of prose at the margin ends all of them.
+  local lists = {}
   while i <= #lines do
     local line = lines[i]
+    local indent, bullet, after = line:match("^(%s*)([-*+])%s+(.*)$")
+    local number, delim
+    if not bullet then
+      indent, number, delim, after = line:match("^(%s*)(%d+)([.)])%s+(.*)$")
+    end
+    local column = indent and #indent:gsub("\t", "    ")
+    local display = c.math and line:match("^%s*%$%$(.*)$")
+    local fenced_quote = c.citation and line:match("^%s*>>>%s*$")
+    local toc = line:match("^%s*%[%[_TOC_%]%]%s*$") or line:match("^%s*%[TOC%]%s*$")
     local fence = line:match("^%s*```(.*)$")
     local cited = c.citation and line:match("^%s*>%s?(.*)$")
     local heading, said = line:match("^(#+)%s+(.*)$")
     local align = c.tables and alignments(lines[i + 1]) or nil
-    if fence then
+    if fenced_quote then
+      local inner, j = {}, i + 1
+      while j <= #lines and not lines[j]:match("^%s*>>>%s*$") do
+        table.insert(inner, lines[j])
+        j = j + 1
+      end
+      table.insert(out, { kind = "citation", blocks = M.blocks(inner) })
+      i = j + 1
+    elseif toc then
+      -- The headings outside fences, a level of nesting per level of
+      -- heading below the highest the note has.
+      local found, top, inside = {}, 6, false
+      for _, l in ipairs(lines) do
+        if l:match("^%s*```") then
+          inside = not inside
+        elseif not inside then
+          local hashes, title = l:match("^(#+)%s+(.*)$")
+          if hashes and #hashes <= 6 then
+            table.insert(found, { level = #hashes, text = title })
+            top = math.min(top, #hashes)
+          end
+        end
+      end
+      for _, h in ipairs(found) do
+        table.insert(out, { kind = "item", depth = h.level - top, marker = "-", text = h.text })
+      end
+      i = i + 1
+    elseif display then
+      -- `$$ x $$` on one line, or `$$` to the line that closes it.
+      local one = display:match("^(.-)%$%$%s*$")
+      local body, j = {}, i + 1
+      if one then
+        body = { one }
+      else
+        table.insert(body, display)
+        while j <= #lines do
+          local last = lines[j]:match("^(.-)%$%$%s*$")
+          if last then
+            table.insert(body, last)
+            j = j + 1
+            break
+          end
+          table.insert(body, lines[j])
+          j = j + 1
+        end
+      end
+      table.insert(out, { kind = "math", lines = body })
+      i = one and i + 1 or j
+    elseif c.bullets and indent and (bullet or #number <= 9) then
+      while #lists > 0 and lists[#lists].column > column do
+        table.remove(lists)
+      end
+      local top = lists[#lists]
+      if top and top.column == column and top.ordered ~= (number ~= nil) then
+        table.remove(lists)
+        top = nil
+      end
+      if not (top and top.column == column) then
+        top = { column = column, ordered = number ~= nil }
+        table.insert(lists, top)
+      end
+      local item = { kind = "item", depth = #lists - 1, marker = "-" }
+      if number then
+        top.n = top.n and top.n + 1 or tonumber(number)
+        item.marker = top.n .. delim
+      end
+      local box, rest = after:match("^%[([ xX])%]%s+(.*)$")
+      if box then
+        item.task, after = box ~= " ", rest
+      end
+      item.text = broken(after, lines[i + 1])
+      top.last = item
+      table.insert(out, item)
+      i = i + 1
+    elseif #lists > 0 and line:match("^%s+%S") and not fence then
+      -- Indented under an item and not one itself: the item, carried
+      -- on, and drawn hanging under its words.
+      local top = lists[#lists]
+      table.insert(out, {
+        kind = "item",
+        depth = top.last.depth,
+        of = top.last,
+        text = broken(vim.trim(line), lines[i + 1]),
+      })
+      i = i + 1
+    elseif fence then
       local body, close, j = {}, nil, i + 1
       while j <= #lines do
         if lines[j]:match("^%s*```") then
@@ -756,7 +921,9 @@ function M.blocks(lines)
         table.insert(body, lines[j])
         j = j + 1
       end
-      if fence:match("^suggestion") then
+      if c.math and fence:match("^math%s*$") then
+        table.insert(out, { kind = "math", lines = body })
+      elseif fence:match("^suggestion") then
         table.insert(out, {
           kind = "suggestion",
           lines = body,
@@ -796,6 +963,12 @@ function M.blocks(lines)
       table.insert(out, { kind = "table", rows = rows, align = align })
       i = j
     else
+      -- A blank line does not end a list -- the items either side of
+      -- one are the same list, spaced out -- and words at the margin
+      -- do.
+      if vim.trim(line) ~= "" then
+        lists = {}
+      end
       table.insert(out, { kind = "prose", text = broken(line, lines[i + 1]) })
       i = i + 1
     end

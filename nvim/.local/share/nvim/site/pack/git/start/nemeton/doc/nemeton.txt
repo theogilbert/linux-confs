@@ -153,7 +153,8 @@ A review, end to end:
                         |nemeton-pane-window|
 
 :Nemeton peek           The thread under the cursor, in a float that
-                        closes on the next cursor movement.
+                        closes on the next cursor movement. Again, and
+                        the cursor goes into it.
 
 :Nemeton description    The merge request's own window: what it is for,
                         what CI made of it, who has approved it, how
@@ -243,6 +244,12 @@ A review, end to end:
 
 Every key here is `config.keys.*` and every one of them can be set to
 `false` to unbind it. See |nemeton-config-keys|.
+
+The bar across the top of each of this plugin's windows names only the
+few keys reached for every time there, and `g?` first: it lists all of
+them in a float, read out of the bindings themselves so that it cannot
+drift from them. `q` or `<Esc>` closes it and goes back. Each window's
+`help` key is where to change it.
 
 ALWAYS                                               *nemeton-mappings-global*
 
@@ -395,6 +402,7 @@ without asking the forge anything.
     r               refetch
     o               open it on GitLab
     q               close
+    g?              all of the above, in a float
 
 The window is up before the answer is: it opens on the keypress saying
 that it is fetching, fills in when the queue lands, and each row's CI,
@@ -462,8 +470,10 @@ What comes back is kept until `r`, like the rest of the pane -- a
 pipeline that was running when you looked is refetched by the key that
 refetches the queue.
 
-The list does not move when the pane opens: its top edge stays where it
-is and the pane takes the room below. Where there is not enough of it
+The list does not move when the pane opens: it is placed for the two of
+them together, its top edge stays where it is and the pane takes the
+room below. The list is at most `list.rows` rows tall, fifteen, and
+scrolls past that. Where there is not enough of it
 the list gives up rows from the bottom, and only when it has none left
 to give does the pair come up the screen. `list.preview_height` is the
 most the pane will take. |nemeton-config-list|
@@ -511,9 +521,11 @@ there is and how much of it is yours and unsent.
     p               what CI did, job by job
     m               merge it, after asking; again to take that back
     x               close it, or reopen it, after asking
+    d               mark it a draft, or ready
     o               open it on GitLab
     r               refetch the approvals and the diff
     q               close
+    g?              all of the above, in a float
 
 Which way `a` goes is asked of the forge when it is pressed, not read
 off what this window last showed: an approval withdrawn on the web page,
@@ -528,6 +540,12 @@ sha goes with the request, and a branch pushed to since is refused by
 the forge rather than merged with commits nobody read. `x` closes it,
 or reopens one that is closed. Both ask first, through the same
 question a delete asks, with Cancel the first answer.
+
+`d` makes it a draft, or marks a draft ready, without asking: GitLab
+reads a draft off a `Draft:` in front of the title, so that is what is
+written -- and taken off again, whatever it was spelled as, so the
+title is left as its author meant it. Either way is one keypress from
+undone.
 
 The threads that are on the code are not here: they are read where the
 code is -- in the gutter, on `]m`, in the quickfix list.
@@ -545,10 +563,11 @@ then the ones that are about no line at all.
     e               edit the comment under the cursor
     d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
-    K               who gave the reaction, or when the comment was written
+    K               who reacted, when it was written, where a link goes
     <leader>mL      a link to it, on the clipboard
     R               refetch
     q               close
+    g?              all of the above, in a float
 
 The same keys as the every-thread window below, because it is the same
 threads read at a different depth. `<CR>` on a thread that is about a
@@ -594,10 +613,11 @@ EVERY THREAD                                     *nemeton-conversation-window*
     e               edit the comment under the cursor
     d               delete it, after asking
     <C-]>           follow what is under the cursor |nemeton-follow|
-    K               who gave the reaction, or when the comment was written
+    K               who reacted, when it was written, where a link goes
     <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               close
+    g?              all of the above, in a float
 
 THE PANE                                                 *nemeton-pane-window*
 
@@ -692,7 +712,7 @@ enough.
     x               resolve the thread, or reopen it
     <C-]>           follow what is under the cursor |nemeton-follow|
     +               react to the comment under the cursor
-    K               who gave the reaction, or when the comment was written
+    K               who reacted, when it was written, where a link goes
     <leader>mL      a link to the comment under the cursor, copied
     R               refetch
     q               fold the conversations away
@@ -809,6 +829,7 @@ pipeline, its stage, its status and how long it took.
     o               open the job under the cursor on GitLab
     r               refetch
     q               close
+    g?              all of the above, in a float
 
 A JOB'S LOG                                               *nemeton-log-window*
 
@@ -821,6 +842,7 @@ starts at the end, where a failure is.
     R               refetch -- a running job has more of it every second
     o               open the job on GitLab
     q               close the tab
+    g?              all of the above, in a float
 
 The jobs window is left standing in the tab it was opened from, so `q`
 puts you back in front of it. What the runner wrote for a terminal is
@@ -843,6 +865,7 @@ be a round trip to read what is already on the disk.
     <CR>            what the commit under the cursor did to the file
     o               open the commit under the cursor on GitLab
     q               close
+    g?              all of the above, in a float
 
 `<CR>` opens the patch, as a diff, in a tab of its own like a job's log
 |nemeton-log-window|, headed by the commit and where it stands in the
@@ -854,6 +877,7 @@ move the way the eye would on it.
     K               the commit after it
     o               open this commit on GitLab
     q               close the tab
+    g?              all of the above, in a float
 
 The list is left standing in the tab it was opened from, with its
 cursor on the commit being read, so `q` puts you back in front of it;
@@ -910,6 +934,7 @@ would answer with does not exist yet.
     r               ask CI and git again
     X               throw away what has been typed
     q               close it
+    g?              all of the above, in a float
 
 `q` keeps everything. The window is per branch and lasts as long as the
 editor session: press `+` again and the title, the description and the
@@ -930,7 +955,8 @@ THE PEEK FLOAT                                           *nemeton-peek-window*
 
 `<leader>mp`. The thread on this line, over the code, gone on the next
 cursor movement. For reading; the keys that answer it are the review's
-own, |nemeton-mappings-session|.
+own, |nemeton-mappings-session|. `<leader>mp` again goes into it, for a
+thread taller than the float; `q` or `<Esc>` closes it and goes back.
 
 ==============================================================================
 7. WRITING A COMMENT                                         *nemeton-writing*
@@ -1047,6 +1073,7 @@ fire an event, and nothing goes stale when the view redraws.
                     this is about
     <C-x><C-o>      the people you can put an `@` in front of
     q               close it; what is in it is here again next time
+    g?              all of the above, in a float
 
 `q` PUTS IT AWAY RATHER THAN THROWING IT AWAY. Closing the composer with
 something in it keeps that something, and the next time the same comment
@@ -1218,6 +1245,17 @@ not got it, when it was pushed to the merge request, as `pushed`. The
 key only, not the cursor resting there: the head is the line the cursor
 crosses on the way into every note.
 
+A link answers `K` as well. It is drawn as the words it was given, in
+|hl-NemetonLink|, and not the URL behind them; `K` on it says the
+address, whole -- a path or a fragment resolved against the forge the
+way |nemeton-follow| would. The key only again: a link sits in the
+middle of a sentence.
+
+`K` a second time goes into whichever of those floats is up, as it does
+over an LSP hover, to scroll it or yank out of it. `q` or `<Esc>` closes
+it and goes back to where it was opened, and leaving it any other way
+closes it behind you.
+
 All of it is one GraphQL call beside the discussions on every refresh,
 the same call that brings the approvals and says whose token this is.
 REST publishes reactions one note at a time, so the REST answer to
@@ -1354,7 +1392,32 @@ widest first and a cell that still does not fit is cut with an ellipsis
 -- a ruled table cannot wrap, because a rule that wraps is two rules.
 `comments.tables = false` leaves the pipes.
 
-A CITATION -- the lines that start with `>` -- is drawn behind a bar
+A LIST is drawn as the page draws it: `•`, `◦` and `▪` for the levels in
+place of the `-`, `*` or `+` it was typed with, a numbered list counted
+on from its first number -- `1.` on every line, which is how most people
+write one, reads 1, 2, 3 -- and a task as its box alone, `☐` or a `✓` in
+`NemetonOk`. An item that wraps hangs under its own words rather than
+under the bullet, and so does an indented line that carries it on.
+`comments.bullets` and `comments.tasks` are the glyphs, text-presentation
+codepoints for the reason the CI glyphs are; `comments.bullets = false`
+leaves the lists as they were typed. `[[_TOC_]]` (or `[TOC]`) on a line
+of its own is the note's headings as such a list, nested by level, as
+the page draws its table of contents.
+
+A FORMULA -- `$$…$$` or a ```math fence on lines of its own, `$…$` or
+$`…`$ in a sentence -- is drawn as the characters it would be printed
+with, in |hl-NemetonMath|: `\alpha \le x^2 + y_i` is `α ≤ x² + yᵢ`,
+`\sum_{i=1}^n` is `∑ᵢ₌₁ⁿ`, `\mathbb{R}` is `ℝ`. A terminal has no
+typesetter, so this is a substitution and not one: a fraction is
+`(a+b)/2` on one line, a script Unicode has no letters for is
+`e^(iπ)`, each row of an environment is a line of its own with its `&`
+columns set apart rather than lined up, and a command it does not know
+is left as it was written. `$5 or $10` is money, as on the page -- no
+space inside either `$`, and no digit after the closing one -- and a `$`
+in a code span is a dollar sign. `comments.math = false` leaves the TeX.
+
+A CITATION -- the lines that start with `>`, or everything between two
+`>>>` lines -- is drawn behind a bar
 and in the quiet colour, |hl-NemetonCitation|, the way the page sets it
 off and greys it: it is the one part of a note that is not its author
 speaking, the sentence they are answering pasted in front of the
@@ -1655,12 +1718,13 @@ LIST                                                     *nemeton-config-list*
       order = "updated_at",   -- `glab mr list --order`
       width = 0.7,            -- of the editor
       height = 0.6,
+      rows = 15,              -- at most this many rows; the rest scroll
       ci = true,              -- does each row say what CI made of it
       approvals = true,       -- ...and how far its approvals have got
       drafts = true,          -- ...and what you have not sent on it
       concurrency = 6,        -- how many `drafts` calls at once
       stats = true,           -- does each row say how much it changes
-      preview_height = 14,    -- rows of the pane under the list
+      preview_height = 29,    -- rows of the pane under the list
       remember = true,        -- write down what is open, for the prompt
       remember_path = nil,    -- nil: $XDG_STATE_HOME/nemeton/merge-requests.json
     }
@@ -1716,6 +1780,9 @@ COMMENTS                                             *nemeton-config-comments*
       styles = true,         -- `**bold**`, `*italic*`, `~~struck~~`, `code`
       headings = true,       -- `## why` without the hashes, by level
       tables = true,         -- a pipe table ruled and lined up
+      math = true,           -- `$x^2$` as `x²`, `$$…$$` as a block
+      bullets = { "•", "◦", "▪" }, -- a list's bullets, by level
+      tasks = { "☐", "✓" },  -- a task's box, open and done
       citation = "▎ ",       -- `> quoted` behind a bar; false for the >
       suggest_box = true,    -- a suggestion in a box, not behind a fence
       follow = {             -- what `<C-]>` does with one |nemeton-follow|
@@ -2156,6 +2223,7 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonItalic         one written `*like this*`       italic, no colour
     NemetonStrike         one written `~~like this~~`     struck through
     NemetonCode           one written `` `like this` ``   String
+    NemetonMath           a formula, `$x^2$` drawn `x²`   Constant
     NemetonCitation       what a note quotes with `>`     Comment
     NemetonThread         what they said                  Normal's fg
     NemetonMeta           when, where, how many           Comment
@@ -2211,6 +2279,10 @@ and leaves nowhere to hang the weight.
                                                              *hl-NemetonBold*
                                                            *hl-NemetonItalic*
                                                            *hl-NemetonStrike*
+                                                             *hl-NemetonMath*
+`NemetonMath` is a formula, inline or displayed -- set apart from the
+prose round it the way the page sets one in a face of its own.
+
                                                              *hl-NemetonCode*
 `NemetonBold`, `NemetonItalic` and `NemetonStrike` are the weight a word
 was written with. They carry no colour and none is wanted: extmarks

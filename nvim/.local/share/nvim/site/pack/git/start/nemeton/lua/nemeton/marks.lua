@@ -575,6 +575,9 @@ function M.setup_highlights()
   -- it, and `String` is the colour an editor already draws quoted text
   -- in.
   link("NemetonCode", "String")
+  -- A formula, set apart from the prose round it the way the page sets
+  -- it in a face of its own.
+  link("NemetonMath", "Constant")
   -- A comment you have written and not sent: not open, not settled,
   -- and owed an action by you rather than by anybody else.
   link("NemetonDraft", "DiagnosticWarn")

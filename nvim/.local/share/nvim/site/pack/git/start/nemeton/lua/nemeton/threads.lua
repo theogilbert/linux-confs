@@ -1139,6 +1139,13 @@ function M.render(thread, opts)
   --- not prose: absent is the prose limit, and `false` is no breaking
   --- at all.
   local function body(lead, text, hl, sign, runs, band, cap)
+    -- `sign` is drawn in front of the first line and its width in
+    -- spaces in front of the rest -- in the line's colour, or in its
+    -- own where it comes as `{ text, hl }`: a task's tick is green.
+    local sign_hl
+    if type(sign) == "table" then
+      sign, sign_hl = sign[1], sign[2]
+    end
     sign = sign or ""
     local pad = (" "):rep(vim.fn.strdisplaywidth(sign))
     if cap == nil then
@@ -1152,8 +1159,12 @@ function M.render(thread, opts)
     for j, piece in ipairs(wrap(text, room)) do
       local marker = j > 1 and pad or sign
       local line = front(lead)
-      if not runs then
+      if not runs and not sign_hl then
         table.insert(line, { marker .. piece, band or hl })
+        table.insert(out, line)
+      elseif not runs then
+        table.insert(line, { marker, sign_hl })
+        table.insert(line, { piece, band or hl })
         table.insert(out, line)
       else
         local at = text:find(piece, cursor, true) or cursor
@@ -1162,7 +1173,7 @@ function M.render(thread, opts)
           -- The `+` and the `-` are on the band and nothing else: they
           -- are not code, and the band's own foreground is the colour
           -- the whole half used to be drawn in.
-          table.insert(line, { marker, band or hl })
+          table.insert(line, { marker, j == 1 and sign_hl or band or hl })
         end
         for _, run in ipairs(slice(runs, at, at + #piece)) do
           local colour = run[2] or hl
@@ -1754,6 +1765,48 @@ function M.render(thread, opts)
           end
         elseif block.kind == "table" then
           tabled(left, block)
+        elseif block.kind == "math" then
+          -- A displayed formula on lines of its own, one per row of it,
+          -- set in from the prose as the page centres one. Measured
+          -- like code: a formula broken at a space is not the formula.
+          local tex = require("nemeton.tex")
+          for _, row in ipairs(tex.lines(table.concat(block.lines, " "))) do
+            body(left, row, "NemetonMath", "  ", nil, nil, code)
+          end
+        elseif block.kind == "item" then
+          -- A list item, as the page draws one: a bullet for the
+          -- level it is at, or its number, then its box if it is a
+          -- task -- and every line it wraps to, and every line that
+          -- carries it on, hanging under the words rather than under
+          -- the bullet.
+          local c = config.comments
+          local prose, runs = markdown.inline(M.emoji(block.text))
+          local inset = ("  "):rep(block.depth)
+          local sign
+          if block.of then
+            sign = inset .. (" "):rep(block.of.width or 2)
+          else
+            local glyph = block.marker
+            if glyph == "-" then
+              glyph = c.bullets[block.depth % #c.bullets + 1]
+            end
+            glyph = glyph .. " "
+            -- A task is its box and not a bullet as well, as on the
+            -- page: the box already says "this is an item".
+            local tick = ""
+            if block.task ~= nil then
+              tick = (block.task and c.tasks[2] or c.tasks[1]) .. " "
+              if block.marker == "-" then
+                glyph = ""
+              end
+            end
+            block.width = vim.fn.strdisplaywidth(glyph .. tick)
+            sign = {
+              inset .. glyph .. tick,
+              block.task and "NemetonOk" or block.task == false and "NemetonMeta" or hl,
+            }
+          end
+          body(left, prose, hl, sign, runs)
         elseif block.kind == "citation" then
           -- What somebody quoted before answering it, behind a bar and
           -- in the quiet colour: it is the one part of a note that is

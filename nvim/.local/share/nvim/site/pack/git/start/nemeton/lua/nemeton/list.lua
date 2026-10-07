@@ -395,10 +395,12 @@ end
 
 --- Where the list goes, and where the pane under it goes.
 ---
---- The list is centred, which is where a modal window belongs, and it
---- stays where it is: opening the pane must not move the thing you are
---- reading out from under you. So its top edge is the fixed point of
---- this, and the pane takes the room below it.
+--- The list stays where it is: opening the pane must not move the
+--- thing you are reading out from under you. So its top edge is the
+--- fixed point of this, and the pane takes the room below it -- which
+--- is why it is the pair that is centred, list and pane together,
+--- and not the list alone: a pane twice the list's height opened under
+--- a centred list has nowhere to go but over the list.
 ---
 --- Where there is not enough room down there, the list gives up rows --
 --- from the bottom, its top edge staying put -- and only if it has none
@@ -413,15 +415,10 @@ local function geometry()
   -- which is most of them -- there is no row left for the list and
   -- Neovim refuses the winbar with "E36: Not enough room".
   local body = message and #message or math.max(#rows, 1)
-  local height = math.max(2, math.min(math.floor(vim.o.lines * config.list.height), body + 1))
-  -- Centred on the height it has when it is alone, so that the row
-  -- below does not depend on whether the pane is open -- which is the
-  -- whole point.
-  local row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 1)
-
-  if not preview_open() then
-    return { width = width, col = col, height = height, row = row }
-  end
+  local height = math.max(
+    2,
+    math.min(math.floor(vim.o.lines * config.list.height), body + 1, config.list.rows + 1)
+  )
 
   -- Each float costs its border on top of its height, and the last two
   -- rows of the editor belong to the status and command lines.
@@ -429,10 +426,17 @@ local function geometry()
   local function below(r, h)
     return budget - (r + h + 3)
   end
-  -- ...and never more than half the editor: on a short screen the pane
-  -- asking for fourteen rows is the pane asking for the list.
-  local wanted =
-    math.max(math.min(config.list.preview_height, math.floor(budget / 2), budget - 8), 3)
+  -- ...and never so much that the list is left a sliver: on a short
+  -- screen the pane asking for thirty rows is the pane asking for the
+  -- list.
+  local wanted = math.max(math.min(config.list.preview_height, budget - 12), 3)
+  -- Placed for the pair whether or not the pane is open, so that the
+  -- row the list starts on does not depend on it.
+  local row = math.max(math.floor((budget - (height + wanted + 4)) / 2), 1)
+
+  if not preview_open() then
+    return { width = width, col = col, height = height, row = row }
+  end
 
   if below(row, height) < wanted then
     height = math.max(height - (wanted - below(row, height)), 2)
@@ -570,26 +574,21 @@ local function set_hint()
       { k.quit, "quit" },
     }
   else
+    -- The few reached for every time; `g?` has the rest.
     keys = {
       { k.select, "open" },
-      { k.commits, "commits" },
       { k.description, "description" },
-      { k.jobs, "jobs" },
       -- Named after what pressing it would show rather than after what
       -- is on the screen: every other hint on this bar is a verb.
       { k.state, next_state() },
-      { k.create, "new" },
-      { k.refresh, "refresh" },
-      { k.browser, follow.browse_hint() },
-      { k.quit, "quit" },
     }
     -- Only while there might be another page: a key offered for
     -- something that has already run out is a key you press twice.
     if not exhausted then
-      table.insert(keys, #keys, { k.more, "more" })
+      table.insert(keys, { k.more, "more" })
     end
   end
-  vim.wo[M.win].winbar = detail.hint(keys)
+  vim.wo[M.win].winbar = detail.hint(keys, k.help)
 end
 
 --- Says what the window is doing, in the window.
@@ -783,88 +782,111 @@ local function open_window()
 
   local keys = config.keys.list
 
-  vim.keymap.set("n", keys.quit, function()
-    close()
-    back()
-  end, { buffer = M.buf, desc = "nemeton: close the list" })
-  vim.keymap.set("n", keys.refresh, function()
-    M.open()
-  end, { buffer = M.buf, desc = "nemeton: refetch" })
-  if keys.create and keys.create ~= "" then
-    vim.keymap.set("n", keys.create, function()
-      require("nemeton").create()
-    end, { buffer = M.buf, desc = "nemeton: open a merge request for this branch" })
-  end
-  if keys.more and keys.more ~= "" then
-    vim.keymap.set("n", keys.more, M.more, {
-      buffer = M.buf,
-      desc = "nemeton: another page of them",
-    })
-  end
-  if keys.state and keys.state ~= "" then
-    vim.keymap.set("n", keys.state, function()
-      state = next_state()
-      set_title()
-      M.open()
-    end, { buffer = M.buf, desc = "nemeton: open, merged, closed, or all of them" })
-  end
-  vim.keymap.set("n", keys.select, function()
-    -- Reading a failure is the one thing this window does that ends
-    -- with going back to what was on the screen before it.
-    if message then
-      if #rows > 0 then
-        set_rows(rows)
+  -- In the order `g?` lists them, which is the order they are worth
+  -- reading: opening one, the three panes under it, then the queue.
+  local bindings = {}
+  table.insert(bindings, {
+    keys.select,
+    function()
+      -- Reading a failure is the one thing this window does that ends
+      -- with going back to what was on the screen before it.
+      if message then
+        if #rows > 0 then
+          set_rows(rows)
+        end
+        return
       end
-      return
-    end
-    local mr = current()
-    if not mr then
-      return
-    end
-    -- The window stays up, saying which one it is opening, until the
-    -- merge request is actually open: that is a checkout and three
-    -- round trips, and a picker that vanishes on the keypress leaves
-    -- those seconds looking like nothing happened. It goes when there
-    -- is something to go to; if the open fails, the queue comes back
-    -- and another can be picked.
-    local queue = rows
-    close_preview()
-    set_message(("opening !%d — %s…"):format(mr.iid, mr.title or ""))
-    -- Through the plugin's own entry point rather than straight to
-    -- session.open: opening a merge request also binds the review keys
-    -- on the buffers that are already loaded, and a session with no
-    -- keys on the file you were already reading is a session you cannot
-    -- use.
-    require("nemeton").open(mr.iid, {
-      on_open = close,
-      -- Said here rather than notified: this window is what is being
-      -- looked at, and a reason worth reading is a sentence, which is
-      -- what the body of a window is for. The queue is still in `rows`
-      -- underneath it; `<CR>` puts it back without asking the forge
-      -- anything.
-      on_error = function(why)
-        rows = queue
-        set_message(why, "NemetonBad")
-      end,
-    })
-  end, { buffer = M.buf, desc = "nemeton: check this one out and load its comments" })
-  vim.keymap.set("n", keys.browser, function()
-    local mr = current()
-    if mr and mr.web_url then
-      follow.browse(mr.web_url)
-    end
-  end, { buffer = M.buf, desc = "nemeton: open on GitLab" })
+      local mr = current()
+      if not mr then
+        return
+      end
+      -- The window stays up, saying which one it is opening, until the
+      -- merge request is actually open: that is a checkout and three
+      -- round trips, and a picker that vanishes on the keypress leaves
+      -- those seconds looking like nothing happened. It goes when there
+      -- is something to go to; if the open fails, the queue comes back
+      -- and another can be picked.
+      local queue = rows
+      close_preview()
+      set_message(("opening !%d — %s…"):format(mr.iid, mr.title or ""))
+      -- Through the plugin's own entry point rather than straight to
+      -- session.open: opening a merge request also binds the review keys
+      -- on the buffers that are already loaded, and a session with no
+      -- keys on the file you were already reading is a session you cannot
+      -- use.
+      require("nemeton").open(mr.iid, {
+        on_open = close,
+        -- Said here rather than notified: this window is what is being
+        -- looked at, and a reason worth reading is a sentence, which is
+        -- what the body of a window is for. The queue is still in `rows`
+        -- underneath it; `<CR>` puts it back without asking the forge
+        -- anything.
+        on_error = function(why)
+          rows = queue
+          set_message(why, "NemetonBad")
+        end,
+      })
+    end,
+    "check this one out and load its comments",
+  })
   for _, pane in ipairs({
     { keys.commits, "commits", "the commits on this merge request" },
     { keys.description, "description", "what this merge request is for" },
     { keys.jobs, "jobs", "what CI made of this merge request, job by job" },
   }) do
-    if pane[1] and pane[1] ~= "" then
-      vim.keymap.set("n", pane[1], function()
+    table.insert(bindings, {
+      pane[1],
+      function()
         M.toggle_preview(pane[2])
-      end, { buffer = M.buf, desc = "nemeton: " .. pane[3] })
-    end
+      end,
+      pane[3],
+    })
   end
+  vim.list_extend(bindings, {
+    {
+      keys.state,
+      function()
+        state = next_state()
+        set_title()
+        M.open()
+      end,
+      "open, merged, closed, or all of them",
+    },
+    { keys.more, M.more, "another page of them" },
+    {
+      keys.create,
+      function()
+        require("nemeton").create()
+      end,
+      "open a merge request for this branch",
+    },
+    {
+      keys.browser,
+      function()
+        local mr = current()
+        if mr and mr.web_url then
+          follow.browse(mr.web_url)
+        end
+      end,
+      "open on GitLab",
+    },
+    {
+      keys.refresh,
+      function()
+        M.open()
+      end,
+      "refetch",
+    },
+    {
+      keys.quit,
+      function()
+        close()
+        back()
+      end,
+      "close the list",
+    },
+  })
+  detail.bind(M.buf, bindings, keys.help, " merge requests ")
 
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = M.buf,

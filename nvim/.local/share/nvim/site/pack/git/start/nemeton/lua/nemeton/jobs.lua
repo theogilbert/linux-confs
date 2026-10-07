@@ -94,10 +94,7 @@ function M.open()
   vim.wo[M.win].winbar = detail.hint({
     { k.log, "log" },
     { k.retry, "retry" },
-    { k.browser, follow.browse_hint() },
-    { k.refresh, "refresh" },
-    { k.quit, "quit" },
-  })
+  }, k.help)
 
   local function load()
     glab.pipeline_jobs(mr.root, pipeline.id, function(data, err)
@@ -180,11 +177,7 @@ function M.open()
       "open the job under the cursor on GitLab",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  detail.bind(M.buf, bindings, k.help, " jobs ")
 
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, { "…" })
   vim.bo[M.buf].modifiable = false

@@ -305,15 +305,16 @@ function M.open()
   vim.wo[M.win].cursorline = true
 
   local k = config.keys.conversation
-  local hint = "%%#NemetonHint#%s code · %s reply · %s edit"
-    .. " · %s delete · %s refresh · %s quit%%*"
-  vim.wo[M.win].winbar = hint:format(k.code, k.reply, k.edit, k.delete, k.refresh, k.quit)
+  vim.wo[M.win].winbar = require("nemeton.detail").hint({
+    { k.code, "code" },
+    { k.reply, "reply" },
+  }, k.help)
 
   local bindings = {
     -- What the word under the cursor points at -- a link, a commit, the
     -- person a comment is calling on. See `comments.follow`.
     { k.follow, follow.here, "follow what is under the cursor" },
-    { k.who, who.show, "who gave the reaction, or when the comment was written" },
+    { k.who, who.show, "who reacted, when it was written, where a link goes" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {
@@ -369,11 +370,7 @@ function M.open()
       "refetch",
     },
   }
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  require("nemeton.detail").bind(M.buf, bindings, k.help, " every thread ")
 
   render()
   return M.win

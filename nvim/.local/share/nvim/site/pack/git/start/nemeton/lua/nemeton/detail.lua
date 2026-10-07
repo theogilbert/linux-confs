@@ -675,8 +675,15 @@ end
 --- `%<` at the end rather than nowhere: a statusline with no truncation
 --- point is truncated at its *start*, which on a narrow window would
 --- take away the first key and leave the least useful one.
-function M.hint(pairs_)
+---
+--- `help` is the key that lists all of them (`M.bind`), and it goes
+--- first: the bar names the few keys reached for every time, and the
+--- one that names the rest is the one a narrow window must not cut.
+function M.hint(pairs_, help)
   local out = {}
+  if help and help ~= "" then
+    pairs_ = vim.list_extend({ { help, "help" } }, pairs_)
+  end
   for _, h in ipairs(pairs_) do
     if h[1] and h[1] ~= "" then
       table.insert(
@@ -688,6 +695,68 @@ function M.hint(pairs_)
   return "%#NemetonHint#" .. table.concat(out, "  ") .. "%<%*"
 end
 
+--- What can be done in a window, in a float over it.
+---
+--- Out of the bindings themselves rather than out of a list written
+--- beside them: a help that is a second copy of the keymaps is a help
+--- that is wrong the first time one of them moves. The order is the
+--- order they are bound in, which is the order they are worth reading.
+---
+--- `g?` because that is what vim already asks it with, and because a
+--- winbar has room to name three keys and these windows have a dozen:
+--- naming them all there was a row cut off at the edge, with the keys
+--- that end a merge request the ones that fell off it.
+function M.help(bindings, title)
+  local chunks, widest = {}, 0
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      widest = math.max(widest, vim.fn.strdisplaywidth(b[1]))
+    end
+  end
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      local pad = widest - vim.fn.strdisplaywidth(b[1])
+      table.insert(chunks, {
+        { " " .. b[1] .. (" "):rep(pad), "NemetonKey" },
+        { "  " .. b[3], "NemetonThread" },
+      })
+    end
+  end
+  local lines, hls = require("nemeton.threads").flatten(chunks, 0)
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  -- Not markdown, and no wider than the keys: this is a table of two
+  -- columns that this module has coloured itself, and a syntax with an
+  -- opinion about the `*` in somebody's keymap is not wanted over it.
+  return M.float(lines, title or " keys ", {
+    hls = hls,
+    width = width + 2,
+    filetype = false,
+  })
+end
+
+--- Binds `{ lhs, fn, desc }` on `buf`, buffer-local and without waiting
+--- on a longer mapping -- and `help`, which lists them (`M.help`).
+--- Skips the keys a user has set to `false`.
+function M.bind(buf, bindings, help, title)
+  if help and help ~= "" then
+    table.insert(bindings, {
+      help,
+      function()
+        M.help(bindings, title)
+      end,
+      "these keys",
+    })
+  end
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      vim.keymap.set("n", b[1], b[2], { buffer = buf, nowait = true, desc = "nemeton: " .. b[3] })
+    end
+  end
+end
+
 --- A float in the middle of the editor, for reading one of these on its
 --- own rather than under the list.
 ---
@@ -696,6 +765,7 @@ end
 --- be scrolled.
 --- `opts.winbar` -- a winbar string, for a float that has keys of its own
 --- `opts.keys`   -- { { lhs, fn, desc }, ... }, bound in the float
+--- `opts.help`   -- the key that lists them, `q` among them
 --- `opts.quit`   -- what closes it, if not `q`. `<Esc>` always does.
 --- `opts.width`  -- columns, for a float holding something narrower than
 ---                  prose. Fitted to the editor either way.
@@ -742,14 +812,10 @@ function M.float(lines, title, opts)
     end
     back()
   end
-  for _, key in ipairs({ opts.quit or "q", "<Esc>" }) do
-    vim.keymap.set("n", key, shut, { buffer = buf, nowait = true, desc = "nemeton: close" })
-  end
-  for _, k in ipairs(opts.keys or {}) do
-    if k[1] and k[1] ~= "" then
-      vim.keymap.set("n", k[1], k[2], { buffer = buf, nowait = true, desc = "nemeton: " .. k[3] })
-    end
-  end
+  vim.keymap.set("n", "<Esc>", shut, { buffer = buf, nowait = true, desc = "nemeton: close" })
+  local bindings = vim.list_extend({}, opts.keys or {})
+  table.insert(bindings, { opts.quit or "q", shut, "close" })
+  M.bind(buf, bindings, opts.help, title)
   return win, buf
 end
 

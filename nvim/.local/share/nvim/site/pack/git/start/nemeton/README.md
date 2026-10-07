@@ -247,6 +247,12 @@ to do about "no opened merge requests" — look at the merged ones, or
 write one of your own — is the one thing a reader cannot guess from an
 empty window.
 
+Every window's bar names only the few keys reached for every time, with
+`g?` first: it lists all of them in a float, read out of the bindings
+themselves. `q` or `<Esc>` closes it. Naming every key across the top
+was a row cut off at the window's edge — in the merge request window,
+the keys that merge and close it were the ones that fell off.
+
 In the list: `<CR>` opens one, `c` shows its commits under the list,
 `d` what it says it is for and `p` what CI made of it — the jobs of the
 head pipeline under their stages, the same table the merge request's own
@@ -294,8 +300,8 @@ request itself, which has no code to be read beside; the pane stays up
 while the reply is written. `r` replies to it, `a` writes a comment on
 the merge request, `t` writes one people can reply to, `e` edits the
 comment under the cursor, `d` deletes it, `K` says who gave the reaction
-under the cursor, or when the comment was written, `<leader>mL` copies a
-link to it, `R` refetches, `q` closes. Every thread is there whole —
+under the cursor, when the comment was written or where the link goes,
+`<leader>mL` copies a link to it, `R` refetches, `q` closes. Every thread is there whole —
 every answer, and for one on code the lines it is about quoted above the
 first note — under a rule naming where it sits: `── src/app.lua:3 ──`,
 or `── on the merge request ──` (`comments.thread_rule`, "─"; `false`
@@ -394,11 +400,13 @@ asked at the keypress, says it is not, so an approval withdrawn on the
 web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
 pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
-`o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
+`d` makes it a draft (or marks a draft ready), `o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
 first, Cancel being the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:
-a branch pushed to since is refused by the forge.
+a branch pushed to since is refused by the forge. `d` does not ask:
+it is the `Draft:` in front of the title, which is how GitLab reads it,
+and pressed again it is taken off.
 None of them is a key you read with — it is a window of
 prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
@@ -432,8 +440,8 @@ the review starts on the new one, discussions and all.
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `K` says who gave the reaction under the
-cursor, or when the comment was written, `<leader>mL` copies a link to
-the comment under the cursor, `R` refetches, `q` closes.
+cursor, when the comment was written or where the link goes,
+`<leader>mL` copies a link to the comment under the cursor, `R` refetches, `q` closes.
 
 The pane's own header is the one line of it that does not scroll, so it
 carries what stays true while the conversation is read: its state, in
@@ -454,8 +462,8 @@ In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the
 code the thread being read is about, landing the way `]m` lands, with
 the whole span of a comment written over a selection in the middle of
 the window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says
-who gave the reaction under the cursor, or when the comment was written,
-`<leader>mL` copies a link to the comment under the cursor, `R`
+who gave the reaction under the cursor, when the comment was written or
+where the link goes, `<leader>mL` copies a link to the comment under the cursor, `R`
 refetches — and `q` folds the conversations away rather than only
 closing the window, because while it is open the pane *is* what expanded
 means. Closing it any other way says the same thing: the mode follows
@@ -934,7 +942,30 @@ first and a cell that still does not fit is cut with an ellipsis — a
 ruled table cannot wrap, because a rule that wraps is two rules.
 `comments.tables = false` leaves the pipes.
 
-A **citation** — the lines that start with `>` — is drawn behind a bar
+A **list** is drawn as the page draws it: `•`, `◦` and `▪` for the
+levels in place of the `-`, `*` or `+`, a numbered list counted on from
+its first number (so `1.` on every line reads 1, 2, 3), a task as its
+box alone — `☐`, or a green `✓` — and an item that wraps hanging under
+its own words rather than under the bullet. `comments.bullets` and
+`comments.tasks` are the glyphs; `comments.bullets = false` leaves the
+lists as they were typed. `[[_TOC_]]` is the note's headings as such a
+list, nested by level, as the page draws its table of contents.
+
+A **formula** — `$$…$$` or a ```` ```math ```` fence on lines of its
+own, `$…$` or `` $`…`$ `` in a sentence — is drawn as the characters it
+would be printed with, in `NemetonMath`: `\alpha \le x^2 + y_i` is
+`α ≤ x² + yᵢ`, `\sum_{i=1}^n` is `∑ᵢ₌₁ⁿ`, `\mathbb{R}` is `ℝ`. A
+terminal has no typesetter, so this is a substitution and not one: a
+fraction is `(a+b)/2` on one line, a script Unicode has no letters for
+is `e^(iπ)`, each row of an environment is a line of its own with its
+`&` columns set apart rather than lined up, and a command it does not
+know is left as it was written. `$5 or $10` is money, as on the page —
+no space inside either `$`, and no digit after the closing one — and a
+`$` in a code span is a dollar sign. `comments.math = false` leaves the
+TeX.
+
+A **citation** — the lines that start with `>`, or everything between
+two `>>>` lines — is drawn behind a bar
 and in the quiet colour, `NemetonCitation`, the way the page sets it off
 and greys it: it is the one part of a note that is not its author
 speaking, the sentence they are answering pasted in front of the answer.
@@ -1019,6 +1050,16 @@ exactly when the comment was written and when its commit was made, as
 the head is the line the cursor crosses on the way into every note.
 The commit's time is the clone's; where the clone has not got it, it is
 when that commit was pushed to the merge request.
+
+A link answers `K` too. It is drawn as the words it was given, in
+`NemetonLink`, and not the URL behind them; `K` on it says the address,
+whole — the key only again, since a link sits in the middle of a
+sentence.
+
+`K` a second time goes into whichever of those floats is up, as it does
+over an LSP hover, to scroll it or yank out of it; `q` or `<Esc>` closes
+it and goes back, and leaving it any other way closes it behind you. The
+peek float (`<leader>mp`) is the same: its key again goes in.
 
 That list is short on purpose and it is not the limit.
 `vim.ui.select` is a numbered list unless you have replaced it, and a
@@ -1279,8 +1320,10 @@ lua/nemeton/
                  pure, and the part the tests lean on hardest
   markdown.lua   a comment read as the page rather than as the source:
                  links, headings, citations, emphasis, code, tables,
-                 fences -- pure, and a parser only, since the drawing
-                 is threads.lua's
+                 lists, fences -- pure, and a parser only, since the
+                 drawing is threads.lua's
+  tex.lua        a formula as the Unicode it would be printed with --
+                 a substitution, not a typesetter
   follow.lua     what <C-]> goes to: where each kind of reference has a
                  page, and the one kind that is a thread in here instead
   session.lua    one merge request at a time, and everything hanging off it

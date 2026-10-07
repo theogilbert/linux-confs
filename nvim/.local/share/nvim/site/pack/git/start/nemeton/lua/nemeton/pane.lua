@@ -758,7 +758,7 @@ function M.open(at)
       "delete the comment under the cursor",
     },
     { k.follow, follow.here, "follow what is under the cursor" },
-    { k.who, who.show, "who gave the reaction, or when the comment was written" },
+    { k.who, who.show, "who reacted, when it was written, where a link goes" },
     -- On the comment under the cursor, like the two above it: the
     -- whole conversation is drawn here, so the reader is already
     -- pointing at the one they mean.
@@ -817,19 +817,8 @@ function M.open(at)
     -- so the key that puts it away is the key that folds the
     -- conversations back into the gutter.
     { k.quit, session.toggle_expanded, "put the conversations away" },
-    {
-      k.help,
-      function()
-        M.help(bindings)
-      end,
-      "these keys",
-    },
   })
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = M.buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  require("nemeton.detail").bind(M.buf, bindings, k.help, " the conversation ")
 
   local group = vim.api.nvim_create_augroup("NemetonPane", { clear = true })
   vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
@@ -942,48 +931,6 @@ function M.read(thread)
   if valid() then
     vim.api.nvim_set_current_win(M.win)
   end
-end
-
---- What can be done in here, in a float over it.
----
---- Out of the bindings themselves rather than out of a list written
---- beside them: a help that is a second copy of the keymaps is a help
---- that is wrong the first time one of them moves. The order is the
---- order they are bound in, which is the order they are worth reading.
----
---- `g?` because that is what vim already asks it with, and because the
---- pane's header used to spend its right-hand side naming three of
---- these -- which was a reminder for the first afternoon and a column
---- of the file name's room for ever after.
-function M.help(bindings)
-  local chunks, widest = {}, 0
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      widest = math.max(widest, vim.fn.strdisplaywidth(b[1]))
-    end
-  end
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      local pad = widest - vim.fn.strdisplaywidth(b[1])
-      table.insert(chunks, {
-        { " " .. b[1] .. (" "):rep(pad), "NemetonKey" },
-        { "  " .. b[3], "NemetonThread" },
-      })
-    end
-  end
-  local lines, hls = threads.flatten(chunks, 0)
-  local width = 0
-  for _, l in ipairs(lines) do
-    width = math.max(width, vim.fn.strdisplaywidth(l))
-  end
-  -- Not markdown, and no wider than the keys: this is a table of two
-  -- columns that this module has coloured itself, and a syntax with an
-  -- opinion about the `*` in somebody's keymap is not wanted over it.
-  return require("nemeton.detail").float(lines, " the conversation ", {
-    hls = hls,
-    width = width + 2,
-    filetype = false,
-  })
 end
 
 --- Redraws it if it is open, and does nothing if it is not: this is

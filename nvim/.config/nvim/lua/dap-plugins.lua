@@ -166,12 +166,15 @@ end
 dap.listeners.before.launch.dapui_config = function()
   M.show_repl_pane()
 end
-dap.listeners.before.event_terminated.dapui_config = function()
-  dapui.close()
+-- debugpy debugs spawned python subprocesses as child sessions; their exit
+-- must not close the UI while the parent session is still running.
+local function close_ui_on_root_end(session)
+  if session.parent == nil then
+    dapui.close()
+  end
 end
-dap.listeners.before.event_exited.dapui_config = function()
-  dapui.close()
-end
+dap.listeners.before.event_terminated.dapui_config = close_ui_on_root_end
+dap.listeners.before.event_exited.dapui_config = close_ui_on_root_end
 
 require("nvim-dap-virtual-text").setup({
     virt_text_pos = 'eol'
@@ -180,7 +183,10 @@ require("nvim-dap-virtual-text").setup({
 -- On session end the plugin clears its extmarks but keeps the pending
 -- exception/stop-reason state, which then gets redrawn at the next session's
 -- first stop. Reset it the same way a `continue` does.
-local function forget_stop_reason()
+local function forget_stop_reason(session)
+    if session.parent ~= nil then
+        return
+    end
     -- Slash form on purpose: the plugin requires it that way, and a dotted
     -- require would load a second module instance with its own state.
     require("nvim-dap-virtual-text/virtual_text")._on_continue({ clear_on_continue = true })

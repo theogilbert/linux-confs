@@ -140,8 +140,12 @@ M.open = function(opts)
     vim.api.nvim_win_set_hl_ns(winid, hl.NS_ID)
     vim.api.nvim_set_current_win(winid)
 
-    for keymap, action in pairs(opts.keymaps) do
-        vim.keymap.set("n", keymap, action, { buffer = bufid })
+    -- A keymap set to false or "" in the config is disabled
+    for _, keymap in ipairs(opts.keymaps) do
+        local lhs, action = keymap[1], keymap[2]
+        if lhs and lhs ~= "" then
+            vim.keymap.set("n", lhs, action, { buffer = bufid })
+        end
     end
 
     init_pane_info(winid, bufid, opts.on_close)

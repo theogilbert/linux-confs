@@ -11,6 +11,8 @@ sections-cypher	sections.txt	/*sections-cypher*
 sections-installation	sections.txt	/*sections-installation*
 sections-introduction	sections.txt	/*sections-introduction*
 sections-json	sections.txt	/*sections-json*
+sections-keymap-collapse	sections.txt	/*sections-keymap-collapse*
+sections-keymap-expand	sections.txt	/*sections-keymap-expand*
 sections-keymap-private	sections.txt	/*sections-keymap-private*
 sections-keymap-select	sections.txt	/*sections-keymap-select*
 sections-keymap-toggle	sections.txt	/*sections-keymap-toggle*

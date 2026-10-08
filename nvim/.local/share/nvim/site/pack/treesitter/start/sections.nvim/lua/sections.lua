@@ -156,7 +156,9 @@ local function select_section()
     vim.api.nvim_set_current_win(info.watched_win)
 end
 
-local function toggle_section_collapse()
+--- Collapses or expands the section under the cursor in the pane.
+---@param collapse boolean|nil true to collapse, false to expand, nil to toggle
+local function set_section_collapse(collapse)
     local info = get_tab_info()
     if info == nil then
         return
@@ -164,21 +166,23 @@ local function toggle_section_collapse()
 
     local section_line, err = pane.get_selected_section()
     if err ~= nil then
-        vim.notify("Cannot select section: " .. err, vim.log.level.ERROR)
+        vim.notify("Cannot select section: " .. err, vim.log.levels.ERROR)
         return
     end
 
     local section = formatter.get_nth_section(info.sections, section_line, info.collapsed, info.show_private)
     if section == nil then
-        vim.notify("Cannot select section: section is nil", vim.log.level.ERROR)
+        vim.notify("Cannot select section: section is nil", vim.log.levels.ERROR)
         return
     end
 
-    if info.collapsed[section.node_id] == nil then
-        info.collapsed[section.node_id] = true
-    else
-        info.collapsed[section.node_id] = nil
+    if collapse == nil then
+        collapse = info.collapsed[section.node_id] == nil
     end
+    if (info.collapsed[section.node_id] ~= nil) == collapse then
+        return
+    end
+    info.collapsed[section.node_id] = collapse or nil
 
     info.last_pane_line = nil
     info.cached_sequence = nil
@@ -252,9 +256,11 @@ M.toggle = function()
             win = watched_win,
             width = cfg.width,
             keymaps = {
-                [cfg.keymaps.select_section] = select_section,
-                [cfg.keymaps.toggle_section_collapse] = toggle_section_collapse,
-                [cfg.keymaps.toggle_private] = toggle_private,
+                { cfg.keymaps.select_section, select_section },
+                { cfg.keymaps.collapse_section, function() set_section_collapse(true) end },
+                { cfg.keymaps.expand_section, function() set_section_collapse(false) end },
+                { cfg.keymaps.toggle_section_collapse, function() set_section_collapse(nil) end },
+                { cfg.keymaps.toggle_private, toggle_private },
             },
             on_close = clear_tab_info,
         })

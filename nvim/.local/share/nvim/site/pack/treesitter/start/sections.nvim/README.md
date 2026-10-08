@@ -66,8 +66,10 @@ require("sections").setup({
     },
     keymaps = {                           -- Keymaps within the sections panel
         toggle_private = "p",             -- Toggle private sections visibility
-        toggle_section_collapse = "<cr>", -- Collapse/expand section
-        select_section = "<C-]>",         -- Jump to section in code
+        select_section = "<cr>",          -- Jump to section in code
+        collapse_section = "zc",          -- Collapse section
+        expand_section = "zo",            -- Expand section
+        toggle_section_collapse = "za",   -- Collapse/expand section
     },
 })
 ```
@@ -83,15 +85,18 @@ require("sections").setup({
 | `icons.attribute` | string | `"󰠲"` | Icon for attributes/variables |
 | `icons.header` | string | `""` | Icon for headers/headings |
 | `keymaps.toggle_private` | string | `"p"` | Key to toggle private sections |
-| `keymaps.toggle_section_collapse` | string | `"<cr>"` | Key to expand/collapse sections |
-| `keymaps.select_section` | string | `"<C-]>"` | Key to jump to section |
+| `keymaps.select_section` | string | `"<cr>"` | Key to jump to section |
+| `keymaps.collapse_section` | string | `"zc"` | Key to collapse a section |
+| `keymaps.expand_section` | string | `"zo"` | Key to expand a section |
+| `keymaps.toggle_section_collapse` | string | `"za"` | Key to collapse/expand a section |
 
 ## Keymaps (within sections panel)
 
 | Key | Action |
 |-----|--------|
-| `<C-]>` | Jump to section in source code |
-| `<cr>` | Collapse/expand section |
+| `<cr>` | Jump to section in source code |
+| `zc` / `zo` | Collapse / expand section |
+| `za` | Toggle section collapse |
 | `p` | Toggle private sections visibility |
 
 ## Supported Languages

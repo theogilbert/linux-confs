@@ -70,8 +70,10 @@ sections.nvim can be configured by passing options to the setup function:
         },
         keymaps = {                           -- Keymaps within the sections panel
             toggle_private = "p",             -- Toggle private sections visibility
-            toggle_section_collapse = "<cr>", -- Collapse/expand section
-            select_section = "<C-]>",         -- Jump to section in code
+            select_section = "<cr>",          -- Jump to section in code
+            collapse_section = "zc",          -- Collapse section
+            expand_section = "zo",            -- Expand section
+            toggle_section_collapse = "za",   -- Collapse/expand section
         },
     })
 <
@@ -99,8 +101,11 @@ Configuration Options:~
 `keymaps` (table)
     Key mappings for the sections panel:
     - `toggle_private`: Toggle visibility of private sections (default: "p")
-    - `toggle_section_collapse`: Collapse/expand a section (default: "<cr>")
-    - `select_section`: Jump to section in source code (default: "<C-]>")
+    - `select_section`: Jump to section in source code (default: "<cr>")
+    - `collapse_section`: Collapse a section (default: "zc")
+    - `expand_section`: Expand a section (default: "zo")
+    - `toggle_section_collapse`: Collapse/expand a section (default: "za")
+    Set a keymap to `false` to disable it.
 
 ================================================================================
 5. USAGE                                                        *sections-usage*
@@ -137,10 +142,16 @@ Panel Features:~
 Default keymaps within the sections panel:
 
 *sections-keymap-select*
-`<C-]>` - Jump to section in source code and focus the code window
+`<cr>` - Jump to section in source code and focus the code window
+
+*sections-keymap-collapse*
+`zc` - Collapse the current section (if it has children)
+
+*sections-keymap-expand*
+`zo` - Expand the current section
 
 *sections-keymap-toggle*
-`<cr>` - Collapse or expand the current section (if it has children)
+`za` - Collapse or expand the current section
 
 *sections-keymap-private*
 `p` - Toggle visibility of private sections (e.g. Python functions starting with '_')

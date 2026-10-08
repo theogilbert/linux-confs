@@ -11,8 +11,10 @@ local _config = {
     },
     keymaps = {
         toggle_private = "p",
-        toggle_section_collapse = "<cr>",
-        select_section = "<C-]>",
+        select_section = "<cr>",
+        collapse_section = "zc",
+        expand_section = "zo",
+        toggle_section_collapse = "za",
     },
 }
 

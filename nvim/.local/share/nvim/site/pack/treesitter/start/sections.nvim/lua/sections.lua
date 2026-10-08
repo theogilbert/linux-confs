@@ -193,6 +193,43 @@ local function set_section_collapse(collapse)
     update_current_section_highlight()
 end
 
+local function show_description()
+    local info = get_tab_info()
+    if info == nil then
+        return
+    end
+
+    local section_line, err = pane.get_selected_section()
+    if err ~= nil then
+        vim.notify("Cannot select section: " .. err, vim.log.levels.ERROR)
+        return
+    end
+
+    local section = formatter.get_nth_section(info.sections, section_line, info.collapsed, info.show_private)
+    if section == nil then
+        return
+    end
+
+    if section.description == nil then
+        vim.notify("No description for section " .. section.name, vim.log.levels.INFO)
+        return
+    end
+
+    local lines = { "**" .. section.name .. "**", "" }
+    vim.list_extend(lines, vim.split(section.description, "\n", { plain = true }))
+    vim.lsp.util.open_floating_preview(lines, "markdown", { border = "rounded", focus_id = "sections_description" })
+end
+
+-- Closes the pane and returns to the code window it watches
+local function close_pane()
+    local info = get_tab_info()
+    local watched_win = info and info.watched_win
+    pane.close()
+    if watched_win ~= nil and vim.api.nvim_win_is_valid(watched_win) then
+        vim.api.nvim_set_current_win(watched_win)
+    end
+end
+
 local function toggle_private()
     local info = get_tab_info()
     if info == nil then
@@ -261,6 +298,8 @@ M.toggle = function()
                 { cfg.keymaps.expand_section, function() set_section_collapse(false) end },
                 { cfg.keymaps.toggle_section_collapse, function() set_section_collapse(nil) end },
                 { cfg.keymaps.toggle_private, toggle_private },
+                { cfg.keymaps.show_description, show_description },
+                { cfg.keymaps.close, close_pane },
             },
             on_close = clear_tab_info,
         })

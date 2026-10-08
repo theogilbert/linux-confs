@@ -3,7 +3,7 @@ local ts = vim.treesitter
 
 local M = {}
 
-local SUPPORTED_CAPTURES = { "section.name", "section.type_annotation", "section.level" }
+local SUPPORTED_CAPTURES = { "section.name", "section.type_annotation", "section.level", "section.description" }
 
 -- A banner rule is a comment made of a single repeated character, e.g. `------`
 local function is_rule(node, source)
@@ -35,10 +35,9 @@ ts.query.add_predicate("sections-banner?", function(match, _, source, predicate)
     return rules_before % 2 == 0
 end, { force = true, all = true })
 
--- `(#sections-own-line? @node)`: @node is alone on its line, i.e. only
--- whitespace precedes it, as opposed to a comment trailing some code.
-ts.query.add_predicate("sections-own-line?", function(match, _, source, predicate)
-    local row, col = match[predicate[2]][1]:start()
+-- Whether @node is alone on its line, i.e. only whitespace precedes it
+local function is_own_line(node, source)
+    local row, col = node:start()
     local line
     if type(source) == "number" then
         line = vim.api.nvim_buf_get_lines(source, row, row + 1, false)[1]
@@ -46,7 +45,61 @@ ts.query.add_predicate("sections-own-line?", function(match, _, source, predicat
         line = vim.split(source, "\n", { plain = true })[row + 1]
     end
     return line ~= nil and line:sub(1, col):match("^%s*$") ~= nil
+end
+
+-- `(#sections-own-line? @node)`: @node is alone on its line, as opposed to a
+-- comment trailing some code.
+ts.query.add_predicate("sections-own-line?", function(match, _, source, predicate)
+    return is_own_line(match[predicate[2]][1], source)
 end, { force = true, all = true })
+
+-- Trims a description's lines, dropping its leading and trailing blank lines.
+-- Returns nil for an empty description.
+local function normalize_description(lines)
+    local out = {}
+    for _, line in ipairs(lines) do
+        table.insert(out, (line:gsub("%s+$", "")))
+    end
+    while #out > 0 and out[1] == "" do
+        table.remove(out, 1)
+    end
+    while #out > 0 and out[#out] == "" do
+        table.remove(out)
+    end
+    return #out > 0 and table.concat(out, "\n") or nil
+end
+
+-- `(#set! description_prefix <pattern>)`: the section's description is the
+-- run of comment lines right below its header (its last captured node), each
+-- stripped of <pattern> and of an optional closing box. The run ends at a blank line, code, a rule, or a line
+-- starting another section.
+local function collect_following_comments(section, section_rows, source)
+    local node = section.header_end
+    local lines = {}
+    local sibling = node:next_sibling()
+    while
+        sibling ~= nil
+        and sibling:type() == node:type()
+        and sibling:start() == node:end_() + 1
+        and section_rows[sibling:start()] == nil
+        and not is_rule(sibling, source)
+        and is_own_line(sibling, source)
+    do
+        local text = ts.get_node_text(sibling, source)
+        local _, prefix_end = text:find(section.description_prefix)
+        if prefix_end ~= nil then
+            -- Drop a box closing the line with the same marker, e.g. `-- text --`
+            local marker = vim.trim(text:sub(1, prefix_end))
+            text = text:sub(prefix_end + 1)
+            if marker ~= "" and vim.endswith(text, " " .. marker) then
+                text = text:sub(1, -#marker - 2)
+            end
+        end
+        table.insert(lines, text)
+        node, sibling = sibling, sibling:next_sibling()
+    end
+    return lines
+end
 
 local function build_section(match, metadata, query_info, buf_id)
     local current_section = { children = {} }
@@ -54,6 +107,11 @@ local function build_section(match, metadata, query_info, buf_id)
     for id, nodes in pairs(match) do
         for _, node in ipairs(nodes) do
             local capture_name = query_info.captures[id]
+
+            -- The header ends with the last node of the match, e.g. a banner's closing rule
+            if current_section.header_end == nil or node:end_() > current_section.header_end:end_() then
+                current_section.header_end = node
+            end
 
             if capture_name == "section" then
                 local sr, sc, _, _ = ts.get_node_range(node)
@@ -86,6 +144,7 @@ local function build_section(match, metadata, query_info, buf_id)
     -- A level is set statically (`#set! level`) or by the length of the
     -- @section.level text, e.g. `##` is level 2
     current_section.level = tonumber(metadata.level) or (current_section.level and #current_section.level)
+    current_section.description_prefix = metadata.description_prefix
 
     return current_section
 end
@@ -172,6 +231,8 @@ local function cleanup_internal_data_from_sections(sections)
         sections[i].node_id = sections[i].node:id()
         sections[i].node = nil
         sections[i].level = nil
+        sections[i].header_end = nil
+        sections[i].description_prefix = nil
         sections[i].children = cleanup_internal_data_from_sections(sections[i].children)
     end
     return sections
@@ -198,8 +259,10 @@ M.parse_sections = function(buf_id)
 
     local sections_match = {}
     local sections_stack = {}
+    local all_sections = {}
     for _, match, meta in queries:iter_matches(root, buf_id, 0, -1) do
         local new_section = build_section(match, meta, queries.info, buf_id)
+        table.insert(all_sections, new_section)
 
         local parent_section_idx = find_parent_section(new_section, sections_stack)
         if parent_section_idx >= 0 then
@@ -210,6 +273,18 @@ M.parse_sections = function(buf_id)
         end
 
         table.insert(sections_stack, new_section)
+    end
+
+    local section_rows = {}
+    for _, section in ipairs(all_sections) do
+        section_rows[section.position[1] - 1] = true
+    end
+    for _, section in ipairs(all_sections) do
+        local lines = section.description and vim.split(section.description, "\n", { plain = true }) or {}
+        if section.description_prefix ~= nil then
+            vim.list_extend(lines, collect_following_comments(section, section_rows, buf_id))
+        end
+        section.description = normalize_description(lines)
     end
 
     local sections = merge_sections(sections_match)

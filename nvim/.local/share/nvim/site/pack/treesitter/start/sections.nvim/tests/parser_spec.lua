@@ -12,6 +12,10 @@ local function drop_node_id(sections)
     return sections
 end
 
+local function with_description(section, description)
+    return vim.tbl_extend("force", section, { description = description })
+end
+
 local function create_buf_with_text(text, lang)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_set_option_value("filetype", lang, { buf = buf })
@@ -620,7 +624,7 @@ SELECT 3;
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_header("First section", 1),
+            with_description(build_header("First section", 1), "some description"),
             build_header("Second section", 10),
         }, root_nodes)
     end)
@@ -664,7 +668,7 @@ describe("should parse mongo sections", function()
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_header("First section", 1),
+            with_description(build_header("First section", 1), "some description"),
             build_header("Second section", 11),
         }, root_nodes)
     end)
@@ -708,7 +712,7 @@ MATCH (n)-[r]->(m) RETURN r;
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_header("First section", 1),
+            with_description(build_header("First section", 1), "some description"),
             build_header("Second section", 11),
         }, root_nodes)
     end)
@@ -751,7 +755,7 @@ metrics | host:web01
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_header("First section", 1),
+            with_description(build_header("First section", 1), "some description"),
             build_header("Second section", 10),
         }, root_nodes)
     end)
@@ -794,7 +798,7 @@ sum by (job) (up)
 
         root_nodes = drop_node_id(root_nodes)
         assert.are.same({
-            build_header("First section", 1),
+            with_description(build_header("First section", 1), "some description"),
             build_header("Second section", 10),
         }, root_nodes)
     end)
@@ -819,7 +823,7 @@ describe("should parse alternate banners and subsections of query languages", fu
 
     it("parse sql block comment banners", function()
         assert.are.same(
-            { build_header("Orders", 1) },
+            { with_description(build_header("Orders", 1), "Open orders only") },
             parse(
                 [[
 /******************
@@ -839,7 +843,7 @@ SELECT 2;
     for _, lang in ipairs({ "mongo", "cypher" }) do
         it("parse " .. lang .. " line comment banners", function()
             assert.are.same(
-                { build_header("First section", 1), build_header("Second section", 7) },
+                { with_description(build_header("First section", 1), "some description"), build_header("Second section", 7) },
                 parse(
                     [[
 //////////////////
@@ -941,7 +945,7 @@ up # # not a section
 
     it("not open a banner on a closing rule or across blank lines", function()
         assert.are.same(
-            { build_header("First", 1), build_header("Second", 5) },
+            { with_description(build_header("First", 1), "regular comment"), build_header("Second", 5) },
             parse(
                 [[
 ------------------
@@ -971,7 +975,7 @@ up # # not a section
     end)
     it("require the closing rule right below the name line", function()
         assert.are.same(
-            { build_header("Unboxed", 1), build_header("Boxed", 6) },
+            { with_description(build_header("Unboxed", 1), "description below the banner"), build_header("Boxed", 6) },
             parse(
                 [[
 ------------------
@@ -1005,7 +1009,7 @@ SELECT 3;
         assert.are.same({
             build_header("Banner", 1, { build_header("Sub", 4) }),
             build_header("Heading", 5, { build_header("Sub", 6) }),
-            vim.tbl_extend("force", build_header("Indented", 8), { position = { 8, 2 } }),
+            vim.tbl_extend("force", build_header("Indented", 8), { position = { 8, 2 }, description = "#1 fix, not a heading" }),
         }, parse(
             [[
 ------------------
@@ -1030,6 +1034,62 @@ SELECT 1; -- # trailing, not a heading
     }) do
         it("parse " .. lang .. " level 1 headings alone on their line", function()
             assert.are.same({ build_header("Heading", 1) }, parse(text, lang))
+        end)
+    end
+
+    it("collect the comment lines below a section as its description", function()
+        assert.are.same({
+            with_description(build_header("Banner", 1), "First line\n  indented second\n\nboxed"),
+            with_description(build_header("Heading", 9, {
+                with_description(build_header("Sub", 11), "sub desc"),
+            }), "heading desc"),
+            build_header("NoDesc", 14),
+            build_header("Next", 17),
+            with_description(build_header("Block", 20), "block desc\n\nmore"),
+            build_header("BlockNoDesc", 26),
+        }, parse(
+            [[
+------------------
+-- Banner
+------------------
+-- First line
+--   indented second
+--
+-- boxed --
+SELECT 1;
+-- # Heading
+-- heading desc
+-- ## Sub
+-- sub desc
+SELECT 2; -- trailing, not a description
+-- # NoDesc
+
+-- not a description, after a blank line
+------------------
+-- Next
+------------------
+/******************
+ * Block
+ * block desc *
+ *
+ * more
+ ******************/
+/*****
+ * BlockNoDesc
+ *****/
+]],
+            "sql"
+        ))
+    end)
+
+    for lang, text in pairs({
+        lucene = "------\n-- Name\n------\n-- line 1\n-- line 2\nlogs | a\n",
+        promql = "######\n# Name\n######\n# line 1\n# line 2 #\nup\n",
+        mongo = '/******\n * Name\n * line 1\n ******/\n// line 2\n{"find": "a"}\n',
+        cypher = "// # Name\n// line 1\n// line 2\nMATCH (n) RETURN n;\n",
+    }) do
+        it("collect " .. lang .. " section descriptions", function()
+            assert.are.same({ with_description(build_header("Name", 1), "line 1\nline 2") }, parse(text, lang))
         end)
     end
 end)

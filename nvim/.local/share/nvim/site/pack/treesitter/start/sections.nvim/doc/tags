@@ -8,10 +8,13 @@ sections-config-width	sections.txt	/*sections-config-width*
 sections-configuration	sections.txt	/*sections-configuration*
 sections-contents	sections.txt	/*sections-contents*
 sections-cypher	sections.txt	/*sections-cypher*
+sections-descriptions	sections.txt	/*sections-descriptions*
 sections-installation	sections.txt	/*sections-installation*
 sections-introduction	sections.txt	/*sections-introduction*
 sections-json	sections.txt	/*sections-json*
+sections-keymap-close	sections.txt	/*sections-keymap-close*
 sections-keymap-collapse	sections.txt	/*sections-keymap-collapse*
+sections-keymap-description	sections.txt	/*sections-keymap-description*
 sections-keymap-expand	sections.txt	/*sections-keymap-expand*
 sections-keymap-private	sections.txt	/*sections-keymap-private*
 sections-keymap-select	sections.txt	/*sections-keymap-select*

@@ -74,6 +74,8 @@ sections.nvim can be configured by passing options to the setup function:
             collapse_section = "zc",          -- Collapse section
             expand_section = "zo",            -- Expand section
             toggle_section_collapse = "za",   -- Collapse/expand section
+            show_description = "K",           -- Show section description
+            close = "q",                      -- Close the panel
         },
     })
 <
@@ -105,6 +107,8 @@ Configuration Options:~
     - `collapse_section`: Collapse a section (default: "zc")
     - `expand_section`: Expand a section (default: "zo")
     - `toggle_section_collapse`: Collapse/expand a section (default: "za")
+    - `show_description`: Show the section's description (default: "K")
+    - `close`: Close the panel (default: "q")
     Set a keymap to `false` to disable it.
 
 ================================================================================
@@ -152,6 +156,13 @@ Default keymaps within the sections panel:
 
 *sections-keymap-toggle*
 `za` - Collapse or expand the current section
+
+*sections-keymap-description*
+`K` - Show the current section's description in a floating window, see
+|sections-descriptions|
+
+*sections-keymap-close*
+`q` - Close the panel and return to the code window
 
 *sections-keymap-private*
 `p` - Toggle visibility of private sections (e.g. Python functions starting with '_')
@@ -337,6 +348,25 @@ Example (SQL): >sql
          By region
        Churned
 <
+*sections-descriptions*
+Descriptions (SQL, Lucene, PromQL, MongoDB, Cypher):~
+A section's description is shown with `K` in the panel
+(|sections-keymap-description|). It is made of the comment lines right
+below the banner or heading, each alone on its line, stripped of the
+comment marker (and of a closing box, as in `-- text --`). It ends at a
+blank line, code, a rule, or a line starting another section. In a block
+comment banner, the lines after the name are part of the description too.
+Example (SQL): >sql
+    ------------------
+    -- Customers
+    ------------------
+    -- Every customer, active or not.
+    -- Joined with their latest order.
+    SELECT * FROM customers;
+    -- # Orders
+    -- Open orders only.
+    SELECT * FROM orders WHERE status = 'open';
+<
 To add support for additional languages, create Tree-sitter query files
 in the `queries/<language>/sections.scm` directory. See |sections-queries|.
 
@@ -401,6 +431,8 @@ Queries should capture nodes with the following captures:
 - `@section.type_annotation` - Type annotations, displayed after `:` (optional)
 - `@section.level` - Sets the section level to the length of its text, so
   it is usually rewritten with `#gsub!` first, e.g. to `##` (optional)
+- `@section.description` - The section description, shown with `K`; usually
+  rewritten with `#gsub!` (optional)
 
 Metadata:~
 - `(#set! type "function"|"class"|"attribute"|"header")` - Section type
@@ -409,12 +441,17 @@ Metadata:~
   under the closest preceding section with a lower level, instead of the
   section whose node contains it. Used for sections that never contain one
   another, such as comments (see |sections-subsections|)
+- `(#set! description_prefix "<pattern>")` - The comment lines right below
+  the section's last captured node are its description, each stripped of
+  the Lua <pattern>, e.g. `"^%-%-%s?"`. See |sections-descriptions|
 
 Predicates:~
-- `(#sections-banner? @rule @name)` - `@rule` opens a banner of line
-  comments: `@name` is on the next line, and `@rule` is not the rule
-  closing a previous banner. A rule is a comment made of one repeated
-  punctuation character, such as `------`
+- `(#sections-banner? @rule @name @close)` - `@rule` opens a banner of
+  line comments: `@name` is on the next line, `@close` on the line after,
+  and `@rule` is not the rule closing a previous banner. A rule is a
+  comment made of one repeated punctuation character, such as `------`
+- `(#sections-own-line? @node)` - `@node` is alone on its line, i.e. it is
+  not a comment trailing some code
 
 Example query for functions:~
 >query

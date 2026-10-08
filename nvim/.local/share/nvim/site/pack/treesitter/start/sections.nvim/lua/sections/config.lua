@@ -15,6 +15,8 @@ local _config = {
         collapse_section = "zc",
         expand_section = "zo",
         toggle_section_collapse = "za",
+        show_description = "K",
+        close = "q",
     },
 }
 

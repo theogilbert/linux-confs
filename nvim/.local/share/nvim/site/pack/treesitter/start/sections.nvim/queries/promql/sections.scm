@@ -17,6 +17,7 @@
  (#gsub! @section.name "%s+#+%s*$" "")
  (#gsub! @section.name "%s+$" "")
  (#set! type "header")
+ (#set! description_prefix "^#%s?")
  (#set! level "1")
  )
 
@@ -30,4 +31,5 @@
  (#gsub! @section.name "^#%s+#+%s+(.-)%s*$" "%1")
  (#gsub! @section.level "^#%s+(#+).*$" "%1")
  (#set! type "header")
+ (#set! description_prefix "^#%s?")
  )

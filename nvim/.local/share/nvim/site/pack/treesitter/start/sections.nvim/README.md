@@ -70,6 +70,8 @@ require("sections").setup({
         collapse_section = "zc",          -- Collapse section
         expand_section = "zo",            -- Expand section
         toggle_section_collapse = "za",   -- Collapse/expand section
+        show_description = "K",           -- Show section description
+        close = "q",                      -- Close the pane
     },
 })
 ```
@@ -89,6 +91,8 @@ require("sections").setup({
 | `keymaps.collapse_section` | string | `"zc"` | Key to collapse a section |
 | `keymaps.expand_section` | string | `"zo"` | Key to expand a section |
 | `keymaps.toggle_section_collapse` | string | `"za"` | Key to collapse/expand a section |
+| `keymaps.show_description` | string | `"K"` | Key to show a section's description |
+| `keymaps.close` | string | `"q"` | Key to close the pane |
 
 ## Keymaps (within sections panel)
 
@@ -97,6 +101,8 @@ require("sections").setup({
 | `<cr>` | Jump to section in source code |
 | `zc` / `zo` | Collapse / expand section |
 | `za` | Toggle section collapse |
+| `K` | Show section description |
+| `q` | Close the pane |
 | `p` | Toggle private sections visibility |
 
 ## Supported Languages
@@ -155,6 +161,10 @@ of `#`, as in Markdown: `-- # name` is a level 1 section, like a banner, and `--
 under it. The comment marker is the language's own: `--` (SQL, Lucene), `#` (PromQL, so
 `# # name`), `//` (MongoDB, Cypher). Comments trailing code are never headings.
 
+The comment lines right below a banner or heading are its description, shown with `K` in the
+pane. It ends at a blank line, code, or the next section. In a block comment banner, the lines
+after the name are part of it too.
+
 ```sql
 ------------------
 -- Customers
@@ -185,13 +195,16 @@ Example query for functions:
 - `@section.param` - Function parameters (optional)
 - `@section.type_annotation` - Type annotations (optional)
 - `@section.level` - Section level, from the length of its (usually `#gsub!`-rewritten) text (optional)
+- `@section.description` - Section description, shown with `K` (optional)
 
 ### Query Metadata
 
 - `(#set! type "function"|"class"|"attribute"|"header")` - Section type
 - `(#set! private "true")` - Mark section as private
 - `(#set! level "1")` - Section level: nest under the closest preceding section of a lower level
-- `(#sections-banner? @rule @name)` - `@rule` opens a banner of line comments, with `@name` on the next line
+- `(#set! description_prefix "<pattern>")` - The comment lines right below the section are its description, stripped of this Lua pattern
+- `(#sections-banner? @rule @name @close)` - `@rule` opens a banner of line comments, with `@name` on the next line and `@close` on the one after
+- `(#sections-own-line? @node)` - `@node` is alone on its line, not trailing code
 
 ## License
 

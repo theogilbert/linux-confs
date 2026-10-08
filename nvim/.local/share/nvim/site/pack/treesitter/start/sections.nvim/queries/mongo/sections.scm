@@ -3,11 +3,17 @@
 ;    * section name   *
 ;    * section desc   *
 ;    ******************/
-((comment) @section @section.name
+((comment) @section @section.name @section.description
  (#lua-match? @section "^/%*%*+%s*\n")
  (#lua-match? @section "\n%s*%*+/$")
  (#gsub! @section.name "^/%*+%s*\n%s*%*%s*(.-)%s*%**%s*\n.*$" "%1")
+ (#gsub! @section.description "^/%*+%s*\n[^\n]*\n?(.-)%s*%*+/$" "%1")
+ (#gsub! @section.description "^[ \t]*%*?[ \t]?" "")
+ (#gsub! @section.description "\n[ \t]*%*?[ \t]?" "\n")
+ (#gsub! @section.description "[ \t]+%*+[ \t]*\n" "\n")
+ (#gsub! @section.description "[ \t]+%*+[ \t]*$" "")
  (#set! type "header")
+ (#set! description_prefix "^//%s?")
  (#set! level "1")
  )
 
@@ -30,6 +36,7 @@
  (#gsub! @section.name "%s+//+%s*$" "")
  (#gsub! @section.name "%s+$" "")
  (#set! type "header")
+ (#set! description_prefix "^//%s?")
  (#set! level "1")
  )
 
@@ -43,4 +50,5 @@
  (#gsub! @section.name "^//%s*#+%s+(.-)%s*$" "%1")
  (#gsub! @section.level "^//%s*(#+).*$" "%1")
  (#set! type "header")
+ (#set! description_prefix "^//%s?")
  )

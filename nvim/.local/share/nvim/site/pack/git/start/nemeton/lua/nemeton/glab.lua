@@ -1608,6 +1608,19 @@ function M.retitle(root, iid, title, cb)
   send("PUT", root, ("projects/:fullpath/merge_requests/%d"):format(iid), { title = title }, cb)
 end
 
+--- Gives it a new description. An empty string is sent as one rather
+--- than left out: a description taken away is a thing that was asked
+--- for.
+function M.describe(root, iid, description, cb)
+  send(
+    "PUT",
+    root,
+    ("projects/:fullpath/merge_requests/%d"):format(iid),
+    { description = description },
+    cb
+  )
+end
+
 --- Merges it once its pipeline succeeds -- at once, where it already
 --- has, or has none to wait for.
 ---

@@ -1096,6 +1096,10 @@ return {
       -- Not asked about: a draft is marked ready and back again with
       -- nothing lost either way, and the forge does it by the title.
       draft = "d", -- mark it a draft, or ready
+      -- What it says it is, once it has been said: the title asked for
+      -- on the command line, the description in the composer.
+      retitle = "R",
+      describe = "e",
       browser = "o",
       refresh = "r",
       quit = "q",

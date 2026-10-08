@@ -161,6 +161,12 @@ A review, end to end:
                         much conversation is on it -- and the keys to
                         act on all three. |nemeton-detail-window|
 
+:Nemeton retitle        Give the open merge request a new title.
+                        |nemeton-detail-window|
+
+:Nemeton describe       Rewrite its description, in the composer.
+                        |nemeton-detail-window|
+
 :Nemeton comment        A new thread on the line under the cursor.
 
 :Nemeton reply          A reply into the thread under the cursor.
@@ -522,6 +528,8 @@ there is and how much of it is yours and unsent.
     m               merge it, after asking; again to take that back
     x               close it, or reopen it, after asking
     d               mark it a draft, or ready
+    R               give it a new title
+    e               rewrite its description
     o               open it on GitLab
     r               refetch the approvals and the diff
     q               close
@@ -546,6 +554,14 @@ reads a draft off a `Draft:` in front of the title, so that is what is
 written -- and taken off again, whatever it was spelled as, so the
 title is left as its author meant it. Either way is one keypress from
 undone.
+
+`R` asks for a new title over the one it has, without the `Draft:` in
+front -- whether it is a draft is `d`'s to say, and a word fixed in the
+title does not make it ready by the way. `e` opens the description in
+the composer, starting from what it says now, and `<C-s>` or `:w` sends
+it straight away: there is no unsent edit of a description to keep.
+Emptied, it takes the description away. Neither asks first; both are
+undone the same way they were done.
 
 The threads that are on the code are not here: they are read where the
 code is -- in the gutter, on `]m`, in the quickfix list.

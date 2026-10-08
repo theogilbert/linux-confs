@@ -745,6 +745,7 @@ local function took(mr, data)
   end
   mr.state = data.state or mr.state
   mr.title = data.title or mr.title
+  mr.description = data.description or mr.description
   if data.merge_when_pipeline_succeeds ~= nil then
     mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
   end
@@ -883,6 +884,84 @@ M.toggle_draft = with_session(function(cb)
       cb()
     end
   end)
+end)
+
+--- A new title for the merge request, asked for over the one it has.
+---
+--- The words alone, without the `Draft:` in front: whether it is a
+--- draft is the draft key's to say, and a title retyped to fix a word
+--- should not make it ready by the way. Typing the prefix still makes
+--- one, as it does on the web.
+M.retitle = with_session(function(cb)
+  local mr = session.current
+  local create = require("nemeton.create")
+  local bare = create.undraft(mr.title or "")
+  vim.ui.input({ prompt = "title: ", default = bare }, function(text)
+    if text == nil then
+      return
+    end
+    local title, drafted = create.undraft(vim.trim(text))
+    if title == "" then
+      session.notify("a merge request has to have a title", vim.log.levels.WARN)
+      return
+    end
+    if title == bare and drafted == false then
+      session.notify("unchanged")
+      return
+    end
+    title = ((mr.draft or drafted) and "Draft: " or "") .. title
+    glab.retitle(mr.root, mr.iid, title, function(data, err)
+      if not data then
+        session.refused("could not change the title", err)
+        return
+      end
+      took(mr, data)
+      require("nemeton.detail").forget()
+      session.notify("retitled")
+      if cb then
+        cb()
+      end
+    end)
+  end)
+end)
+
+--- The description rewritten, in the composer, starting from what it
+--- says now. Sent rather than kept: there is no such thing as an unsent
+--- edit of a description on the forge, and a review is not waiting on
+--- it. Not remembered when closed unsent, like a rewritten comment:
+--- it starts from what the forge has, which is where it lives.
+M.describe = with_session(function(cb)
+  local mr = session.current
+  local was = vim.trim(mr.description or "")
+  require("nemeton.compose").open({
+    title = ("!%d  description"):format(mr.iid),
+    body = mr.description or "",
+    -- An empty one is an answer: a description can be taken away.
+    empty = true,
+    on_submit = function(body)
+      if body == was then
+        session.notify("unchanged")
+        return
+      end
+      glab.describe(mr.root, mr.iid, body, function(data, err)
+        if not data then
+          session.refused("could not change the description", err)
+          return
+        end
+        took(mr, data)
+        -- `data.description or` above keeps the old one over a `null`,
+        -- which is what GitLab answers an emptied one with.
+        if body == "" then
+          mr.description = ""
+        end
+        require("nemeton.detail").forget()
+        session.notify("description changed")
+        if cb then
+          cb()
+        end
+      end)
+    end,
+  })
 end)
 
 --- What CI did, job by job, in a float.
@@ -1203,6 +1282,12 @@ local SUBCOMMANDS = {
     M.publish()
   end,
   description = M.description,
+  describe = function()
+    M.describe()
+  end,
+  retitle = function()
+    M.retitle()
+  end,
   notes = M.notes,
   threads = M.threads,
   merge = function()

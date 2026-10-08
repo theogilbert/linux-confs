@@ -153,6 +153,20 @@ function M.open()
         "mark it a draft, or ready",
       },
       {
+        k.retitle,
+        function()
+          require("nemeton").retitle(M.redraw)
+        end,
+        "give it a new title",
+      },
+      {
+        k.describe,
+        instead(function()
+          require("nemeton").describe()
+        end),
+        "rewrite its description",
+      },
+      {
         k.browser,
         function()
           if mr.web_url then

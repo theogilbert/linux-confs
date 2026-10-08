@@ -117,6 +117,8 @@ rest.
 | `:Nemeton comments` | markers on/off |
 | `:Nemeton expand` | the conversations themselves: one at a time in a pane beside the code, or all of them under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
+| `:Nemeton retitle` | give it a new title |
+| `:Nemeton describe` | rewrite its description, in the composer |
 | `:Nemeton peek` | the thread under the cursor, in a float |
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
@@ -400,7 +402,8 @@ asked at the keypress, says it is not, so an approval withdrawn on the
 web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
 pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
-`d` makes it a draft (or marks a draft ready), `o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
+`d` makes it a draft (or marks a draft ready), `R` gives it a new title,
+`e` rewrites its description in the composer, `o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
 first, Cancel being the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:

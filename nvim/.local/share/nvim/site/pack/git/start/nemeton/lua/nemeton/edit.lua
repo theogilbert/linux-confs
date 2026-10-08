@@ -33,6 +33,36 @@ local function in_flight(thread, note)
   return true
 end
 
+--- The lines a thread is about as the branch has them now, and the
+--- language they are in: what the composer's `suggest` key drops in,
+--- the same as for a comment being written for the first time. Out of
+--- the buffer where the file is open, because that is what you are
+--- looking at, and off the disk otherwise -- an edit is as often made
+--- from the window that lists every thread as from the code. Nothing
+--- for a thread on the old side, which is code the branch has nothing
+--- to patch, nor for one about no line at all.
+local function code_of(thread)
+  local mr = session.current
+  if not (thread.path and thread.line) or thread.side == "old" then
+    return nil
+  end
+  local full = mr.root .. "/" .. thread.path
+  local first = thread.first_line or thread.line
+  local bufnr = vim.fn.bufnr(full)
+  local lines
+  if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+    lines = vim.api.nvim_buf_get_lines(bufnr, first - 1, thread.line, false)
+  else
+    local ok, all = pcall(vim.fn.readfile, full)
+    lines = ok and vim.list_slice(all, first, thread.line) or {}
+  end
+  if #lines == 0 then
+    return nil
+  end
+  local syntax = require("nemeton.syntax")
+  return lines, bufnr ~= -1 and syntax.of_buf(bufnr) or syntax.of_path(thread.path)
+end
+
 --- `after` is what the window this was pressed in does with itself
 --- once the forge has been asked again: the comments window stays open
 --- over the list it just changed, and a list that still has the note
@@ -42,7 +72,10 @@ local function rewrite(thread, note, after)
   if in_flight(thread, note) then
     return
   end
+  local suggest, lang = code_of(thread)
   compose.open({
+    suggest = suggest,
+    lang = lang,
     title = ("!%d  edit %s"):format(
       mr.iid,
       (note.draft or thread.draft) and "the comment you have not sent"

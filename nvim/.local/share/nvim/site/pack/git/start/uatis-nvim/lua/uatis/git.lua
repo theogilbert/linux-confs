@@ -434,6 +434,23 @@ function M.commit_message(root, sha, cb)
   end)
 end
 
+--- When `sha` was made, to the second and with its offset: cb({ author,
+--- committer, epoch }), `committer` nil where it is the same moment --
+--- it differs after a rebase or a cherry-pick, and says when this copy
+--- of the work came to be. `epoch` is the author date's, for "how long
+--- ago".
+function M.commit_times(root, sha, cb)
+  run(root, { "log", "-1", "--no-walk", "--date=format:%Y-%m-%d %H:%M:%S %z",
+    "--format=%ad%x00%cd%x00%at", sha }, function(ok, out)
+    local author, committer, epoch = (ok and out or ""):match("^([^%z]*)%z([^%z]*)%z(%d+)")
+    if not author then
+      return cb(nil)
+    end
+    cb({ author = author, committer = committer ~= author and committer or nil,
+      epoch = tonumber(epoch) })
+  end)
+end
+
 --- What a file shown at a commit carries above its first line:
 --- cb(datetime, message), the author date to the second and the whole
 --- message. The author date, as everywhere else here: it is when the work

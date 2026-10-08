@@ -72,6 +72,7 @@ function M.render(pane)
   pane.list_rows = built.rows
   pane.list_dirs = built.dirs
   pane.list_commits = built.commits or {}
+  pane.list_dates = built.dates or {}
   -- The foot of the pane: where the current file leaves you in the
   -- review. A window status line rather than a row of the buffer,
   -- because that is the one place in a window that is always at the

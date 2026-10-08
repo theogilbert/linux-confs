@@ -187,6 +187,22 @@ function Buf:hl(line, col_start, col_end, hl)
   table.insert(self.hls, { line = line - 1, col_start = col_start, col_end = col_end, hl = hl })
 end
 
+--- Where on `line` the date `date` of commit `sha` was drawn, for the
+--- list's hover to say the time to the second (`pane.peek_date`). Found
+--- in the text rather than counted, since `names` drops fields off a
+--- narrow row and the date may not be there at all.
+function Buf:date(line, date, sha)
+  local text = self.lines[line]
+  if not (text and date and date ~= "" and sha) then
+    return
+  end
+  local s = text:find(date, 1, true)
+  if s then
+    self.dates = self.dates or {}
+    self.dates[line] = { col_start = s - 1, col_end = s - 1 + #date, sha = sha }
+  end
+end
+
 --- Builds the entire left pane: the review header for the current mode,
 --- then one row per changed file.
 ---
@@ -368,10 +384,11 @@ local function history_list(pane, width)
   end
   local n = #(pane.commits or {})
   local oldest = (pane.commits or {})[1]
-  b:add(pad(names({
+  local since = b:add(pad(names({
     string.format("%d commit%s", n, n == 1 and "" or "s"),
     oldest and oldest.date and ("since " .. oldest.date) or nil,
   }, inner)), "UatisMeta")
+  b:date(since, oldest and oldest.date, oldest and oldest.sha)
   for _, l in ipairs(M.wrap(pane.hint or "", inner)) do
     b:add(pad(l), "UatisHint")
   end
@@ -388,6 +405,7 @@ local function history_list(pane, width)
     local subject = clip(c.subject or "", math.max(inner - vim.fn.strdisplaywidth(head), 4))
     local line = b:add(head .. subject)
     commits[line] = i
+    b:date(line, c.date, c.sha)
     b:hl(line, 0, #head, "UatisMeta")
     if here then
       b:hl(line, #head, -1, "UatisFileCur")
@@ -401,7 +419,8 @@ local function history_list(pane, width)
       end
     end
   end
-  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs, commits = commits }
+  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs, commits = commits,
+    dates = b.dates or {} }
 end
 
 function M.build_list(pane, width)
@@ -434,8 +453,9 @@ function M.build_list(pane, width)
   -- A conflict review has no two sides to name -- the sides are in the
   -- files -- so it says what it is and which branch is taking the merge.
   if pane.standalone and pane.commit then
-    b:add(pad(names({ pane.src, pane.commit.date, pane.commit.author }, inner)),
+    local line = b:add(pad(names({ pane.src, pane.commit.date, pane.commit.author }, inner)),
       "UatisMeta")
+    b:date(line, pane.commit.date, pane.commit.sha)
   elseif pane.conflicts then
     for _, l in ipairs(M.wrap("conflicts on " .. pane.src, inner)) do
       b:add(pad(l), "UatisHeader")
@@ -470,9 +490,10 @@ function M.build_list(pane, width)
     -- nor any need to name the sha again, since the line above it is
     -- `<sha>^ ← <sha>` and says which commit this is twice already.
     if not pane.standalone then
-      b:add(pad(names({
+      local line = b:add(pad(names({
         ("%d/%d"):format(pane.commit_idx, #pane.commits), c.short, c.date, c.author,
       }, inner)), "UatisMeta")
+      b:date(line, c.date, c.sha)
     end
     -- The message, in the buffer's own colour and nothing else's.
     -- Everything above it -- sha, count, date, author -- is how you
@@ -507,7 +528,7 @@ function M.build_list(pane, width)
     b:add(pad(pane.conflicts and "(no conflicts)" or "(no changes)"), "UatisMeta")
   end
   local rows, dirs = draw_tree(b, pane, inner, "")
-  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs }
+  return { lines = b.lines, hls = b.hls, rows = rows, dirs = dirs, dates = b.dates or {} }
 end
 
 --- How much of the review the reader has marked read, as a status line

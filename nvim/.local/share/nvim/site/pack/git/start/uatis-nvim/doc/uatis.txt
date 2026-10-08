@@ -527,7 +527,7 @@ cannot then be read back as code.
 11. COMMIT BY COMMIT                                           *uatis-commits*
 
 `<leader>gh` in a file, or `C` in the list, puts ONE commit of your branch on
-show, starting at the newest. `[C` and `]C` move within it; they neither enter
+show, starting at the first. `[C` and `]C` move within it; they neither enter
 nor leave the mode, and at either end they say so and stay.
 
 The walk is `--first-parent`, oldest first, so it is the commits their author
@@ -535,9 +535,16 @@ wrote rather than everything ever merged in, in the order the work happened.
 The header counts you through it -- `12/17`.
 
 While a commit is on show, a file whose content still equals the file at that
-commit is your own buffer; anything else opens read-only as
-`uatis://at/<short>/<path>`. Arriving at a file by hand does not annotate it:
-that file holds the working tree, not the commit.
+commit is your own buffer; anything else opens read-only out of a checkout of
+that commit, so your language server attaches -- hover, go-to-definition and
+references answer about the code as it was, and a jump lands in the same
+checkout. One checkout per review, moved as `]C` steps, so one server serves
+the whole walk; it is removed when the walk or the review ends. A server may
+need the project set up there too -- a virtualenv, `node_modules` -- to
+resolve third-party imports; the project's own code resolves without it.
+`show.checkout = false` reads files as `uatis://at/<short>/<path>` copies
+instead. Arriving at a file by hand does not annotate it: that file holds the
+working tree, not the commit.
 
 A file opened as it was carries its commit pinned under the winbar, there
 wherever you are in the file: the author date to the second and the subject
@@ -591,6 +598,11 @@ body is the half that says why, and a review is exactly the activity that
 wants it. Under the message, every file the commit touched with its `+N -M`
 -- the whole commit, even in the history of one file, since what else it
 touched is often why it touched this one. `q` or `<Esc>` closes it.
+
+A date in the list says the day; rest the cursor on it and a float says the
+moment -- the author date to the second, with its offset and how long ago,
+and the committer date under it where a rebase or a cherry-pick made that
+later. It waits for 'updatetime', as every hover does.
 
                                                                *uatis-history*
 `<leader>gL` (|:UatisHistory|) lists every commit that touched one file, back

@@ -19,6 +19,7 @@ local filelist = require("uatis.filelist")
 local read = require("uatis.read")
 local ui = require("uatis.ui")
 local view_mod = require("uatis.view")
+local checkout = require("uatis.checkout")
 local conflict_mod = require("uatis.conflict")
 local base = require("uatis.base")
 local keys = require("uatis.keys")
@@ -1031,6 +1032,10 @@ local function show(pane, idx, keep_path)
   end
   pane.hint = hint_for(pane)
   view_mod.close_all(pane.root, was, pane.standalone)
+  -- Out of the walk, the checkout that followed it goes.
+  if not idx then
+    checkout.release(pane)
+  end
 
   pane.on_ready = function(p)
     if panes[p.tab] ~= p or #p.files == 0 then
@@ -1150,10 +1155,11 @@ end
 
 --- `<leader>gh`: read the review one commit at a time, or stop.
 ---
---- Entering shows the newest commit -- the last thing the branch did,
---- which is where reading it in order ends up and the most likely thing
---- to want to look at first. Leaving puts the review back to what it is
---- the rest of the time: the whole branch against the working tree.
+--- Entering shows the first commit -- where the branch starts, so `]C`
+--- reads it in the order it was written. Leaving puts the review back to
+--- what it is the rest of the time: the whole branch against the working
+--- tree. (A history opens on its newest instead: "what happened here
+--- last" is the question it answers.)
 function M.toggle_commits(pane)
   pane = pane or M.get()
   if not pane then
@@ -1190,7 +1196,7 @@ function M.toggle_commits(pane)
         vim.log.levels.INFO)
       return
     end
-    show(p, #p.commits, current_path(p))
+    show(p, 1, current_path(p))
   end)
   return true
 end
@@ -2002,39 +2008,70 @@ function M.goto_file(pane, idx)
       -- because today's copy happens to match would put a review of the
       -- past on a buffer that belongs to the present -- one whose view
       -- the review of your own branch, in the tab you came from, owns.
-      in_code_win(pane, win, function()
-        -- Either way the cursor goes to what the commit did, not to the
-        -- top of the file: a commit is read for its change, and a file
-        -- opened out of one at line 1 has the reader pressing `]c` before
-        -- anything else, every time. Answered by the view once it has
-        -- drawn, since where the first change is is its to say.
-        if not pane.standalone and text ~= nil and text == live_text(pane.root, f.path) then
-          vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
-          view_mod.land_first(vim.api.nvim_get_current_buf())
-          view_mod.open(pane.ref, pinned(pane, f))
+      local own = not pane.standalone and text ~= nil and text == live_text(pane.root, f.path)
+      local function place(dir)
+        in_code_win(pane, win, function()
+          -- Either way the cursor goes to what the commit did, not to the
+          -- top of the file: a commit is read for its change, and a file
+          -- opened out of one at line 1 has the reader pressing `]c` before
+          -- anything else, every time. Answered by the view once it has
+          -- drawn, since where the first change is is its to say.
+          if own then
+            vim.cmd("edit " .. vim.fn.fnameescape(pane.root .. "/" .. f.path))
+            view_mod.land_first(vim.api.nvim_get_current_buf())
+            view_mod.open(pane.ref, pinned(pane, f))
+            return
+          end
+          local buf
+          if dir then
+            -- A buffer of its own, not `:edit`: in a tab just opened, `:edit`
+            -- reuses the empty buffer standing there -- same number, its
+            -- mappings cleared -- and the keys the list lent that buffer on
+            -- arriving in the tab were gone while the list believed it had
+            -- lent them.
+            buf = vim.fn.bufadd(dir .. "/" .. f.path)
+            vim.fn.bufload(buf)
+            vim.bo[buf].buflisted = true
+            vim.api.nvim_win_set_buf(win, buf)
+            checkout.take(buf)
+          else
+            buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
+            vim.api.nvim_win_set_buf(win, buf)
+          end
+          show_card(pane, win, buf, commit)
+          -- A history of lines is about one place in the file, and the
+          -- commit may have touched others: the lines asked about, where
+          -- `-L` said they stood in this commit. Set on the buffer at once
+          -- -- it is the commit's own text, and the marks the view draws
+          -- over it add no rows.
+          local row = pane.history and commit.row
+          if row then
+            vim.api.nvim_win_set_cursor(win,
+              { math.max(1, math.min(row, vim.api.nvim_buf_line_count(buf))), 0 })
+            vim.cmd("normal! zz")
+          else
+            view_mod.land_first(buf)
+          end
+          view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
+            root = pane.root,
+            path = f.path,
+            at_commit = commit.short,
+          }))
+        end)
+      end
+      -- Out of the review's checkout of the commit where one can be had
+      -- (`checkout.lua`): the same text as a copy, and a project around
+      -- it, so the language server answers hover and go-to-definition in
+      -- the past as it does in the present. The copy where it cannot.
+      if own or text == nil or not checkout.enabled() then
+        return place(nil)
+      end
+      checkout.at(pane, commit.sha, function(dir, released)
+        if released or panes[pane.tab] ~= pane or pane.commit ~= commit
+          or pane.open_gen ~= asked or not vim.api.nvim_win_is_valid(win) then
           return
         end
-        local buf = buffer_at(pane.root, commit.sha, commit.short, f.path, text)
-        vim.api.nvim_win_set_buf(win, buf)
-        show_card(pane, win, buf, commit)
-        -- A history of lines is about one place in the file, and the
-        -- commit may have touched others: the lines asked about, where
-        -- `-L` said they stood in this commit. Set on the buffer at once
-        -- -- it is the commit's own text, and the marks the view draws
-        -- over it add no rows.
-        local row = pane.history and commit.row
-        if row then
-          vim.api.nvim_win_set_cursor(win,
-            { math.max(1, math.min(row, vim.api.nvim_buf_line_count(buf))), 0 })
-          vim.cmd("normal! zz")
-        else
-          view_mod.land_first(buf)
-        end
-        view_mod.open(pane.ref, vim.tbl_extend("force", pinned(pane, f), {
-          root = pane.root,
-          path = f.path,
-          at_commit = commit.short,
-        }))
+        place(dir)
       end)
     end)
     return
@@ -2358,6 +2395,7 @@ function M.close(pane)
   pane.closing = true
   panes[pane.tab] = nil
   return_keys(pane)
+  checkout.release(pane)
   -- The list is the review: a conflict review's annotators go with it.
   if pane.conflicts then
     conflict_mod.close_all(pane.root)
@@ -2403,6 +2441,9 @@ end
 --- survives, its tab goes with the rest, and a session drops it: a
 --- scratch buffer is not something `:mksession` writes.
 function M.close_owned()
+  -- A walk's checkout is removed whatever tab the walk is in, and waited
+  -- for: a removal still running when the editor goes is killed half done.
+  checkout.release_all()
   local at = require("uatis.at")
   local owned = {}
   for _, pane in ipairs(M.all()) do
@@ -2500,6 +2541,68 @@ function M.history_at_cursor(pane)
     return true
   end
   return false
+end
+
+--- How long ago `epoch` was, in the one unit that reads naturally.
+local function ago(epoch)
+  local s = os.time() - epoch
+  if s < 0 then
+    return nil
+  end
+  for _, u in ipairs({ { 365 * 86400, "year" }, { 30 * 86400, "month" }, { 7 * 86400, "week" },
+    { 86400, "day" }, { 3600, "hour" }, { 60, "minute" } }) do
+    if s >= u[1] then
+      local n = math.floor(s / u[1])
+      return ("%d %s%s ago"):format(n, u[2], n == 1 and "" or "s")
+    end
+  end
+  return "just now"
+end
+
+--- The date under the cursor in the list, to the second: a float beside
+--- it, gone when the cursor moves. The list draws dates as `YYYY-MM-DD`,
+--- which is how a walk or a history is found; WHEN on that day -- and
+--- when the copy was committed, where a rebase made that later -- is a
+--- question for one commit at a time, and asked of git when it is put.
+function M.peek_date(pane)
+  local win = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_buf(win) ~= pane.list_buf then
+    return
+  end
+  local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+  local span = (pane.list_dates or {})[row]
+  if not span or col < span.col_start or col >= span.col_end then
+    return
+  end
+  git.commit_times(pane.root, span.sha, function(t)
+    if not t or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win then
+      return
+    end
+    local now_row, now_col = unpack(vim.api.nvim_win_get_cursor(win))
+    if now_row ~= row or now_col < span.col_start or now_col >= span.col_end then
+      return
+    end
+    local lines = { t.author .. (ago(t.epoch) and ("  · " .. ago(t.epoch)) or "") }
+    if t.committer then
+      table.insert(lines, "committed " .. t.committer)
+    end
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = "wipe"
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    local width = 0
+    for _, l in ipairs(lines) do
+      width = math.max(width, vim.fn.strdisplaywidth(l))
+    end
+    if pane.date_float and vim.api.nvim_win_is_valid(pane.date_float) then
+      vim.api.nvim_win_close(pane.date_float, true)
+    end
+    pane.date_float = vim.api.nvim_open_win(buf, false, {
+      relative = "cursor", row = 1, col = span.col_start - now_col,
+      width = width, height = #lines, style = "minimal", focusable = false,
+    })
+    vim.wo[pane.date_float].winhighlight = "Normal:UatisMeta"
+  end)
 end
 
 local function setup_keymaps(pane)
@@ -2777,6 +2880,7 @@ local function setup_watchers(pane)
           panes[tab] = nil
           p.closing = true
           return_keys(p)
+          checkout.release(p)
         end
       end
     end,
@@ -3064,6 +3168,22 @@ function M.open(opts)
     -- winbar, describing a file this pane is not showing.
     vim.wo[pane.list_win].winbar = ""
     setup_keymaps(pane)
+    -- The date under a resting cursor, to the second, and gone again
+    -- once the cursor moves (`peek_date`).
+    local hover = vim.api.nvim_create_augroup("UatisListDate" .. pane.list_buf, { clear = true })
+    vim.api.nvim_create_autocmd("CursorHold", {
+      group = hover, buffer = pane.list_buf,
+      callback = function() M.peek_date(pane) end,
+    })
+    vim.api.nvim_create_autocmd({ "CursorMoved", "BufLeave", "WinLeave" }, {
+      group = hover, buffer = pane.list_buf,
+      callback = function()
+        if pane.date_float and vim.api.nvim_win_is_valid(pane.date_float) then
+          vim.api.nvim_win_close(pane.date_float, true)
+        end
+        pane.date_float = nil
+      end,
+    })
     filelist.render(pane)
 
     if opts.focus == false and vim.api.nvim_win_is_valid(here) then

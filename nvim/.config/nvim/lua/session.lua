@@ -67,15 +67,15 @@ function M.clear_session()
 end
 
 function M.reset_session()
-    -- a keyboard interrupt raises here; treat it as "No"
-    local ok, choice = pcall(vim.fn.confirm, "Clear session and close all buffers?", "&Yes\n&No", 2, "Question")
-    if not ok or choice ~= 1 then
-        return
-    end
+    vim.ui.select({ "No", "Yes" }, { prompt = "Clear session and close all buffers?" }, function(choice)
+        if choice ~= "Yes" then
+            return
+        end
 
-    M.clear_session()
-    -- close all tabs and windows
-    vim.cmd("enew | only | tabonly | %bw!")
+        M.clear_session()
+        -- close all tabs and windows
+        vim.cmd("enew | only | tabonly | %bw!")
+    end)
 end
 
 local function is_visible(buf)

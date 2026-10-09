@@ -66,6 +66,60 @@ function M.clear_session()
     os.remove(get_session_path())
 end
 
+-- floating window showing `lines`, calls on_confirm() only if the user presses y
+local function confirm_float(title, lines, on_confirm)
+    lines = vim.list_extend(vim.deepcopy(lines), { "", "[y] Yes   [n] No" })
+
+    local width = #title + 4
+    for _, line in ipairs(lines) do
+        width = math.max(width, vim.fn.strdisplaywidth(line))
+    end
+    width = math.min(width + 2, vim.o.columns - 4)
+    local height = math.min(#lines, vim.o.lines - 4)
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.tbl_map(function(l) return " " .. l end, lines))
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].bufhidden = "wipe"
+
+    local win = vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        width = width,
+        height = height,
+        row = math.floor((vim.o.lines - height) / 2) - 1,
+        col = math.floor((vim.o.columns - width) / 2),
+        style = "minimal",
+        border = "rounded",
+        title = " " .. title .. " ",
+        title_pos = "center",
+    })
+
+    local done = false
+    local function close(confirmed)
+        if done then
+            return
+        end
+        done = true
+        if vim.api.nvim_win_is_valid(win) then
+            vim.api.nvim_win_close(win, true)
+        end
+        if confirmed then
+            on_confirm()
+        end
+    end
+
+    vim.keymap.set("n", "y", function() close(true) end, { buffer = buf, nowait = true })
+    for _, key in ipairs({ "n", "q", "<Esc>" }) do
+        vim.keymap.set("n", key, function() close(false) end, { buffer = buf, nowait = true })
+    end
+    -- leaving the window any other way counts as "No"
+    vim.api.nvim_create_autocmd("WinLeave", {
+        buffer = buf,
+        once = true,
+        callback = function() vim.schedule(function() close(false) end) end,
+    })
+end
+
 function M.reset_session()
     local unsaved = {}
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -75,17 +129,16 @@ function M.reset_session()
         end
     end
 
-    local prompt = "Clear session and close all buffers?"
+    local lines = { "Clear session and close all buffers?" }
     if #unsaved > 0 then
-        prompt = ("%d unsaved buffer(s), changes will be lost:\n%s\n\n%s")
-            :format(#unsaved, table.concat(unsaved, "\n"), prompt)
+        lines = { ("%d unsaved buffer(s), changes will be lost:"):format(#unsaved) }
+        for _, name in ipairs(unsaved) do
+            table.insert(lines, "  " .. name)
+        end
+        vim.list_extend(lines, { "", "Clear session and close all buffers anyway?" })
     end
 
-    vim.ui.select({ "No", "Yes" }, { prompt = prompt }, function(choice)
-        if choice ~= "Yes" then
-            return
-        end
-
+    confirm_float("Clear session", lines, function()
         M.clear_session()
         -- close all tabs and windows, discarding unsaved changes
         local old_bufs = vim.api.nvim_list_bufs()

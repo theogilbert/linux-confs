@@ -67,14 +67,35 @@ function M.clear_session()
 end
 
 function M.reset_session()
-    vim.ui.select({ "No", "Yes" }, { prompt = "Clear session and close all buffers?" }, function(choice)
+    local unsaved = {}
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.bo[buf].modified then
+            local name = vim.api.nvim_buf_get_name(buf)
+            table.insert(unsaved, name ~= "" and vim.fn.fnamemodify(name, ":~:.") or ("[No Name] #" .. buf))
+        end
+    end
+
+    local prompt = "Clear session and close all buffers?"
+    if #unsaved > 0 then
+        prompt = ("%d unsaved buffer(s), changes will be lost:\n%s\n\n%s")
+            :format(#unsaved, table.concat(unsaved, "\n"), prompt)
+    end
+
+    vim.ui.select({ "No", "Yes" }, { prompt = prompt }, function(choice)
         if choice ~= "Yes" then
             return
         end
 
         M.clear_session()
-        -- close all tabs and windows
-        vim.cmd("enew | only | tabonly | %bw!")
+        -- close all tabs and windows, discarding unsaved changes
+        local old_bufs = vim.api.nvim_list_bufs()
+        vim.api.nvim_win_set_buf(0, vim.api.nvim_create_buf(true, false))
+        vim.cmd("silent! only! | silent! tabonly!")
+        for _, buf in ipairs(old_bufs) do
+            if vim.api.nvim_buf_is_valid(buf) then
+                vim.api.nvim_buf_delete(buf, { force = true })
+            end
+        end
     end)
 end
 

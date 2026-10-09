@@ -191,6 +191,12 @@ reflowed across three lines has honestly lost a bracket and two commas —
 dimming four lines to point at four punctuation marks is not a comparison
 anyone can use.
 
+Except where the comparison is on screen: difft's spans for a row, taken out
+of it, leave exactly the row it is anchored to (`leaves`). A last parameter
+dropped with the comma before it lost only that comma from `port,`, and
+`port` is directly below — refused, the row was drawn solid red as though the
+parameter had gone with it.
+
 ### `refit_new` — `overlay.lua`
 
 The emphasis is a block comparison, old rows against new, so that a
@@ -450,6 +456,12 @@ one takes the changed line's partner — the hunk's own new rows are asked which
 one the old line resembles. A row re-matched that way is re-measured against
 it: the backend's spans were a comparison against a line it was never the old
 version of, and they say the whole row went every time.
+
+A line broken over several counts as resembling the piece it was anchored on:
+`f(a=1, b=2)` reflowed as `f(` / `a=1, b=2` / `)` is anchored on `f(`, far too
+short to resemble the old line, and re-matched to the argument row it drew
+`f(` as lost. An anchored row difft put nothing on, whose trimmed text is still
+inside the old line, is left where difft put it (`split_from`).
 
 ### `diff.line.spread_max` — `overlay.lua`
 

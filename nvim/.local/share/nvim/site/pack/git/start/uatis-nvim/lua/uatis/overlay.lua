@@ -801,6 +801,30 @@ local function names(ranges, text)
   return false
 end
 
+--- Whether taking `ranges` out of `text` leaves exactly `partner`, the
+--- row the alignment put opposite it.
+---
+--- The exception to `names`. A reflow loses its brackets across rows,
+--- and what is left of each line is nothing the reader can hold up
+--- against anything. A trailing comma dropped with the parameter after
+--- it is the same punctuation, but the line it came off is on the next
+--- row whole -- `port,` above `port` -- and refusing it there drew the
+--- old row solid red, as though the parameter itself had gone.
+local function leaves(ranges, text, partner)
+  if not partner or #(ranges or {}) == 0 then
+    return false
+  end
+  local cut = {}
+  for _, r in ipairs(ranges) do
+    table.insert(cut, r)
+  end
+  table.sort(cut, function(a, b) return a.col_start > b.col_start end)
+  for _, r in ipairs(cut) do
+    text = text:sub(1, r.col_start) .. text:sub(r.col_end + 1)
+  end
+  return (text:gsub("%s+$", "")) == (partner:gsub("%s+$", ""))
+end
+
 --- Whether the emphasis `fine` leaves enough of the span `sp` for the
 --- step-back to be a comparison: past `emphasis_ratio` of the span's
 --- non-whitespace, what stays pale is a remainder rather than the half
@@ -2278,11 +2302,27 @@ function M.render(bufnr, win, result, old_lines, opts)
     local function resembles(a, b)
       return fit(a, b) >= config.diff.line.word_similarity
     end
+    -- ...or one line broken over several. `f(a=1, b=2)` reflowed as
+    -- `f(` / `a=1, b=2` / `)` is anchored on `f(`, which is a sliver of
+    -- the old line and nowhere near it in length -- so it never
+    -- resembled it, and the before-image was re-paired with the
+    -- argument row instead and measured against it, calling `f(` lost
+    -- from a line that still opens with it. A row the backend put
+    -- nothing on, whose whole text is still inside the old line, is
+    -- the piece it kept there; an inserted line taking a changed one's
+    -- partner -- what the re-pairing below is for -- comes back marked
+    -- as the addition it is.
+    local function split_from(old, at)
+      local piece = vim.trim(line_text(at - 1))
+      return piece ~= "" and not (by_row[at - 1] and #by_row[at - 1] > 0)
+        and old:find(piece, 1, true) ~= nil
+    end
     local alike = 0
     if result.anchor then
       for i = 0, hunk.count_a - 1 do
         local at = result.anchor[hunk.start_a + i]
-        if at and resembles(old_lines[hunk.start_a + i] or "", line_text(at - 1)) then
+        local old = old_lines[hunk.start_a + i] or ""
+        if at and (resembles(old, line_text(at - 1)) or split_from(old, at)) then
           alike = alike + 1
         end
       end
@@ -2614,7 +2654,9 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- went. One edit cannot read two ways in two layouts.
           if (not dels or #dels == 0) and result.precise then
             local reported = del_marked[old_row]
-            dels = reported and names(reported, text) and reported or nil
+            local partner = result.anchor and result.anchor[old_row]
+            dels = reported and (names(reported, text)
+              or leaves(reported, text, partner and line_text(partner - 1))) and reported or nil
           end
           if dels and rewritten(dels, text) then
             dels = nil

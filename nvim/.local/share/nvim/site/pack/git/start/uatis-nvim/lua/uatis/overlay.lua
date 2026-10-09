@@ -801,28 +801,41 @@ local function names(ranges, text)
   return false
 end
 
---- Whether taking `ranges` out of `text` leaves exactly `partner`, the
---- row the alignment put opposite it.
+--- Whether the hunk did nothing but lose what the backend marked: its
+--- old rows, with every removal cut out, read exactly as its new rows,
+--- whitespace aside, and nothing on the new side was added.
 ---
 --- The exception to `names`. A reflow loses its brackets across rows,
 --- and what is left of each line is nothing the reader can hold up
---- against anything. A trailing comma dropped with the parameter after
---- it is the same punctuation, but the line it came off is on the next
---- row whole -- `port,` above `port` -- and refusing it there drew the
---- old row solid red, as though the parameter itself had gone.
-local function leaves(ranges, text, partner)
-  if not partner or #(ranges or {}) == 0 then
-    return false
+--- against anything. A last parameter dropped with the comma before it
+--- is the same punctuation, but there the marks account for the whole
+--- edit -- `port,` / `timeout):` became `port):`, and the two removals
+--- are all that separates them -- so they are the comparison, not
+--- debris. Refused, `port,` was drawn solid red, as though `port` had
+--- gone too. The whole hunk and not the row: the `):` that survived
+--- moved up from the row below.
+local function only_lost(hunk, del_marked, old_lines, text_of, by_row)
+  local was, now = {}, {}
+  for i = 0, hunk.count_a - 1 do
+    local text = old_lines[hunk.start_a + i] or ""
+    local cut = vim.list_extend({}, del_marked[hunk.start_a + i] or {})
+    table.sort(cut, function(x, y) return x.col_start > y.col_start end)
+    for _, r in ipairs(cut) do
+      text = text:sub(1, r.col_start) .. text:sub(r.col_end + 1)
+    end
+    table.insert(was, text)
   end
-  local cut = {}
-  for _, r in ipairs(ranges) do
-    table.insert(cut, r)
+  for i = 0, hunk.count_b - 1 do
+    local row = hunk.start_b + i - 1
+    if by_row[row] and #by_row[row] > 0 then
+      return false
+    end
+    table.insert(now, text_of(row))
   end
-  table.sort(cut, function(a, b) return a.col_start > b.col_start end)
-  for _, r in ipairs(cut) do
-    text = text:sub(1, r.col_start) .. text:sub(r.col_end + 1)
+  local function squeeze(rows)
+    return (table.concat(rows):gsub("%s+", ""))
   end
-  return (text:gsub("%s+$", "")) == (partner:gsub("%s+$", ""))
+  return squeeze(was) == squeeze(now)
 end
 
 --- Whether the emphasis `fine` leaves enough of the span `sp` for the
@@ -2654,9 +2667,8 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- went. One edit cannot read two ways in two layouts.
           if (not dels or #dels == 0) and result.precise then
             local reported = del_marked[old_row]
-            local partner = result.anchor and result.anchor[old_row]
             dels = reported and (names(reported, text)
-              or leaves(reported, text, partner and line_text(partner - 1))) and reported or nil
+              or only_lost(hunk, del_marked, old_lines, line_text, by_row)) and reported or nil
           end
           if dels and rewritten(dels, text) then
             dels = nil

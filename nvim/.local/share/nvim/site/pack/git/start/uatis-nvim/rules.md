@@ -191,11 +191,12 @@ reflowed across three lines has honestly lost a bracket and two commas —
 dimming four lines to point at four punctuation marks is not a comparison
 anyone can use.
 
-Except where the comparison is on screen: difft's spans for a row, taken out
-of it, leave exactly the row it is anchored to (`leaves`). A last parameter
-dropped with the comma before it lost only that comma from `port,`, and
-`port` is directly below — refused, the row was drawn solid red as though the
-parameter had gone with it.
+Except where the marks are the whole edit: the hunk added nothing, and its old
+rows with difft's removals cut out read as its new rows, whitespace aside
+(`only_lost`). A last parameter dropped with the comma before it — `port,` /
+`timeout):` becoming `port):` — lost only that comma from `port,`; refused,
+the row was drawn solid red as though `port` had gone with it. The hunk and
+not the row, because the `):` that survived moved up from the row below.
 
 ### `refit_new` — `overlay.lua`
 

@@ -61,6 +61,18 @@ M.at = nil
 local rows = {}
 local said = {}
 
+-- The place the pane last drew, as `place_of` names it, so that a redraw
+-- can tell a new conversation from the same one drawn again.
+local drawn_at = nil
+
+local function place_of(at)
+  if not at then
+    return nil
+  end
+  return at.thread and ("thread:" .. tostring(at.thread))
+    or ("%s:%s"):format(tostring(at.buf), tostring(at.line))
+end
+
 --- Open, and still the pane: a window that is showing something else
 --- now -- a file opened in it -- is somebody's window and not this.
 local function valid()
@@ -489,6 +501,7 @@ function M.render()
   vim.wo[M.win].wrap = false
 
   local text, hls, refs = marks.shade_lines(chunks, 0, ground)
+  local view = vim.api.nvim_win_call(M.win, vim.fn.winsaveview)
   rows, said = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, text)
@@ -497,8 +510,21 @@ function M.render()
   follow.set(M.buf, refs, to_source)
   -- Back to the top: this is one conversation, read from the first
   -- thing anybody said, and a pane still scrolled to where the last one
-  -- ended is a pane that opens in the middle of a sentence.
-  vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
+  -- ended is a pane that opens in the middle of a sentence. Not when it
+  -- is the same conversation drawn again, though -- a reaction, a reply
+  -- or a refresh redraws the place the reader is already reading, and
+  -- throwing them back to its first line loses their place in it.
+  local key = place_of(at)
+  if key ~= nil and key == drawn_at then
+    view.lnum = math.min(view.lnum, #text)
+    view.topline = math.min(view.topline, #text)
+    vim.api.nvim_win_call(M.win, function()
+      vim.fn.winrestview(view)
+    end)
+  else
+    vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
+  end
+  drawn_at = key
 
   vim.wo[M.win].winbar = head
 end
@@ -680,6 +706,7 @@ function M.open(at)
       end
     end
   end
+  drawn_at = nil
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
   who.attach(M.buf)

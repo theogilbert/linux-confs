@@ -814,19 +814,26 @@ end
 --- debris. Refused, `port,` was drawn solid red, as though `port` had
 --- gone too. The whole hunk and not the row: the `):` that survived
 --- moved up from the row below.
-local function only_lost(hunk, del_marked, old_lines, text_of, by_row)
+---
+--- `old_from`..`old_to` and `new_from`..`new_to` are the rows compared,
+--- 1-based: the hunk's own, or for a fold (`collapsed_span`) every old
+--- row folded and the one row they were folded into. ruff joining the
+--- two parameters left -- `df,` / `fields_columns,` / `config_adv,`
+--- becoming `df, fields_columns` -- is a hunk with no new rows at all;
+--- what survived of it is on the row above, and measured against
+--- nothing, `fields_columns,` was drawn solid red.
+local function only_lost(old_from, old_to, new_from, new_to, del_marked, old_lines, text_of, by_row)
   local was, now = {}, {}
-  for i = 0, hunk.count_a - 1 do
-    local text = old_lines[hunk.start_a + i] or ""
-    local cut = vim.list_extend({}, del_marked[hunk.start_a + i] or {})
+  for old_row = old_from, old_to do
+    local text = old_lines[old_row] or ""
+    local cut = vim.list_extend({}, del_marked[old_row] or {})
     table.sort(cut, function(x, y) return x.col_start > y.col_start end)
     for _, r in ipairs(cut) do
       text = text:sub(1, r.col_start) .. text:sub(r.col_end + 1)
     end
     table.insert(was, text)
   end
-  for i = 0, hunk.count_b - 1 do
-    local row = hunk.start_b + i - 1
+  for row = new_from - 1, new_to - 1 do
     if by_row[row] and #by_row[row] > 0 then
       return false
     end
@@ -2668,7 +2675,9 @@ function M.render(bufnr, win, result, old_lines, opts)
           if (not dels or #dels == 0) and result.precise then
             local reported = del_marked[old_row]
             dels = reported and (names(reported, text)
-              or only_lost(hunk, del_marked, old_lines, line_text, by_row)) and reported or nil
+              or only_lost(from, upto, hunk.start_b,
+                span and hunk.start_b or hunk.start_b + hunk.count_b - 1,
+                del_marked, old_lines, line_text, by_row)) and reported or nil
           end
           if dels and rewritten(dels, text) then
             dels = nil

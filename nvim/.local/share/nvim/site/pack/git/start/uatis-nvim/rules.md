@@ -197,6 +197,10 @@ rows with difft's removals cut out read as its new rows, whitespace aside
 `timeout):` becoming `port):` — lost only that comma from `port,`; refused,
 the row was drawn solid red as though `port` had gone with it. The hunk and
 not the row, because the `):` that survived moved up from the row below.
+For a fold (`collapsed_span`) the rows compared are every old row folded and
+the one row they went into: ruff joining the two parameters left onto one line
+is a hunk with no new rows at all, and measured against nothing,
+`fields_columns,` was drawn solid red.
 
 ### `refit_new` — `overlay.lua`
 

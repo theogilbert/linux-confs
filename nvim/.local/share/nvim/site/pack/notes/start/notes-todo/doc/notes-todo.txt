@@ -1,0 +1,99 @@
+*notes-todo.txt*   TODO items in markdown notes
+
+==============================================================================
+CONTENTS                                                 *notes-todo-contents*
+
+    1. Introduction ......................... |notes-todo-introduction|
+    2. Items ................................ |notes-todo-items|
+    3. Usage ................................ |notes-todo-usage|
+    4. Functions ............................ |notes-todo-functions|
+    5. Highlight groups ..................... |notes-todo-highlights|
+
+==============================================================================
+1. INTRODUCTION                                      *notes-todo-introduction*
+                                                                  *notes-todo*
+
+Notes kept in a single markdown file, one section per date, accumulate TODO
+items all over the place: in a todo section at the top, and in the daily
+sections below it. The `notes-todo` module helps keep track of them:
+
+  - the words TODO and DONE are highlighted in markdown buffers,
+  - the cursor can jump from one TODO item to the next,
+  - all TODO items of the buffer can be listed in the quickfix list.
+
+==============================================================================
+2. ITEMS                                                    *notes-todo-items*
+
+An item is any line containing the word `TODO`, written in uppercase as a
+whole word. `TODO:` is an item, `TODOS` is not. Whatever surrounds the word
+is free text, list marker included: >markdown
+
+    # TODO
+    - TODO renew passport
+
+    ## 2026-10-08
+    TODO reply to Marc
+    - DONE read paper
+<
+Headings are never items, so a `# TODO` section title is left out, and
+neither are lines inside fenced code blocks. Each item belongs to the
+closest heading above it, its section. `DONE` only matters for
+highlighting: a line becomes a done item by replacing its `TODO` with
+`DONE`.
+
+==============================================================================
+3. USAGE                                                    *notes-todo-usage*
+
+Requiring the module enables the highlighting of |notes-todo-highlights| in
+markdown buffers. The other features are exposed as functions, meant to be
+mapped buffer-locally for the markdown filetype: >lua
+
+    vim.api.nvim_create_autocmd("FileType", {
+        pattern = "markdown",
+        callback = function()
+            local todo = require("notes-todo")
+            vim.keymap.set("n", "]t", todo.next, { buffer = true })
+            vim.keymap.set("n", "[t", todo.prev, { buffer = true })
+            vim.keymap.set("n", "<leader>T", todo.show, { buffer = true })
+        end,
+    })
+<
+Note that LSP hover windows are markdown buffers too, so TODO and DONE are
+highlighted in them as well.
+
+==============================================================================
+4. FUNCTIONS                                            *notes-todo-functions*
+
+                                                          *notes-todo.next()*
+notes-todo.next()
+    Moves the cursor to the next item of the current buffer, wrapping
+    around to the first one at the end of the buffer. The previous position
+    is added to the |jumplist|.
+
+                                                          *notes-todo.prev()*
+notes-todo.prev()
+    Like |notes-todo.next()|, towards the start of the buffer.
+
+                                                          *notes-todo.show()*
+notes-todo.show()
+    Fills the |quickfix| list with the items of the current buffer, in
+    buffer order, and opens the quickfix window. Each entry is prefixed by
+    its section between brackets, e.g. `[2026-10-08] TODO reply to Marc`.
+    The list is a snapshot: call it again after editing the notes.
+
+==============================================================================
+5. HIGHLIGHT GROUPS                                    *notes-todo-highlights*
+
+The keywords are highlighted wherever they appear in a markdown buffer,
+code blocks included, above treesitter highlighting.
+
+                                                              *hl-NotesTodo*
+NotesTodo       The word TODO. Links to |hl-DiagnosticWarn| by default.
+
+                                                              *hl-NotesDone*
+NotesDone       The word DONE. Links to |hl-DiagnosticOk| by default.
+
+Both are defined with `default`, so a colorscheme or a later
+|nvim_set_hl()| call takes precedence.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

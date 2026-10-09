@@ -38,6 +38,10 @@ vim.api.nvim_create_autocmd("FileType", {
         "v", "<leader>Mf", [[:! tr -s " " | column -t -s '|' -o '|'<CR>]],
         { buffer = true, desc = "[M]arkdown - [f]ormat" }
     )
+    local notes_todo = require("notes-todo")
+    vim.keymap.set("n", "]t", notes_todo.next, { buffer = true, desc = "Next TODO" })
+    vim.keymap.set("n", "[t", notes_todo.prev, { buffer = true, desc = "Previous TODO" })
+    vim.keymap.set("n", "<leader>T", notes_todo.show, { buffer = true, desc = "List [T]ODOs" })
   end,
 })
 

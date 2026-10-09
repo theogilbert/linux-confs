@@ -59,7 +59,8 @@ local function draw(jobs, pipeline)
 end
 
 --- The jobs of the open merge request's head pipeline, in a float.
-function M.open()
+--- `back` is where `q` goes, as for `nemeton.notes`.
+function M.open(back)
   local mr = session.current
   if not mr then
     session.notify("no merge request open — :Nemeton to pick one", vim.log.levels.WARN)
@@ -76,7 +77,7 @@ function M.open()
   local height = math.max(4, math.floor(vim.o.lines * 0.5))
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
-  local back = win.came_from()
+  back = back or win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,

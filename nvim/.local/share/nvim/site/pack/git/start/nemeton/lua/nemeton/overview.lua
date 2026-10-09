@@ -70,15 +70,29 @@ function M.redraw()
   vim.wo[M.win].winbar = hint()
 end
 
---- Closes this and opens `fn`'s window in its place.
+--- Closes this and opens `fn`'s window in its place, handing it the
+--- way back here for its `q`.
 ---
 --- The two are floats over the middle of the editor and one is in the
---- way of the other; and coming back here afterwards would put a window
---- on top of the window somebody just chose to look at.
-local function instead(fn)
+--- way of the other, so this one goes. But it is where the comments,
+--- the pipeline and the description were reached from, and `q` on any
+--- of them is the reader done with that and not with the merge request:
+--- it comes back here, and `q` here is the one that puts them back in
+--- the file.
+local function instead(back, fn)
   return function()
     M.close()
-    fn()
+    local done = false
+    fn(function()
+      -- Once: the composer goes back from its `q` and again from the
+      -- `WinClosed` that closing it fires.
+      if done then
+        return
+      end
+      done = true
+      back()
+      M.open()
+    end)
   end
 end
 
@@ -91,6 +105,7 @@ function M.open()
   M.close()
 
   local k = config.keys.detail
+  local back = require("nemeton.win").came_from()
   local lines, hls = drawn()
   M.win, M.buf = detail.float(lines, (" !%d "):format(mr.iid), {
     winbar = hint(),
@@ -119,15 +134,15 @@ function M.open()
       },
       {
         k.comments,
-        instead(function()
-          require("nemeton.notes").open()
+        instead(back, function(again)
+          require("nemeton.notes").open(nil, again)
         end),
         "every thread on the merge request, whole",
       },
       {
         k.pipeline,
-        instead(function()
-          require("nemeton.jobs").open()
+        instead(back, function(again)
+          require("nemeton.jobs").open(again)
         end),
         "what CI did, job by job",
       },
@@ -161,8 +176,10 @@ function M.open()
       },
       {
         k.describe,
-        instead(function()
-          require("nemeton").describe()
+        instead(back, function(again)
+          -- Redrawn when the answer lands: the window is back up before
+          -- the forge has taken the new description.
+          require("nemeton").describe(M.redraw, again)
         end),
         "rewrite its description",
       },

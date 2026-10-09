@@ -535,6 +535,10 @@ there is and how much of it is yours and unsent.
     q               close
     g?              all of the above, in a float
 
+`c`, `p` and `e` open their window in place of this one, and `q` in it
+-- or the composer closed either way -- comes back here; `q` here is
+the one that goes back to the file.
+
 Which way `a` goes is asked of the forge when it is pressed, not read
 off what this window last showed: an approval withdrawn on the web page,
 or reset by a push, is given back rather than withdrawn again.
@@ -609,12 +613,17 @@ resolved thread is on |hl-NemetonSettled|, leant green. `e`, `d` and
 `<leader>mL` act on the comment under the cursor, and ask which of the
 thread's where the cursor is on none of them.
 
-Each thread is a fold, from its rule to its last line, all open to
-begin with, and Vim's own fold commands act on them: `zc`, `zo` and
-`za` on the one under the cursor, `zM` and `zR` on every one. A shut
-one is drawn as its rule alone.
-What was shut stays shut through `R`, and through the window closing
-for a reply and coming back; a thread a link sends you to is opened.
+Each thread is a fold, from its rule to its last line, open to begin
+with but for the resolved ones, and Vim's own fold commands act on
+them: `zc`, `zo` and `za` on the one under the cursor, `zM` and `zR`
+on every one. A shut one is drawn as its rule, who started it, when,
+and the first line of what they said, cut to fit with an ellipsis
+where that is not all of it: >
+    ── src/app.lua:6  reviewer · 27 Aug  nit: name this mat…
+<
+What was shut or opened stays that way through `R`, and through the
+window closing for a reply and coming back; a thread a link sends you
+to is opened.
 
 GitLab will not take a reply to a comment that was posted on its own;
 nemeton says so rather than failing the post, and `t` is how you start

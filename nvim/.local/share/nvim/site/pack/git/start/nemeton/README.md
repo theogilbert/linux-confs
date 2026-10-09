@@ -308,9 +308,12 @@ every answer, and for one on code the lines it is about quoted above the
 first note — under a rule naming where it sits: `── src/app.lua:3 ──`,
 or `── on the merge request ──` (`comments.thread_rule`, "─"; `false`
 for the place alone). A resolved one is on a green ground. Each thread
-is a fold: `zc`/`zo`/`za` shut the one under the cursor down to its
-rule and open it again, `zM`/`zR` all of them, and what was shut stays
-shut through a refetch or a reply written from the window.
+is a fold, and the resolved ones start shut: `zc`/`zo`/`za` shut the
+one under the cursor and open it again, `zM`/`zR` all of them, and
+what was shut or opened stays that way through a refetch or a reply
+written from the window. Shut, a thread is its rule, who started it,
+when, and the first line of what they said —
+`── src/app.lua:6  reviewer · 27 Aug  nit: name this mat…`.
 
 `<C-]>` follows what is under the cursor — there, in the pane and in the
 every-thread window. It is vim's own key for "go to the thing under the
@@ -403,7 +406,9 @@ web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
 pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
 `d` makes it a draft (or marks a draft ready), `R` gives it a new title,
-`e` rewrites its description in the composer, `o` opens it in a browser, `r` refetches, `q` closes. `m` and `x` ask
+`e` rewrites its description in the composer, `o` opens it in a browser, `r` refetches, `q` closes.
+The comments, the jobs and the composer `c`, `p` and `e` open take
+its place, and `q` in them comes back to it. `m` and `x` ask
 first, Cancel being the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:

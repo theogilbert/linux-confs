@@ -194,6 +194,8 @@ end
 ---                  a comment, which is why the default is no; it is
 ---                  for a merge request's description, which has to be
 ---                  able to go away again once it is written.
+--- opts.back     -- where every way out goes, instead of the window the
+---                  composer was opened from.
 ---
 --- Two exits from one window, and which of them is the reflex is the
 --- caller's to say. A new thread is kept: it is a remark in a review
@@ -209,7 +211,7 @@ function M.open(opts)
   opened = opened + 1
   vim.api.nvim_buf_set_name(buf, ("nemeton://compose/%d"):format(opened))
 
-  local back = win.came_from()
+  local back = opts.back or win.came_from()
   vim.cmd(("botright %dsplit"):format(config.compose.height))
   local window = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(window, buf)

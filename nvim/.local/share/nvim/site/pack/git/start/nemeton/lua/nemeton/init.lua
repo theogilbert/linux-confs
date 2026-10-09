@@ -930,7 +930,8 @@ end)
 --- edit of a description on the forge, and a review is not waiting on
 --- it. Not remembered when closed unsent, like a rewritten comment:
 --- it starts from what the forge has, which is where it lives.
-M.describe = with_session(function(cb)
+--- `back` is the composer's: see `nemeton.compose`.
+M.describe = with_session(function(cb, back)
   local mr = session.current
   local was = vim.trim(mr.description or "")
   require("nemeton.compose").open({
@@ -938,6 +939,7 @@ M.describe = with_session(function(cb)
     body = mr.description or "",
     -- An empty one is an answer: a description can be taken away.
     empty = true,
+    back = back,
     on_submit = function(body)
       if body == was then
         session.notify("unchanged")

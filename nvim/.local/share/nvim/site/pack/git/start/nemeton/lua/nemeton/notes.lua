@@ -44,6 +44,10 @@ local noted = {}
 -- arguments still open is a list that has to stay that way through
 -- both, or folding it was not worth the keys.
 local shut = {}
+-- Where `q` goes when the opener said, kept for the times this window
+-- opens itself again after a reply: reached from the merge request's
+-- window, it goes back there however many comments were written.
+local onward = nil
 
 --- Which of the drawn threads are folded, read off the window into
 --- `shut` before the window or its lines go away.
@@ -54,7 +58,13 @@ local function remember()
   vim.api.nvim_win_call(M.win, function()
     for row, t in pairs(rows) do
       if t.id and rows[row - 1] ~= t then
-        shut[t.id] = vim.fn.foldclosed(row) == row or nil
+        -- Only where it differs from how the thread starts, so that one
+        -- resolved since it was last drawn starts shut like the rest.
+        local closed = vim.fn.foldclosed(row) == row
+        if closed == (t.resolved == true) then
+          closed = nil
+        end
+        shut[t.id] = closed
       end
     end
   end)
@@ -124,6 +134,48 @@ local function rule(t, width)
   }
 end
 
+--- `foldtext`: a thread folded shut, as its rule with who started it,
+--- when, and the first line of what they said cut off to fit. The rule
+--- alone was where a thread is and nothing of what it is, and a list of
+--- folded threads is read to decide which to open.
+function M.foldtext()
+  local t = rows[vim.v.foldstart]
+  local first = t and t.notes and t.notes[1]
+  if not first then
+    return vim.fn.foldtext()
+  end
+  local width = vim.api.nvim_win_get_width(0)
+  local chunks = rule(t, 0)
+  chunks[3] = nil
+  local function add(text, hl)
+    table.insert(chunks, { text, hl })
+  end
+  add("  " .. (first.author or "?"), "NemetonAuthor")
+  local age = require("nemeton.threads").age(first.created_at)
+  if age then
+    add(" · " .. age, "NemetonMeta")
+  end
+  local used = 0
+  for _, c in ipairs(chunks) do
+    used = used + vim.fn.strdisplaywidth(c[1])
+  end
+  -- The first line of the first note, and an ellipsis wherever that is
+  -- not all of the note: cut to fit, or with lines below it.
+  local body = vim.trim(require("nemeton.threads").drawn(first.body or ""))
+  local said = vim.split(body, "\n", { plain = true })[1]
+  local room = width - used - 2
+  if said ~= "" and room > 1 then
+    if said ~= body or vim.fn.strdisplaywidth(said) > room then
+      while vim.fn.strdisplaywidth(said) > room - 1 do
+        said = vim.fn.strcharpart(said, 0, vim.fn.strchars(said) - 1)
+      end
+      said = said .. "…"
+    end
+    add("  " .. said, "Normal")
+  end
+  return chunks
+end
+
 local function render()
   if not (M.buf and vim.api.nvim_buf_is_valid(M.buf) and session.current) then
     return
@@ -168,8 +220,14 @@ local function render()
       -- Replacing every line puts every fold back at `foldlevel`, open;
       -- the ones that were shut are shut again by hand.
       vim.cmd("normal! zx")
+      -- Shut until opened, for a resolved one: it is settled, and the
+      -- window is read for the ones still being argued.
       for row, t in pairs(map) do
-        if t.id and shut[t.id] and map[row - 1] ~= t then
+        local closed = t.id and shut[t.id]
+        if closed == nil then
+          closed = t.resolved
+        end
+        if closed and map[row - 1] ~= t then
           vim.cmd(row .. "foldclose")
         end
       end
@@ -231,7 +289,7 @@ local function write(title, send, keep, default, into)
       session.notify(said .. " !" .. mr.iid)
       sent(true)
       session.refresh(function()
-        M.open()
+        M.open(nil, onward)
       end)
     end
   end
@@ -303,7 +361,7 @@ function M.edit()
     callback = function()
       vim.schedule(function()
         if session.current == mr then
-          M.open()
+          M.open(nil, onward)
         end
       end)
     end,
@@ -346,7 +404,10 @@ end
 --- to a comment on the merge request itself has nowhere else to go, and
 --- a window that opens at the top of a list of nine threads has not
 --- shown anybody the one they asked for.
-function M.open(focus)
+---
+--- `back` is where `q` goes instead of the window this was opened from:
+--- the merge request's own window, when that is what opened it.
+function M.open(focus, back)
   if not session.current then
     session.notify("no merge request open — :Nemeton to pick one", vim.log.levels.WARN)
     return
@@ -358,7 +419,8 @@ function M.open(focus)
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
   who.attach(M.buf)
-  local back = win.came_from()
+  onward = back
+  back = back or win.came_from()
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,
@@ -382,14 +444,13 @@ function M.open(focus)
   vim.wo[M.win].wrap = true
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true
-  -- One fold a thread, all open: the window is for reading every one of
-  -- them, and folding is how the settled ones are put out of the way of
-  -- the ones still being argued. A closed fold is drawn as its first
-  -- line, highlights and all -- which is the rule, and the rule is
-  -- already what this window says a thread is in one line.
+  -- One fold a thread, open but for the resolved ones: the window is
+  -- for reading every one of them, and folding is how the settled ones
+  -- are put out of the way of the ones still being argued. A closed
+  -- fold is its rule and the start of the thread: see `M.foldtext`.
   vim.wo[M.win].foldmethod = "expr"
   vim.wo[M.win].foldexpr = "v:lua.require'nemeton.notes'.foldexpr(v:lnum)"
-  vim.wo[M.win].foldtext = ""
+  vim.wo[M.win].foldtext = "v:lua.require'nemeton.notes'.foldtext()"
   vim.wo[M.win].foldlevel = 99
   vim.wo[M.win].foldenable = true
 

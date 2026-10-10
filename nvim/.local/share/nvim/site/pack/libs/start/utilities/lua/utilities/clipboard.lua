@@ -204,14 +204,44 @@ function H.hint(text)
     end, HINT_MS)
 end
 
+---Send the content of OSC52_REG over OSC 52 and confirm it on screen.
+function H.send_register()
+    local lines = vim.fn.getreg(OSC52_REG, 1, true)
+    M.osc52_send(lines)
+    H.hint(("OSC 52: %d line%s copied"):format(#lines, #lines == 1 and "" or "s"))
+end
+
 ---One-off copy of the visual selection over OSC 52, leaving the backend
 ---alone.  For a visual-mode keymap.
 function M.osc52_yank()
     vim.cmd(('normal! "%sy'):format(OSC52_REG))
+    H.send_register()
+end
 
-    local lines = vim.fn.getreg(OSC52_REG, 1, true)
-    M.osc52_send(lines)
-    H.hint(("OSC 52: %d line%s copied"):format(#lines, #lines == 1 and "" or "s"))
+---Visual selection reproducing the text an operator was applied to, by
+---'operatorfunc' type.
+local OPFUNC_SELECTION = {
+    char = "`[v`]",
+    line = "'[V']",
+    block = "`[\22`]",
+}
+
+---'operatorfunc' behind M.osc52_operator().
+---
+---@param type "char"|"line"|"block"
+function M.osc52_opfunc(type)
+    vim.cmd(('normal! %s"%sy'):format(OPFUNC_SELECTION[type], OSC52_REG))
+    H.send_register()
+end
+
+---Operator flavour of M.osc52_yank(), to be used like `y`: takes a motion
+---or text object, a count, and repeats with `.`.  For a normal-mode keymap
+---with `expr = true`.
+---
+---@return string # Keys to feed: `g@`, the motion is left to the user
+function M.osc52_operator()
+    vim.o.operatorfunc = "v:lua.require'utilities.clipboard'.osc52_opfunc"
+    return "g@"
 end
 
 return M

@@ -78,6 +78,9 @@ vim.keymap.set("n", "<Leader>Oc", clipboard_utils.rotate,
     { desc = "Toggle [O]ption [C]lipboard (osc52 -> tmux -> auto)" })
 -- One-off yank to the physical machine's clipboard, whatever the backend.
 vim.keymap.set("x", "<leader>y", clipboard_utils.osc52_yank, { desc = "[Y]ank over OSC 52" })
+vim.keymap.set("n", "<leader>y", clipboard_utils.osc52_operator, { expr = true, desc = "[Y]ank over OSC 52" })
+vim.keymap.set("n", "<leader>yy", function() return clipboard_utils.osc52_operator() .. "_" end,
+    { expr = true, desc = "[Y]ank line over OSC 52" })
 
 -- Diagnostic keymaps
 --

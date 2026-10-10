@@ -166,3 +166,4 @@ vim.opt.sessionoptions = {
 vim.o.switchbuf = 'useopen,uselast'
 
 vim.treesitter.language.register('typescript', 'typescriptreact')
+vim.treesitter.language.register('bash', { 'sh', 'shell' })

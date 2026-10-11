@@ -188,9 +188,63 @@ if vim.fn.executable("ruff") == 1 then
     vim.keymap.set("n", "<leader>lw", toggle_ruff_watcher, { desc = "Toggle ruff file[w]atcher" })
 end
 
+-- Schemas come from a local mirror, for offline use: see schemas/yaml/update.py.
+local yaml_schemas_dir = vim.fn.stdpath("data") .. "/schemas/yaml"
+
+---@param url string A schema URL, as listed in schemas.json
+---@return string # URI of its mirrored copy, keeping any `#fragment`
+local function yaml_mirror_uri(url)
+    local location, fragment = url:match("^https?://([^#]*)(.*)$")
+    return vim.uri_from_fname(yaml_schemas_dir .. "/mirror/" .. location) .. fragment
+end
+
+-- yamlls only enables its Kubernetes mode for its own built-in schema URL:
+-- without it, Kubernetes files get no completion at all.  Hence a URL here,
+-- served from the mirror by yaml_schema_content().
+local KUBERNETES_SCHEMA_URL =
+"https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.32.1-standalone-strict/all.json"
+
+local function yaml_schemas()
+    local schemas = {}
+    local by_url = vim.json.decode(table.concat(vim.fn.readfile(yaml_schemas_dir .. "/schemas.json"), "\n"))
+    for url, globs in pairs(by_url) do
+        schemas[yaml_mirror_uri(url)] = globs
+    end
+
+    local kubernetes = {}
+    for _, dir in ipairs({ "k8s", "kubernetes", "k8s_template" }) do
+        for _, ext in ipairs({ "yaml", "yml" }) do
+            vim.list_extend(kubernetes, {
+                -- Picks the schema: a real glob, where `*` stops at `/`
+                dir .. "/**/*." .. ext,
+                -- Enables the Kubernetes mode: there, `*` is `.*`
+                dir .. "/*." .. ext,
+            })
+        end
+    end
+    schemas[KUBERNETES_SCHEMA_URL] = kubernetes
+
+    return schemas
+end
+
+-- Answers the server's requests for http(s) schemas from the mirror.  Only
+-- the Kubernetes one goes through here: every other schema is a local path.
+---@param params string[] The schema's URL, wrapped in an array by vscode-jsonrpc
+local function yaml_schema_content(_, params)
+    local location = params[1]:match("^https?://([^#]*)")
+    local file = location and io.open(yaml_schemas_dir .. "/mirror/" .. location, "rb")
+    if not file then
+        return nil, vim.lsp.rpc_response_error(vim.lsp.protocol.ErrorCodes.InvalidRequest,
+            "Schema not mirrored offline: " .. params[1])
+    end
+    local content = file:read("*a")
+    file:close()
+    return content
+end
+
 vim.lsp.config("yamlls", {
     filetypes = { "yaml", "yml" },
-    flags = { debounce_test_changes = 150 },
+    flags = { debounce_text_changes = 150 },
     settings = {
         yaml = {
             format = {
@@ -201,14 +255,17 @@ vim.lsp.config("yamlls", {
             hover = true,
             completion = true,
             validate = true,
-            schemas = {
-                [vim.fn.stdpath("data") .. "/schemas/yaml/gitlab-ci.json"] = {
-                    "/.gitlab-ci.yml",
-                    "/.gitlab-ci.yaml",
-                }
-            },
+            schemaStore = { enable = false },
+            schemas = yaml_schemas(),
         },
-    }
+    },
+    on_init = function(client)
+        -- Kept from nvim-lspconfig's on_init, which this one replaces
+        client.server_capabilities.documentFormattingProvider = true
+        -- Route the server's http(s) schema requests to yaml_schema_content()
+        client:notify("yaml/registerContentRequest")
+    end,
+    handlers = { ["vscode/content"] = yaml_schema_content },
 })
 vim.lsp.enable("yamlls")
 

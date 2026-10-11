@@ -1,0 +1,82 @@
+{
+  "https://gitlab.com/gitlab-org/gitlab-foss/-/raw/master/app/assets/javascripts/editor/schema/ci.json": [
+    "**/.gitlab-ci.yml",
+    "**/.gitlab-ci.yaml",
+    "**/*.gitlab-ci.yml",
+    "**/*.gitlab-ci.yaml"
+  ],
+  "https://www.schemastore.org/github-workflow.json": [
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+    "**/.gitea/workflows/*.yml",
+    "**/.gitea/workflows/*.yaml",
+    "**/.forgejo/workflows/*.yml",
+    "**/.forgejo/workflows/*.yaml"
+  ],
+  "https://raw.githubusercontent.com/compose-spec/compose-go/master/schema/compose-spec.json": [
+    "**/docker-compose.yml",
+    "**/docker-compose.yaml",
+    "**/docker-compose.*.yml",
+    "**/docker-compose.*.yaml",
+    "**/compose.yml",
+    "**/compose.yaml",
+    "**/compose.*.yml",
+    "**/compose.*.yaml"
+  ],
+  "https://www.schemastore.org/prometheus.json": [
+    "prometheus.yml",
+    "prometheus.yaml"
+  ],
+  "https://www.schemastore.org/prometheus.rules.json": [
+    "*.prometheus.rules.yml",
+    "*.prometheus.rules.yaml",
+    "*prometheus-rules.yml",
+    "*prometheus-rules.yaml",
+    "*prometheus_rules.yml",
+    "*prometheus_rules.yaml",
+    "prometheus.rules.yml",
+    "prometheus.rules.yaml"
+  ],
+  "https://www.schemastore.org/prometheus-alertmanager.json": [
+    "alertmanager.yml",
+    "alertmanager.yaml"
+  ],
+  "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json#/$defs/playbook": [
+    "playbook.yml",
+    "playbook.yaml",
+    "site.yml",
+    "site.yaml",
+    "**/playbooks/*.yml",
+    "**/playbooks/*.yaml"
+  ],
+  "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json#/$defs/tasks": [
+    "**/tasks/*.yml",
+    "**/tasks/*.yaml",
+    "**/handlers/*.yml",
+    "**/handlers/*.yaml"
+  ],
+  "https://www.schemastore.org/pre-commit-config.json": [
+    ".pre-commit-config.yml",
+    ".pre-commit-config.yaml"
+  ],
+  "https://www.schemastore.org/prettierrc.json": [
+    ".prettierrc",
+    ".prettierrc.json",
+    ".prettierrc.yml",
+    ".prettierrc.yaml"
+  ],
+  "https://www.schemastore.org/eslintrc.json": [
+    ".eslintrc",
+    ".eslintrc.json",
+    ".eslintrc.yml",
+    ".eslintrc.yaml"
+  ],
+  "https://spec.openapis.org/oas/3.0/schema/2024-10-18": [
+    "openapi.json",
+    "openapi.yml",
+    "openapi.yaml",
+    "*.openapi.json",
+    "*.openapi.yml",
+    "*.openapi.yaml"
+  ]
+}

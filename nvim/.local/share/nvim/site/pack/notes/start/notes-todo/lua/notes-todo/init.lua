@@ -9,8 +9,18 @@ local M = {}
 local QF_TITLE = "Todos"
 local KEYWORDS = { TODO = "NotesTodo", DONE = "NotesDone" }
 
-vim.api.nvim_set_hl(0, "NotesTodo", { default = true, link = "DiagnosticWarn" })
-vim.api.nvim_set_hl(0, "NotesDone", { default = true, link = "DiagnosticOk" })
+-- TODO is purple rather than the usual yellow so that it stands out from
+-- markdown's own highlighting. Redefined after each colorscheme change, which
+-- clears all highlight groups.
+local function define_highlights()
+    vim.api.nvim_set_hl(0, "NotesTodo", { default = true, fg = "#ab9df2", ctermfg = 176, bold = true })
+    vim.api.nvim_set_hl(0, "NotesDone", { default = true, link = "DiagnosticOk" })
+end
+define_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", {
+    group = vim.api.nvim_create_augroup("notes-todo", { clear = true }),
+    callback = define_highlights,
+})
 
 ---@class notes-todo.Item
 ---@field lnum    integer  -- 1-indexed

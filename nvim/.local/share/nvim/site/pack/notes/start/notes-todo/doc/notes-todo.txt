@@ -88,7 +88,7 @@ The keywords are highlighted wherever they appear in a markdown buffer,
 code blocks included, above treesitter highlighting.
 
                                                               *hl-NotesTodo*
-NotesTodo       The word TODO. Links to |hl-DiagnosticWarn| by default.
+NotesTodo       The word TODO. Bold purple by default.
 
                                                               *hl-NotesDone*
 NotesDone       The word DONE. Links to |hl-DiagnosticOk| by default.

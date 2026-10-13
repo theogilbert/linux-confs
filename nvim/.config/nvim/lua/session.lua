@@ -167,7 +167,8 @@ function M.drop_background_buffers()
     local file_count = 0
 
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.bo[buf].buflisted and not is_visible(buf) then
+        -- terminals are kept: they may host running processes
+        if vim.bo[buf].buflisted and vim.bo[buf].buftype ~= "terminal" and not is_visible(buf) then
             table.insert(targets, buf)
             local name = vim.api.nvim_buf_get_name(buf)
             local is_file = name ~= "" and vim.bo[buf].buftype == ""

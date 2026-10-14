@@ -284,7 +284,19 @@ local function render(view)
         local refit
         -- The old lines a move from another file brought with it ride past
         -- the end of this file's own, where the drawn answer points at them.
-        view.anchors, view.del_fine, refit = overlay.render(view.bufnr, view.win, result,
+        -- Measured on the window the buffer is actually in. `view.win` is
+        -- where the view was opened, and it can be gone while the buffer
+        -- stays on screen in a split beside it: measured there, the gutter
+        -- is zero wide and every before-image starts at the left edge.
+        local win = view.win
+        if not (win and vim.api.nvim_win_is_valid(win)
+            and vim.api.nvim_win_get_buf(win) == view.bufnr) then
+          win = vim.fn.bufwinid(view.bufnr)
+          win = win ~= -1 and win or nil
+        end
+        view.drawn_for = vim.tbl_extend("force", overlay.measure(win), { win = win })
+        view.regutter = nil
+        view.anchors, view.del_fine, refit = overlay.render(view.bufnr, win, result,
           result.drawn and result.drawn.old_lines or vim.split(old_text, "\n", { plain = true }),
           -- Side by side, the old revision is a window of its own: drawing
           -- it here too would say everything twice.
@@ -1079,6 +1091,44 @@ local function setup_keymaps(view)
       opts = { desc = "Uatis - Stop reviewing" } },
   })
 end
+
+--- Draws a view again when the gutter or the width its before-images
+--- were padded to has changed since (see `overlay.measure`).
+---
+--- A decoration provider, because nothing fires an event for the one
+--- change that matters most: a sign column with 'signcolumn=auto' opens
+--- when a diagnostic or a gitsigns sign first lands, and 'number'
+--- toggled with `:set` reaches no `OptionSet` handler when a mapping does
+--- it through `vim.opt`. The window is asked as it is drawn. Even the
+--- render's own measurement can be stale -- `textoff` takes a newly
+--- placed sign into account only once the window has been redrawn -- and
+--- the next draw is where that is found out and put right. Only the
+--- window the render measured is asked: the same buffer in two windows
+--- with two gutters cannot be drawn right in both, and asking both would
+--- draw it forever, once for each.
+vim.api.nvim_set_decoration_provider(
+  vim.api.nvim_create_namespace("uatis.gutter"), {
+    on_win = function(_, winid, bufnr)
+      local view = views[bufnr]
+      local was = view and view.drawn_for
+      if not was or was.win ~= winid or view.regutter or view.layout == "side" then
+        return false
+      end
+      local now = overlay.measure(winid)
+      if now.off ~= was.off or now.width ~= was.width then
+        -- Up until the render has measured again, not until it starts:
+        -- every frame in between would start another, each one's
+        -- generation cancelling the last, and none would ever land.
+        view.regutter = true
+        vim.schedule(function()
+          if views[view.bufnr] == view then
+            render(view)
+          end
+        end)
+      end
+      return false
+    end,
+  })
 
 local function setup_watchers(view)
   -- `on_lines` rather than TextChanged, because TextChanged only fires for

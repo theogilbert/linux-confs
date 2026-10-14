@@ -494,6 +494,18 @@ local function window_width(win)
   end
 end
 
+--- The two numbers a render bakes into its before-images, which nothing
+--- else in an extmark tracks: the padding is spaces as wide as the
+--- gutter WAS, and the band is filled to the width the window WAS. A
+--- gutter that changes afterwards -- a sign column opening, the number
+--- column toggled, a split resized -- leaves the old code drawn at the
+--- old indent, out of line with the code under it. `view.lua` keeps
+--- what a render measured and draws again when the window says
+--- otherwise.
+function M.measure(win)
+  return { off = text_offset(win), width = window_width(win) }
+end
+
 --- True when `ranges` account for every non-whitespace character of
 --- `text`: nothing on the line came through.
 ---

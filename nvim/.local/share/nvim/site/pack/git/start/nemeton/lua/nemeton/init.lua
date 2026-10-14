@@ -213,6 +213,7 @@ M.toggle = session.toggle
 M.expand = session.toggle_expanded
 M.refresh = function()
   session.refresh()
+  session.refresh_mr()
 end
 
 M.peek = with_session(function()
@@ -736,24 +737,6 @@ M.approve = with_session(function(want, cb)
   end)
 end)
 
---- What the forge answered a change of state with, kept: the merge
---- request as it now stands, so the window that asked can say so
---- without asking again.
-local function took(mr, data)
-  if type(data) ~= "table" then
-    return
-  end
-  mr.state = data.state or mr.state
-  mr.title = data.title or mr.title
-  mr.description = data.description or mr.description
-  if data.merge_when_pipeline_succeeds ~= nil then
-    mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
-  end
-  if data.draft ~= nil or data.work_in_progress ~= nil then
-    mr.draft = data.draft or data.work_in_progress or false
-  end
-end
-
 --- Merges it when its pipeline succeeds -- or, where that is already
 --- set, takes it back. Asked about first either way: `m` in a window
 --- of prose is one stray keypress from a merge nobody meant.
@@ -774,7 +757,7 @@ M.merge = with_session(function(cb)
           session.notify("could not take the merge back: " .. tostring(err), vim.log.levels.ERROR)
           return
         end
-        took(mr, data)
+        session.took(mr, data)
         mr.merge_when_pipeline_succeeds = false
         session.notify(("!%d will not merge on its own"):format(mr.iid))
         if cb then
@@ -813,7 +796,7 @@ M.merge = with_session(function(cb)
           session.notify("could not merge: " .. tostring(err), vim.log.levels.ERROR)
           return
         end
-        took(mr, data)
+        session.took(mr, data)
         session.notify(
           mr.state == "merged" and ("merged !" .. mr.iid)
             or ("!%d will merge when its pipeline succeeds"):format(mr.iid)
@@ -847,7 +830,7 @@ M.close_or_reopen = with_session(function(cb)
           session.notify(("could not %s: %s"):format(event, tostring(err)), vim.log.levels.ERROR)
           return
         end
-        took(mr, data)
+        session.took(mr, data)
         session.notify(("%s !%d"):format(event == "close" and "closed" or "reopened", mr.iid))
         if cb then
           cb()
@@ -878,7 +861,7 @@ M.toggle_draft = with_session(function(cb)
       session.notify("could not change the title: " .. tostring(err), vim.log.levels.ERROR)
       return
     end
-    took(mr, data)
+    session.took(mr, data)
     session.notify(("!%d is %s"):format(mr.iid, mr.draft and "a draft" or "ready"))
     if cb then
       cb()
@@ -915,7 +898,7 @@ M.retitle = with_session(function(cb)
         session.refused("could not change the title", err)
         return
       end
-      took(mr, data)
+      session.took(mr, data)
       require("nemeton.detail").forget()
       session.notify("retitled")
       if cb then
@@ -950,7 +933,7 @@ M.describe = with_session(function(cb, back)
           session.refused("could not change the description", err)
           return
         end
-        took(mr, data)
+        session.took(mr, data)
         -- `data.description or` above keeps the old one over a `null`,
         -- which is what GitLab answers an emptied one with.
         if body == "" then

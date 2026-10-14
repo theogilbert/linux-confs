@@ -97,17 +97,28 @@ function M.open(back)
     { k.retry, "retry" },
   }, k.help)
 
+  -- The merge request first, then its jobs: the head pipeline is the
+  -- one the review was opened with until something asks again, and a
+  -- push since has made it somebody else's. A merge request that will
+  -- not answer leaves the pipeline we had, which is still a pipeline.
   local function load()
-    glab.pipeline_jobs(mr.root, pipeline.id, function(data, err)
-      if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
+    local mine = M.buf
+    session.refresh_mr(function()
+      if M.buf ~= mine then
         return
       end
-      if not data then
-        draw({}, pipeline)
-        session.notify("could not read the jobs: " .. tostring(err), vim.log.levels.ERROR)
-        return
-      end
-      draw(data, pipeline)
+      pipeline = detail.ci(mr) or pipeline
+      glab.pipeline_jobs(mr.root, pipeline.id, function(data, err)
+        if M.buf ~= mine or not vim.api.nvim_buf_is_valid(mine) then
+          return
+        end
+        if not data then
+          draw({}, pipeline)
+          session.notify("could not read the jobs: " .. tostring(err), vim.log.levels.ERROR)
+          return
+        end
+        draw(data, pipeline)
+      end)
     end)
   end
 

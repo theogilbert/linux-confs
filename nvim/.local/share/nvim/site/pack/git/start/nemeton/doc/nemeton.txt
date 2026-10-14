@@ -233,9 +233,10 @@ A review, end to end:
 :Nemeton merge          Merge it when its pipeline succeeds, after
                         asking. |nemeton-detail-window|
 
-:Nemeton refresh        Refetch the discussions. The forge is the source
-                        of truth; this is how you pick up what somebody
-                        else said while you were reading.
+:Nemeton refresh        Refetch the discussions, and the merge request
+                        with its pipeline. The forge is the source of
+                        truth; this is how you pick up what somebody
+                        else said, or CI did, while you were reading.
 
 :Nemeton status         Which merge request is open, and how much is on
                         it.
@@ -531,7 +532,7 @@ there is and how much of it is yours and unsent.
     R               give it a new title
     e               rewrite its description
     o               open it on GitLab
-    r               refetch the approvals and the diff
+    r               refetch it: its pipeline, approvals and diff
     q               close
     g?              all of the above, in a float
 
@@ -847,7 +848,9 @@ and it says it with a sign column that is off. `comments.reading_ground
 THE PIPELINE                                             *nemeton-jobs-window*
 
 `p` on the window above, or `:Nemeton jobs`. Every job of the head
-pipeline, its stage, its status and how long it took.
+pipeline, its stage, its status and how long it took. The head pipeline
+is asked for again each time, so a push since the review opened shows
+the build it started.
 
     <CR>            what the job under the cursor printed
     R               run it again, after asking

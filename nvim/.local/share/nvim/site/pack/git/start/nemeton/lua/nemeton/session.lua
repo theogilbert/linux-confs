@@ -768,6 +768,54 @@ function M.leftovers()
   return out
 end
 
+--- What the forge answered a change of state with, kept: the merge
+--- request as it now stands, so the window that asked can say so
+--- without asking again.
+function M.took(mr, data)
+  if type(data) ~= "table" then
+    return
+  end
+  mr.state = data.state or mr.state
+  mr.title = data.title or mr.title
+  mr.description = data.description or mr.description
+  if data.merge_when_pipeline_succeeds ~= nil then
+    mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
+  end
+  if data.draft ~= nil or data.work_in_progress ~= nil then
+    mr.draft = data.draft or data.work_in_progress or false
+  end
+  -- Only when the answer names one: a payload without the field is
+  -- not news that the branch was never built.
+  if type(data.head_pipeline) == "table" then
+    mr.head_pipeline = data.head_pipeline
+  end
+end
+
+--- The merge request itself, asked for again: its state and, above
+--- all, its pipeline, which moves on while nothing else about the
+--- merge request does -- a build that was running when the review
+--- opened has finished since, or been replaced by the one a push
+--- started. Not a passenger on `M.refresh`, for the reason the
+--- approvals are not: posting a note cannot change it.
+function M.refresh_mr(cb)
+  local mr = M.current
+  if not mr then
+    if cb then
+      cb(nil, "no merge request open")
+    end
+    return
+  end
+  glab.mr_get(mr.root, mr.iid, function(data, err)
+    if data and M.current == mr then
+      M.took(mr, data)
+      M.redraw_all()
+    end
+    if cb then
+      cb(data, err)
+    end
+  end)
+end
+
 --- Who has approved it, and how many more it needs.
 ---
 --- Its own call and its own refresh rather than a passenger on the one

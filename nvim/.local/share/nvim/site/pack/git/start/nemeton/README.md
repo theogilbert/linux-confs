@@ -137,7 +137,7 @@ rest.
 | `:Nemeton approve` | approve the open merge request |
 | `:Nemeton unapprove` | take the approval back |
 | `:Nemeton merge` | merge it when its pipeline succeeds, after asking |
-| `:Nemeton refresh` | refetch the discussions |
+| `:Nemeton refresh` | refetch the discussions and the merge request's pipeline |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
 | `:Nemeton token` | type a token in for this editor session |

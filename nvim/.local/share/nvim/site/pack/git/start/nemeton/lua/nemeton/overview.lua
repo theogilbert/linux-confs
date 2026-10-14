@@ -195,6 +195,7 @@ function M.open()
       {
         k.refresh,
         function()
+          session.refresh_mr(M.redraw)
           session.refresh_approvals(M.redraw)
           session.refresh_changes(M.redraw)
         end,

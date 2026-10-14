@@ -1093,3 +1093,50 @@ SELECT 2; -- trailing, not a description
         end)
     end
 end)
+
+describe("parsing man pages", function()
+    local parser = require("sections.parser")
+
+    local function build(name, type, line, col, children)
+        return { name = name, type = type, position = { line, col }, private = false, children = children or {} }
+    end
+
+    it("nest options under subsections under sections", function()
+        local text = table.concat({
+            "LS(1)                  User Commands                  LS(1)",
+            "",
+            "NAME",
+            "       ls - list directory contents",
+            "",
+            "DESCRIPTION",
+            "       Mandatory arguments to long options are mandatory for short",
+            "       options too, e.g. -a is the same as --all.",
+            "",
+            "       -a, --all",
+            "              do not ignore entries starting with .",
+            "",
+            "       -c     with -lt: sort by ctime",
+            "",
+            "   Exit status:",
+            "       --min-parents=<n>, --no-min-parents,",
+            "       --no-max-parents",
+            "              exit status",
+            "",
+            "GNU coreutils 9.10          August 2026                LS(1)",
+        }, "\n")
+        local buf = create_buf_with_text(text, "man")
+
+        local sections = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same({
+            build("NAME", "header", 3, 0),
+            build("DESCRIPTION", "header", 6, 0, {
+                build("-a, --all", "attribute", 10, 7),
+                build("-c", "attribute", 13, 7),
+                build("Exit status", "header", 15, 3, {
+                    build("--min-parents=<n>, --no-min-parents, --no-max-parents", "attribute", 16, 7),
+                }),
+            }),
+        }, sections)
+    end)
+end)

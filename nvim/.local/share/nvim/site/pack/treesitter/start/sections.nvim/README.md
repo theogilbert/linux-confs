@@ -9,7 +9,7 @@ A Neovim plugin that displays code sections (functions, classes, headers, etc.) 
 - **Private Section Filtering** - Toggle visibility of private functions and classes
 - **Quick Navigation** - Jump directly to any section in your code
 - **Customizable Icons** - Configure icons for different section types
-- **Multi-language Support** - Works with Lua, Python, Markdown, JSON, YAML, XML, SQL, Lucene, PromQL, MongoDB and Cypher, and extensible to other languages
+- **Multi-language Support** - Works with Lua, Python, Markdown, JSON, YAML, XML, SQL, Lucene, PromQL, MongoDB, Cypher and man pages, and extensible to other languages
 - **Auto-refresh** - Automatically updates when you save files or switch buffers
 
 ## Requirements

@@ -1,4 +1,5 @@
 local utils = require("sections.utils")
+local man = require("sections.man")
 local ts = vim.treesitter
 
 local M = {}
@@ -244,6 +245,9 @@ end
 --         Otherwise, returns nil and the error message.
 M.parse_sections = function(buf_id)
     local lang = vim.api.nvim_get_option_value("filetype", { buf = buf_id })
+    if lang == "man" then
+        return man.parse_sections(buf_id), nil
+    end
 
     local queries = ts.query.get(lang, "sections")
     if queries == nil then

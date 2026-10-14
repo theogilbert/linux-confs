@@ -43,7 +43,8 @@ local IGNORED_BUFTYPES = { "nofile", "terminal", "quickfix", "help", "prompt" }
 
 local function supports_buf(buf)
     local bt = vim.api.nvim_get_option_value("buftype", { buf = buf })
-    if vim.tbl_contains(IGNORED_BUFTYPES, bt) then
+    -- Man pages are rendered in nofile buffers
+    if vim.tbl_contains(IGNORED_BUFTYPES, bt) and vim.bo[buf].filetype ~= "man" then
         return false
     end
 

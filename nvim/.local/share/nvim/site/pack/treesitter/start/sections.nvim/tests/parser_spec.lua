@@ -1140,3 +1140,45 @@ describe("parsing man pages", function()
         }, sections)
     end)
 end)
+
+describe("parsing help pages", function()
+    local parser = require("sections.parser")
+
+    local function build(name, line, children)
+        return { name = name, type = "header", position = { line, 0 }, private = false, children = children or {} }
+    end
+
+    it("nest headings by rule and case", function()
+        local text = table.concat({
+            "*guide.txt*  A guide",
+            "",
+            "==============================================================================",
+            "Introduction                                                     *guide-intro*",
+            "",
+            "Some text.",
+            "",
+            "------------------------------------------------------------------------------",
+            "Some words                                                       *guide-words*",
+            "",
+            "CONNECTING                                                  *guide-connecting*",
+            "",
+            "==============================================================================",
+            "Usage                                                            *guide-usage*",
+            "",
+            "Parameters: ~",
+            "  • a",
+        }, "\n")
+        local buf = create_buf_with_text(text, "help")
+
+        local sections = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same({
+            build("Introduction", 4, {
+                build("Some words", 9, {
+                    build("CONNECTING", 11),
+                }),
+            }),
+            build("Usage", 14),
+        }, sections)
+    end)
+end)

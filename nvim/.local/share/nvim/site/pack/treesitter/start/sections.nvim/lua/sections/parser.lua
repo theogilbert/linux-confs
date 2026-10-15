@@ -244,10 +244,12 @@ end
 -- @return A table containing sections parsed from the buffer if sections are successfully parsed.
 --         Otherwise, returns nil and the error message.
 M.parse_sections = function(buf_id)
-    local lang = vim.api.nvim_get_option_value("filetype", { buf = buf_id })
-    if lang == "man" then
+    local filetype = vim.api.nvim_get_option_value("filetype", { buf = buf_id })
+    if filetype == "man" then
         return man.parse_sections(buf_id), nil
     end
+    -- The Tree-sitter language may differ from the filetype, e.g. `vimdoc` for `help`
+    local lang = ts.language.get_lang(filetype) or filetype
 
     local queries = ts.query.get(lang, "sections")
     if queries == nil then

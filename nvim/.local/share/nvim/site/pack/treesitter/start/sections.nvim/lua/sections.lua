@@ -40,11 +40,12 @@ local function clear_tab_info()
 end
 
 local IGNORED_BUFTYPES = { "nofile", "terminal", "quickfix", "help", "prompt" }
+-- Man pages are rendered in nofile buffers, help pages in help buffers
+local SUPPORTED_SPECIAL_FILETYPES = { "man", "help" }
 
 local function supports_buf(buf)
     local bt = vim.api.nvim_get_option_value("buftype", { buf = buf })
-    -- Man pages are rendered in nofile buffers
-    if vim.tbl_contains(IGNORED_BUFTYPES, bt) and vim.bo[buf].filetype ~= "man" then
+    if vim.tbl_contains(IGNORED_BUFTYPES, bt) and not vim.tbl_contains(SUPPORTED_SPECIAL_FILETYPES, vim.bo[buf].filetype) then
         return false
     end
 

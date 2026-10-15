@@ -203,6 +203,9 @@ end
 -- served from the mirror by yaml_schema_content().
 local KUBERNETES_SCHEMA_URL =
 "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.32.1-standalone-strict/all.json"
+-- In Kubernetes mode, yamlls looks custom resources up in this catalog, as
+-- <url>/<group>/<kind>_<version>.json.  Also served from the mirror.
+local CRD_CATALOG_URL = "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main"
 
 local function yaml_schemas()
     local schemas = {}
@@ -228,7 +231,7 @@ local function yaml_schemas()
 end
 
 -- Answers the server's requests for http(s) schemas from the mirror.  Only
--- the Kubernetes one goes through here: every other schema is a local path.
+-- the Kubernetes and CRD ones go through here: every other schema is a local path.
 ---@param params string[] The schema's URL, wrapped in an array by vscode-jsonrpc
 local function yaml_schema_content(_, params)
     local location = params[1]:match("^https?://([^#]*)")
@@ -257,6 +260,7 @@ vim.lsp.config("yamlls", {
             validate = true,
             schemaStore = { enable = false },
             schemas = yaml_schemas(),
+            kubernetesCRDStore = { enable = true, url = CRD_CATALOG_URL },
         },
     },
     on_init = function(client)

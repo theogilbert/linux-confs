@@ -9,7 +9,8 @@ schemas.json maps each SchemaStore schema URL to the file globs the SchemaStore
 catalog associates it with.  lua/lsps.lua turns those URLs into mirror paths.
 
 KUBERNETES_SCHEMA_URL is mirrored too, but served differently, and applied to
-files decided in lua/lsps.lua.
+files decided in lua/lsps.lua.  So are the CRD_GROUPS schemas of the CRD
+catalog, which yamlls picks from in Kubernetes mode, by apiVersion and kind.
 
 Usage: ./update.py   (needs internet access)
 """
@@ -54,6 +55,16 @@ KUBERNETES_SCHEMA_URL = (
     "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.32.1-standalone-strict/all.json"
 )
 
+# The CRD catalog yamlls looks custom resources up in.  Keep in sync with
+# CRD_CATALOG_URL in lua/lsps.lua.
+CRD_CATALOG_REPO = "datreeio/CRDs-catalog"
+CRD_CATALOG_URL = f"https://raw.githubusercontent.com/{CRD_CATALOG_REPO}/main"
+
+# Its API groups to mirror, by directory name: every kind and version.
+CRD_GROUPS = [
+    "external-secrets.io",
+]
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MIRROR = os.path.join(HERE, "mirror")
 
@@ -67,6 +78,14 @@ def fetch(url):
 def mirror_path(url):
     parsed = urllib.parse.urlsplit(url)
     return os.path.join(MIRROR, parsed.netloc, parsed.path.lstrip("/"))
+
+
+def crd_schema_urls():
+    for group in CRD_GROUPS:
+        listing = json.loads(fetch(f"https://api.github.com/repos/{CRD_CATALOG_REPO}/contents/{group}"))
+        for entry in listing:
+            if entry["name"].endswith(".json"):
+                yield f"{CRD_CATALOG_URL}/{group}/{entry['name']}"
 
 
 def remote_refs(node, base):
@@ -152,7 +171,7 @@ def main():
     }
 
     shutil.rmtree(MIRROR, ignore_errors=True)
-    mirror(list(associations) + [KUBERNETES_SCHEMA_URL])
+    mirror(list(associations) + [KUBERNETES_SCHEMA_URL, *crd_schema_urls()])
 
     with open(os.path.join(HERE, "schemas.json"), "w") as f:
         json.dump(associations, f, indent=2)

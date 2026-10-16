@@ -12,10 +12,12 @@
 -- And when, on the head of a note. The head says "2d" and eight digits
 -- of a sha, which is what a head has room for and not what is wanted
 -- the moment the question is "was this before or after the push on
--- Tuesday": the same float, on `K` over the head, says both exactly --
--- to the second and with the day of the week. The key only: the head
--- is the line the cursor crosses on the way into every note, and a
--- float that rose on each of them was one over the words being read.
+-- Tuesday": the same float, on `K` over the age, says when to the
+-- second and with the day of the week, and on `K` over the sha, the
+-- commit -- its time, its message and the lines it changed in each
+-- file. The key only: the head is the line the cursor crosses on the
+-- way into every note, and a float that rose on each of them was one
+-- over the words being read.
 --
 -- And where, on a link. A link is drawn as the words it was given and
 -- not the URL behind them, which is the right trade until the question
@@ -53,19 +55,18 @@ end
 --- Where a link goes, whole: the address it was written with where that
 --- is one, and otherwise the page `follow` would open for it -- a path
 --- or a fragment is only half an address.
-local function address(ref)
+local function address(ref, on)
   if ref.href:match("^https?://") then
     return ref.href
   end
-  return follow.href(ref) or ref.href
+  return follow.href(ref, on) or ref.href
 end
 
 --- The names as one line: whoever gave it, in the order the forge
 --- listed them, and "you" for the reader -- which is what the colour of
 --- the row already said, so the float agrees with it.
-local function names(ref)
-  local session = require("nemeton.session")
-  local me = session.current and session.current.me
+local function names(ref, on)
+  local me = on and on.me
   local out = {}
   for _, user in ipairs(ref.who or {}) do
     table.insert(out, (me and user == me) and "you" or user)
@@ -73,58 +74,123 @@ local function names(ref)
   return table.concat(out, ", ")
 end
 
--- sha -> when it was committed: asked of git once each, since a hover
--- is asked again every time the cursor rests. Only what git answered
--- is kept -- a commit this clone has not got yet is one the session
--- may fetch a moment later (`session.fetch_commit`).
+-- sha -> what git says of it: asked once each, since a hover is asked
+-- again every time the cursor rests. Only what git answered is kept --
+-- a commit this clone has not got yet is one the session may fetch a
+-- moment later (`session.fetch_commit`).
 local committed = {}
 
---- When `sha` was committed, as the clone knows it. Waited on, and only
---- briefly: this is a hover, on one commit this editor has almost
---- certainly checked out, and a float that arrives after the cursor has
---- moved on arrives over nothing.
-local function commit_time(sha)
+--- What the clone knows of `sha`: its time, its message, and the lines
+--- it changed in each file. Waited on, and only briefly: this is a
+--- hover, on one commit this editor has almost certainly checked out,
+--- and a float that arrives after the cursor has moved on arrives over
+--- nothing.
+local function commit_of(sha, on)
   if committed[sha] == nil then
-    local session = require("nemeton.session")
-    local root = session.current and session.current.root
+    local root = on and on.root
     if root then
-      local cmd = { "git", "show", "-s", "--format=%ct", sha }
+      local cmd = { "git", "show", "--numstat", "--format=%H%x00%ct%x00%s%x00%b%x00", sha }
       local done = log.exec(cmd, { cwd = root })
       local ok, res = pcall(function()
         return vim.system(cmd, { text = true, cwd = root }):wait(1000)
       end)
       if ok and res then
         done(res.code, res.stderr)
-        committed[sha] = res.code == 0 and tonumber(vim.trim(res.stdout or "")) or nil
+        local full, at, subject, body, stat = (res.stdout or ""):match(
+          "^(%x+)%z(%d+)%z([^%z]*)%z([^%z]*)%z(.*)$"
+        )
+        if res.code == 0 and full then
+          local files = {}
+          for added, removed, path in stat:gmatch("([%d-]+)\t([%d-]+)\t([^\n]+)") do
+            table.insert(files, { tonumber(added), tonumber(removed), path })
+          end
+          committed[sha] = {
+            sha = full,
+            at = tonumber(at),
+            subject = subject,
+            body = vim.trim(body),
+            files = files,
+          }
+        end
       end
     end
   end
   return committed[sha]
 end
 
---- What the float over a note's head says: when it was written, and
---- when the commit it was written against was made -- or, for one this
---- clone has not got, when it was pushed, which is the other half of
---- the same question and what the merge request's versions know.
-local function stamp(ref)
-  local out = {}
-  local written = threads.when(threads.epoch(ref.written))
-  if written then
-    table.insert(out, { "written ", written })
-  end
-  if ref.sha then
-    local at = commit_time(ref.sha)
-    if at then
-      table.insert(out, { "commit  ", ("%s · %s"):format(ref.sha:sub(1, 8), threads.when(at)) })
-    else
-      local pushed = threads.when(threads.epoch(ref.pushed))
-      table.insert(
-        out,
-        { "commit  ", pushed and ("%s · pushed %s"):format(ref.sha:sub(1, 8), pushed) or ref.sha }
-      )
+-- More files than this and the float is a list to scroll rather than a
+-- glance; the rest are counted, and `K` again goes in for the whole.
+local FILES = 20
+
+--- The float over a note's sha: the commit whole, its time, what it says
+--- and what it changed -- `git show --stat` in the room of a hover. For
+--- one this clone has not got, when it was pushed, which is what the
+--- merge request's versions know of it.
+local function commit(ref, on)
+  local lines, hls = {}, {}
+  local function add(text, spans)
+    table.insert(lines, text)
+    for _, s in ipairs(spans or {}) do
+      local stop = s[2] == -1 and #text or s[2]
+      table.insert(hls, { row = #lines - 1, col = s[1], end_col = stop, hl = s[3] })
     end
   end
-  return out
+  local c = commit_of(ref.sha, on)
+  if not c then
+    add(ref.sha, { { 0, #ref.sha, "NemetonMeta" } })
+    local pushed = threads.when(threads.epoch(ref.pushed))
+    add(pushed and ("pushed " .. pushed) or "not in this clone", { { 0, 6, "NemetonMeta" } })
+    return lines, hls
+  end
+  add(c.sha, { { 0, #c.sha, "NemetonMeta" } })
+  add(threads.when(c.at) or "", { { 0, -1, "NemetonMeta" } })
+  add("")
+  add(c.subject, { { 0, #c.subject, "NemetonAuthor" } })
+  if c.body ~= "" then
+    add("")
+    for _, l in ipairs(vim.split(c.body, "\n", { plain = true })) do
+      add(l)
+    end
+  end
+  if #c.files == 0 then
+    return lines, hls
+  end
+  add("")
+  -- Binary files count no lines (`-` from git), and are named all the
+  -- same: a commit's files are what it touched, not only what diffs.
+  local plus, minus = 0, 0
+  local cells = {}
+  for _, f in ipairs(c.files) do
+    plus, minus = plus + (f[1] or 0), minus + (f[2] or 0)
+    table.insert(cells, { f[1] and ("+" .. f[1]) or "bin", f[2] and ("−" .. f[2]) or "" })
+  end
+  local a, r = "+" .. plus, "−" .. minus
+  local total = ("%s %s · %d file%s"):format(a, r, #c.files, #c.files == 1 and "" or "s")
+  add(total, {
+    { 0, #a, "NemetonAdded" },
+    { #a + 1, #a + 1 + #r, "NemetonRemoved" },
+    { #a + 1 + #r, -1, "NemetonMeta" },
+  })
+  local wa, wr = 0, 0
+  for _, cell in ipairs(cells) do
+    wa = math.max(wa, vim.fn.strdisplaywidth(cell[1]))
+    wr = math.max(wr, vim.fn.strdisplaywidth(cell[2]))
+  end
+  for i, f in ipairs(c.files) do
+    if i > FILES then
+      add(("… %d more"):format(#c.files - FILES), { { 0, -1, "NemetonMeta" } })
+      break
+    end
+    local ca, cr = cells[i][1], cells[i][2]
+    local left = "  " .. ca .. (" "):rep(wa - vim.fn.strdisplaywidth(ca)) .. " "
+    local mid = cr .. (" "):rep(wr - vim.fn.strdisplaywidth(cr)) .. "  "
+    add(left .. mid .. f[3], {
+      { 2, 2 + #ca, f[1] and "NemetonAdded" or "NemetonMeta" },
+      { #left, #left + #cr, "NemetonRemoved" },
+      { #left + #mid, -1, "NemetonPath" },
+    })
+  end
+  return lines, hls
 end
 
 --- Says who gave the reaction under the cursor, when the note under it
@@ -157,10 +223,11 @@ function M.show(resting)
   end
   M.close()
 
+  local on = follow.subject(buf)
   local lines, hls = {}, {}
   if ref.kind == "reaction" then
     local picture = threads.emoji(":" .. ref.name .. ":")
-    lines[1] = picture .. "  " .. names(ref)
+    lines[1] = picture .. "  " .. names(ref, on)
     hls[1] = {
       row = 0,
       col = 0,
@@ -168,15 +235,15 @@ function M.show(resting)
       hl = ref.mine and "NemetonReactionMine" or "NemetonReaction",
     }
   elseif link then
-    lines[1] = address(ref)
+    lines[1] = address(ref, on)
+  elseif ref.sha then
+    lines, hls = commit(ref, on)
   else
-    for i, pair in ipairs(stamp(ref)) do
-      lines[i] = pair[1] .. pair[2]
-      table.insert(hls, { row = i - 1, col = 0, end_col = #pair[1], hl = "NemetonMeta" })
-    end
-    if #lines == 0 then
+    local written = threads.when(threads.epoch(ref.written))
+    if not written then
       return nil
     end
+    lines[1] = written
   end
   -- Wider for a time than for names: a date that wraps is two halves
   -- of one fact, where a list of names wraps between two of them. And
@@ -191,6 +258,9 @@ function M.show(resting)
   for _, l in ipairs(lines) do
     height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(l) / width))
   end
+  -- A commit's message can be a page; half the screen of it, and `K`
+  -- again goes in to read the rest.
+  height = math.max(1, math.min(height, math.floor(vim.o.lines / 2)))
   local fbuf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, lines)
   require("nemeton.marks").paint(fbuf, hls)

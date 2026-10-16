@@ -785,7 +785,7 @@ function M.open(at)
       "delete the comment under the cursor",
     },
     { k.follow, follow.here, "follow what is under the cursor" },
-    { k.who, who.show, "who reacted, when it was written, where a link goes" },
+    { k.who, who.show, "who reacted, when, what commit, where a link goes" },
     -- On the comment under the cursor, like the two above it: the
     -- whole conversation is drawn here, so the reader is already
     -- pointing at the one they mean.

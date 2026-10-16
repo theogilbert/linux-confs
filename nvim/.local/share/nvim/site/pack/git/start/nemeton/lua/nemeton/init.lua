@@ -63,6 +63,100 @@ function M.list()
   require("nemeton.list").open()
 end
 
+--- The project's issues, searched as you type. Not `with_session`
+--- either: they are the project's.
+function M.issues()
+  ready()
+  require("nemeton.issue_list").open()
+end
+
+-- What the issue prompt completes over: the issues the cache has, as it
+-- had them when the prompt opened.
+local issue_store = nil
+
+--- The issues the prompt offers for what has been typed, for `v:lua`:
+--- the search the list runs (`nemeton.issues`), over the open ones
+--- unless it says otherwise, best first -- so "proxy" offers the proxy
+--- one, and `assignee:@me` the ones that are yours.
+function M.issue_omnifunc(findstart, base)
+  if findstart == 1 then
+    return 0
+  end
+  if not issue_store then
+    return {}
+  end
+  local text = vim.trim(base or "")
+  -- An answer already chosen out of the menu is a number and a title:
+  -- that is the issue, not a search for its title.
+  if text:match("^#?%d+%s%s") then
+    return {}
+  end
+  local out = {}
+  for _, hit in ipairs(require("nemeton.issues").search(issue_store, text, { state = "opened" })) do
+    table.insert(out, ("%d  %s"):format(hit.issue.iid, hit.issue.title))
+    if #out >= 50 then
+      break
+    end
+  end
+  return out
+end
+
+--- Which issue to open, asked rather than typed: `:Nemeton issue 12`
+--- for the one you know the number of, and this for "the proxy one".
+--- Up on the keypress, on what the cache has; the number is taken off
+--- the front of whatever comes back, so `12`, `#12` and a row of the
+--- menu accepted whole are one answer.
+function M.ask_issue()
+  ready()
+  local root = session.root()
+  if not root then
+    session.notify("not inside a git repository", vim.log.levels.ERROR)
+    return
+  end
+  local cache = require("nemeton.issue_cache")
+  issue_store = cache.peek(root)
+  local prompt = require("nemeton.prompt")
+  prompt.open({
+    title = "open issue",
+    omnifunc = "v:lua.require'nemeton'.issue_omnifunc",
+    items = function(line)
+      return M.issue_omnifunc(0, line)
+    end,
+  }, function(answer)
+    answer = vim.trim(answer or "")
+    local iid = tonumber(answer:match("^#?(%d+)"))
+    if not iid then
+      if answer ~= "" then
+        session.notify("no issue number in " .. answer, vim.log.levels.WARN)
+      end
+      return
+    end
+    require("nemeton.issue").open(iid)
+  end)
+  -- ...and read off the disk, where this editor has not yet, with the
+  -- menu put up again on it; the forge is asked behind that, as the
+  -- list asks it.
+  cache.get(root, function(store)
+    issue_store = store
+    prompt.refresh()
+    cache.sync(root, nil, function()
+      issue_store = cache.peek(root)
+      prompt.refresh()
+    end)
+  end)
+end
+
+--- Issue `iid` of this project, in a tab of its own, or the prompt that
+--- asks which. Not `with_session`: an issue is the project's, and needs
+--- no review open to be read.
+function M.issue(iid)
+  ready()
+  if not tonumber(iid) then
+    return M.ask_issue()
+  end
+  return require("nemeton.issue").open(iid)
+end
+
 -- What the prompt below completes over, from the fetch that opened it.
 -- Module-local because `vim.fn.input`'s completion is the name of a
 -- function, and a name has nowhere to carry a list.
@@ -325,53 +419,86 @@ end
 --- once, and the revision is the checkout's own HEAD: the commit the
 --- line is being read at, which is what a permalink is for. A HEAD
 --- the forge has not been sent is a link that works once it has.
-function M.link(first, last)
-  ready()
-  local path, _, sha, why = reading(vim.api.nvim_get_current_buf())
+--- A permalink to `first`..`last` of the file in `bufnr`, worked out the
+--- way the link key works it out: `cb(url, path)`, or `cb(nil, why)`.
+local function permalink(bufnr, first, last, cb)
+  local path, _, sha, why = reading(bufnr)
   if not path then
-    session.notify(why, vim.log.levels.WARN)
+    cb(nil, why)
     return
   end
-  first = first or vim.api.nvim_win_get_cursor(0)[1]
-  last = math.max(last or first, first)
   local follow = require("nemeton.follow")
-  local function copied(url, why_not)
-    if not url then
-      session.notify(why_not, vim.log.levels.WARN)
-      return
-    end
-    follow.copy(url)
-    session.notify(span(path, first, last) .. " — link copied")
-  end
   -- On the old side, a link against the revision that buffer is
   -- showing: the line numbers are that file's, and against the head
   -- they would point at whatever happens to be there now.
   if session.current then
-    copied(
-      follow.line_link(path, first, last, sha),
-      "no page to link to — the merge request has no url"
-    )
+    local url = follow.line_link(path, first, last, sha)
+    cb(url, url and path or "no page to link to — the merge request has no url")
     return
   end
   local root = session.root()
   require("nemeton.glab").project_url(root, function(project, err)
     if not project then
-      copied(
-        nil,
-        "no page to link to — " .. (err or "the forge did not say which project this is")
-      )
+      cb(nil, "no page to link to — " .. (err or "the forge did not say which project this is"))
       return
     end
     if sha then
-      copied(follow.line_link(path, first, last, sha, project))
+      cb(follow.line_link(path, first, last, sha, project), path)
       return
     end
     session.head(root, function(head)
-      copied(
-        head and follow.line_link(path, first, last, head, project),
-        "no page to link to — this checkout is at no commit"
-      )
+      local url = head and follow.line_link(path, first, last, head, project)
+      cb(url, url and path or "no page to link to — this checkout is at no commit")
     end)
+  end)
+end
+
+function M.link(first, last)
+  ready()
+  first = first or vim.api.nvim_win_get_cursor(0)[1]
+  last = math.max(last or first, first)
+  permalink(vim.api.nvim_get_current_buf(), first, last, function(url, path_or_why)
+    if not url then
+      session.notify(path_or_why, vim.log.levels.WARN)
+      return
+    end
+    require("nemeton.follow").copy(url)
+    session.notify(span(path_or_why, first, last) .. " — link copied")
+  end)
+end
+
+--- A window for an issue of your own. Over `first`..`last` -- a range
+--- or a selection -- its description starts with a link to those lines
+--- and the lines themselves, fenced in the language of the buffer: what
+--- an issue filed from the code it is about begins with.
+function M.new_issue(first, last)
+  ready()
+  local create = require("nemeton.issue_create")
+  if not first then
+    return create.open()
+  end
+  local bufnr = vim.api.nvim_get_current_buf()
+  last = math.max(last or first, first)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, first - 1, last, false)
+  -- The buffer's filetype, or what its name says where nothing has set
+  -- one: a fence with no language is a block of one colour on the page.
+  local fence = vim.bo[bufnr].filetype
+  if not fence or fence == "" then
+    fence = vim.filetype.match({ buf = bufnr }) or ""
+  end
+  permalink(bufnr, first, last, function(url, path_or_why)
+    local body = {}
+    if url then
+      vim.list_extend(body, { url, "" })
+    else
+      -- The lines without the link, and why: an issue about some code
+      -- is still worth filing with the code in it.
+      session.notify(path_or_why, vim.log.levels.WARN)
+    end
+    table.insert(body, "```" .. fence)
+    vim.list_extend(body, lines)
+    table.insert(body, "```")
+    create.open({ description = table.concat(body, "\n") })
   end)
 end
 
@@ -1286,6 +1413,11 @@ local SUBCOMMANDS = {
   end,
   token = M.token,
   ["forget-token"] = M.forget_token,
+  issue = M.issue,
+  issues = M.issues,
+  ["new-issue"] = function()
+    M.new_issue()
+  end,
 }
 
 function M.command(opts)
@@ -1302,10 +1434,14 @@ function M.command(opts)
     )
     return
   end
-  -- The range, for the one verb that takes lines: `:'<,'>Nemeton
+  -- The range, for the two verbs that take lines: `:'<,'>Nemeton
   -- history` is the history of the selection.
   if args[1] == "history" and (opts.range or 0) > 0 then
     return M.history(opts.line1, opts.line2)
+  end
+  -- ...and `:'<,'>Nemeton new-issue`, an issue about the selection.
+  if args[1] == "new-issue" and (opts.range or 0) > 0 then
+    return M.new_issue(opts.line1, opts.line2)
   end
   return fn(args[2])
 end
@@ -1426,6 +1562,7 @@ function M.setup(opts)
     end
   end
   global("list", { n = { M.list, "merge requests" } })
+  global("issues", { n = { M.issues, "issues" } })
   global("link", {
     n = { M.link, "copy a link to this line" },
     x = { M.link_lines, "copy a link to these lines" },
@@ -1434,7 +1571,7 @@ function M.setup(opts)
     n = { M.history, "the commits that touched this file" },
     x = { M.history_lines, "the commits that touched these lines" },
   })
-  -- The other way in, unbound by default. Nothing in `plugin/` binds
+  -- The other way in. Nothing in `plugin/` binds
   -- this one, so there is no earlier key to take back -- and rebinding
   -- it in a second `setup{}` is `keymap.set` over `keymap.set`, which
   -- is what it already is.
@@ -1443,6 +1580,13 @@ function M.setup(opts)
     vim.keymap.set("n", ask, function()
       M.ask_open()
     end, { silent = true, desc = "nemeton: open a merge request by number" })
+  end
+  -- ...and its issue twin, beside it under `<leader>mo`.
+  local ask_issue = config.keys.global.issue
+  if ask_issue and ask_issue ~= "" then
+    vim.keymap.set("n", ask_issue, function()
+      M.ask_issue()
+    end, { silent = true, desc = "nemeton: open an issue by number" })
   end
 end
 

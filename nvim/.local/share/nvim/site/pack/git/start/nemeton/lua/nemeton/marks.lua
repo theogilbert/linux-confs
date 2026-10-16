@@ -478,6 +478,13 @@ function M.setup_highlights()
   -- fix/proxy → main · updated 3d ago" in one colour is a sentence to
   -- be read, and these are three facts to be picked out of it.
   link("NemetonBranch", "Directory")
+  -- A label the forge sent no colour for. One the forge did is drawn
+  -- in its own -- a chip of the label's colour, as on the page -- in a
+  -- group of its own made when it is first drawn, `NemetonLabel_<rgb>`.
+  link("NemetonLabel", "Visual")
+  -- What a search found, picked out of the row or the line it was in:
+  -- the colour the editor picks out its own search matches in.
+  link("NemetonMatch", "Search")
   -- Where a thread sits, where a list of them has to say so. The colour
   -- an editor draws a path in, which is the colour this one is.
   link("NemetonPath", "Directory")

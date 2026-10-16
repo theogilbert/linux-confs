@@ -16,6 +16,60 @@ local threads = require("nemeton.threads")
 
 local M = {}
 
+--- What `thread` hangs off: the issue it was drawn from, which says so
+--- by carrying itself as `on`, or else the merge request under review.
+---
+--- Carried by the thread rather than passed beside it, because every
+--- one of these verbs is reached from a window that holds a thread and
+--- nothing else -- and a thread is the one thing that window cannot
+--- confuse with another.
+---
+--- An issue refetches and draws a comment on its way through functions
+--- of its own -- `refetch`, `show_sending` -- since it is not
+--- `session.current` and none of the session's drawing is its; it says
+--- what it is called (`label`, `noteable`); and `drafts = false`,
+--- because GitLab keeps no unsent comments on an issue.
+local function on(thread)
+  return thread and thread.on or session.current
+end
+
+--- How the composer's title names it: `!7`, or `#12`.
+local function named(subject)
+  return subject.label or ("!%d"):format(subject.iid)
+end
+
+--- The endpoint's noun for it: the number of a merge request, or the
+--- path of anything else (`glab.noteable`).
+local function at(subject)
+  return subject.noteable or subject.iid
+end
+
+local function refresh(subject, after)
+  if subject.refetch then
+    return subject.refetch(after)
+  end
+  return session.refresh(after)
+end
+
+--- What a write that came back a failure does, for whatever it was a
+--- write to: says so, and asks the forge anyway -- `session.refused`'s
+--- reason, which is that a call can land and still come back an error.
+local function refused(subject, said, err)
+  if subject.refetch then
+    session.notify(said .. ": " .. tostring(err), vim.log.levels.ERROR)
+    subject.refetch()
+    return
+  end
+  session.refused(said, err)
+end
+
+local function sending(subject, what)
+  if subject.show_sending then
+    return subject.show_sending(what)
+  end
+  return session.sending(what)
+end
+
 --- Whether the thing a key was pressed on is still on its way to the
 --- forge, said out loud.
 ---
@@ -42,7 +96,7 @@ end
 --- for a thread on the old side, which is code the branch has nothing
 --- to patch, nor for one about no line at all.
 local function code_of(thread)
-  local mr = session.current
+  local mr = on(thread)
   if not (thread.path and thread.line) or thread.side == "old" then
     return nil
   end
@@ -68,7 +122,7 @@ end
 --- over the list it just changed, and a list that still has the note
 --- in it is a window that has to be refetched by hand to be believed.
 local function rewrite(thread, note, after)
-  local mr = session.current
+  local mr = on(thread)
   if in_flight(thread, note) then
     return
   end
@@ -76,8 +130,8 @@ local function rewrite(thread, note, after)
   compose.open({
     suggest = suggest,
     lang = lang,
-    title = ("!%d  edit %s"):format(
-      mr.iid,
+    title = ("%s  edit %s"):format(
+      named(mr),
       (note.draft or thread.draft) and "the comment you have not sent"
         or (note.author .. "'s comment")
     ),
@@ -91,16 +145,16 @@ local function rewrite(thread, note, after)
       -- forge's: a rewrite is a round trip, and a comment that goes on
       -- saying the old thing for half a second is a keypress you cannot
       -- tell worked.
-      local sent = session.sending({ body = body, note_id = note.id, author = note.author })
+      local sent = sending(mr, { body = body, note_id = note.id, author = note.author })
       local function done(data, err)
         if not data then
           sent(false)
-          session.refused("could not edit", err)
+          refused(mr, "could not edit", err)
           return
         end
         session.notify("edited")
         sent(true)
-        session.refresh(after)
+        refresh(mr, after)
       end
       -- An unsent comment lives at its own endpoint until it is sent --
       -- a whole thread of one, or a reply folded into somebody else's --
@@ -110,7 +164,7 @@ local function rewrite(thread, note, after)
       if note.draft or thread.draft then
         glab.update_draft(mr.root, mr.iid, note.id, body, note.position, done)
       else
-        glab.update_note(mr.root, mr.iid, note.id, body, done)
+        glab.update_note(mr.root, at(mr), note.id, body, done)
       end
     end,
   })
@@ -138,7 +192,7 @@ function M.confirm(question, done, verb)
 end
 
 local function remove(thread, note, after)
-  local mr = session.current
+  local mr = on(thread)
   if in_flight(thread, note) then
     return
   end
@@ -154,13 +208,13 @@ local function remove(thread, note, after)
         return
       end
       local drop = (note.draft or thread.draft) and glab.delete_draft or glab.delete_note
-      drop(mr.root, mr.iid, note.id, function(ok, err)
+      drop(mr.root, at(mr), note.id, function(ok, err)
         if not ok then
-          session.refused("could not delete", err)
+          refused(mr, "could not delete", err)
           return
         end
         session.notify("deleted")
-        session.refresh(after)
+        refresh(mr, after)
       end)
     end
   )
@@ -173,7 +227,7 @@ end
 --- the forge to act on yet, and a list that offers one is a list with a
 --- wrong answer in it.
 local function pick(thread, question, fn, after)
-  if not session.current or not thread then
+  if not thread or not on(thread) then
     session.notify("no thread here", vim.log.levels.WARN)
     return
   end
@@ -215,7 +269,7 @@ end
 --- your own can wait for the whole review; an answer to a question
 --- cannot.
 function M.reply(thread)
-  local mr = session.current
+  local mr = on(thread)
   if not mr or not thread then
     session.notify("no thread here", vim.log.levels.WARN)
     return
@@ -230,7 +284,9 @@ function M.reply(thread)
   -- GitLab's Comment button and its Start thread are two different
   -- things for good: a note posted on its own has no discussion to
   -- answer into, and the API refuses the reply rather than making one.
-  if thread.individual_note then
+  -- Not on an issue, whose comment a reply turns into a thread -- which
+  -- is what its page offers, and what 19.3 was seen to do.
+  if thread.individual_note and mr.kind ~= "issue" then
     session.notify(
       "GitLab does not take replies to a comment posted on its own — start a thread on the merge request instead",
       vim.log.levels.WARN
@@ -239,36 +295,36 @@ function M.reply(thread)
   end
   local to = thread.notes[1].author
   compose.open({
-    title = ("!%d  reply to %s"):format(mr.iid, to),
+    title = ("%s  reply to %s"):format(named(mr), to),
     -- Filed under the thread it answers: an unfinished reply is one
     -- reply to one conversation, wherever in the review you go and
     -- whenever you come back. See `nemeton.kept`.
-    remember = ("!%d reply %s"):format(mr.iid, thread.id),
+    remember = ("%s reply %s"):format(named(mr), thread.id),
     default = "post",
-    on_draft = function(body)
-      local sent = session.sending({ body = body, discussion_id = thread.id })
+    on_draft = mr.drafts ~= false and function(body)
+      local sent = sending(mr, { body = body, discussion_id = thread.id })
       glab.create_draft(mr.root, mr.iid, body, nil, thread.id, function(data, err)
         if not data then
           sent(false)
-          session.refused("could not keep", err)
+          refused(mr, "could not keep", err)
           return
         end
         session.notify("kept a reply to " .. to)
         sent(true)
-        session.refresh()
+        refresh(mr)
       end)
-    end,
+    end or nil,
     on_submit = function(body)
-      local sent = session.sending({ body = body, discussion_id = thread.id })
-      glab.reply(mr.root, mr.iid, thread.id, body, function(data, err)
+      local sent = sending(mr, { body = body, discussion_id = thread.id })
+      glab.reply(mr.root, at(mr), thread.id, body, function(data, err)
         if not data then
           sent(false)
-          session.refused("could not reply", err)
+          refused(mr, "could not reply", err)
           return
         end
         session.notify("replied")
         sent(true)
-        session.refresh()
+        refresh(mr)
       end)
     end,
   })
@@ -343,7 +399,7 @@ end
 local MORE = {}
 
 local function react_to(thread, note, after)
-  local mr = session.current
+  local mr = on(thread)
   if in_flight(thread, note) then
     return
   end
@@ -385,16 +441,16 @@ local function react_to(thread, note, after)
   --- one gesture, because GitLab has one.
   local function toggle(name)
     if not (given[name] and given[name].mine) then
-      glab.award(mr.root, mr.iid, note.id, name, function(data, err)
+      glab.award(mr.root, at(mr), note.id, name, function(data, err)
         if not data then
-          session.refused("could not react", err)
+          refused(mr, "could not react", err)
           return
         end
-        session.refresh(after)
+        refresh(mr, after)
       end)
       return
     end
-    glab.note_awards(mr.root, mr.iid, note.id, function(awards, err)
+    glab.note_awards(mr.root, at(mr), note.id, function(awards, err)
       local id = nil
       for _, award in ipairs(type(awards) == "table" and awards or {}) do
         if award.name == name and vim.tbl_get(award, "user", "username") == mr.me then
@@ -408,12 +464,12 @@ local function react_to(thread, note, after)
         )
         return
       end
-      glab.unaward(mr.root, mr.iid, note.id, id, function(ok, why)
+      glab.unaward(mr.root, at(mr), note.id, id, function(ok, why)
         if not ok then
-          session.refused("could not take it back", why)
+          refused(mr, "could not take it back", why)
           return
         end
-        session.refresh(after)
+        refresh(mr, after)
       end)
     end)
   end

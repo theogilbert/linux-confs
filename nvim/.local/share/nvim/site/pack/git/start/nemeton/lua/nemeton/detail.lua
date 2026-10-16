@@ -45,6 +45,11 @@ function M.ago(iso)
     hour = tonumber(h),
     min = tonumber(mi),
     sec = 0,
+    -- As standard time, which is how `os.date("!*t")` below comes back:
+    -- left to guess, `os.time` reads a summer timestamp as daylight
+    -- time and the now beside it as standard, and every age is an hour
+    -- too old from March to October.
+    isdst = false,
   })
   -- os.time read the timestamp as local; GitLab wrote it as UTC.
   local secs = os.difftime(os.time(os.date("!*t")), t)

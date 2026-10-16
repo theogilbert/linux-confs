@@ -1717,19 +1717,21 @@ function M.render(thread, opts)
         head[2][1] = room > 0 and fit(head[2][1], room) or ""
       end
     end
-    -- The whole head is one thing to rest the cursor on: what it says in
-    -- a word -- "2d", eight digits of a sha -- is said exactly in the
-    -- float `who.lua` opens over it.
-    if note.created_at or sha then
-      local stamp = {
+    -- What the head says in a word -- "2d", eight digits of a sha -- is
+    -- said whole in the float `who.lua` opens over that word: the time
+    -- over the age, the commit over the sha. Two answers and not one
+    -- float of both, because the commit's is a page of its own -- the
+    -- message, the files -- and the question asked of the age is only
+    -- ever "when".
+    if spare[2] and note.created_at then
+      head[spare[2]].ref = { kind = "stamp", written = note.created_at }
+    end
+    if spare[1] then
+      head[spare[1]].ref = {
         kind = "stamp",
-        written = note.created_at,
         sha = sha,
-        pushed = sha and sha == note.commit and note.pushed_at or nil,
+        pushed = sha == note.commit and note.pushed_at or nil,
       }
-      for _, chunk in ipairs(head) do
-        chunk.ref = stamp
-      end
     end
     table.insert(out, head)
 

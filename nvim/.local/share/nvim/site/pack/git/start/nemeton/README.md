@@ -138,6 +138,10 @@ rest.
 | `:Nemeton unapprove` | take the approval back |
 | `:Nemeton merge` | merge it when its pipeline succeeds, after asking |
 | `:Nemeton refresh` | refetch the discussions and the merge request's pipeline |
+| `:Nemeton issues` | the project's issues, searched as you type; needs no review open |
+| `:Nemeton issue 12` | issue #12, in a tab of its own; needs no review open |
+| `:Nemeton issue` | ask which, completing with the issue search as you type |
+| `:Nemeton new-issue` | a window for an issue of your own; over a range, its description starts with a link to the lines and the lines |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
 | `:Nemeton token` | type a token in for this editor session |
@@ -149,7 +153,11 @@ rest.
 way in — it asks for a number and completes over what is open, by number
 and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
-`<leader>mo` (`keys.global.open`) is the same thing on a key.
+`<leader>mom` (`keys.global.open`) is the same thing on a key, and
+`<leader>mi` (`keys.global.issues`) is the project's issues.
+`<leader>moi` (`keys.global.issue`) asks for an issue the same way,
+completing with the issue search as it is typed — `proxy` offers the
+proxy one — on what the cache has, so it is up on the keypress.
 
 `<leader>mL` puts a link to the line under the cursor — or to the
 selection, in visual mode — on the clipboard, and is global too: what
@@ -302,7 +310,7 @@ request itself, which has no code to be read beside; the pane stays up
 while the reply is written. `r` replies to it, `a` writes a comment on
 the merge request, `t` writes one people can reply to, `e` edits the
 comment under the cursor, `d` deletes it, `K` says who gave the reaction
-under the cursor, when the comment was written or where the link goes,
+under the cursor, when the comment was written, what its commit was, or where the link goes,
 `<leader>mL` copies a link to it, `R` refetches, `q` closes. Every thread is there whole —
 every answer, and for one on code the lines it is about quoted above the
 first note — under a rule naming where it sits: `── src/app.lua:3 ──`,
@@ -339,6 +347,11 @@ stays where it is. A comment this review cannot show — one on another
 merge request, one resolved while resolved threads are hidden, one
 deleted since it was linked — falls back to the clipboard and says which
 of those it was.
+
+**An issue of this project is a third** — `#12`, `group/proj#12` where
+that is this project, or a link to its page (`/-/issues/12`, or
+`/-/work_items/12` as the forge now spells it): it opens in its tab.
+One of another project is copied, as before.
 
 **A link to a file of this repository is the other exception**, for the
 same reason: the file is on the disk, and a key that copied a URL to it
@@ -420,6 +433,64 @@ prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
 on `]m`, in the quickfix list.
 
+`<leader>mi`, or `:Nemeton issues`, is the project's issues in a float
+where the queue is, with its keys: `<CR>` opens one, `d` shows what it
+says under the list, `s` walks open → closed → all, `o` opens it on
+GitLab, `r` asks the forge what changed (and compares every comment),
+`+` files one, `q` closes. The rows come from the cache (see [Issues](#issues) under
+Configuration), so the window is full on the keypress and the forge is
+asked behind it. A row is the number, the title, who has it, how stale
+it is, how many comments, and the labels in their own colours.
+
+`/` searches, **narrowing the list on every key typed**; `<CR>` keeps
+the search and `<Esc>` puts the list back. Words are looked for in the
+title, labels, description and every comment — smartcase — and ranked
+by where they were found; `"a phrase"` is whole and `-word` excludes.
+The filters are the forge's own filter-bar words: `label:bug`
+(`label:"needs docs"`), `assignee:@me` / `none` / `any`,
+`author:alice`, `state:closed` / `all`, each negated with `-`, and `#12`
+for one issue. The box completes them, and the labels and people the
+cache has after them. A row found by its description or a comment has a
+line under it saying where — `comment · alice ·` — and quoting the line,
+the word picked out: neither is on the screen, and a row nobody can
+account for is one nobody trusts.
+
+`:Nemeton issue 12` opens an issue of the project — no review needed —
+in a **tab** of its own rather than a float: an issue is the thing being
+read, kept open while a branch is written to fix it and gone back to,
+and a tab is the editor's way of keeping a page open to one side. `gt`
+reaches it, several issues are several tabs, and opening one already
+open goes to its tab. At the top, what it is and whose; then its state
+when it is closed, who it is assigned to, its labels in their own
+colours, its reactions, the merge requests about it and how many
+comments it has; then the description. The keys are the merge request
+window's where the two do the same thing: `c` shows or hides its
+comments, `e` rewrites the description in the composer, `R` retitles
+it, `l` and `a` tick its labels and assignees on and off (a list that
+comes back with the tick moved until you dismiss it, and one change
+sent then), `x` closes or reopens it after asking, `o` opens it on GitLab, `r`
+refetches, and `q` closes the tab and goes back to the one it came
+from. It is drawn from the cache on the keypress and from the forge as
+soon as that answers.
+
+Its comments open beside it in a split placed like the review's pane
+(`issues.comments = false` leaves that to `c`), every thread whole,
+with the comments window's keys on the comment under the cursor: `r`
+replies, `a` comments, `t` starts a thread, `e` edits, `d` deletes, `+`
+reacts, `K` hovers, `<C-]>` follows, `<leader>mL` copies a link, `R`
+refetches, `q` closes the pane and leaves the issue. Everything is
+posted as it is sent — GitLab keeps no unsent comments on an issue —
+and a reply to a comment posted on its own turns it into a thread, as
+on the page.
+
+`+` in the issue list, or `:Nemeton new-issue`, is the same window for
+an issue: its title, labels, assignees and description, each a field
+`<CR>` changes, `<C-s>` files it and opens it in its tab, `X` throws it
+away, and `q` keeps it for the next `+` in the same editor session.
+Over a range or a selection — `:'<,'>Nemeton new-issue` — the
+description starts with a permalink to those lines and the lines
+themselves, fenced in their language.
+
 `+` in the list, or `:Nemeton create`, is a window for a merge request
 that does not exist yet: the title, whether it is a draft, the
 description, the branch it goes to and the labels, each a field the
@@ -448,7 +519,7 @@ the review starts on the new one, discussions and all.
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
 comments, `d` deletes one, `K` says who gave the reaction under the
-cursor, when the comment was written or where the link goes,
+cursor, when the comment was written, what its commit was, or where the link goes,
 `<leader>mL` copies a link to the comment under the cursor, `R` refetches, `q` closes.
 
 The pane's own header is the one line of it that does not scroll, so it
@@ -470,8 +541,8 @@ In the pane (`<leader>mx`): the same keys again — `<CR>` goes to the
 code the thread being read is about, landing the way `]m` lands, with
 the whole span of a comment written over a selection in the middle of
 the window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says
-who gave the reaction under the cursor, when the comment was written or
-where the link goes, `<leader>mL` copies a link to the comment under the cursor, `R`
+who gave the reaction under the cursor, when the comment was written, what its commit was,
+or where the link goes, `<leader>mL` copies a link to the comment under the cursor, `R`
 refetches — and `q` folds the conversations away rather than only
 closing the window, because while it is open the pane *is* what expanded
 means. Closing it any other way says the same thing: the mode follows
@@ -1052,12 +1123,16 @@ seconds as Neovim ships, a few hundred milliseconds in most configs.
 `comments.hover = false` leaves only the key.
 
 The head of a note — `reviewer · 2d · a1b2c3d4` — answers `K` the
-same way, in the pane and in the comments and conversation windows:
-exactly when the comment was written and when its commit was made, as
-`Thursday 27 August 2026, 12:00:00 CEST`. The key only, not the rest:
-the head is the line the cursor crosses on the way into every note.
-The commit's time is the clone's; where the clone has not got it, it is
-when that commit was pushed to the merge request.
+same way, in the pane and in the comments and conversation windows, a
+different answer for each word. On the age, exactly when the comment
+was written, as `Thursday 27 August 2026, 12:00:00 CEST`. On the sha,
+the commit: the whole sha, when it was made, its message and the rest
+of its description, and the lines it added and removed, in all and per
+file, the files past twenty counted rather than listed. That is the
+clone's `git show`; where the clone has not got the commit, the float
+says when it was pushed to the merge request instead. The key only, not
+the rest: the head is the line the cursor crosses on the way into every
+note.
 
 A link answers `K` too. It is drawn as the words it was given, in
 `NemetonLink`, and not the URL behind them; `K` on it says the address,
@@ -1271,6 +1346,39 @@ effect, without printing the token.
   alone: a POST that timed out may have landed, and sending it again
   posts it twice. A plain number is one try for every call.
 
+### Issues
+
+Every issue of the project is kept on this side of the forge — its
+fields and every comment on it — so that a search is a walk over a
+table as you type, and over what was said under an issue as well as
+what it says, which GitLab's own search is not.
+
+```lua
+issues = {
+  cache = true,      -- write it down; false keeps it for this session only
+  cache_dir = nil,   -- nil: $XDG_STATE_HOME/nemeton/issues/, a file a project
+  page = 50,         -- issues a call of the sync asks for
+  sweep_days = 7,    -- how often every comment is compared against the forge
+  comments = true,   -- open an issue with its comments in a pane beside it
+}
+```
+
+The first sync is the whole project, oldest change first, written down
+as it goes so that one broken off carries on where it stopped. After
+that a sync is three questions, because an issue changes in three ways
+the forge tells apart. Its own fields move its `updated_at`, so what
+changed since is asked for by time. A comment added does **not** move
+`updated_at` — nor does a reaction, a link or a mention — but it is an
+event, and the project's events name the issues commented on. A comment
+edited or deleted, or an issue deleted, is neither, so once a week (and
+on `r` in the list) every issue's comment ids and edit times are
+compared against what is kept, no bodies and a hundred issues a call,
+and what differs is fetched again. An issue opened is always asked of
+the forge afresh.
+
+What is written includes the confidential issues your token can read,
+in a file only you can read (`0600`). `cache = false` writes nothing.
+
 ## The log
 
 Every subprocess nemeton runs — every `glab` call, so every API call, and
@@ -1441,6 +1549,10 @@ git config core.hooksPath .githooks
 - **Resolvable state per note.** A thread is "resolved" here when every
   resolvable note in it is; GitLab is slightly more subtle.
 - **Pagination in the list.** First 30, ordered by last touched.
+- **More of an issue.** Its labels and assignees are edited here; its
+  milestone, due date, weight, epic, time tracking and links to other
+  issues are not, and boards are not drawn at all. Nor is "a branch and
+  a merge request for this issue" — the natural next step.
 
 ## License
 

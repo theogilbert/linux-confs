@@ -314,7 +314,7 @@ function M.open()
     -- What the word under the cursor points at -- a link, a commit, the
     -- person a comment is calling on. See `comments.follow`.
     { k.follow, follow.here, "follow what is under the cursor" },
-    { k.who, who.show, "who reacted, when it was written, where a link goes" },
+    { k.who, who.show, "who reacted, when, what commit, where a link goes" },
     -- `q` puts the cursor back where it was; the keys below that
     -- close this window are on their way somewhere and must not.
     {

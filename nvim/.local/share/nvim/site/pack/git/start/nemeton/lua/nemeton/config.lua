@@ -95,6 +95,45 @@ return {
     remember_path = nil,
   },
 
+  -- The project's issues, which are kept here whole -- every issue and
+  -- every comment on it -- so that a search is over all of them as you
+  -- type rather than a round trip a keystroke, and over what was said
+  -- under an issue as well as what it says, which the forge's own
+  -- search is not |nemeton-issues-cache|.
+  issues = {
+    -- Whether they are written to disk. On, because the first sync of a
+    -- project is a few hundred calls and nobody should pay for it twice.
+    -- What is written includes confidential issues this token can read,
+    -- in a file only you can read (0600); `false` writes nothing, keeps
+    -- them for this editor session only, and syncs again on the next.
+    cache = true,
+
+    -- Where. Nil is `$XDG_STATE_HOME/nemeton/issues/`, one file per
+    -- project, beside the log and the merge requests the prompt
+    -- remembers.
+    cache_dir = nil,
+
+    -- How many issues a call of the sync asks for. The comments come
+    -- with them, a hundred an issue, and the forge scores that shape at
+    -- half its complexity ceiling whatever the page: this is how long
+    -- one call takes, not whether it is allowed.
+    page = 50,
+
+    -- How many days the cache goes without being compared, comment by
+    -- comment, against the forge. An edited comment, a deleted one and
+    -- a deleted issue are the three changes nothing reports: the forge
+    -- does not move an issue's `updated_at` for them, and they are not
+    -- events. So once a week every issue's comment ids and edit times
+    -- are asked for -- no bodies, a call a hundred issues -- and what
+    -- differs is fetched again. `r` in the list does it now.
+    sweep_days = 7,
+
+    -- Whether an issue opens with its comments in the pane beside it.
+    -- On, because an issue is mostly its conversation; `c` in the
+    -- issue's tab opens and closes the pane either way.
+    comments = true,
+  },
+
   comments = {
     -- What sits in the gutter on a line that carries a thread. Two
     -- glyphs, because "there is a conversation here" and "there is an
@@ -509,7 +548,10 @@ return {
     -- a file of this repository is the other, for the same reason: the
     -- forge's `…/-/blob/<ref>/src/app.lua#L12` names a file on the
     -- disk, and `true` opens it on the line. A file the checkout has
-    -- not got is a page, and is copied like one.
+    -- not got is a page, and is copied like one. And an issue of this
+    -- project -- `#12`, `group/proj#12`, or a link to its page -- is a
+    -- tab this editor opens, so `true` opens it there; one of another
+    -- project is copied. `issue = false` leaves a link to one to `url`.
     --
     -- `url` and `path` are the two halves of what was one `link`: a
     -- page anywhere, and a page on this forge written as the path to
@@ -931,11 +973,16 @@ return {
       list = "<leader>ml",
       -- ...and the other way in, for the reviewer who knows which one:
       -- a prompt for the number, completing over what is open by
-      -- number and by title. Unbound, because the queue is the way in
-      -- that a reviewer wants nine times out of ten and two global
-      -- keys for one plugin is one too many. `:Nemeton open` is it
-      -- typed.
-      open = "<leader>mo",
+      -- number and by title. `:Nemeton open` is it typed. Under
+      -- `<leader>mo`, which is "open by number" for both things that
+      -- have one: `m` a merge request, `i` an issue.
+      open = "<leader>mom",
+      -- The project's issues, searched as you type. Beside the queue's
+      -- key, and global like it: an issue needs no review open.
+      issues = "<leader>mi",
+      -- An issue by number, or by what it says: the prompt completes
+      -- with the list's own search.
+      issue = "<leader>moi",
       -- A permalink to the line, or to the selection, on the clipboard:
       -- what you paste into a comment to point at code the comment is
       -- not on, or into a chat window to point at code at all. Global
@@ -1063,7 +1110,7 @@ return {
       edit = "e", -- rewrite one of the comments in this thread
       delete = "d", -- delete one of them, after asking
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who reacted, when it was written, where a link goes
+      who = "K", -- who reacted, when, what commit, where a link goes
       -- A link to the thread under the cursor on the clipboard. The
       -- same key as on a line of code, because it is the same gesture
       -- -- a link to what the cursor is on -- and the one key in these
@@ -1106,6 +1153,68 @@ return {
       help = "g?", -- every key above, in a float
     },
 
+    -- The project's issues, in a float: the merge request queue's keys
+    -- wherever the two do the same thing, and `/`, which is the reason
+    -- the issues are kept here at all.
+    issue_list = {
+      select = "<CR>", -- open it, in a tab
+      search = "/", -- narrow the list as you type |nemeton-issues-search|
+      description = "d", -- what it says, under the list
+      state = "s", -- open, closed, or all of them
+      create = "+", -- file one |nemeton-issue-create-window|
+      browser = "o",
+      -- Asks the forge what changed -- and compares every comment, which
+      -- otherwise happens once a week (`issues.sweep_days`).
+      refresh = "r",
+      quit = "q",
+      help = "g?", -- every key above, in a float
+    },
+
+    -- An issue you are about to file: the merge request create window's
+    -- keys, since it is the same window with other fields.
+    issue_create = {
+      field = "<CR>", -- change the field under the cursor
+      submit = "<C-s>", -- file it
+      discard = "X", -- throw away what has been typed
+      quit = "q", -- close it; what is typed is here again next time
+      help = "g?", -- every key above, in a float
+    },
+
+    -- The comments beside an issue: the comments window's keys, since it
+    -- is the same conversation with the same verbs.
+    issue_comments = {
+      reply = "r",
+      add = "a", -- a comment on the issue, on its own
+      thread = "t", -- a thread on the issue, that people can answer
+      edit = "e",
+      delete = "d",
+      react = "+",
+      follow = "<C-]>", -- what the word under the cursor points at
+      who = "K", -- who reacted, when, what commit, where a link goes
+      link = "<leader>mL", -- a link to the comment under the cursor, copied
+      refresh = "R",
+      quit = "q", -- closes the pane, not the issue
+      help = "g?", -- every key above, in a float
+    },
+
+    -- An issue, in its tab: the merge request window's keys wherever
+    -- the two do the same thing, so that a hand that knows one knows
+    -- the other.
+    issue = {
+      comments = "c", -- what has been said under it, in a pane beside it
+      describe = "e",
+      retitle = "R",
+      -- Each a list that comes back with the tick moved until it is
+      -- dismissed, and one change sent then: labels come in threes.
+      labels = "l",
+      assignees = "a",
+      close = "x", -- close it, or reopen a closed one, after asking
+      browser = "o",
+      refresh = "r",
+      quit = "q", -- closes the tab
+      help = "g?", -- every key above, in a float
+    },
+
     -- Every thread on the merge request, read as conversation rather
     -- than as a list of places to jump to.
     conversation = {
@@ -1114,7 +1223,7 @@ return {
       edit = "e",
       delete = "d",
       follow = "<C-]>", -- what the word under the cursor points at
-      who = "K", -- who reacted, when it was written, where a link goes
+      who = "K", -- who reacted, when, what commit, where a link goes
       link = "<leader>mL", -- a link to the comment under the cursor, copied
       refresh = "R",
       quit = "q",

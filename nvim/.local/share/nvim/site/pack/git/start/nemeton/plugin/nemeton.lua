@@ -44,6 +44,13 @@ if keys.list and keys.list ~= "" then
   -- the old one back rather than leaving both.
   vim.g.nemeton_global_list = keys.list
 end
+-- ...and the project's issues, which need no merge request either.
+if keys.issues and keys.issues ~= "" then
+  vim.keymap.set("n", keys.issues, function()
+    require("nemeton").issues()
+  end, { silent = true, desc = "nemeton: issues" })
+  vim.g.nemeton_global_issues = keys.issues
+end
 -- ...and a link to the line under the cursor, which needs a project and
 -- not a merge request, so it is here with the way in rather than with
 -- the review keys.

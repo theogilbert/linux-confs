@@ -25,7 +25,7 @@
 -- they do with it. `config.comments.follow` is the kinds, and `true` in
 -- any of them is that.
 --
--- With two exceptions, which are the two destinations that are not a
+-- With three exceptions, which are the destinations that are not a
 -- page somewhere else. A link to another comment on this merge request
 -- is a link to a conversation this editor already has open, and `true`
 -- goes to it. And a link to a file of this repository -- the
@@ -34,7 +34,9 @@
 -- can open, and `true` opens it on the line. Nothing is opened that
 -- was not on the disk already, no browser is raised, and the reader
 -- who pressed the key on "see !7 (comment 1234)" or on "the check in
--- `src/app.lua#L40`" asked for exactly this.
+-- `src/app.lua#L40`" asked for exactly this. And an issue of this
+-- project -- `#12`, or a link to it -- is a tab this editor can open
+-- (`nemeton.issue`), and `true` opens it there.
 --
 -- The refs themselves come from `threads.render`, which puts what a run
 -- points at beside the run: this module only remembers where they
@@ -60,17 +62,31 @@ local drawn = {}
 --- passes what it does instead, and one with nowhere to go passes
 --- nothing.
 ---
+--- `on` is what the conversation in it hangs off, where that is not
+--- the merge request under review: an issue, whose page is where its
+--- `#12` and its uploads are measured from. See `nemeton.edit`.
+---
 --- ...and forgets the buffers that have gone away, here rather than on
 --- an autocommand of their own: these windows wipe their buffer when
 --- they close, buffer numbers are reused, and there are never more than
 --- three of them to walk.
-function M.set(buf, refs, leave)
+function M.set(buf, refs, leave, on)
   for other in pairs(drawn) do
     if not vim.api.nvim_buf_is_valid(other) then
       drawn[other] = nil
     end
   end
-  drawn[buf] = { refs = refs or {}, leave = leave }
+  drawn[buf] = { refs = refs or {}, leave = leave, on = on }
+end
+
+--- What the conversation drawn in `buf` hangs off: what `M.set` was
+--- told, or the merge request under review.
+function M.subject(buf)
+  local on = (drawn[buf] or {}).on
+  if on then
+    return on
+  end
+  return require("nemeton.session").current
 end
 
 --- The reference the cursor is inside at (row, col) of `buf` -- 0-based,
@@ -112,24 +128,26 @@ end
 --- before the project. Read out of the merge request's own page rather
 --- than asked for, because that is a string this plugin already has and
 --- is right even where `glab` is reading its host from somewhere this
---- does not know about.
-local function forge()
-  local session = require("nemeton.session")
-  local url = session.current and session.current.web_url
+--- does not know about. `on` is the page to read it off where that is
+--- not the review's: an issue's.
+local function forge(on)
+  on = on or require("nemeton.session").current
+  local url = on and on.web_url
   if not url then
     return nil, nil
   end
-  local project = url:match("^(.*)/%-/merge_requests/%d+")
+  local project = url:match("^(.*)/%-/[%w_]+/%d+")
   return url:match("^(https?://[^/]+)"), project
 end
 
---- The branch a relative link is measured against.
+--- The branch a relative link is measured against: the one the merge
+--- request goes into, or for an issue the project's default.
 ---
---- `main` where there is no review open, which is only reached by a
---- caller asking about a link it cannot have read anywhere.
-local function branch()
-  local session = require("nemeton.session")
-  return (session.current and session.current.target_branch) or "main"
+--- `main` where neither is known, which is only reached by a caller
+--- asking about a link it cannot have read anywhere.
+local function branch(on)
+  on = on or require("nemeton.session").current
+  return (on and on.target_branch) or "main"
 end
 
 --- Where a reference points, as a URL, or nil for one that has nowhere
@@ -154,11 +172,14 @@ end
 --- default. They are the same branch on all but a merge request
 --- stacked on another one -- and on that one, the file as the branch
 --- under review has it is the file being talked about.
-function M.href(ref)
+---
+--- `on` is what the link was written on, where that is not the review
+--- (`M.subject`).
+function M.href(ref, on)
   if not ref then
     return nil
   end
-  local host, project = forge()
+  local host, project = forge(on)
   -- The three that carry where they point: a page, a page on this forge
   -- written as the path to one, and a comment anchored on a page.
   if ref.kind == "url" or ref.kind == "path" or ref.kind == "thread" then
@@ -169,8 +190,7 @@ function M.href(ref)
     -- A fragment on its own is somewhere on the page it was written on,
     -- which is this merge request.
     if href:sub(1, 1) == "#" then
-      local session = require("nemeton.session")
-      local page = session.current and session.current.web_url
+      local page = (on or require("nemeton.session").current or {}).web_url
       return page and (page .. href) or nil
     end
     if href:match("^/uploads/") then
@@ -179,7 +199,7 @@ function M.href(ref)
     if href:sub(1, 1) == "/" then
       return host and (host .. href) or nil
     end
-    return project and ("%s/-/blob/%s/%s"):format(project, branch(), href) or nil
+    return project and ("%s/-/blob/%s/%s"):format(project, branch(on), href) or nil
   end
   if ref.kind == "commit" then
     return project and (project .. "/-/commit/" .. ref.text) or nil
@@ -234,10 +254,11 @@ end
 --- it: the merge request's page with `#note_<id>` on the end, which is
 --- the anchor |nemeton-follow| reads back. Nil for a comment the forge
 --- has not got -- a draft, or one still on its way -- and for a merge
---- request this plugin never learned the URL of.
-function M.note_link(note)
-  local session = require("nemeton.session")
-  local page = session.current and session.current.web_url
+--- request this plugin never learned the URL of. `on` is the page the
+--- note is on, where that is not the review's.
+function M.note_link(note, on)
+  on = on or require("nemeton.session").current
+  local page = on and on.web_url
   if not (page and note and note.id) or note.draft or note.sending then
     return nil
   end
@@ -260,7 +281,7 @@ function M.copy_note(thread, note)
   if not note then
     return
   end
-  local url = M.note_link(note)
+  local url = M.note_link(note, thread and thread.on)
   if not url then
     session.notify(
       (note.draft or note.sending) and "not sent yet — nothing on the forge to link to"
@@ -320,10 +341,10 @@ end
 --- alternative, refusing every link not written against the head, is a
 --- key that works on half the links in a review and says nothing about
 --- which half.
-function M.file_of(href)
-  local session = require("nemeton.session")
-  local _, project = forge()
-  local root = session.current and session.current.root
+function M.file_of(href, on)
+  on = on or require("nemeton.session").current
+  local _, project = forge(on)
+  local root = on and on.root
   if not (href and project and root) then
     return nil
   end
@@ -351,6 +372,43 @@ function M.file_of(href)
       -- test: a file of somebody else's project that happens to share
       -- a path with one of ours, which is a page.
       return nil
+    end
+  end
+  return nil
+end
+
+--- The number of the issue of *this* project a reference names, or nil
+--- for one of another project or for anything that is not an issue.
+---
+--- `#12` is one of this project's; `group/proj#12` is one where that
+--- is this project's path, however it is cased; and a link to
+--- `…/group/proj/-/issues/12` -- or `/-/work_items/12`, which is what
+--- the forge's own pages call one since 18 -- with or without an anchor
+--- on the end, is one too. `href` is `M.href(ref)`, worked out already.
+function M.issue_of(ref, href, on)
+  if not ref then
+    return nil
+  end
+  local _, project = forge(on)
+  local mine = project and project:match("^https?://[^/]+/(.*)$")
+  if ref.kind == "issue" then
+    local elsewhere, number = (ref.text or ""):match("^(.-)#(%d+)$")
+    if not number then
+      return nil
+    end
+    if elsewhere == "" or (mine and elsewhere:lower() == mine:lower()) then
+      return tonumber(number)
+    end
+    return nil
+  end
+  if (ref.kind == "url" or ref.kind == "path") and href and project then
+    for _, noun in ipairs({ "issues", "work_items" }) do
+      local number = href:lower():match(
+        "^" .. vim.pesc(project:lower()) .. "/%-/" .. noun .. "/(%d+)[#?]?[^/]*$"
+      )
+      if number then
+        return tonumber(number)
+      end
     end
   end
   return nil
@@ -486,7 +544,7 @@ end
 --- with it nil where this plugin cannot work one out: what to do with
 --- `a1b2c3d4` is a question `git` can answer without a forge, and this
 --- is not the module to decide it cannot be answered.
-function M.go(ref, leave)
+function M.go(ref, leave, on)
   if not ref then
     return false
   end
@@ -503,7 +561,7 @@ function M.go(ref, leave)
   if not how then
     return false
   end
-  local href = M.href(ref)
+  local href = M.href(ref, on)
   -- The thread the comment named, where it is one this review has open:
   -- worked out before anything is done about it, because it is the
   -- difference between a place to go and a link to copy -- and it is
@@ -519,7 +577,7 @@ function M.go(ref, leave)
   -- the answer.
   local file = nil
   if ref.kind == "url" or ref.kind == "path" then
-    file = M.file_of(href)
+    file = M.file_of(href, on)
   end
   if type(how) == "function" then
     how(ref.text, href, thread, file)
@@ -527,6 +585,18 @@ function M.go(ref, leave)
   end
   if thread then
     return shown(thread, leave)
+  end
+  -- ...and an issue of this project, which is a tab this editor can
+  -- open rather than a page to send somebody to: the third destination
+  -- that is not somewhere else. One of another project is a link, as
+  -- it always was.
+  local issue = M.issue_of(ref, href, on)
+  if issue and (ref.kind == "issue" or follow.issue ~= false) then
+    if leave then
+      leave()
+    end
+    require("nemeton.issue").open(issue)
+    return true
   end
   if file then
     return require("nemeton.session").goto_file(file.path, file.line, leave)
@@ -547,7 +617,7 @@ end
 function M.here()
   local buf = vim.api.nvim_get_current_buf()
   local pos = vim.api.nvim_win_get_cursor(0)
-  return M.go(M.at(buf, pos[1] - 1, pos[2]), (drawn[buf] or {}).leave)
+  return M.go(M.at(buf, pos[1] - 1, pos[2]), (drawn[buf] or {}).leave, (drawn[buf] or {}).on)
 end
 
 return M

@@ -42,6 +42,10 @@ local answered = nil
 -- changed since the window opened can ask for it again. See
 -- `M.refresh`.
 local menu = nil
+-- Called where the prompt is dismissed rather than answered, for the
+-- caller that changed something while it was being typed into and has
+-- to put it back. See `opts.on_cancel`.
+local cancelled = nil
 
 --- Puts `completeopt` back, closes the window, and hands the cursor to
 --- wherever it came from.
@@ -77,10 +81,16 @@ local function shut()
   end
 end
 
---- Dismissed: nothing is answered and nothing happens.
+--- Dismissed: nothing is answered, and nothing happens but what the
+--- caller asked to have happen on the way out (`opts.on_cancel`).
 function M.cancel()
   answered = nil
+  local undo = cancelled
+  cancelled = nil
   shut()
+  if undo then
+    undo()
+  end
 end
 
 --- Accepted: what is on the line, with the spaces off both ends.
@@ -95,7 +105,7 @@ function M.accept()
     text = vim.trim(vim.api.nvim_buf_get_lines(M.buf, 0, 1, false)[1] or "")
   end
   local said = answered
-  answered = nil
+  answered, cancelled = nil, nil
   shut()
   if said then
     vim.schedule(function()
@@ -133,6 +143,14 @@ end
 ---               handed to the editor and not typed at it.
 ---   `menu`      `false` for no list until something has been typed.
 ---   `text`      what is in it to start with, if anything.
+---   `on_change` `f(line)`, on every change to what is typed: for the
+---               prompt whose answer is acted on as it is typed -- a
+---               search, narrowing a list under it.
+---   `on_cancel` `f()`, where it is dismissed: what puts back what
+---               `on_change` changed.
+---   `at`        `{ row, col, width }` on the editor, for a prompt that
+---               belongs to a window of its own and sits over it rather
+---               than in the middle of the screen.
 ---
 --- `cb` is called with the answer, and not at all where the prompt was
 --- dismissed -- which is a different thing from being answered with
@@ -141,6 +159,7 @@ function M.open(opts, cb)
   M.cancel()
   opts = opts or {}
   answered = cb
+  cancelled = opts.on_cancel
   back = win.came_from()
 
   M.buf = vim.api.nvim_create_buf(false, true)
@@ -154,12 +173,14 @@ function M.open(opts, cb)
   -- and never wider than the editor.
   local width = math.max(vim.fn.strdisplaywidth(title) + 2, 34)
   width = math.min(width, math.max(vim.o.columns - 4, 10))
+  local at = opts.at or {}
+  width = at.width or width
   M.win = vim.api.nvim_open_win(M.buf, true, {
     relative = "editor",
     width = width,
     height = 1,
-    row = math.max(math.floor(vim.o.lines / 3), 1),
-    col = math.floor((vim.o.columns - width) / 2),
+    row = at.row or math.max(math.floor(vim.o.lines / 3), 1),
+    col = at.col or math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = "rounded",
     title = title,
@@ -248,6 +269,16 @@ function M.open(opts, cb)
         end,
       })
     end
+  end
+
+  if opts.on_change then
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+      buffer = M.buf,
+      desc = "nemeton: what is typed, acted on as it is typed",
+      callback = function()
+        opts.on_change(vim.api.nvim_buf_get_lines(M.buf, 0, 1, false)[1] or "")
+      end,
+    })
   end
 
   local function map(modes, lhs, fn)

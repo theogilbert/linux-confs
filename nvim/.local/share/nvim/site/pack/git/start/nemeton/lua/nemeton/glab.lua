@@ -574,6 +574,21 @@ end
 
 M.json = json
 
+--- What a conversation hangs off, as the API names it: a number is a
+--- merge request, which is what every caller passed before issues had
+--- comments here too, and anything else is the path already --
+--- `issues/12`. The notes, threads and reactions of both are the same
+--- endpoints under a different noun, and two copies of nine calls to
+--- say so would be two copies to keep in step.
+local function noteable(iid)
+  if type(iid) == "number" then
+    return ("merge_requests/%d"):format(iid)
+  end
+  return iid
+end
+
+M.noteable = noteable
+
 function M.available()
   return vim.fn.executable(config.glab.bin) == 1
 end
@@ -814,7 +829,7 @@ function M.discussions(root, iid, cb)
   json({
     "api",
     "--paginate",
-    ("projects/:fullpath/merge_requests/%d/discussions?per_page=100"):format(iid),
+    ("projects/:fullpath/%s/discussions?per_page=100"):format(noteable(iid)),
   }, { cwd = root }, cb)
 end
 
@@ -911,8 +926,8 @@ function M.award(root, iid, note_id, name, cb)
     "api",
     "--method",
     "POST",
-    ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji?name=%s"):format(
-      iid,
+    ("projects/:fullpath/%s/notes/%s/award_emoji?name=%s"):format(
+      noteable(iid),
       note_id,
       vim.uri_encode(name)
     ),
@@ -923,7 +938,7 @@ end
 --- `M.unaward` needs and `M.review_facts` does not have.
 function M.note_awards(root, iid, note_id, cb)
   json(
-    { "api", ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji"):format(iid, note_id) },
+    { "api", ("projects/:fullpath/%s/notes/%s/award_emoji"):format(noteable(iid), note_id) },
     { cwd = root },
     cb
   )
@@ -934,7 +949,7 @@ function M.unaward(root, iid, note_id, award_id, cb)
     "api",
     "--method",
     "DELETE",
-    ("projects/:fullpath/merge_requests/%d/notes/%s/award_emoji/%s"):format(iid, note_id, award_id),
+    ("projects/:fullpath/%s/notes/%s/award_emoji/%s"):format(noteable(iid), note_id, award_id),
   }, { cwd = root }, function(ok, out, err)
     cb(ok, vim.trim(err ~= "" and err or out))
   end)
@@ -1444,7 +1459,7 @@ function M.create_discussion(root, iid, body, position, cb)
   with_position(
     "POST",
     root,
-    ("projects/:fullpath/merge_requests/%d/discussions"):format(iid),
+    ("projects/:fullpath/%s/discussions"):format(noteable(iid)),
     { body = body, position = position },
     cb
   )
@@ -1455,7 +1470,7 @@ end
 function M.reply(root, iid, discussion_id, body, cb)
   post(
     root,
-    ("projects/:fullpath/merge_requests/%d/discussions/%s/notes"):format(iid, discussion_id),
+    ("projects/:fullpath/%s/discussions/%s/notes"):format(noteable(iid), discussion_id),
     { body = body },
     cb
   )
@@ -1464,7 +1479,7 @@ end
 --- An overall comment -- one with no position, which is what the MR page
 --- shows at the bottom rather than against a line.
 function M.create_note(root, iid, body, cb)
-  post(root, ("projects/:fullpath/merge_requests/%d/notes"):format(iid), { body = body }, cb)
+  post(root, ("projects/:fullpath/%s/notes"):format(noteable(iid)), { body = body }, cb)
 end
 
 --- Rewrites a note that is already posted.
@@ -1478,7 +1493,7 @@ function M.update_note(root, iid, note_id, body, cb)
   send(
     "PUT",
     root,
-    ("projects/:fullpath/merge_requests/%d/notes/%s"):format(iid, note_id),
+    ("projects/:fullpath/%s/notes/%s"):format(noteable(iid), note_id),
     { body = body },
     cb
   )
@@ -1563,7 +1578,7 @@ function M.delete_note(root, iid, note_id, cb)
     "api",
     "--method",
     "DELETE",
-    ("projects/:fullpath/merge_requests/%d/notes/%s"):format(iid, note_id),
+    ("projects/:fullpath/%s/notes/%s"):format(noteable(iid), note_id),
   }, { cwd = root }, function(ok, out, err)
     cb(ok, vim.trim(err ~= "" and err or out))
   end)
@@ -1663,6 +1678,241 @@ function M.resolve(root, iid, discussion_id, resolved, cb)
     "resolved=" .. tostring(resolved),
     ("projects/:fullpath/merge_requests/%d/discussions/%s"):format(iid, discussion_id),
   }, { cwd = root }, cb)
+end
+
+------------------------------------------------------------------ issues
+
+-- What an issue is kept as, asked of GraphQL because REST cannot say it
+-- in one call: the fields, and the comments under them, for a page of
+-- issues at once. Comments only (`ONLY_COMMENTS`): a system note --
+-- "added ~bug", "mentioned in !7" -- is the forge's diary rather than
+-- anything anybody said, and a search that matched on one would be a
+-- search of the diary.
+--
+-- A hundred comments an issue, which with the fields the forge scores
+-- at about half its complexity ceiling (148 of 300, on 19.3): an issue
+-- with more than that says so (`hasNextPage`) and the rest are asked
+-- for on their own (`M.issue_notes`).
+local NOTE_FIELDS = "pageInfo { hasNextPage endCursor }"
+  .. " nodes { id body createdAt updatedAt author { username name } }"
+local ISSUE_NOTES = "notes(first: 100, filter: ONLY_COMMENTS) { " .. NOTE_FIELDS .. " }"
+local ISSUE_FIELDS = "iid title description state webUrl createdAt updatedAt closedAt confidential"
+  .. " userNotesCount upvotes downvotes author { username name }"
+  .. " assignees { nodes { username name } } labels { nodes { title color textColor } } "
+  .. ISSUE_NOTES
+
+--- A GraphQL string literal. JSON's is the same grammar.
+local function literal(text)
+  return vim.json.encode(tostring(text))
+end
+
+--- Asks GraphQL `query` about the project of `root`, and hands `cb` the
+--- project's half of the answer -- or nil and why.
+local function about_project(root, query, cb)
+  M.project_path(root, function(path, err)
+    if not path then
+      cb(nil, err or "no project")
+      return
+    end
+    json(
+      { "api", "graphql", "--raw-field", "query=" .. query:format(literal(path)) },
+      { cwd = root },
+      function(data, why)
+        local got = vim.tbl_get(data or {}, "data", "project")
+        if type(got) ~= "table" then
+          local said = vim.tbl_get(data or {}, "errors", 1, "message")
+          cb(nil, said or why or "the forge did not say")
+          return
+        end
+        cb(got, nil)
+      end
+    )
+  end)
+end
+
+--- One page of the project's issues, every state, oldest change first:
+--- `opts.updated_after` for the ones changed since the last time
+--- (`updatedAfter`, which is the issue's own fields and nothing said
+--- under it -- see `nemeton.issues`), `opts.iids` for the ones asked for
+--- by number, `opts.after` for the page past the last one.
+---
+--- Oldest change first, so that a sync broken off halfway has kept a
+--- prefix of the answer and can go on from the last issue it kept.
+---
+--- `cb(connection)` -- `{ count, pageInfo, nodes }` as the forge wrote
+--- them -- or `cb(nil, why)`.
+function M.issue_page(root, opts, cb)
+  local args = { "first: " .. tostring(opts.first or 50), "sort: UPDATED_ASC" }
+  if opts.after then
+    table.insert(args, "after: " .. literal(opts.after))
+  end
+  if opts.updated_after then
+    table.insert(args, "updatedAfter: " .. literal(opts.updated_after))
+  end
+  if opts.iids then
+    local quoted = vim.tbl_map(literal, opts.iids)
+    table.insert(args, ("iids: [%s]"):format(table.concat(quoted, ", ")))
+  end
+  local query = "{ project(fullPath: %s) { issues("
+    .. table.concat(args, ", ")
+    .. ") { count pageInfo { endCursor hasNextPage } nodes { "
+    .. ISSUE_FIELDS
+    .. " } } } }"
+  about_project(root, query, function(got, err)
+    cb(got and got.issues or nil, err)
+  end)
+end
+
+--- The comments of one issue past the first hundred, a page at a time.
+--- `cb(connection)` or `cb(nil, why)`.
+function M.issue_notes(root, iid, after, cb)
+  local query = ("{ project(fullPath: %%s) { issue(iid: %s) {"):format(literal(iid))
+    .. (" notes(first: 100, after: %s, filter: ONLY_COMMENTS) { "):format(literal(after))
+    .. NOTE_FIELDS
+    .. " } } } }"
+  about_project(root, query, function(got, err)
+    cb(vim.tbl_get(got or {}, "issue", "notes"), err)
+  end)
+end
+
+--- What the weekly sweep compares the cache against: every issue's
+--- number, and the id and last change of every comment on it -- no
+--- bodies, which is what makes it cheap enough to ask of all of them.
+--- See `nemeton.issues`.
+function M.issue_sweep(root, after, cb)
+  local query = "{ project(fullPath: %s) { issues(first: 100"
+    .. (after and (", after: " .. literal(after)) or "")
+    .. ") { pageInfo { endCursor hasNextPage } nodes { iid userNotesCount"
+    .. " notes(first: 100, filter: ONLY_COMMENTS) { nodes { id updatedAt } } } } } }"
+  about_project(root, query, function(got, err)
+    cb(got and got.issues or nil, err)
+  end)
+end
+
+--- The comments written on the project since `since` (a date, which is
+--- the finest the endpoint takes), a page at a time.
+---
+--- The one way to hear that an issue has been commented on: a comment
+--- does not touch the issue's `updated_at`, and neither does anything
+--- else that is not the issue's own fields. Each event names the issue
+--- it was on. An edit of a comment is not an event; the sweep is what
+--- finds those.
+function M.note_events(root, since, page, cb)
+  json({
+    "api",
+    ("projects/:fullpath/events?target_type=note&after=%s&per_page=100&page=%d"):format(
+      since,
+      page or 1
+    ),
+  }, { cwd = root }, cb)
+end
+
+--- One issue, as REST has it: what the issue window is drawn from, asked
+--- again every time it opens, since the cache is a copy for searching.
+---
+--- With the labels' details, which is their colours: the window draws a
+--- label the way the forge does, and a name alone is a label in
+--- whatever colour this plugin guessed.
+function M.issue_get(root, iid, cb)
+  json({
+    "api",
+    ("projects/:fullpath/issues/%d?with_labels_details=true"):format(iid),
+  }, { cwd = root }, cb)
+end
+
+--- The merge requests that say they close the issue or mention it, for
+--- the line of the window that says what is being done about it.
+function M.issue_related(root, iid, cb)
+  json(
+    { "api", ("projects/:fullpath/issues/%d/related_merge_requests"):format(iid) },
+    { cwd = root },
+    cb
+  )
+end
+
+--- The reactions on each comment of an issue, and whose token this is
+--- -- what `M.review_facts` is for a merge request, and as quiet:
+--- `cb(nil)` for a forge whose GraphQL would not answer, and the issue
+--- is drawn without pictures.
+---
+--- `{ me, reactions = { [note_id] = { { name, user }, ... } } }`. The
+--- ones on the issue itself are not here: GraphQL's `Issue` has none
+--- (they moved to a widget of work items), so they are REST's
+--- (`M.issue_awards`).
+function M.issue_facts(root, iid, cb)
+  local awarded = "awardEmoji { nodes { name user { username } } }"
+  local query = ("{ currentUser { username } project(fullPath: %%s) { issue(iid: %s) { "):format(
+    literal(iid)
+  ) .. "notes(filter: ONLY_COMMENTS) { nodes { id " .. awarded .. " } } } } }"
+  M.project_path(root, function(path)
+    if not path then
+      cb(nil)
+      return
+    end
+    json(
+      { "api", "graphql", "--raw-field", "query=" .. query:format(literal(path)) },
+      { cwd = root },
+      function(data)
+        local issue = vim.tbl_get(data or {}, "data", "project", "issue")
+        if type(issue) ~= "table" then
+          cb(nil)
+          return
+        end
+        local function awards(of)
+          local list = {}
+          for _, award in ipairs(vim.tbl_get(of, "awardEmoji", "nodes") or {}) do
+            table.insert(list, { name = award.name, user = vim.tbl_get(award, "user", "username") })
+          end
+          return list
+        end
+        local out = {
+          me = vim.tbl_get(data, "data", "currentUser", "username"),
+          reactions = {},
+        }
+        for _, note in ipairs(vim.tbl_get(issue, "notes", "nodes") or {}) do
+          local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
+          local given = awards(note)
+          if id and #given > 0 then
+            out.reactions[id] = given
+          end
+        end
+        cb(out)
+      end
+    )
+  end)
+end
+
+--- The reactions on the issue itself, with the ids taking one back
+--- needs.
+function M.issue_awards(root, iid, cb)
+  json({ "api", ("projects/:fullpath/issues/%d/award_emoji"):format(iid) }, { cwd = root }, cb)
+end
+
+--- Files one. `fields` is the API's own: `title`, `description`,
+--- `labels` (a list, sent as the comma-separated string the API takes)
+--- and `assignee_ids`. Answers with the issue that was made.
+function M.issue_create(root, fields, cb)
+  local body = vim.deepcopy(fields)
+  if type(body.labels) == "table" then
+    body.labels = table.concat(body.labels, ",")
+  end
+  post(root, "projects/:fullpath/issues", body, cb)
+end
+
+--- Changes one: the same fields, and `state_event` -- "close" or
+--- "reopen". Answers with the issue as it now stands.
+function M.issue_update(root, iid, fields, cb)
+  local body = vim.deepcopy(fields)
+  if type(body.labels) == "table" then
+    body.labels = table.concat(body.labels, ",")
+  end
+  send("PUT", root, ("projects/:fullpath/issues/%d"):format(iid), body, cb)
+end
+
+--- The project itself, as GitLab's own object: its page, and the
+--- default branch a link written on an issue is measured against.
+function M.project(root, cb)
+  project(root, cb)
 end
 
 return M

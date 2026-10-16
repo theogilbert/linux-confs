@@ -121,6 +121,24 @@ function M.search_scratches()
     })
 end
 
+---Live grep through the scratches private to the cwd and the global ones.
+function M.grep_scratches()
+    -- Scope names relative to the root: fzf-lua makes absolute search paths
+    -- relative to the editor cwd, which would break once rg runs from the root.
+    local scopes = {}
+    for _, dir in ipairs({ H.project_dir(), H.global_dir() }) do
+        if vim.fn.isdirectory(dir) == 1 then
+            table.insert(scopes, vim.fs.basename(dir))
+        end
+    end
+
+    fzf.live_grep({
+        cwd = H.root(),
+        search_paths = scopes,
+        winopts = { title = " Grep scratches " },
+    })
+end
+
 ---Ask which scope the new scratch belongs to, then for its name.
 function M.prompt_new_file()
     vim.ui.select({ "project", "global" }, {

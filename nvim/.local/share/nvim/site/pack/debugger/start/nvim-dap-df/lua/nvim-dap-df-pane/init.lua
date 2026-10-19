@@ -14,6 +14,10 @@ local state = {
 local default_config = {
 	size = 10,
 	limit = 500,
+	-- Character grouping digits in numeric cells (e.g. "1_234_567"). Off by
+	-- default for every column; `t` toggles it for the column under the cursor.
+	-- Set to false or "" to disable the feature.
+	thousands_separator = "_",
 }
 
 local function remove_pane(pane)

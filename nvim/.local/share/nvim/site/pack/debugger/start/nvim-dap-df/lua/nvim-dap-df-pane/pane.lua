@@ -1,8 +1,11 @@
 local DataView = require("nvim-dap-df-pane.dataview")
 local Buffer = require("nvim-dap-df-pane.buffer")
 local prompt = require("nvim-dap-df-pane.prompt")
-local help = require("nvim-dap-df-pane.help")
 local hl = require("nvim-dap-df-pane.hl")
+local table_fmt = require("nvim-dap-df-pane.table")
+local col_picker = require("nvim-dap-df-pane.col_picker")
+local row_detail = require("nvim-dap-df-pane.row_detail")
+local hover = require("nvim-dap-df-pane.hover")
 
 local Pane = {}
 Pane.__index = Pane
@@ -18,6 +21,7 @@ function Pane:new(config, pane_idx, opts)
 	self.config = config
 	self.win_id = nil
 	self.buffer = Buffer:new("[DAP DF Pane " .. pane_idx .. "]", "dap-df", false, "nofile")
+	table_fmt.setup_buf_hl(self.buffer.buf_id, "DapDfBorder")
 	-- Set up keymaps for the buffer
 	self:setup_keymaps()
 
@@ -160,75 +164,65 @@ function Pane:buf_id()
 	return self.buffer.buf_id
 end
 
+--- Create a new DataView for `expr`, configured from the plugin options.
+--- @param expr string
+--- @return DataView
+function Pane:new_dataview(expr)
+	return DataView:new(expr, self.config.limit, self.config.thousands_separator)
+end
+
+--- The cursor position in the pane, as DataView methods expect it.
+--- @return Cursor
+function Pane:cursor()
+	return { line = vim.fn.line(".") - 1, col = vim.fn.virtcol(".") }
+end
+
 -- Set up keymaps for the buffer
 function Pane:setup_keymaps()
-	self.buffer:set_keymap("n", "e", function()
-		self:prompt_expression()
-	end, { desc = "Enter DataFrame expression" })
+	local function map(key, fn, desc, group)
+		self.buffer:set_keymap("n", key, fn, { desc = desc, group = group, silent = true, nowait = true })
+	end
 
-	self.buffer:set_keymap("n", "r", function()
-		self:refresh(false)
-	end, { desc = "Refresh DataFrame display" })
+	local EXPR, COLS, NAV, WIN = "Expression", "Columns", "Navigation", "Window"
 
-	self.buffer:set_keymap("n", "d", function()
+	map("e", function() self:prompt_expression() end, "Enter DataFrame expression", EXPR)
+	map("r", function() self:refresh(false) end, "Refresh DataFrame display", EXPR)
+	map("d", function()
 		self.dataview = nil
 		self:refresh()
-	end, { desc = "Clear DataFrame expression" })
+	end, "Clear DataFrame expression", EXPR)
 
-	self.buffer:set_keymap("n", "_", function()
+	map("s", function() self:sort_column() end, "Sort by column under cursor (asc → desc → none)", COLS)
+	map("f", function() self:filter_column() end, "Filter column under cursor", COLS)
+	map("F", function() self:clear_filter() end, "Clear filter on column under cursor", COLS)
+	map("c", function() self:pick_columns() end, "Select displayed columns", COLS)
+	map("x", function() self:hide_column() end, "Hide the column under the cursor", COLS)
+	map("t", function() self:toggle_thousands_separator() end, "Toggle thousands separator for column", COLS)
+	map("K", function() self:show_column_info() end, "Show column info", COLS)
+
+	map("<CR>", function() self:show_row_detail() end, "Show the row under the cursor as a vertical table", NAV)
+	map("L", function() self:scroll_columns(1) end, "Scroll right by one column", NAV)
+	map("H", function() self:scroll_columns(-1) end, "Scroll left by one column", NAV)
+	map("gc", function() self:prompt_jump_to_column() end, "Jump to column", NAV)
+
+	map("_", function()
 		if self.on_split then
 			self.on_split(self)
 		end
-	end, { desc = "Split pane horizontally" })
-
-	self.buffer:set_keymap("n", "|", function()
+	end, "Split pane horizontally", WIN)
+	map("|", function()
 		if self.on_split then
 			self.on_split(self, "vertical")
 		end
-	end, { desc = "Split pane vertically" })
-
-	self.buffer:set_keymap("n", "q", function()
+	end, "Split pane vertically", WIN)
+	map("+", function() self:resize(vim.v.count1) end, "Grow pane height", WIN)
+	map("-", function() self:resize(-vim.v.count1) end, "Shrink pane height", WIN)
+	map("q", function()
 		if self.on_close then
 			self.on_close(self)
 		end
-                self:close()
-	end, { desc = "Close this pane" })
-
-	self.buffer:set_keymap("n", "s", function()
-		self:sort_column()
-	end, { desc = "Sort by column under cursor" })
-
-	self.buffer:set_keymap("n", "f", function()
-		self:filter_column()
-	end, { desc = "Filter column under cursor" })
-
-	self.buffer:set_keymap("n", "F", function()
-		self:clear_filter()
-	end, { desc = "Clear filter on column under cursor" })
-
-	self.buffer:set_keymap("n", "L", function()
-		self:scroll_columns(1)
-	end, { desc = "Scroll right by one column" })
-
-	self.buffer:set_keymap("n", "H", function()
-		self:scroll_columns(-1)
-	end, { desc = "Scroll left by one column" })
-
-	self.buffer:set_keymap("n", "c", function()
-		self:prompt_jump_to_column()
-	end, { desc = "Jump to column" })
-
-	self.buffer:set_keymap("n", "+", function()
-		self:resize(vim.v.count1)
-	end, { desc = "Grow pane height" })
-
-	self.buffer:set_keymap("n", "-", function()
-		self:resize(-vim.v.count1)
-	end, { desc = "Shrink pane height" })
-
-	self.buffer:set_keymap("n", "g?", function()
-		help.show(self.buffer.keymaps)
-	end, { desc = "Show help" })
+		self:close()
+	end, "Close this pane", WIN)
 end
 
 -- Grow or shrink the pane by delta lines (positive = taller, negative = shorter).
@@ -289,29 +283,17 @@ function Pane:scroll_columns(direction)
 			local cursor_virtcol = vim.fn.virtcol('.')  -- 1-indexed screen col
 			local new_virtcol = math.max(1, target + cursor_virtcol - leftcol)
 			local row = vim.fn.line('.')
-			local byte_col = vim.fn.virtcol2col(0, row, new_virtcol) - 1
+			-- A line that doesn't reach the new column (the prompt, the blank
+			-- line) can't hold the cursor there, and Neovim would scroll back
+			-- to wherever it did land: carry it onto the table's header row.
+			if vim.fn.virtcol({ row, "$" }) <= new_virtcol then
+				row = DataView.TABLE_START + 1
+			end
+			local byte_col = math.max(0, vim.fn.virtcol2col(0, row, new_virtcol) - 1)
 			vim.api.nvim_win_set_cursor(0, { row, byte_col })
 			vim.fn.winrestview({ leftcol = target })
 		end)
 	end
-end
-
---- Get column info under the cursor (1-indexed column, column name, is_index),
---- or nil if the cursor is not on a data column.
---- @return integer|nil col_idx
---- @return string|nil col_name
---- @return boolean|nil is_index
-function Pane:get_column_under_cursor()
-	local virtual_col = vim.fn.virtcol(".")
-	local col_idx = self.dataview:get_column_at_cursor(virtual_col)
-	if col_idx == nil then
-		return nil
-	end
-	local col_name = self.dataview:get_column_name(col_idx)
-	if col_name == nil then
-		return nil
-	end
-	return col_idx, col_name, self.dataview:is_index_column(col_idx)
 end
 
 -- Prompt for new expression
@@ -324,7 +306,7 @@ function Pane:prompt_expression()
             expression = current_expr,
             on_confirm = function(expr)
                 if expr ~= "" then
-                    self.dataview = DataView:new(expr, self.config.limit)
+                    self.dataview = self:new_dataview(expr)
                 else
                     self.dataview = nil
                 end
@@ -341,7 +323,7 @@ end
 function Pane:set_expression(expr)
         local current_dataview = self.dataview
 
-        self.dataview = DataView:new(expr, self.config.limit)
+        self.dataview = self:new_dataview(expr)
 	self:refresh(true, current_dataview)
 end
 
@@ -351,8 +333,7 @@ function Pane:sort_column()
 		return
 	end
 
-	local virtual_col = vim.fn.virtcol(".")
-        self.dataview:sort_column_under_cursor(virtual_col)
+	self.dataview:sort_column_under_cursor(self:cursor())
 	self:refresh()
 end
 
@@ -362,18 +343,18 @@ function Pane:filter_column()
 		return
 	end
 
-	local virtual_col = vim.fn.virtcol(".")
-        local col_name, _ = self.dataview:get_column_under_cursor(virtual_col)
-        if col_name == nil then
-                return
-        end
-        local current = self.dataview:get_column_filter_under_cursor(virtual_col) or ""
+	local cursor = self:cursor()
+	local col_name, _ = self.dataview:get_column_under_cursor(cursor)
+	if col_name == nil then
+		return
+	end
+	local current = self.dataview:get_column_filter_under_cursor(cursor) or ""
 
 	vim.ui.input({ prompt = "Filter " .. col_name .. ": ", default = current }, function(condition)
 		if condition == nil then
 			return
 		end
-                self.dataview:filter_column_under_cursor(virtual_col, condition)
+		self.dataview:filter_column_under_cursor(cursor, condition)
 		self:refresh()
 	end)
 end
@@ -436,9 +417,68 @@ function Pane:clear_filter()
 		return
 	end
 
-	local virtual_col = vim.fn.virtcol(".")
-	self.dataview:clear_filter_under_cursor(virtual_col)
+	self.dataview:clear_filter_under_cursor(self:cursor())
 	self:refresh()
+end
+
+-- Open the column picker: show/hide/reorder the displayed columns, live.
+function Pane:pick_columns()
+	if self.dataview == nil or self.dataview.column_names == nil then
+		return
+	end
+	col_picker.open(self.dataview:get_column_labels(), self.dataview:get_visible_labels(), function(selected)
+		if self.dataview == nil then
+			return
+		end
+		self.dataview:set_visible_labels(selected)
+		self:render()
+	end)
+end
+
+-- Hide the column under the cursor; `c` brings it back.
+function Pane:hide_column()
+	if self.dataview ~= nil and self.dataview:hide_column_under_cursor(self:cursor()) then
+		self:render()
+	end
+end
+
+-- Toggle digit grouping for the column under the cursor.
+function Pane:toggle_thousands_separator()
+	if self.dataview ~= nil and self.dataview:toggle_thousands_separator_under_cursor(self:cursor()) then
+		self:render()
+	end
+end
+
+-- Open the row under the cursor in a float, as a vertical `column │ value` table.
+function Pane:show_row_detail()
+	if self.dataview == nil then
+		return
+	end
+	local r = self.dataview:row_at_cursor(self:cursor())
+	if r then
+		row_detail.open(r.columns, r.row, r.title, r.selected)
+	end
+end
+
+-- Show the name, dtype, sort and filter of the column under the cursor.
+function Pane:show_column_info()
+	if self.dataview == nil then
+		return
+	end
+	local lines, hls = self.dataview:column_info_under_cursor(self:cursor())
+	if lines then
+		hover.open(lines, self.buffer.buf_id, { hls = hls, above = true })
+	end
+end
+
+-- Redraw the current DataView without re-evaluating it.
+function Pane:render()
+	if self.dataview == nil or not self.buffer:is_valid() then
+		return
+	end
+	self.buffer:set_content(self.dataview:get_lines())
+	self.buffer:apply_highlight(self.dataview:get_hl_rules())
+	self:update_truncation_indicator()
 end
 
 --- Refresh the pane content
@@ -458,9 +498,7 @@ function Pane:refresh(use_cache, rollback_dataview)
                 return  -- abort if dataview was removed during refresh operation.
             end
 
-            self.buffer:set_content(self.dataview:get_lines())
-            self.buffer:apply_highlight(self.dataview:get_hl_rules())
-            self:update_truncation_indicator()
+            self:render()
         end,
         function(err) -- on failure
             if self.dataview ~= nil then

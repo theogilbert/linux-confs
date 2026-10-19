@@ -229,15 +229,24 @@ function M.find(result, old_text, new_text, lang)
     return false
   end
 
+  -- ...but the copy in place is scored all the same, and competes. A
+  -- definition rewritten in place is still a candidate on both sides,
+  -- and left out of the scoring it was free to pair with anything that
+  -- shared its name: two settings classes whose `desc` docstrings each
+  -- gained a paragraph -- one atom each to difftastic, so wholly inside
+  -- its hunks -- came out as each docstring moved to the other class and
+  -- rewritten into its text. Where the copy in place is the better
+  -- match, it takes both nodes and nothing is drawn.
   local scored = {}
   for i, o in ipairs(olds) do
     local at = hangs_at(result, o.first)
     for j, n in ipairs(news) do
-      if o.kind == n.kind and moved(at, n) then
+      if o.kind == n.kind then
         local sim = likeness(slice(old_lines, o.first, o.last), slice(new_lines, n.first, n.last))
         local named = o.name ~= nil and o.name == n.name
         if (named and sim >= opts.named_similarity) or sim >= opts.similarity then
-          table.insert(scored, { i = i, j = j, at = at, score = (named and 1 or 0) + sim })
+          table.insert(scored, { i = i, j = j, at = at, score = (named and 1 or 0) + sim,
+            stays = not moved(at, n) })
         end
       end
     end
@@ -247,13 +256,15 @@ function M.find(result, old_text, new_text, lang)
   for _, s in ipairs(scored) do
     if not taken_i[s.i] and not taken_j[s.j] then
       taken_i[s.i], taken_j[s.j] = true, true
-      local o, n = olds[s.i], news[s.j]
-      table.insert(out, {
-        name = n.name or o.name,
-        old = { first = o.first, last = o.last },
-        new = { first = n.first, last = n.last },
-        at = s.at,
-      })
+      if not s.stays then
+        local o, n = olds[s.i], news[s.j]
+        table.insert(out, {
+          name = n.name or o.name,
+          old = { first = o.first, last = o.last },
+          new = { first = n.first, last = n.last },
+          at = s.at,
+        })
+      end
     end
   end
   table.sort(out, function(x, y) return x.new.first < y.new.first end)

@@ -51,6 +51,20 @@ fields comes back red above the same `follow = {` in green. Only where that
 changes a pairing: an edge difft already paired with its twin (a docstring's
 first rows) is left to `quiet_unchanged`.
 
+A region ends at the first row both sides agree on, and one such row can be a
+coincidence of the damage. Taking a class header out hands its methods to the
+class above: to difft they are new there and gone from below, and the agreed
+rows it still finds — a blank line, a `c = Config()` — cut that into regions
+too small for the line diff to see a method in one as the same method in
+another. So a run of regions with ONE agreed row between each is diffed as one,
+and kept as one up to the furthest such row a match crosses: a non-blank line
+identical on both sides, with its old copy on one side of the row and its new
+copy on the other, and difft calling the old copy removed and the new copy
+added. Both conditions matter. A blank line pairs with any other, and a line
+difft left unmarked was in place — a new method calling `self._write_locked()`
+otherwise matched the call an old method kept, and two edits either side of it
+were diffed as one with their rows paired off in order.
+
 ### A lone unchanged row between a deletion and an insertion — `diff.lua`
 
 A single unchanged row between two changed ones normally stays inside the hunk,
@@ -70,6 +84,16 @@ third route. `intact` now keeps a row anchored on its own identical line
 whenever the rows are going to be drawn one above their partner: the majority
 test there protects a passage, and rows spread each above the line they became
 are no passage.
+
+That still left the row swallowed wherever the hunk was drawn as a block.
+`except Exception:` → `except BaseException:` over an untouched `if` and a
+rewritten two-line comment is a 4-into-4 hunk in which only two rows resemble
+their partners, so it went up as one block: the `if` red above itself, and the
+old comment hoisted above the `except` instead of the comment that replaced it.
+So a row byte for byte the same on both sides is never swallowed. A wrap
+reindents what it wraps, so the row the rule is there for differs by its
+whitespace; one that does not differ at all was not part of the edit, and the
+two changes either side of it are two hunks.
 
 ---
 
@@ -338,6 +362,14 @@ little alike (`diff.move.named_similarity`), or no name and alike enough
 (`similarity`) — is a move, provided something that stayed sits between the
 two places; otherwise it is a rewrite in place, which the backend had right.
 
+The pair in place is still scored, and competes for both nodes: where it is
+the better match it takes them and nothing is drawn. Left out, a definition
+rewritten in place was free to pair with any other that shared its name. Two
+settings classes whose `desc` docstrings each gained a paragraph — one atom
+each, so each wholly inside its hunk — came out as each docstring moved into
+the other class and rewritten into its text. `xmoves.pair` already did this
+across files, pairing a file with itself and dropping the pair.
+
 The answer to DRAW (`result.drawn`) then has both copies carved out — with
 the blank separators that went with them — and the backend's comparison of
 the two copies spliced in at the new one. Every rule below runs on that
@@ -404,6 +436,13 @@ same and nothing was folded: the rows simply went, and they went *after* it. A
 file whose whole body was deleted otherwise put every removed row above the one
 line it had left — above the first line of the buffer, where there is nothing
 to scroll to.
+
+Nor where the row belongs to a hunk of its own. A fold leaves the row it went
+into with nothing the backend calls changed, so no hunk claims it; a row that
+is the last of a line-for-line rewrite was rewritten by that hunk, which already
+draws its old version. A rewrite followed by two blank lines and a class header
+taken out drew the rewrite's last old row a second time, above itself, with the
+header.
 
 ### Where the red comes from — `overlay.lua`
 

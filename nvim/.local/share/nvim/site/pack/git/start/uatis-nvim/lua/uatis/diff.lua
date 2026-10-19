@@ -840,6 +840,75 @@ local function realign(rows, old_lines, new_lines, classify)
     return r.lhs ~= nil and r.rhs ~= nil and r.kind == "same"
   end
 
+  --- Rows `i`..`j - 1` diffed by line: each side's rows and text, how
+  --- many of the old ones are not blank, and -- where both sides have
+  --- rows -- the pairing the line diff gives, how many non-blank rows
+  --- it matched, and which (`solid`).
+  local function by_line(i, j)
+    -- The region's own lines, in the order the alignment has them,
+    -- which for either side is simply that side's rows in file order.
+    local a_idx, b_idx, a_text, b_text = {}, {}, {}, {}
+    local a_solid = 0
+    for k = i, j - 1 do
+      if rows[k].lhs then
+        table.insert(a_idx, rows[k].lhs)
+        table.insert(a_text, old_lines[rows[k].lhs + 1] or "")
+        a_solid = a_solid + (a_text[#a_text]:match("%S") and 1 or 0)
+      end
+      if rows[k].rhs then
+        table.insert(b_idx, rows[k].rhs)
+        table.insert(b_text, new_lines[rows[k].rhs + 1] or "")
+      end
+    end
+
+    local hunks = (#a_idx > 0 and #b_idx > 0) and vim.diff(
+      terminate(table.concat(a_text, "\n")),
+      terminate(table.concat(b_text, "\n")),
+      { result_type = "indices", algorithm = config.diff.line.algorithm }
+    ) or nil
+
+    local fixed = nil
+    if hunks then
+      fixed = {}
+      local ai, bi, matched, solid = 1, 1, 0, {}
+      local function context_to(a_stop)
+        while ai < a_stop do
+          -- Identical by construction -- this is what the line diff
+          -- matched -- so `same` whatever difftastic said about the
+          -- node the row belongs to. Blank rows do not count towards
+          -- the tally: two files almost always have a blank line to
+          -- spare, and re-cutting a region around one is a
+          -- coincidence, not an alignment.
+          if a_text[ai]:match("%S") then
+            matched = matched + 1
+            table.insert(solid, { lhs = a_idx[ai], rhs = b_idx[bi] })
+          end
+          table.insert(fixed, { lhs = a_idx[ai], rhs = b_idx[bi], kind = "same" })
+          ai, bi = ai + 1, bi + 1
+        end
+      end
+      for _, h in ipairs(hunks) do
+        local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
+        context_to(ca > 0 and sa or sa + 1)
+        bi = cb > 0 and sb or sb + 1
+        -- Inside a hunk the rows really are different, and pairing
+        -- them off in order is what difftastic would have done had it
+        -- been looking at these rows alone.
+        for k = 0, math.max(ca, cb) - 1 do
+          local lhs = k < ca and a_idx[ai + k] or nil
+          local rhs = k < cb and b_idx[bi + k] or nil
+          table.insert(fixed, { lhs = lhs, rhs = rhs, kind = classify(lhs, rhs) })
+        end
+        ai, bi = ai + ca, bi + cb
+      end
+      context_to(#a_idx + 1)
+      return { a_idx = a_idx, b_idx = b_idx, a_text = a_text, b_text = b_text,
+        a_solid = a_solid, fixed = fixed, matched = matched, solid = solid }
+    end
+    return { a_idx = a_idx, b_idx = b_idx, a_text = a_text, b_text = b_text,
+      a_solid = a_solid }
+  end
+
   local out, i = {}, 1
   while i <= #rows do
     if settled(rows[i]) then
@@ -850,63 +919,82 @@ local function realign(rows, old_lines, new_lines, classify)
       while j <= #rows and not settled(rows[j]) do
         j = j + 1
       end
-      -- The region's own lines, in the order the alignment has them,
-      -- which for either side is simply that side's rows in file order.
-      local a_idx, b_idx, a_text, b_text = {}, {}, {}, {}
-      local a_solid = 0
-      for k = i, j - 1 do
-        if rows[k].lhs then
-          table.insert(a_idx, rows[k].lhs)
-          table.insert(a_text, old_lines[rows[k].lhs + 1] or "")
-          a_solid = a_solid + (a_text[#a_text]:match("%S") and 1 or 0)
+      local m = by_line(i, j)
+
+      -- A region ends at the first row the two sides agree on, and one
+      -- such row can be a coincidence of the damage rather than the end
+      -- of it: a blank line, or a `c = Config()` inside a method
+      -- difftastic matched with a different one. Taking the header off
+      -- a class hands its methods to the class above, so to difftastic
+      -- they are new there and gone from below, and its tree matcher
+      -- paired the method that WAS removed with one that stayed, by the
+      -- two lines they share. Three single agreed rows cut that into
+      -- four regions, and the line diff of each alone could not see an
+      -- unchanged method in one region as the same method in another:
+      -- it came out drawn as an edit of the removed method, as removed
+      -- again lower down, and as moved.
+      --
+      -- So the run of regions that follow one another with ONE agreed
+      -- row between each is diffed as one, and taken up to the furthest
+      -- of those rows that a match crosses: a line found identical on
+      -- both sides, not blank, with its old copy on one side of the row
+      -- and its new copy on the other. That is what says the row was a
+      -- coincidence -- the text went past it. A blank line re-paired
+      -- does not say so, since a blank line pairs with any other: taken
+      -- as enough, two edits either side of one were diffed as one and
+      -- the rows inside paired off in order, `await self._drain()`
+      -- pulled under a new `if` losing the columns that said so.
+      --
+      -- Checked over the whole run at once and not a row at a time: the
+      -- method that crossed here crossed three of them.
+      --
+      -- And only a match difftastic itself contradicts: the old copy a
+      -- row it says was removed and the new copy one it says was added.
+      -- That is the reading this whole repair exists to undo -- a line
+      -- gone from one place and the same line arrived in another. A
+      -- line difftastic left unmarked on either side was in place, and
+      -- its twin elsewhere is a coincidence the line diff fell into: a
+      -- new method calling `self._write_locked()` matched the call an
+      -- old method kept.
+      local function gone_and_back(p)
+        return classify(p.lhs, nil) ~= "same" and classify(nil, p.rhs) ~= "same"
+      end
+      local ends = { j }
+      local e = j
+      while e + 1 <= #rows and settled(rows[e]) and not settled(rows[e + 1]) do
+        e = e + 1
+        while e <= #rows and not settled(rows[e]) do
+          e = e + 1
         end
-        if rows[k].rhs then
-          table.insert(b_idx, rows[k].rhs)
-          table.insert(b_text, new_lines[rows[k].rhs + 1] or "")
+        table.insert(ends, e)
+      end
+      if #ends > 1 then
+        local wide = by_line(i, ends[#ends])
+        -- Each row's position in the run, by side.
+        local at_a, at_b = {}, {}
+        for k = i, ends[#ends] - 1 do
+          if rows[k].lhs then at_a[rows[k].lhs] = k end
+          if rows[k].rhs then at_b[rows[k].rhs] = k end
+        end
+        local reach = nil
+        for _, p in ipairs(wide.solid or {}) do
+          local lo = math.min(at_a[p.lhs], at_b[p.rhs])
+          local hi = math.max(at_a[p.lhs], at_b[p.rhs])
+          for n = 1, #ends - 1 do
+            if lo < ends[n] and hi > ends[n] and gone_and_back(p) then
+              reach = math.max(reach or 0, n)
+            end
+          end
+        end
+        if reach then
+          j = ends[reach + 1]
+          m = j == ends[#ends] and wide or by_line(i, j)
         end
       end
+      local a_idx, b_idx, a_text, b_text = m.a_idx, m.b_idx, m.a_text, m.b_text
+      local a_solid, fixed, matched = m.a_solid, m.fixed, m.matched
 
-      local hunks = (#a_idx > 0 and #b_idx > 0) and vim.diff(
-        terminate(table.concat(a_text, "\n")),
-        terminate(table.concat(b_text, "\n")),
-        { result_type = "indices", algorithm = config.diff.line.algorithm }
-      ) or nil
-
-      local fixed = nil
-      if hunks then
-        fixed = {}
-        local ai, bi, matched = 1, 1, 0
-        local function context_to(a_stop)
-          while ai < a_stop do
-            -- Identical by construction -- this is what the line diff
-            -- matched -- so `same` whatever difftastic said about the
-            -- node the row belongs to. Blank rows do not count towards
-            -- the tally: two files almost always have a blank line to
-            -- spare, and re-cutting a region around one is a
-            -- coincidence, not an alignment.
-            if a_text[ai]:match("%S") then
-              matched = matched + 1
-            end
-            table.insert(fixed, { lhs = a_idx[ai], rhs = b_idx[bi], kind = "same" })
-            ai, bi = ai + 1, bi + 1
-          end
-        end
-        for _, h in ipairs(hunks) do
-          local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
-          context_to(ca > 0 and sa or sa + 1)
-          bi = cb > 0 and sb or sb + 1
-          -- Inside a hunk the rows really are different, and pairing
-          -- them off in order is what difftastic would have done had it
-          -- been looking at these rows alone.
-          for k = 0, math.max(ca, cb) - 1 do
-            local lhs = k < ca and a_idx[ai + k] or nil
-            local rhs = k < cb and b_idx[bi + k] or nil
-            table.insert(fixed, { lhs = lhs, rhs = rhs, kind = classify(lhs, rhs) })
-          end
-          ai, bi = ai + ca, bi + cb
-        end
-        context_to(#a_idx + 1)
-
+      if fixed then
         -- Two gates, both of them about not overruling difftastic where
         -- it was right. The answer has to DIFFER from the pairing
         -- difftastic gave -- otherwise there was nothing wrong with it
@@ -1119,6 +1207,16 @@ local function from_json(data, old_lines, new_lines)
   -- case -- the hunk covers the row on both sides alike and there is
   -- nothing to draw twice.
   --
+  -- ...unless the row is byte for byte the same on both sides. A wrap
+  -- reindents what it wraps, so the row it is there for differs by its
+  -- whitespace; one that does not differ at all was not part of the
+  -- edit. `except Exception:` becoming `except BaseException:` over an
+  -- untouched `if` and a rewritten comment came out as one 4-into-4 hunk
+  -- whose rows did not mostly resemble their partners, so it went up as
+  -- one block -- the `if` in red above itself, and the old comment
+  -- hoisted above the `except` rather than above the comment that
+  -- replaced it.
+  --
   -- A one-sided same row is free either way: a blank line in the middle
   -- of an added block has no old row to be drawn as, and belongs to the
   -- block.
@@ -1131,9 +1229,16 @@ local function from_json(data, old_lines, new_lines)
     return rows[k] ~= nil and rows[k].lhs ~= nil and rows[k].rhs ~= nil
   end
 
+  --- A two-sided row whose two sides are byte for byte the same.
+  local function untouched(k)
+    local r = rows[k]
+    return two_sided(k) and old_lines[r.lhs + 1] == new_lines[r.rhs + 1]
+  end
+
   --- Whether a lone unchanged row is one the run can take with it.
   local function absorbs(k)
-    return not two_sided(k) or (two_sided(k - 1) and two_sided(k + 1))
+    return not two_sided(k)
+      or (two_sided(k - 1) and two_sided(k + 1) and not untouched(k))
   end
 
   -- difftastic's own line pairing, kept as it stated it rather than left

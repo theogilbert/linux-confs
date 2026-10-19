@@ -3226,9 +3226,13 @@ function M.show_commit(rev, opts)
         -- git's first line only. The rest of what it says about an
         -- unknown revision is three lines about `--` and paths, which
         -- is advice for a command the reader did not type.
+        -- And which repository was asked: it is the current buffer's, or
+        -- the working directory's where the buffer is no file, and a
+        -- sha that exists in the repository the reader has in mind is
+        -- otherwise reported as not existing at all.
         local why = err and err:match("^[^\r\n]*") or ""
-        vim.notify("uatis: no commit at " .. rev .. (why ~= "" and (": " .. why) or ""),
-          vim.log.levels.ERROR)
+        vim.notify("uatis: no commit at " .. rev .. " in " .. vim.fn.fnamemodify(root, ":~")
+          .. (why ~= "" and (": " .. why) or ""), vim.log.levels.ERROR)
         return
       end
       local own_tab = opts.tab

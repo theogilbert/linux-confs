@@ -3,6 +3,10 @@ local M = {}
 local _config = {
     indent = 2,
     width = 40,
+    fold_markers = {
+        expanded = "▾",
+        collapsed = "▸",
+    },
     icons = {
         ["function"] = "󰊕",
         class = "",

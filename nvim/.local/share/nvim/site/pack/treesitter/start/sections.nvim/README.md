@@ -58,6 +58,10 @@ The `:SectionsJump [name]` command does the same.
 require("sections").setup({
     indent = 2,                           -- Indentation per level
     width = 40,                           -- Default width of the pane
+    fold_markers = {                      -- Markers in front of sections with children
+        expanded = "▾",
+        collapsed = "▸",
+    },
     icons = {                             -- Icons for different section types
         ["function"] = "󰊕",
         class = "",
@@ -82,6 +86,8 @@ require("sections").setup({
 |--------|------|---------|-------------|
 | `indent` | number | `2` | Number of spaces to indent nested sections |
 | `width` | number | `40` | Width of the section pane (in characters) |
+| `fold_markers.expanded` | string | `"▾"` | Marker for expanded sections with children |
+| `fold_markers.collapsed` | string | `"▸"` | Marker for collapsed sections with children |
 | `icons.function` | string | `"󰊕"` | Icon for functions |
 | `icons.class` | string | `""` | Icon for classes |
 | `icons.attribute` | string | `"󰠲"` | Icon for attributes/variables |

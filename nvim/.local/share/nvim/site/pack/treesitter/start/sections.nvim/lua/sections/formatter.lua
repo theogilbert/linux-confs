@@ -22,27 +22,38 @@ local function get_section_name(section)
     return section.name .. suffix
 end
 
-local function get_section_text(section, collapsed, cfg, depth)
-    local prefix = string.rep(" ", depth * cfg.indent)
-    local icon = get_section_icon(section.type)
-    local text = get_section_name(section)
-    local suffix = ""
-
-    if collapsed[section.node_id] and #section.children > 0 then
-        suffix = " ..."
+-- The marker in front of a section: whether it is expanded or collapsed when
+-- it has visible children, or a blank of the same width when it has none
+local function get_fold_marker(section_line, collapsed, cfg)
+    local markers = cfg.fold_markers
+    if not section_line.has_children then
+        local width = math.max(vim.api.nvim_strwidth(markers.expanded), vim.api.nvim_strwidth(markers.collapsed))
+        return string.rep(" ", width)
     end
+    return collapsed[section_line.value.node_id] and markers.collapsed or markers.expanded
+end
 
-    return prefix .. icon .. " " .. text .. suffix
+local function get_section_prefix(section_line, collapsed, cfg)
+    local indent = string.rep(" ", section_line.depth * cfg.indent)
+    local marker = get_fold_marker(section_line, collapsed, cfg)
+    return indent .. marker .. " " .. get_section_icon(section_line.value.type) .. " "
+end
+
+local function is_visible(section, show_private)
+    return show_private or not section.private
 end
 
 local function build_sections_sequence_recursively(sequence, section, cfg, collapsed, show_private, depth)
     depth = depth or 0
 
-    if section.private and not show_private then
+    if not is_visible(section, show_private) then
         return
     end
 
-    local section_line = { depth = depth, value = section }
+    local has_children = vim.iter(section.children):any(function(child)
+        return is_visible(child, show_private)
+    end)
+    local section_line = { depth = depth, value = section, has_children = has_children }
     table.insert(sequence, section_line)
 
     if not collapsed[section.node_id] then
@@ -74,7 +85,7 @@ M.format = function(sections, collapsed, show_private)
 
     local lines = {}
     for _, section_line in pairs(sequence) do
-        local text = get_section_text(section_line.value, collapsed, cfg, section_line.depth)
+        local text = get_section_prefix(section_line, collapsed, cfg) .. get_section_name(section_line.value)
         table.insert(lines, text)
     end
 
@@ -133,10 +144,8 @@ M.get_max_name_width = function(sections, collapsed, show_private)
 
     local max_width = 0
     for _, section_line in ipairs(sequence) do
-        local section = section_line.value
-        local prefix = string.rep(" ", section_line.depth * cfg.indent)
-        local icon = get_section_icon(section.type)
-        local name_width = vim.api.nvim_strwidth(prefix .. icon .. " " .. section.name)
+        local prefix = get_section_prefix(section_line, collapsed, cfg)
+        local name_width = vim.api.nvim_strwidth(prefix .. section_line.value.name)
         if name_width > max_width then
             max_width = name_width
         end

@@ -30,7 +30,7 @@ describe("should display sections", function()
             },
         }
 
-        assert.are.same({ "# First header", "# Second header" }, formatter.format(sections, {}, true))
+        assert.are.same({ "  # First header", "  # Second header" }, formatter.format(sections, {}, true))
     end)
 
     it("should format nested sections", function()
@@ -52,7 +52,7 @@ describe("should display sections", function()
             },
         }
 
-        assert.are.same({ "# Parent header", "  # Sub header" }, formatter.format(sections, {}, true))
+        assert.are.same({ "▾ # Parent header", "    # Sub header" }, formatter.format(sections, {}, true))
     end)
 
     it("should format header section", function()
@@ -67,7 +67,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ "# First header" }, lines)
+        assert.are.same({ "  # First header" }, lines)
     end)
 
     it("should format function section", function()
@@ -82,7 +82,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ "f foo()" }, lines)
+        assert.are.same({ "  f foo()" }, lines)
     end)
 
     it("should format function section with parameters", function()
@@ -98,7 +98,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ "f foo(abc, bar)" }, lines)
+        assert.are.same({ "  f foo(abc, bar)" }, lines)
     end)
 
     it("should format class section with parameters", function()
@@ -114,7 +114,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ " Foo(str)" }, lines)
+        assert.are.same({ "   Foo(str)" }, lines)
     end)
 
     it("should format attribute section", function()
@@ -129,7 +129,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ "󰠲 bar" }, lines)
+        assert.are.same({ "  󰠲 bar" }, lines)
     end)
 
     it("should format attribute section with type annotation", function()
@@ -145,7 +145,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, {}, true)
 
-        assert.are.same({ "󰠲 bar: int" }, lines)
+        assert.are.same({ "  󰠲 bar: int" }, lines)
     end)
 
     it("should not collapse section when it has no child", function()
@@ -161,7 +161,7 @@ describe("should display sections", function()
 
         local lines = formatter.format(sections, { ["1"] = true }, true)
 
-        assert.are.same({ "f foo(abc, bar)" }, lines)
+        assert.are.same({ "  f foo(abc, bar)" }, lines)
     end)
 
     it("should collapse section", function()
@@ -183,7 +183,7 @@ describe("should display sections", function()
 
         local text = formatter.format(sections, { ["1"] = true }, true)
 
-        assert.are.same({ "f foo() ..." }, text)
+        assert.are.same({ "▸ f foo()" }, text)
     end)
 
     it("should hide private section", function()
@@ -204,8 +204,30 @@ describe("should display sections", function()
             },
         }
 
-        assert.are.same({ "f foo()", "f _foo()" }, formatter.format(sections, {}, true))
-        assert.are.same({ "f foo()" }, formatter.format(sections, {}, false))
+        assert.are.same({ "  f foo()", "  f _foo()" }, formatter.format(sections, {}, true))
+        assert.are.same({ "  f foo()" }, formatter.format(sections, {}, false))
+    end)
+
+    it("should not mark section as parent when all its children are hidden", function()
+        local sections = {
+            {
+                name = "Header",
+                type = "header",
+                node_id = "1",
+                children = {
+                    {
+                        name = "_foo",
+                        type = "function",
+                        private = true,
+                        node_id = "2",
+                        children = {},
+                    },
+                },
+            },
+        }
+
+        assert.are.same({ "▾ # Header", "    f _foo()" }, formatter.format(sections, {}, true))
+        assert.are.same({ "  # Header" }, formatter.format(sections, {}, false))
     end)
 end)
 

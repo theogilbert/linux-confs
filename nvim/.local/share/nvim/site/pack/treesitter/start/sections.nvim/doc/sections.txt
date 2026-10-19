@@ -62,6 +62,10 @@ sections.nvim can be configured by passing options to the setup function:
     require("sections").setup({
         indent = 2,                           -- Indentation per level
         width = 40,                           -- Default width of the pane
+        fold_markers = {                      -- Markers in front of sections with children
+            expanded = "▾",
+            collapsed = "▸",
+        },
         icons = {                             -- Icons for different section types
             ["function"] = "󰊕",
             class = "",
@@ -90,6 +94,13 @@ Configuration Options:~
 `width` (number, default: 40)
     Default width of the sections pane when first opened.
 
+
+*sections-config-fold_markers*
+`fold_markers` (table)
+    Markers displayed in front of sections having children, telling them
+    apart from sections without any. Defaults:
+    - expanded: "▾"
+    - collapsed: "▸"
 
 *sections-config-icons*
 `icons` (table)

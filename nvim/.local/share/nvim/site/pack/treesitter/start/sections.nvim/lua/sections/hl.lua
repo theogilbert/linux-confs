@@ -10,6 +10,7 @@ local DEFAULT_HIGHLIGHTS = {
     SectionsPaneHeaderDim = { fg = "#999E9B", bold = true },
     SectionsPaneHeaderWarn = { fg = "#e78a4e", bold = true },
     SectionsParameters = { fg = "#6c597a", bold = false },
+    SectionsFoldMarker = { fg = "#999E9B", bold = false },
     SectionsCurrentSection = { bg = "#4e432f" },
 }
 
@@ -40,6 +41,9 @@ local function define_syntax_match_rules(buf)
         end
 
         vim.cmd([[syntax match SectionsParameters /([^)]*)/]])
+        for _, marker in pairs(cfg.fold_markers) do
+            vim.cmd(string.format([[syntax match SectionsFoldMarker /^\s*\V%s/]], vim.fn.escape(marker, "/\\")))
+        end
     end)
 end
 

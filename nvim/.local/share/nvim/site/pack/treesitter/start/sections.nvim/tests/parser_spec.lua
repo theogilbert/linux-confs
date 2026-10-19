@@ -1178,7 +1178,57 @@ describe("parsing help pages", function()
                     build("CONNECTING", 11),
                 }),
             }),
-            build("Usage", 14),
+            build("Usage", 14, {
+                build("Parameters", 16),
+            }),
+        }, sections)
+    end)
+
+    it("nest tagged entries and column headings under headings", function()
+        local text = table.concat({
+            "==============================================================================",
+            "Buffer Functions                                                  *api-buffer*",
+            "",
+            "Unloaded Buffers: ~",
+            "",
+            "nvim_buf_attach({buf}, {opts})                             *nvim_buf_attach()*",
+            "    Activates events.",
+            "",
+            "    Parameters: ~",
+            "      • {buf}",
+            "",
+            "\t\t\t*'allowrevins'* *'ari'*",
+            "'allowrevins' 'ari'\tboolean\t(default off)",
+            "\t\t\tglobal",
+            "",
+            "*plugin.setup({config})*",
+            "    Initialize the plugin.",
+            "",
+            "Options:~",
+            ">lua",
+            "    -- Code:~",
+            "<",
+            "Paragraph with",
+            "Text ending a paragraph with a tag                                  *not-entry*",
+            "",
+            "==============================================================================",
+            " vim:tw=78:ts=8:ft=help:norl:",
+        }, "\n")
+        local buf = create_buf_with_text(text, "help")
+
+        local sections = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same({
+            build("Buffer Functions", 2, {
+                build("Unloaded Buffers", 4),
+                build("nvim_buf_attach({buf}, {opts})", 6, {
+                    vim.tbl_extend("force", build("Parameters", 9), { position = { 9, 4 } }),
+                }),
+                build("'allowrevins' 'ari' boolean (default off)", 13),
+                build("plugin.setup({config})", 16, {
+                    build("Options", 19),
+                }),
+            }),
         }, sections)
     end)
 end)

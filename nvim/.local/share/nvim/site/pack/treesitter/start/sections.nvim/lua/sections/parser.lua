@@ -54,6 +54,24 @@ ts.query.add_predicate("sections-own-line?", function(match, _, source, predicat
     return is_own_line(match[predicate[2]][1], source)
 end, { force = true, all = true })
 
+-- `(#sections-tags-only? @node)`: @node holds nothing but tags, e.g. a help
+-- line `*'aleph'* *'al'*` tagging the line below it.
+ts.query.add_predicate("sections-tags-only?", function(match, _, _, predicate)
+    local node = match[predicate[2]][1]
+    for _, child in ipairs(node:named_children()) do
+        if child:type() ~= "tag" then
+            return false
+        end
+    end
+    return node:named_child_count() > 0
+end, { force = true, all = true })
+
+-- `(#sections-indented? @node)`: @node, starting its line, is indented
+ts.query.add_predicate("sections-indented?", function(match, _, _, predicate)
+    local _, col = match[predicate[2]][1]:start()
+    return col > 0
+end, { force = true, all = true })
+
 -- Trims a description's lines, dropping its leading and trailing blank lines.
 -- Returns nil for an empty description.
 local function normalize_description(lines)

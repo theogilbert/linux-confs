@@ -19,7 +19,7 @@ sections below it. The `notes-todo` module helps keep track of them:
 
   - the words TODO and DONE are highlighted in markdown buffers,
   - the cursor can jump from one TODO item to the next,
-  - all TODO items of the buffer can be listed in the quickfix list.
+  - all TODO items of the buffer can be listed in a floating window.
 
 ==============================================================================
 2. ITEMS                                                    *notes-todo-items*
@@ -76,10 +76,17 @@ notes-todo.prev()
 
                                                           *notes-todo.show()*
 notes-todo.show()
-    Fills the |quickfix| list with the items of the current buffer, in
-    buffer order, and opens the quickfix window. Each entry is prefixed by
-    its section between brackets, e.g. `[2026-10-08] TODO reply to Marc`.
-    The list is a snapshot: call it again after editing the notes.
+    Opens a floating window listing the items of the current buffer, in
+    buffer order, grouped under their section heading. Each item shows its
+    line number on the right. The cursor starts on the item at or above the
+    cursor of the buffer. In the window:
+
+        j  k        move to the next / previous item
+        <CR>        jump to the item under the cursor and close the window
+        q  <Esc>    close the window
+
+    The window also closes when leaving it. The list is a snapshot: call it
+    again after editing the notes.
 
 ==============================================================================
 5. HIGHLIGHT GROUPS                                    *notes-todo-highlights*

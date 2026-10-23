@@ -69,6 +69,9 @@ local python_cfg_preset = {
         end
     end,
     justMyCode = false,
+    -- run in a terminal buffer (the dapui console pane) rather than piping
+    -- output to the repl, which shows ANSI color codes as raw text
+    console = "integratedTerminal",
     cwd = "${workspaceFolder}"
 }
 
@@ -187,6 +190,7 @@ dapui.setup({
         build_pane_layout("watches"),
         build_pane_layout("stacks"),
         build_pane_layout("breakpoints"),
+        build_pane_layout("console"),
     },
 })
 
@@ -197,7 +201,7 @@ dap_df.setup({ size = 15, limit = 1000 })
 function M.set_bottom_pane(scope)
     dap_df.close()
     dapui.close()
-    local indices = { repl = 1, scopes = 2, watches = 3, stacks = 4, breakpoints = 5, dataframe = 6 }
+    local indices = { repl = 1, scopes = 2, watches = 3, stacks = 4, breakpoints = 5, console = 6 }
     dapui.open({layout = indices[scope]})
 end
 
@@ -216,6 +220,9 @@ end
 M.show_breakpoints_pane = function()
     M.set_bottom_pane('breakpoints')
 end
+M.show_console_pane = function()
+    M.set_bottom_pane('console')
+end
 M.show_dataframe_pane = function()
     dapui.close()
     dap_df.open()
@@ -224,10 +231,10 @@ end
 
 
 dap.listeners.before.attach.dapui_config = function()
-  M.show_repl_pane()
+  M.show_console_pane()
 end
 dap.listeners.before.launch.dapui_config = function()
-  M.show_repl_pane()
+  M.show_console_pane()
 end
 -- debugpy debugs spawned python subprocesses as child sessions; their exit
 -- must not close the UI while the parent session is still running.

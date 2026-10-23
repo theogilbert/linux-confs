@@ -119,6 +119,48 @@ dap.configurations.python = {
     run_cmd_cfg
 }
 
+-- dotted module path of a python file, and the directory it is importable from:
+-- climbs parent directories as long as they are packages (contain __init__.py)
+local function python_module_of(path)
+    local parts = { vim.fn.fnamemodify(path, ":t:r") }
+    local dir = vim.fn.fnamemodify(path, ":h")
+    while vim.uv.fs_stat(dir .. "/__init__.py") do
+        table.insert(parts, 1, vim.fn.fnamemodify(dir, ":t"))
+        dir = vim.fn.fnamemodify(dir, ":h")
+    end
+    return table.concat(parts, "."), dir
+end
+
+-- offers to serve each top-level `app = FastAPI(...)` of the workspace through uvicorn
+dap.providers.configs["fastapi"] = function(bufnr)
+    if vim.bo[bufnr].filetype ~= "python" then
+        return {}
+    end
+
+    local cwd = vim.fn.getcwd()
+    local res = vim.system({
+        "rg", "--no-heading", "--with-filename", "--line-number", "--type", "py", "-g", "!venv",
+        "--only-matching", [[^\w+\s*(:\s*[\w.]+\s*)?=\s*(fastapi\.)?FastAPI\(]],
+    }, { cwd = cwd, text = true }):wait()
+    if res.code ~= 0 then
+        return {}
+    end
+
+    local configs = {}
+    for _, line in ipairs(vim.split(res.stdout, "\n", { trimempty = true })) do
+        local file, lnum, var = line:match("^(.-):(%d+):([%w_]+)")
+        if file then
+            local module, app_dir = python_module_of(vim.fs.joinpath(cwd, file))
+            table.insert(configs, make_python_cfg({
+                name = ("FastAPI: %s:%s (%s:%s)"):format(module, var, file, lnum),
+                module = "uvicorn",
+                args = { module .. ":" .. var, "--app-dir", app_dir },
+            }))
+        end
+    end
+    return configs
+end
+
 -- Break at the raise point instead of letting the exception unwind:
 --   uncaught      -- exception reaches the top and kills the program
 --   userUnhandled -- raised in project code, only handled outside it (e.g. by pytest)

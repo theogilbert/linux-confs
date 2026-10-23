@@ -134,6 +134,19 @@ local function python_module_of(path)
     return table.concat(parts, "."), dir
 end
 
+-- first port from `start` that can be listened on at `host`; libuv may defer
+-- EADDRINUSE from bind to listen, hence both calls
+local function free_port(host, start)
+    for port = start, start + 100 do
+        local tcp = assert(vim.uv.new_tcp())
+        local ok = tcp:bind(host, port) and tcp:listen(1, function() end)
+        tcp:close()
+        if ok then
+            return port
+        end
+    end
+end
+
 -- offers to serve each top-level `app = FastAPI(...)` of the workspace through uvicorn
 dap.providers.configs["fastapi"] = function(bufnr)
     if vim.bo[bufnr].filetype ~= "python" then
@@ -157,7 +170,15 @@ dap.providers.configs["fastapi"] = function(bufnr)
             table.insert(configs, make_python_cfg({
                 name = ("FastAPI: %s:%s (%s:%s)"):format(module, var, file, lnum),
                 module = "uvicorn",
-                args = { module .. ":" .. var, "--app-dir", app_dir },
+                -- resolved at launch so that a port taken by another server is skipped
+                args = function()
+                    local port = free_port("127.0.0.1", 8000)
+                    if not port then
+                        vim.notify("No free port in 8000-8100", vim.log.levels.ERROR)
+                        return dap.ABORT
+                    end
+                    return { module .. ":" .. var, "--app-dir", app_dir, "--port", tostring(port) }
+                end,
             }))
         end
     end

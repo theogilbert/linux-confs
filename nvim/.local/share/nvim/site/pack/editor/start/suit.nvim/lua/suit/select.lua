@@ -61,18 +61,26 @@ local function open(raw_items, opts, on_choice)
     '<down>',
     { buffer = select_win.buffer }
   )
-  local function on_item_select()
-    if on_choice then
-      local row = unpack(vim.api.nvim_win_get_cursor(select_win.window))
-      -- restore previous mode and selection
-      if util.is_visual(prev_mode) then
-        vim.api.nvim_feedkeys('gv', 'n', false)
-      end
-      util.close_window(select_win.window)
-      on_choice(raw_items[row], row)
-    else
-      util.close_window(select_win.window)
+  -- closing the window fires BufLeave, so without this guard a selection
+  -- would first be reported as a cancel (on_choice(nil)), then as the item
+  local done = false
+  local function finish(item, idx)
+    if done then
+      return
     end
+    done = true
+    util.close_window(select_win.window)
+    if on_choice then
+      on_choice(item, idx)
+    end
+  end
+  local function on_item_select()
+    local row = unpack(vim.api.nvim_win_get_cursor(select_win.window))
+    -- restore previous mode and selection
+    if on_choice and util.is_visual(prev_mode) then
+      vim.api.nvim_feedkeys('gv', 'n', false)
+    end
+    finish(raw_items[row], row)
   end
   vim.keymap.set(
     { 'n', 'v' },
@@ -87,24 +95,15 @@ local function open(raw_items, opts, on_choice)
     { buffer = select_win.buffer }
   )
   vim.keymap.set({ 'n', 'v' }, '<esc>', function()
-    if on_choice then
-      on_choice(nil, nil)
-    end
-    util.close_window(select_win.window)
+    finish(nil, nil)
   end, { buffer = select_win.buffer })
   vim.keymap.set({ 'n', 'v' }, 'q', function()
-    if on_choice then
-      on_choice(nil, nil)
-    end
-    util.close_window(select_win.window)
+    finish(nil, nil)
   end, { buffer = select_win.buffer })
   vim.api.nvim_create_autocmd({ 'BufLeave' }, {
     buffer = select_win.buffer,
     callback = function()
-      if on_choice then
-        on_choice(nil, nil)
-      end
-      util.close_window(select_win.window)
+      finish(nil, nil)
     end,
   })
   local ns_id = vim.api.nvim_create_namespace('')

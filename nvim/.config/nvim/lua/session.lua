@@ -213,8 +213,75 @@ vim.api.nvim_create_autocmd("VimEnter", {
     callback = M.try_load_session
 })
 
+-- When :qa is aborted by an unsaved hidden buffer, nvim shows that buffer in the
+-- current window, evicting the buffer it held, which then drops out of the session.
+-- Put the evicted buffer back and show the unsaved one in a float instead: floats
+-- are not saved by mksession, so the session keeps the layout from before the :qa.
+local unsaved_float
+-- window that was current before the float opened, focused again when saving the session
+local return_win
+
+local function show_in_unsaved_float(buf)
+    local title = " Unsaved: " .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":~:.") .. " "
+    if unsaved_float and vim.api.nvim_win_is_valid(unsaved_float) then
+        vim.api.nvim_win_set_buf(unsaved_float, buf)
+        vim.api.nvim_win_set_config(unsaved_float, { title = title, title_pos = "center" })
+        vim.api.nvim_set_current_win(unsaved_float)
+        return
+    end
+
+    return_win = vim.api.nvim_get_current_win()
+    local width = math.floor(vim.o.columns * 0.8)
+    local height = math.floor(vim.o.lines * 0.8)
+    unsaved_float = vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        width = width,
+        height = height,
+        row = math.floor((vim.o.lines - height) / 2) - 1,
+        col = math.floor((vim.o.columns - width) / 2),
+        border = "rounded",
+        title = title,
+        title_pos = "center",
+    })
+end
+
+vim.api.nvim_create_autocmd("ExitPre", {
+    callback = function()
+        local win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_win_get_buf(win)
+        local alt = vim.fn.bufnr("#")
+        -- only runs if the exit was aborted
+        vim.schedule(function()
+            if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
+                return
+            end
+            local unsaved = vim.api.nvim_win_get_buf(win)
+            if unsaved == buf then
+                return
+            end
+            if win ~= unsaved_float then
+                vim.api.nvim_win_call(win, function()
+                    vim.api.nvim_win_set_buf(win, buf)
+                    if alt ~= -1 and vim.api.nvim_buf_is_valid(alt) then
+                        vim.fn.setreg("#", alt)
+                    end
+                end)
+            end
+            show_in_unsaved_float(unsaved)
+        end)
+    end,
+})
+
 vim.api.nvim_create_autocmd("VimLeavePre", {
-    callback = M.save_session,
+    callback = function()
+        if unsaved_float and vim.api.nvim_win_is_valid(unsaved_float) then
+            vim.api.nvim_win_close(unsaved_float, true)
+            if return_win and vim.api.nvim_win_is_valid(return_win) then
+                vim.api.nvim_set_current_win(return_win)
+            end
+        end
+        M.save_session()
+    end,
 })
 
 return M

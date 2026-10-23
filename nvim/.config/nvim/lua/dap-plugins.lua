@@ -93,8 +93,24 @@ setmetatable(run_cmd_cfg, {
     })
 
 
+local launch_file_with_args_cfg = make_python_cfg( {
+    name = "Launch file with arguments",
+    program = "${file}",
+    args = function()
+        -- <Esc> returns cancelreturn, <C-c> raises; an empty line launches without arguments
+        local ok, args = pcall(vim.fn.input, { prompt = "Arguments: ", cancelreturn = vim.NIL })
+        if not ok or args == vim.NIL then
+            return dap.ABORT
+        end
+        -- honors quotes, e.g. --name "two words"
+        return require("dap.utils").splitstr(args)
+    end,
+} )
+
+
 dap.configurations.python = {
     make_python_cfg( { name = "Launch file", program = "${file}" } ),
+    launch_file_with_args_cfg,
     run_cmd_cfg
 }
 

@@ -5,6 +5,11 @@ local dap = require('dap')
 
 dap.listeners.after.event_stopped["center_breakpoint_line"] = function(session, body)
     vim.defer_fn(function()
+        -- focus stayed in a terminal (e.g. stop triggered by a curl run there):
+        -- :normal is not allowed in terminal mode, and there is no frame to center anyway
+        if vim.api.nvim_get_mode().mode == "t" then
+            return
+        end
         vim.cmd("normal! zz")
     end, 50)
 end

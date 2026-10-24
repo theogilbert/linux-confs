@@ -70,6 +70,13 @@ function M.issues()
   require("nemeton.issue_list").open()
 end
 
+--- Your to-do list on the forge, a kind at a time. Not `with_session`:
+--- it is yours, across every project.
+function M.todos()
+  ready()
+  require("nemeton.todos").open()
+end
+
 -- What the issue prompt completes over: the issues the cache has, as it
 -- had them when the prompt opened.
 local issue_store = nil
@@ -1415,6 +1422,7 @@ local SUBCOMMANDS = {
   ["forget-token"] = M.forget_token,
   issue = M.issue,
   issues = M.issues,
+  todos = M.todos,
   ["new-issue"] = function()
     M.new_issue()
   end,
@@ -1563,6 +1571,7 @@ function M.setup(opts)
   end
   global("list", { n = { M.list, "merge requests" } })
   global("issues", { n = { M.issues, "issues" } })
+  global("todos", { n = { M.todos, "to-do list" } })
   global("link", {
     n = { M.link, "copy a link to this line" },
     x = { M.link_lines, "copy a link to these lines" },

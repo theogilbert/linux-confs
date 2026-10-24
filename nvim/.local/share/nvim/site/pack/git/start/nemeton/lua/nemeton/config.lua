@@ -983,6 +983,10 @@ return {
       -- An issue by number, or by what it says: the prompt completes
       -- with the list's own search.
       issue = "<leader>moi",
+      -- Your to-do list on the forge: reviews asked of you, comments
+      -- that name you, pipelines of yours that broke -- across every
+      -- project, so it needs no review open and no repository either.
+      todos = "<leader>mt",
       -- A permalink to the line, or to the selection, on the clipboard:
       -- what you paste into a comment to point at code the comment is
       -- not on, or into a chat window to point at code at all. Global
@@ -1320,6 +1324,18 @@ return {
       help = "g?", -- every key above, in a float
     },
 
+    -- The to-do list.
+    todos = {
+      open = "<CR>", -- open it: here if it is of this repository, on GitLab if not
+      body = "p", -- what it says, in a float
+      done = "d", -- mark it done
+      filter = "f", -- show one kind of to-do, and the next, and all again
+      browser = "o", -- open it on GitLab
+      refresh = "r",
+      quit = "q",
+      help = "g?", -- every key above, in a float
+    },
+
     -- The window a merge request of your own is written in. Nothing
     -- here is a motion either: it is a form, `<CR>` changes the field
     -- the cursor is on, and the rest are the two ways out of it.
@@ -1458,6 +1474,20 @@ return {
     --
     -- string | fun(): string | nil
     host = nil,
+
+    -- The host to ask where there is no project to ask it of: the
+    -- to-do list opened outside a GitLab repository. Yours and not a
+    -- project's, so it can be asked anywhere -- but of which forge is
+    -- what a repository's remote would have said, and glab's own
+    -- default (gitlab.com, or the first host it was logged into) is a
+    -- guess. Nil, and the list refuses to open there and says so.
+    --
+    -- Its token is glab's for that host (`glab auth login --hostname`),
+    -- not `token` below, unless `host` names this same one: a token
+    -- configured for one forge is not sent to another.
+    --
+    -- string | fun(): string | nil
+    backup_host = nil,
 
     -- The token, exported as GITLAB_TOKEN. Also nil by default: `glab
     -- auth login` puts one in the system keyring, and a token in a

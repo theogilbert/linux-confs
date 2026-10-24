@@ -141,6 +141,7 @@ rest.
 | `:Nemeton issues` | the project's issues, searched as you type; needs no review open |
 | `:Nemeton issue 12` | issue #12, in a tab of its own; needs no review open |
 | `:Nemeton issue` | ask which, completing with the issue search as you type |
+| `:Nemeton todos` | your to-do list on GitLab, every project's, a kind at a time; needs no review open; outside a GitLab repository, `glab.backup_host` |
 | `:Nemeton new-issue` | a window for an issue of your own; over a range, its description starts with a link to the lines and the lines |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
@@ -154,7 +155,8 @@ way in — it asks for a number and completes over what is open, by number
 and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
 `<leader>mom` (`keys.global.open`) is the same thing on a key, and
-`<leader>mi` (`keys.global.issues`) is the project's issues.
+`<leader>mi` (`keys.global.issues`) is the project's issues, and
+`<leader>mt` (`keys.global.todos`) your to-do list.
 `<leader>moi` (`keys.global.issue`) asks for an issue the same way,
 completing with the issue search as it is typed — `proxy` offers the
 proxy one — on what the cache has, so it is up on the keypress.
@@ -454,6 +456,24 @@ cache has after them. A row found by its description or a comment has a
 line under it saying where — `comment · alice ·` — and quoting the line,
 the word picked out: neither is on the screen, and a row nobody can
 account for is one nobody trusts.
+
+`<leader>mt`, or `:Nemeton todos`, is your **to-do list** on GitLab —
+the reviews asked of you, the comments that name you, what is assigned
+to you, the pipelines of yours that broke — across every project you are
+in, so it needs no review open. Inside a GitLab repository it asks that
+repository's forge; outside one it asks `glab.backup_host`, and with
+that unset it does not open and says so — which forge would otherwise
+be glab's guess. A row is what kind of to-do it is, what it is
+about (`group/proj!12`), its title, who and how long ago. `f` narrows it
+a kind at a time — review → mentions → assigned → build → other → all,
+skipping the kinds with nothing in them; `p` shows what the to-do says,
+which on a mention is the comment that named you; `d` marks it done;
+`o` opens it on GitLab; `r` asks again; `q` closes. `<CR>` opens a merge
+request or an issue of the repository you are in here, the way the
+queue and the issue list do, and anything else — another project's, a
+commit, an epic — on GitLab, at the comment where there is one. It is
+the pending ones, a hundred at most; the title says `100+` when there
+are more.
 
 `:Nemeton issue 12` opens an issue of the project — no review needed —
 in a **tab** of its own rather than a float: an issue is the thing being
@@ -1306,6 +1326,13 @@ login` keeps a token in the system keyring.
   point elsewhere ("none of the git remotes configured for this
   repository correspond to the GITLAB_HOST environment variable"). If you
   review across two instances, leave it nil.
+- **`backup_host`** — a string or a function: the forge to ask where
+  there is no project to ask it of, which is the to-do list opened
+  outside a GitLab repository. Unset, the list refuses to open there.
+  Its token is glab's own for that host (`glab auth login --hostname`),
+  not `token` below — unless `host` names the same one — and a 401 from
+  it does not prompt: a token configured or typed for one forge is not
+  sent to another.
 - **`token`** — a string or a function. A function is the point: it is
   called once per editor session, cached, and never written anywhere, so
   it is where you shell out to a password manager rather than putting a
@@ -1549,6 +1576,8 @@ git config core.hooksPath .githooks
 - **Resolvable state per note.** A thread is "resolved" here when every
   resolvable note in it is; GitLab is slightly more subtle.
 - **Pagination in the list.** First 30, ordered by last touched.
+- **A to-do of another project, here.** It opens on GitLab: opening it
+  in the editor means finding or cloning that project's checkout first.
 - **More of an issue.** Its labels and assignees are edited here; its
   milestone, due date, weight, epic, time tracking and links to other
   issues are not, and boards are not drawn at all. Nor is "a branch and

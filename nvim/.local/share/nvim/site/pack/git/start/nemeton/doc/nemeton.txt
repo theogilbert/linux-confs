@@ -253,6 +253,11 @@ A review, end to end:
                         the keypress, on what the cache has. `12`, `#12`
                         and a row of the menu are one answer.
 
+:Nemeton todos          Your to-do list on GitLab, every project's, a
+                        kind at a time. Needs no review open; outside a
+                        GitLab repository, |nemeton-config-backup-host|.
+                        |nemeton-todos-window|
+
 :Nemeton new-issue      A window for an issue of your own.
                         |nemeton-issue-create-window|
 :'<,'>Nemeton new-issue The same, its description starting with a link
@@ -282,6 +287,7 @@ ALWAYS                                               *nemeton-mappings-global*
     <leader>mi      the issues, searched as you type
                     |nemeton-issues-window|
     <leader>moi     open one by number, asked for |:Nemeton| issue
+    <leader>mt      your to-do list |nemeton-todos-window|
     <leader>mL      a link to this line, or (visual) to these lines, on
                     the clipboard
 
@@ -647,6 +653,37 @@ under it: where the word was -- the description, or whose comment --
 and the line it was in, with the word picked out. The description and
 the comments are not on the screen, and a row nobody can account for is
 a row nobody trusts.
+
+THE TO-DO LIST                                          *nemeton-todos-window*
+
+`<leader>mt`, or `:Nemeton todos`. Your to-do list on the forge -- the
+reviews asked of you, the comments that name you, what is assigned to
+you, the pipelines of yours that broke -- across every project you are
+in. It needs no review open. Inside a GitLab repository it is asked of
+that repository's forge; outside one, of `glab.backup_host`
+|nemeton-config-backup-host| -- and with that unset it does not open,
+and says so, rather than show glab's guess at a forge. A row is the kind of to-do, what it is about
+(`group/proj!12`), its title, who, and how long ago.
+
+    <CR>            open it: a merge request or an issue of the
+                    repository you are in opens here, the way the queue
+                    and the issue list open one; anything else on GitLab
+    p               what it says -- on a mention, the comment that named
+                    you -- in a float
+    d               mark it done
+    f               one kind at a time: review, mentions, assigned,
+                    build, other, and all again -- skipping the kinds
+                    with nothing in them
+    o               open it on GitLab, at the comment where there is one
+    r               ask again
+    q               close
+    g?              these keys
+
+The kinds are GitLab's `action_name`s, grouped: review is a review or
+an approval asked of you, mentions a comment that names you, build a
+pipeline that failed or a merge request that no longer merges. One the
+forge adds later is other, in GitLab's own words. It is the pending
+to-dos, a hundred at most; the title says `100+` when there are more.
 
 AN ISSUE OF YOUR OWN                             *nemeton-issue-create-window*
 
@@ -2344,8 +2381,8 @@ KEYS                                                     *nemeton-config-keys*
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
 `keys.issue_list`, `keys.issue`, `keys.issue_comments`, `keys.issue_create`,
 `keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`,
-`keys.history`, `keys.create` and `keys.compose`, each a table of
-what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
+`keys.history`, `keys.todos`, `keys.create` and `keys.compose`, each a
+table of what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
 can be `false`:
 >
     require("nemeton").setup({
@@ -2362,11 +2399,13 @@ GLAB                                                     *nemeton-config-glab*
       timeout = { 5, 10, 30 },  -- seconds, try by try
       track = true,             -- fix the upstream after a checkout
       host = nil,               -- string | fun(): string | nil
+      backup_host = nil,        -- string | fun(): string | nil
       token = nil,              -- string | fun(): string | nil
       prompt_for_token = true,
     }
 <
-See |nemeton-credentials| for `host`, `token` and `prompt_for_token`.
+See |nemeton-credentials| for `host`, `backup_host`, `token` and
+`prompt_for_token`.
 
 `timeout` is how long a call is given before it is called hung. A list
 is tries: a call that only reads is given the first and asked again
@@ -2434,6 +2473,15 @@ glab's: with `GITLAB_HOST` set, glab refuses to work in a repository
 whose remotes point elsewhere ("none of the git remotes configured for
 this repository correspond to the GITLAB_HOST environment variable"). If
 you review across two instances, leave it nil.
+
+                                                  *nemeton-config-backup-host*
+`backup_host` -- a string, or a function returning one: the forge to
+ask where there is no project to ask it of, which is the to-do list
+|nemeton-todos-window| opened outside a GitLab repository. Unset, the
+list refuses to open there. Its token is glab's own for that host
+(`glab auth login --hostname`), not `token` -- unless `host` names the
+same one -- and a 401 from it does not prompt: a token configured or
+typed for one forge is not sent to another.
 
                                                         *nemeton-config-token*
 `token` -- a string, or a function returning one. A function is the
@@ -2818,6 +2866,9 @@ One rotation, at `log.max_bytes`: past it the file becomes
     resolvable in practice, so resolving lives on the gutter.
   - Pagination in the list. The first `list.per_page`, ordered by
     what was touched last.
+  - A to-do of another project, here. It opens on GitLab: opening it
+    in the editor means finding or cloning that project's checkout
+    first.
 
 More of an issue: its labels and assignees are edited here; its
 milestone, due date, weight, epic, time tracking and links to other

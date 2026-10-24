@@ -51,6 +51,13 @@ if keys.issues and keys.issues ~= "" then
   end, { silent = true, desc = "nemeton: issues" })
   vim.g.nemeton_global_issues = keys.issues
 end
+-- ...and your to-do list, which needs no project at all.
+if keys.todos and keys.todos ~= "" then
+  vim.keymap.set("n", keys.todos, function()
+    require("nemeton").todos()
+  end, { silent = true, desc = "nemeton: to-do list" })
+  vim.g.nemeton_global_todos = keys.todos
+end
 -- ...and a link to the line under the cursor, which needs a project and
 -- not a merge request, so it is here with the way in rather than with
 -- the review keys.

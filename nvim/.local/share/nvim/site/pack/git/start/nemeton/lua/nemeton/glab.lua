@@ -163,6 +163,12 @@ local function spawn(args, opts, cb)
   if opts.env then
     e = vim.tbl_extend("force", e or {}, opts.env)
   end
+  -- A call to a host of its own (`M.at`), with the configured token
+  -- only where it was configured for that host.
+  if opts.host then
+    local same = e and e.GITLAB_HOST == opts.host
+    e = vim.tbl_extend("force", same and e or {}, { GITLAB_HOST = opts.host })
+  end
   -- Logged before the call rather than after it, so a call that hangs is
   -- in the file too. `done` closes the entry with the exit code.
   local done =
@@ -1913,6 +1919,50 @@ end
 --- default branch a link written on an issue is measured against.
 function M.project(root, cb)
   project(root, cb)
+end
+
+--- `glab.backup_host`, or nil.
+function M.backup_host()
+  return value(config.glab.backup_host)
+end
+
+--- Where a call that belongs to no project is sent: `{ root = ... }`,
+--- the forge of that repository, or `{ host = ... }`, a forge named
+--- outright -- as the run options that say so.
+---
+--- A named host is asked from a directory that is no repository of
+--- anybody's, so that no remote has a say in which forge answers --
+--- glab reads one wherever it runs, and refuses some calls where the
+--- remote and GITLAB_HOST disagree. And without the
+--- token prompt where the configured token was not sent: a token typed
+--- there would be kept as the one for every call, and sent to the
+--- forge the rest of them go to.
+local function at(where)
+  if where.root then
+    return { cwd = where.root }
+  end
+  local e = env()
+  return {
+    cwd = vim.fn.fnamemodify("/", ":p"),
+    host = where.host,
+    no_prompt = not (e and e.GITLAB_HOST == where.host),
+  }
+end
+
+--- Your to-do list on the forge: what is pending, newest first.
+---
+--- The user's and not the project's, so there is no `:fullpath` in it:
+--- `where` (`at` above) only says which forge to ask. One page of a
+--- hundred: a list longer than that is a backlog, and the window says
+--- so rather than walking it.
+function M.todos(where, cb)
+  json({ "api", "todos?state=pending&per_page=100" }, at(where), cb)
+end
+
+--- Marks to-do `id` done. The forge answers with the to-do as it now
+--- stands.
+function M.todo_done(where, id, cb)
+  json({ "api", "--method", "POST", ("todos/%d/mark_as_done"):format(id) }, at(where), cb)
 end
 
 return M

@@ -78,6 +78,10 @@ sections.nvim can be configured by passing options to the setup function:
             collapse_section = "zc",          -- Collapse section
             expand_section = "zo",            -- Expand section
             toggle_section_collapse = "za",   -- Collapse/expand section
+            collapse_section_recursive = "zC", -- Collapse section and nested ones
+            expand_section_recursive = "zO",  -- Expand section and nested ones
+            collapse_all = "zM",              -- Collapse all sections
+            expand_all = "zR",                -- Expand all sections
             show_description = "K",           -- Show section description
             close = "q",                      -- Close the panel
         },
@@ -118,6 +122,12 @@ Configuration Options:~
     - `collapse_section`: Collapse a section (default: "zc")
     - `expand_section`: Expand a section (default: "zo")
     - `toggle_section_collapse`: Collapse/expand a section (default: "za")
+    - `collapse_section_recursive`: Collapse a section and every section
+      nested in it (default: "zC")
+    - `expand_section_recursive`: Expand a section and every section nested
+      in it (default: "zO")
+    - `collapse_all`: Collapse all sections (default: "zM")
+    - `expand_all`: Expand all sections (default: "zR")
     - `show_description`: Show the section's description (default: "K")
     - `close`: Close the panel (default: "q")
     Set a keymap to `false` to disable it.
@@ -168,6 +178,18 @@ Default keymaps within the sections panel:
 
 *sections-keymap-toggle*
 `za` - Collapse or expand the current section
+
+*sections-keymap-collapse-recursive*
+`zC` - Collapse the current section and every section nested in it
+
+*sections-keymap-expand-recursive*
+`zO` - Expand the current section and every section nested in it
+
+*sections-keymap-collapse-all*
+`zM` - Collapse all sections, nested ones included
+
+*sections-keymap-expand-all*
+`zR` - Expand all sections
 
 *sections-keymap-description*
 `K` - Show the current section's description in a floating window, see

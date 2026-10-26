@@ -160,7 +160,8 @@ end
 
 --- Collapses or expands the section under the cursor in the pane.
 ---@param collapse boolean|nil true to collapse, false to expand, nil to toggle
-local function set_section_collapse(collapse)
+---@param recursive boolean|nil true to also apply it to every nested section
+local function set_section_collapse(collapse, recursive)
     local info = get_tab_info()
     if info == nil then
         return
@@ -181,10 +182,40 @@ local function set_section_collapse(collapse)
     if collapse == nil then
         collapse = info.collapsed[section.node_id] == nil
     end
-    if (info.collapsed[section.node_id] ~= nil) == collapse then
+    if recursive then
+        local function walk(s)
+            info.collapsed[s.node_id] = collapse or nil
+            for _, child in ipairs(s.children) do
+                walk(child)
+            end
+        end
+        walk(section)
+    else
+        if (info.collapsed[section.node_id] ~= nil) == collapse then
+            return
+        end
+        info.collapsed[section.node_id] = collapse or nil
+    end
+
+    info.last_pane_line = nil
+    info.cached_sequence = nil
+
+    local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
+    pane.write_sections(sections_lines)
+
+    update_current_section_highlight()
+end
+
+--- Collapses or expands every section in the pane, nested ones included.
+---@param collapse boolean true to collapse, false to expand
+local function set_all_collapse(collapse)
+    local info = get_tab_info()
+    if info == nil then
         return
     end
-    info.collapsed[section.node_id] = collapse or nil
+
+    -- With a cursor preceding every section, nothing is left expanded
+    info.collapsed = collapse and formatter.get_default_collapsed(info.sections, 0, 0) or {}
 
     info.last_pane_line = nil
     info.cached_sequence = nil
@@ -331,6 +362,10 @@ M.toggle = function()
                 { cfg.keymaps.collapse_section, function() set_section_collapse(true) end },
                 { cfg.keymaps.expand_section, function() set_section_collapse(false) end },
                 { cfg.keymaps.toggle_section_collapse, function() set_section_collapse(nil) end },
+                { cfg.keymaps.collapse_section_recursive, function() set_section_collapse(true, true) end },
+                { cfg.keymaps.expand_section_recursive, function() set_section_collapse(false, true) end },
+                { cfg.keymaps.collapse_all, function() set_all_collapse(true) end },
+                { cfg.keymaps.expand_all, function() set_all_collapse(false) end },
                 { cfg.keymaps.toggle_private, toggle_private },
                 { cfg.keymaps.show_description, show_description },
                 { cfg.keymaps.close, close_pane },

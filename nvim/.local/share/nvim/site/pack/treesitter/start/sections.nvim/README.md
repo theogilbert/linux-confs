@@ -74,6 +74,10 @@ require("sections").setup({
         collapse_section = "zc",          -- Collapse section
         expand_section = "zo",            -- Expand section
         toggle_section_collapse = "za",   -- Collapse/expand section
+        collapse_section_recursive = "zC", -- Collapse section and nested ones
+        expand_section_recursive = "zO",  -- Expand section and nested ones
+        collapse_all = "zM",              -- Collapse all sections
+        expand_all = "zR",                -- Expand all sections
         show_description = "K",           -- Show section description
         close = "q",                      -- Close the pane
     },
@@ -97,6 +101,10 @@ require("sections").setup({
 | `keymaps.collapse_section` | string | `"zc"` | Key to collapse a section |
 | `keymaps.expand_section` | string | `"zo"` | Key to expand a section |
 | `keymaps.toggle_section_collapse` | string | `"za"` | Key to collapse/expand a section |
+| `keymaps.collapse_section_recursive` | string | `"zC"` | Key to collapse a section and its nested sections |
+| `keymaps.expand_section_recursive` | string | `"zO"` | Key to expand a section and its nested sections |
+| `keymaps.collapse_all` | string | `"zM"` | Key to collapse all sections |
+| `keymaps.expand_all` | string | `"zR"` | Key to expand all sections |
 | `keymaps.show_description` | string | `"K"` | Key to show a section's description |
 | `keymaps.close` | string | `"q"` | Key to close the pane |
 
@@ -107,6 +115,8 @@ require("sections").setup({
 | `<cr>` | Jump to section in source code |
 | `zc` / `zo` | Collapse / expand section |
 | `za` | Toggle section collapse |
+| `zC` / `zO` | Collapse / expand section and its nested sections |
+| `zM` / `zR` | Collapse / expand all sections |
 | `K` | Show section description |
 | `q` | Close the pane |
 | `p` | Toggle private sections visibility |

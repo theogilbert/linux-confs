@@ -281,6 +281,38 @@ local function setup_autocommands()
             update_current_section_highlight()
         end,
     })
+
+    -- When quitting the watched window while the pane is the only other window of the tab,
+    -- close the pane first: doing it from WinClosed would make the quit abort (E855),
+    -- as the watched window would then be the last one.
+    vim.api.nvim_create_autocmd("QuitPre", {
+        group = group,
+        callback = function()
+            local info = get_tab_info()
+            if info == nil or vim.api.nvim_get_current_win() ~= info.watched_win then
+                return
+            end
+
+            if #vim.api.nvim_tabpage_list_wins(0) == 2 then
+                pane.close()
+            end
+        end,
+    })
+
+    -- When the watched window is closed, close the pane along with it
+    vim.api.nvim_create_autocmd("WinClosed", {
+        group = group,
+        callback = function(args)
+            local info = get_tab_info()
+            if info == nil or tonumber(args.match) ~= info.watched_win then
+                return
+            end
+
+            if #vim.api.nvim_tabpage_list_wins(0) > 2 then
+                pane.close()
+            end
+        end,
+    })
 end
 
 M.toggle = function()

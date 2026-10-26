@@ -129,7 +129,8 @@ Open/close the sections panel:~
 >
     :lua require("sections").toggle()
 <
-The panel opens directly to the left of the current window.
+The panel opens directly to the right of the current window, and closes
+along with it.
 
 Jump to a section by name (the panel does not need to be open):~
 >

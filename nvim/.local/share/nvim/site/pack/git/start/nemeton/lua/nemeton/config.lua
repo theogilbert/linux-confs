@@ -1101,6 +1101,11 @@ return {
       -- it. The same letter the merge request's own window puts the
       -- pipeline on.
       jobs = "p",
+      -- ...and what has been said on it, which is the rest of "is it
+      -- worth opening": a merge request with nobody's questions on it
+      -- reads differently from one with a long argument. Not `c`, as it
+      -- is in the merge request's own window: here that is the commits.
+      comments = "n",
     },
     -- The window holding every comment on the merge request, one line
     -- each. The same keys as the every-thread window below, because it

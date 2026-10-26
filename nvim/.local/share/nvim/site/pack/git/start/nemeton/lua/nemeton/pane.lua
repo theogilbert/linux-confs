@@ -898,15 +898,53 @@ function M.open(at)
       end)
     end,
   })
-  -- Closed by hand -- `:q` in it, or the window it was split from going
-  -- away with it. The mode follows the window: the conversations are
-  -- not expanded any more, whatever the session last recorded.
+  -- Closed by hand -- `:q` in it. The mode follows the window: the
+  -- conversations are not expanded any more, whatever the session last
+  -- recorded.
   vim.api.nvim_create_autocmd("WinClosed", {
     group = group,
     pattern = tostring(M.win),
     callback = function()
       M.win = nil
       fold()
+    end,
+  })
+  -- ...and the window the code is read in closing takes the pane with
+  -- it: the pane is read beside the code, and left on its own it is a
+  -- conversation about a file nobody has open. Whichever window that is
+  -- *now* -- `follow` moves it -- so not a pattern fixed at the open,
+  -- and only while it still holds a file of the merge request: `:new`
+  -- enters its window on the file it was split from before it swaps
+  -- in the empty one, and `follow` cannot tell that from a split of
+  -- the code.
+  -- After the close rather than in it, because a window closed from
+  -- inside `WinClosed` aborts the command that closed the first one;
+  -- and where the pane is then the only window left, `:q` was leaving
+  -- the editor, and the pane is no reason to stay.
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = group,
+    callback = function(ev)
+      local closing = tonumber(ev.match)
+      if closing ~= M.source or not session.relpath(vim.api.nvim_win_get_buf(closing)) then
+        return
+      end
+      local pane_win = M.win
+      vim.schedule(function()
+        if not (valid() and M.win == pane_win) then
+          return
+        end
+        local others = vim.tbl_filter(function(w)
+          return w ~= pane_win and vim.api.nvim_win_get_config(w).relative == ""
+        end, vim.api.nvim_list_wins())
+        if #others == 0 then
+          local quit, err = pcall(vim.cmd.quit)
+          if not quit then
+            vim.notify(tostring(err), vim.log.levels.ERROR)
+          end
+          return
+        end
+        fold()
+      end)
     end,
   })
 

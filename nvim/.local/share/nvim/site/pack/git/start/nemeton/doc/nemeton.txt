@@ -488,9 +488,16 @@ and a mixed queue is read a row at a time. It is a question asked, not a
 setting changed: close the window and the next one opens on
 `list.state` again. |nemeton-config-list|
 
-`c`, `d` and `p` open a pane under the list for the row the cursor is
-on, and follow the cursor down the queue. `d` shows exactly what the
-merge request's own window shows.
+`c`, `d`, `p` and `n` open a pane under the list for the row the
+cursor is on, and follow the cursor down the queue. `d` shows exactly
+what the merge request's own window shows.
+
+`n` is every comment on it: the threads on the code under the file and
+line each is on, then the ones on the merge request as a whole, drawn
+as the comments window draws them. Without the code a thread is about:
+that is read from the files on disk, and they are not this merge
+request's until it is opened. The answer is the one `d` counts its
+threads from, so one key after the other is one call, not two.
 
 `p` is the CI column asked what it means: the jobs of the head
 pipeline, grouped under their stages with what each one did and how
@@ -546,7 +553,8 @@ THE MERGE REQUEST                                      *nemeton-detail-window*
 
 `<leader>md`, or `:Nemeton description`. What it is for, and the state
 it is in: CI, approvals, how big the change is, how much conversation
-there is and how much of it is yours and unsent.
+there is, how many open threads somebody else spoke in last, and how
+much of it is yours and unsent.
 
     a               approve it, or take the approval back
     s               send every comment kept unsent
@@ -898,7 +906,10 @@ so, with a |User| autocommand named in `comments.file_walk`, and this
 one listens. Neither needs the other installed: one fires an event with
 no idea who is listening, the other is handed a name. uatis fires
 `UatisFile`; nothing is set by default, and the pane then closes only
-on `q`, `<leader>mx`, or its window going. A thread on the merge
+on `q`, `<leader>mx`, its window going, or the window of code it is
+read beside going -- a conversation beside nothing is about a file
+nobody has open, and where the pane would be the last window left, `:q`
+was leaving the editor and the pane goes with it. A thread on the merge
 request itself is about no file and stays put either way.
 
 ...which leaves "the one I am on" needing a key of its own, and that key

@@ -9,12 +9,22 @@
 
 local config = require("nemeton.config")
 local glab = require("nemeton.glab")
+local marks = require("nemeton.marks")
 local threads = require("nemeton.threads")
 
 local M = {}
 
 -- iid -> { commits = { line, ... }, description = { line, ... } }
 local cache = {}
+
+-- iid -> { inline = { thread, ... }, overview = { thread, ... } }
+--
+-- The conversation kept as threads rather than as lines, apart from
+-- the rest: the description counts it and the comments pane draws it,
+-- and the second of those is drawn to the width of the pane, which
+-- moves with the editor -- so it is the threads that are kept, and the
+-- lines made again for whatever width there is.
+local talk = {}
 
 --- Drops everything fetched so far.
 ---
@@ -23,6 +33,7 @@ local cache = {}
 --- must not still be on the screen afterwards.
 function M.forget()
   cache = {}
+  talk = {}
 end
 
 --- "3d" / "4h" / "12m" -- how long ago an ISO timestamp was.
@@ -347,9 +358,32 @@ end
 ---
 --- Nil when none of it is known: a row of the list carries no threads,
 --- and "0 threads" there would be a lie rather than a count.
+---
+--- `awaiting` is the open threads somebody other than you spoke in
+--- last, on a line or not -- the ones a reply from you would move --
+--- and nil when who you are is not known, for the same reason.
+--- Unsent replies do not count as speaking: nobody else has read them.
 function M.counts(mr)
   if not mr.inline and not mr.overview then
     return nil
+  end
+  local awaiting = mr.me and 0 or nil
+  if mr.me then
+    for _, list in ipairs({ mr.inline or {}, mr.overview or {} }) do
+      for _, t in ipairs(list) do
+        if t.resolvable and not t.resolved then
+          local last
+          for _, n in ipairs(t.notes or {}) do
+            if not n.draft then
+              last = n
+            end
+          end
+          if last and last.author ~= mr.me then
+            awaiting = awaiting + 1
+          end
+        end
+      end
+    end
   end
   local resolved, comments = 0, 0
   for _, t in ipairs(mr.inline or {}) do
@@ -366,6 +400,7 @@ function M.counts(mr)
     resolved = resolved,
     overall = #(mr.overview or {}),
     comments = comments,
+    awaiting = awaiting,
     unsent = #(mr.drafts or {}) + #(mr.draft_overview or {}) + #(mr.draft_replies or {}),
   }
 end
@@ -504,6 +539,18 @@ function M.description_chunks(mr)
       { (", %d resolved"):format(counts.resolved), "NemetonSignResolved" },
       { (" · %d on the merge request itself"):format(counts.overall), "NemetonMeta" },
     })
+    -- Its own row rather than a bracket on the one above, which this
+    -- would push past the width of the float -- and because it counts
+    -- the threads on no line as well, it is not a part of "open" there.
+    if counts.awaiting then
+      local n = counts.awaiting
+      fact(facts, "Waiting", {
+        {
+          ("%d open thread%s whose last comment is not yours"):format(n, n == 1 and "" or "s"),
+          n > 0 and "NemetonSignOpen" or "NemetonMeta",
+        },
+      })
+    end
     local comments = { { ("%d in all"):format(counts.comments), "NemetonMeta" } }
     if counts.unsent > 0 then
       table.insert(comments, { (" · %d unsent"):format(counts.unsent), "NemetonDraft" })
@@ -535,13 +582,92 @@ function M.description_chunks(mr)
   return out
 end
 
+--- The threads on a merge request, asked for once and kept: the
+--- description pane and the comments pane read the same answer, so
+--- moving from one to the other on a row is not a second call.
+--- cb(parsed) or cb(nil, err), synchronously when it is kept.
+local function talk_of(root, iid, cb)
+  if talk[iid] then
+    cb(talk[iid])
+    return
+  end
+  glab.discussions(root, iid, function(data, err)
+    if type(data) ~= "table" then
+      cb(nil, err)
+      return
+    end
+    talk[iid] = threads.parse(data)
+    cb(talk[iid])
+  end)
+end
+
+--- Everything said on a merge request, as lines for a pane `width`
+--- wide: the threads on the code by file and line, then the ones on
+--- the merge request as a whole -- the order the comments window reads
+--- them in, and the same drawing of each.
+---
+--- Without the code a thread is about. That is read out of the files
+--- on disk, and the merge request a row of the list stands for is
+--- almost never the branch checked out: the code quoted would be some
+--- other branch's, which is worse than none. The file and the line
+--- say where it was; opening the merge request shows it.
+function M.comment_lines(parsed, width)
+  local inline = vim.list_slice(parsed.inline or {})
+  table.sort(inline, function(a, b)
+    if a.path ~= b.path then
+      return (a.path or "") < (b.path or "")
+    end
+    return (a.line or 0) < (b.line or 0)
+  end)
+  -- What is somebody's words and what is this pane's own: a file
+  -- name, a line number and the blank between two threads stay on the
+  -- window's background, as they do in the comments window.
+  local chunks, ground = {}, {}
+  local function heading(text)
+    if #chunks > 0 then
+      table.insert(chunks, {})
+    end
+    table.insert(chunks, { { text, "NemetonAuthor" } })
+  end
+  local function thread(t)
+    for _, line in ipairs(threads.render(t, { width = width, edge = true })) do
+      table.insert(chunks, line)
+      ground[#chunks] = t.resolved and "settled" or "open"
+    end
+  end
+
+  local seen = nil
+  for _, t in ipairs(inline) do
+    if t.path ~= seen then
+      heading(t.path or "?")
+      seen = t.path
+    end
+    table.insert(chunks, { { ("  line %d"):format(t.line or 0), "NemetonMeta" } })
+    thread(t)
+  end
+  if #(parsed.overview or {}) > 0 then
+    heading("on the merge request")
+    for _, t in ipairs(parsed.overview) do
+      thread(t)
+      table.insert(chunks, {})
+    end
+  end
+  if #chunks == 0 then
+    return threads.flatten({
+      { { "nothing has been said on this merge request yet.", "NemetonMeta" } },
+    }, 0)
+  end
+  local lines, hls = marks.shade_lines(chunks, 0, ground)
+  return lines, hls
+end
+
 --- Everything the block at the top of a description is drawn from,
 --- for a merge request that is only a row of a list.
 ---
 --- The window under the list and the merge request's own window are
 --- meant to be the same window, and a row carries about half of what
 --- that window says: no approvals, and nothing about the conversation.
---- So the missing half is asked for here -- up to three calls at once,
+--- So the missing half is asked for here -- up to four calls at once,
 --- once per merge request, cached with the rendering they go into -- rather
 --- than leaving the pane a poorer version of the thing it is showing.
 ---
@@ -549,7 +675,7 @@ end
 --- send it, and the merge request is asked for in full only when it did
 --- not: a round trip saved on the common path.
 local function facts(root, mr, cb)
-  local whole, pending, failed = vim.tbl_extend("keep", {}, mr), 3, false
+  local whole, pending, failed = vim.tbl_extend("keep", {}, mr), 4, false
   local function fill(data)
     for k, v in pairs(data or {}) do
       if whole[k] == nil then
@@ -592,11 +718,16 @@ local function facts(root, mr, cb)
       done()
     end)
   end
-  glab.discussions(root, mr.iid, function(data)
-    if type(data) == "table" then
-      local parsed = threads.parse(data)
+  talk_of(root, mr.iid, function(parsed)
+    if parsed then
       whole.inline, whole.overview = parsed.inline, parsed.overview
     end
+    done()
+  end)
+  -- Who you are, for which threads are waiting on you: asked once per
+  -- repository and kept, so this is a call for the first row only.
+  glab.me(root, function(who)
+    whole.me = who and who.username or nil
     done()
   end)
 end
@@ -607,7 +738,8 @@ local function remember(iid, mode, chunks)
   return chunks
 end
 
---- `mode` is "commits", "description" or "jobs". cb(lines, highlights) or
+--- `mode` is "commits", "description", "jobs" or "comments" -- the last
+--- drawn `opts.width` wide. cb(lines, highlights) or
 --- cb(nil, err), and called *synchronously* on a cache hit -- which is
 --- what lets the preview pane redraw without a flash of "…" every time
 --- the cursor moves back over a row it has already been on.
@@ -615,7 +747,19 @@ end
 --- The same lines and the same colours the merge request's own window
 --- draws, because it is the same question being asked from two places:
 --- what is this, and is it worth opening.
-function M.fetch(root, mr, mode, cb)
+function M.fetch(root, mr, mode, cb, opts)
+  opts = opts or {}
+  if mode == "comments" then
+    talk_of(root, mr.iid, function(parsed, err)
+      if not parsed then
+        cb(nil, err)
+        return
+      end
+      cb(M.comment_lines(parsed, opts.width))
+    end)
+    return
+  end
+
   local function hand(chunks)
     local lines, hls = threads.flatten(chunks, 0)
     cb(lines, hls)

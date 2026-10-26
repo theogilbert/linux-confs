@@ -270,7 +270,10 @@ In the list: `<CR>` opens one, `c` shows its commits under the list,
 head pipeline under their stages, the same table the merge request's own
 window draws on the same key, because "failed" in a column is where the
 question starts and "which job" is usually the answer to whether to open
-it at all. `s` walks the queue through opened → merged
+it at all. `n` shows what has been said on it, every thread under the
+file and line it is on — without the code each is about, which is read
+from the files on disk and those are not this branch's until it is
+opened. `s` walks the queue through opened → merged
 → closed → all (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
 on the screen, `+` writes one of your own for the branch you are on,
@@ -414,7 +417,8 @@ the buffer again.
 
 `<leader>md` is where a merge request is looked at and acted on: what
 it is for, how big it is, what CI made of it, who has approved it, how
-much conversation is on it and how much of that is yours and unsent.
+much conversation is on it, how many open threads somebody else spoke
+in last, and how much of it is yours and unsent.
 In it: `a` approves it or takes the approval back — whichever the forge,
 asked at the keypress, says it is not, so an approval withdrawn on the
 web page is given back rather than withdrawn again — `s` sends every
@@ -794,7 +798,10 @@ says so, with a `User` autocommand you name in `comments.file_walk`,
 and nemeton listens. Neither needs the other installed: one fires an
 event with no idea who is listening, the other is handed a name. uatis
 fires `UatisFile`; nothing is set by default, and the pane then closes
-only on `q`, `<leader>mx`, or its window going. A thread on the merge
+only on `q`, `<leader>mx`, its window going, or the window of code it
+is read beside going — a conversation beside nothing is about a file
+nobody has open, and where the pane would be the last window left, `:q`
+was leaving the editor and the pane goes with it. A thread on the merge
 request itself is about no file and stays put either way.
 
 **`<leader>mx` is the third way**, and it is the one for "this one
@@ -1509,18 +1516,20 @@ lua/nemeton/
 ## Tests
 
 ```
-./tests/run.sh
+./tests/run.sh                            # every spec
+./tests/run.sh tests/spec/pane_spec.lua   # one
 ```
 
 Headless, no network: a stub `glab` (`tests/stub-glab.sh`) answers from
 `tests/fixtures/` and records what it was asked to POST, so the shape of
 a new thread's position payload is pinned by a test rather than by a
-memory of the API docs. 1014 checks — parsing, indexing, the gutter, the
-toggles, `]m`/`[m`, that a thread follows its line through an edit, the
-two POST payloads, the list, that the host and token reach glab, that a
-token function is read once rather than per call, that a 401 prompts
-once and retries, and that the log records every call without recording
-either the token or what a comment said.
+memory of the API docs. Plenary specs in `tests/spec/`, one per module
+— parsing, indexing, the gutter, the toggles, `]m`/`[m`, that a thread
+follows its line through an edit, the two POST payloads, the list,
+that the host and token reach glab, that a token function is read once
+rather than per call, that a 401 prompts once and retries, and that the
+log records every call without recording either the token or what a
+comment said.
 
 Colour is the one thing here a test cannot settle, because every number
 in `comments` means something different against every colourscheme. Open
@@ -1539,7 +1548,7 @@ the repository root, both runnable by hand:
 
 ```
 luacheck lua plugin tests
-stylua --check lua plugin tests/run.lua
+stylua --check lua plugin tests
 ```
 
 `./tests/check.sh` runs all of it the way CI does — the suite on your

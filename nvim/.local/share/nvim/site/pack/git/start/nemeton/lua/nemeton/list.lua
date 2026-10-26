@@ -698,7 +698,7 @@ local function update_preview(now)
         return
       end
       draw_preview(lines, hls_or_err)
-    end)
+    end, { width = vim.api.nvim_win_get_width(M.preview.win) })
     -- Only when the fetch actually went out: a cached answer comes back
     -- inside the call above, and a "…" drawn either side of it is a
     -- flicker on every cursor move.
@@ -833,6 +833,7 @@ local function open_window()
     { keys.commits, "commits", "the commits on this merge request" },
     { keys.description, "description", "what this merge request is for" },
     { keys.jobs, "jobs", "what CI made of this merge request, job by job" },
+    { keys.comments, "comments", "every comment on this merge request" },
   }) do
     table.insert(bindings, {
       pane[1],

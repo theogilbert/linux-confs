@@ -401,6 +401,24 @@ never appear as reversed changes.
   `at.release_all` removes the worktrees synchronously -- an async
   removal is killed half done when the editor goes.
 
+- **Who wrote it.** `<leader>gi` / `:UatisBlame` (`init.blame` →
+  `blame.lua`): a sibling annotator like `conflict.lua`, registry by
+  bufnr, nothing compared. `git.blame` hands the buffer to `git blame
+  --incremental -M --contents -`, so unsaved lines come back as
+  `uncommitted` and no row needs mapping back; a view's `at_commit`
+  copy or an old side is blamed AT its revision instead. Nothing past
+  the end of a line: per RUN of one commit's lines, the sha and a bracket in a 'statuscolumn' cell put IN
+  FRONT of the window's own (`worn`, `sync` -- a split copies the
+  expression, so what it had is read with ours stripped), one colour
+  per commit from the scheme's syntax groups, assigned so neighbours
+  differ, bold for the cursor's run. `gK` is the run in a float, with
+  `git.line_patch` -- what the commit did to those lines. `-C` is
+  deliberately off: cross-file copies are git's similarity guess. `<leader>gc` opens the run's
+  commit via `pane.show_commit` and lands on the line as the commit has
+  it (`run.orig` + offset) through `view.land_at`, collected on render
+  like `move_landing`. Re-blamed on change (debounced), on write and on
+  `FocusGained`; `:edit!` is a reload, not the end of it.
+
 - **One key under the header.** The hint row is `g?` and nothing else;
   `pane.peek_keys` opens a float over `keys_of(pane)`, which is where
   the mode-awareness lives — a standalone commit review is offered no

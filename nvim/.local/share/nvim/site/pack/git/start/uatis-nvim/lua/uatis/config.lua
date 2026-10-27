@@ -56,6 +56,8 @@ return {
       at = "<leader>gw",
       -- Start or end a review of the files a merge stopped on.
       conflicts = "<leader>gx",
+      -- Name who last wrote each line of this buffer, or stop.
+      blame = "<leader>gi",
     },
     -- Inside the changed-file list.
     pane = {
@@ -127,6 +129,20 @@ return {
       quit = "q",
       -- Jump to the matching row in the file.
       jump = "<CR>",
+    },
+    -- In a buffer while its blame is on.
+    blame = {
+      -- To the first line of the next or previous run of lines one
+      -- commit wrote.
+      next = "]r",
+      prev = "[r",
+      -- The commit that wrote the line under the cursor, against its
+      -- parent, opened at that line.
+      show = "<leader>gc",
+      -- The run under the cursor in a float: the commit, the rows it
+      -- covers, the whole message and what it did to those lines.
+      -- Again, to go into the float.
+      details = "gK",
     },
     -- In a conflicted file, while the conflict review is on. The walk
     -- (`keys.view.files`, `file_next`, `file_prev`) is bound there too.
@@ -361,5 +377,12 @@ return {
     delete = "-",
     -- Drawn in the sign column along a definition that moved.
     move = "▎",
+    -- Drawn in the blame column along a run of lines: its first row,
+    -- the rows between, its last row, and a run of one row -- and the
+    -- same for the run under the cursor.
+    blame = {
+      first = "┌", mid = "│", last = "└", single = "╶",
+      current = { first = "┏", mid = "┃", last = "┗", single = "╺" },
+    },
   },
 }

@@ -430,9 +430,19 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, "UatisStatusD", { link = "DiffDelete" })
   vim.api.nvim_set_hl(0, "UatisStatusM", { link = "DiffChange" })
   vim.api.nvim_set_hl(0, "UatisStatusR", { link = "Special" })
-  -- The name a file had, in its winbar: the same statement as the
-  -- list's `R`, so the same colour.
-  vim.api.nvim_set_hl(0, "UatisRenamed", { link = "UatisStatusR" })
+  -- The name a file had, in its winbar. Gold, and not a group of the
+  -- scheme's: `Special` and its kin are colours the syntax is already
+  -- using, and beside a filename in the bar they read as one more
+  -- token. A rename is often the whole of what a commit did to a file
+  -- -- the commit a `--follow` history lists where the name changed --
+  -- so it is drawn to be seen. Lit to the bar it sits on, as the counts
+  -- are, so it holds on light and dark alike.
+  local _, _, bar_l = to_hsl(bar or 0)
+  vim.api.nvim_set_hl(0, "UatisRenamed", {
+    fg = to_rgb(45 / 360, 0.9, bar_l > 0.5 and 0.38 or 0.6),
+    bold = true,
+    default = true,
+  })
 
   -- A conflict block. Ours takes the addition's green, theirs the
   -- change's blue -- the two colours a diff already taught the reader,

@@ -152,6 +152,10 @@ with nothing changed. Both are remembered per repository between sessions
                         current file. With no argument it asks. See
                         |uatis-at|.
 
+                                                                *:UatisBlame*
+:UatisBlame             Name who last wrote each line of the current buffer,
+                        beside it -- or stop. See |uatis-blame|.
+
                                                              *:UatisConflicts*
 :UatisConflicts         Start, or end, a review of the files a merge, rebase
                         or cherry-pick stopped on. See |uatis-conflicts|.
@@ -182,6 +186,8 @@ press a buffer-local key in. >
     <leader>gw      the project as it was at a revision you pick, to read
                     with a language server |uatis-at|
     <leader>gx      start or end a review of the conflicts a merge left
+    <leader>gi      name who wrote each line of this buffer, or stop
+                    |uatis-blame|
 <
 IN A REVIEWED FILE                                       *uatis-mappings-view*
 >
@@ -238,6 +244,13 @@ IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
     <leader>go      back to the inline layout
     q               the same: close it, and the next file opens inline
     [C  ]C          move within the commit on show, as in your file
+<
+IN A BLAMED BUFFER                                      *uatis-mappings-blame*
+>
+    ]r  [r          next / previous run of lines one commit wrote
+    <leader>gc      that commit against its parent, at this line
+    gK              the run under the cursor: commit, rows, message, and
+                    what it did to those lines; again to go into it
 <
 IN A CONFLICTED FILE                                 *uatis-mappings-conflict*
 
@@ -650,6 +663,42 @@ started for it; so does quitting nvim, before a session is saved. Two tabs
 on one revision share a checkout. |uatis-history| and |:UatisShow| work
 from inside it, reading back from that revision.
 
+                                                                 *uatis-blame*
+`<leader>gi` (|:UatisBlame|) names the commit that last wrote each line in
+the gutter of the buffer you are editing -- not in a column beside a copy of
+it. The buffer is handed to git as it stands, so a line you have typed and
+not written is `new`, and every other line keeps its commit through the
+edit.
+
+Each run of lines from one commit gets its short sha in a column at the
+left of the gutter, on the run's first row, and a bracket down the rest of
+it: `┌` `│` `└`, or `╶` for one row (`marker.blame` to change them). Each
+commit has a colour of its own, taken from your colourscheme's syntax
+groups, and a commit is never given the colour of the run above it -- one
+met again further down keeps the colour it already has. The run under the
+cursor is drawn bold with a heavier bracket, `┏` `┃` `┗`, so the lines it
+covers are read off the gutter. Nothing is drawn past the end of a line:
+who, when and why are `gK` away.
+
+The column is 'statuscolumn'. It is put in front of whatever the window
+already had, never in its place, and what was there is put back when the
+blame goes off.
+
+`<leader>gc` opens the commit that wrote the line under the cursor, as
+|:UatisShow| does, with the cursor on that line as the commit has it -- the
+row it had then, not the one it has now. `gK` opens the run in a float: the
+commit, who and exactly when, the rows it covers here and in that commit,
+the whole message, and what that commit did to these lines (`git log -L`).
+`gK` again goes into the float; moving the cursor closes it.
+
+Lines moved within the file keep the commit that wrote them (`-M`);
+lines copied from another file are named by the commit that copied them,
+since git's guess at where they came from is by similarity. git applies
+`blame.ignoreRevsFile` itself.
+
+A file shown as it was -- a commit on show, the old-revision window -- is
+blamed as of that revision.
+
 ==============================================================================
 12. CONFLICTS                                                *uatis-conflicts*
 
@@ -774,7 +823,7 @@ preserve.
     UatisStatusM        modified
     UatisStatusD        deleted
     UatisStatusR        renamed
-    UatisRenamed        the name a renamed file had, in its winbar
+    UatisRenamed        the name a renamed file had, in its winbar (gold)
     UatisStatusU        unmerged
     UatisOurs           our side of a conflict block
     UatisOursMark       ...and the words it changed
@@ -782,6 +831,11 @@ preserve.
     UatisTheirsMark     ...and the words it changed
     UatisBase           the base between them, where the markers carry one
     UatisMarker         the marker rows
+    UatisBlame          the quiet rows of the blame float |uatis-blame|
+    UatisBlame1..N      a commit's sha and bracket, one per distinct colour
+                        your scheme gives Function, String, Type, ...
+    UatisBlame1Current  ...the same, bold, for the run under the cursor
+    UatisBlameUncommitted  a line not committed yet
 <
 Set any of them yourself after `setup()` and the derivation for that group is
 what you replace.
@@ -857,6 +911,7 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           history = "<leader>gL",
           at = "<leader>gw",
           conflicts = "<leader>gx",
+          blame = "<leader>gi",
         },
         view = { layout = "<leader>go", diff_mode = "<leader>gm" },
         conflict = { next = "]x", prev = "[x", resolve = "<leader>xw" },
@@ -877,6 +932,7 @@ The functions behind the mappings, for binding yourself: >lua
     require("uatis").history([{ path, range, line1, line2 }])
     require("uatis").at([rev])
     require("uatis").conflicts()
+    require("uatis").blame()
     require("uatis").colors()
 <
 ==============================================================================

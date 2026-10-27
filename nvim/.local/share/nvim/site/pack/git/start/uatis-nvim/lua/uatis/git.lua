@@ -434,6 +434,116 @@ function M.commit_message(root, sha, cb)
   end)
 end
 
+--- Who last wrote each line of `path`: cb(runs|nil, err), `runs` in
+--- order of row, each { from, to, path, orig, commit } -- `from`..`to`
+--- rows of the text blamed, `path`/`orig` the name and row its first
+--- line had IN that commit (a rename and an edit above it both move
+--- it), and `commit` one table per sha, shared by its runs: { sha,
+--- short, author, time, summary, uncommitted, boundary }.
+---
+--- `text`, where given, is blamed in place of the file on disk --
+--- `--contents -` -- which is what lets the reader's own buffer be
+--- blamed with its unsaved edits: git answers about exactly these
+--- lines, the ones it has never seen as `uncommitted`, and no row has
+--- to be mapped back from the disk's numbering to the buffer's. `rev`
+--- blames as of that revision instead of the working tree.
+---
+--- `-M` and not `-C`: a line moved within the file keeps the commit
+--- that wrote it, but lines found again in ANOTHER file are git's guess
+--- by similarity, and a guess that names the wrong author is worse than
+--- naming the commit that did the copying. `blame.ignoreRevsFile` is
+--- git's own to apply, and it does.
+---
+--- `--incremental` for its shape rather than for streaming: each commit's
+--- headers come once, beside a run of lines and not one entry per line.
+function M.blame(root, rev, path, text, cb)
+  local cmd = { "git", "--no-pager", "-c", "core.quotepath=false", "-C", root,
+    "blame", "--incremental", "-M" }
+  if text then
+    vim.list_extend(cmd, { "--contents", "-" })
+  end
+  if rev then
+    table.insert(cmd, rev)
+  end
+  vim.list_extend(cmd, { "--", path })
+  -- A trailing newline, as the file on disk has one: without it git
+  -- reads the last line as changed from a version that ended in one.
+  local stdin = text and (text:sub(-1) == "\n" and text or (text .. "\n")) or nil
+  vim.system(cmd, { text = true, stdin = stdin }, function(res)
+    vim.schedule(function()
+      if res.code ~= 0 then
+        return cb(nil, vim.trim(res.stderr or ""))
+      end
+      local commits, runs, cur = {}, {}, nil
+      for line in (res.stdout or ""):gmatch("[^\n]+") do
+        local sha, orig, final, n = line:match("^(%x+) (%d+) (%d+) (%d+)$")
+        if sha and #sha >= 40 then
+          local c = commits[sha]
+          if not c then
+            c = { sha = sha, short = sha:sub(1, 7), uncommitted = sha:match("^0+$") ~= nil }
+            commits[sha] = c
+          end
+          cur = { from = tonumber(final), to = tonumber(final) + tonumber(n) - 1,
+            commit = c, orig = tonumber(orig) }
+          table.insert(runs, cur)
+        elseif cur then
+          local k, v = line:match("^(%S+) ?(.*)$")
+          local c = cur.commit
+          if k == "author" then
+            c.author = v
+          elseif k == "author-time" then
+            c.time = tonumber(v)
+          elseif k == "summary" then
+            c.summary = v
+          elseif k == "boundary" then
+            c.boundary = true
+          elseif k == "filename" then
+            -- Per run, not per commit: a commit may hold the lines under
+            -- two names when a rename and an edit happened in it.
+            cur.path = v
+          end
+        end
+      end
+      table.sort(runs, function(a, b) return a.from < b.from end)
+      -- git hands one commit's adjacent lines back in pieces wherever it
+      -- found them in separate passes; drawn, that would label the same
+      -- run twice.
+      local out = {}
+      for _, r in ipairs(runs) do
+        local last = out[#out]
+        if last and last.commit == r.commit and last.to + 1 == r.from then
+          last.to = r.to
+        else
+          table.insert(out, r)
+        end
+      end
+      cb(out)
+    end)
+  end)
+end
+
+--- What commit `sha` did to lines `from`..`to` of `path` as it left
+--- them: cb(lines), the hunks of `git log -L` from the first `@@` on,
+--- `{}` where git says nothing. `-1` from `sha` itself, so the commit
+--- shown is that one -- `-L` would otherwise walk on to every earlier
+--- commit that touched the lines.
+function M.line_patch(root, sha, path, from, to, cb)
+  run(root, { "log", "-1", "--format=", "--no-color", "--no-ext-diff",
+    "-L", string.format("%d,%d:%s", from, to, path), sha }, function(ok, out)
+    local lines, started = {}, false
+    for line in ((ok and out) or ""):gmatch("[^\n]*") do
+      started = started or line:match("^@@") ~= nil
+      if started then
+        table.insert(lines, line)
+      end
+    end
+    while #lines > 0 and lines[#lines] == "" do
+      table.remove(lines)
+    end
+    cb(lines)
+  end)
+end
+
 --- When `sha` was made, to the second and with its offset: cb({ author,
 --- committer, epoch }), `committer` nil where it is the same moment --
 --- it differs after a rebase or a cherry-pick, and says when this copy

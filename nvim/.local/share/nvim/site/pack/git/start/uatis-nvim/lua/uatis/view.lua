@@ -75,6 +75,33 @@ local function land_move(view)
   end
 end
 
+--- Where a jump to one row of one file is going -- a blamed line opened
+--- as its commit -- `{ root, path, row, till }`. By path, as
+--- `move_landing` is, and for its reason: the commit's copy of the file
+--- is a git call away and its buffer does not exist yet.
+local row_landing
+
+function M.land_at(root, path, row)
+  row_landing = { root = root, path = path, row = row, till = vim.uv.now() + 5000 }
+end
+
+local function land_row(view)
+  local aim = row_landing
+  if aim and vim.uv.now() > aim.till then
+    row_landing, aim = nil, nil
+  end
+  if not aim or aim.root ~= view.root or aim.path ~= view.relpath then
+    return
+  end
+  row_landing = nil
+  local win = vim.fn.bufwinid(view.bufnr)
+  if win ~= -1 then
+    local count = vim.api.nvim_buf_line_count(view.bufnr)
+    vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(aim.row, count)), 0 })
+    vim.api.nvim_win_call(win, function() vim.cmd("normal! zz") end)
+  end
+end
+
 function M.get(bufnr)
   local v = views[bufnr]
   if v and not vim.api.nvim_buf_is_valid(bufnr) then
@@ -323,6 +350,7 @@ local function render(view)
         -- anchors it was aimed at have just been worked out.
         land(view)
         land_move(view)
+        land_row(view)
         -- The list measures what this view measures, and only this view can
         -- see an edit that has not been saved: `git diff` reads the disk.
         -- Told rather than polled, and only when the numbers actually moved,

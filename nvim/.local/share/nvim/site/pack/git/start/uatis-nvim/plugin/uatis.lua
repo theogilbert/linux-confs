@@ -50,6 +50,12 @@ end, {
   desc = "uatis: start or end a review of the files a merge stopped on",
 })
 
+vim.api.nvim_create_user_command("UatisBlame", function()
+  require("uatis").blame()
+end, {
+  desc = "uatis: name who last wrote each line of this buffer, or stop",
+})
+
 vim.api.nvim_create_user_command("UatisColors", function()
   require("uatis").colors()
 end, {

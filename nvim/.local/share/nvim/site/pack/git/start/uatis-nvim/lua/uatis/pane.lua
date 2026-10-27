@@ -734,6 +734,7 @@ local function keys_of(pane)
   add(g.history, "every commit that touched this file, or the lines selected")
   add(g.at, "the project as it was at a revision, to read, with LSP")
   add(g.since_commit, "everything since a revision")
+  add(g.blame, "who wrote each line of a file")
   add(g.open_pane, "open this list")
   return rows
 end
@@ -2543,21 +2544,7 @@ function M.history_at_cursor(pane)
   return false
 end
 
---- How long ago `epoch` was, in the one unit that reads naturally.
-local function ago(epoch)
-  local s = os.time() - epoch
-  if s < 0 then
-    return nil
-  end
-  for _, u in ipairs({ { 365 * 86400, "year" }, { 30 * 86400, "month" }, { 7 * 86400, "week" },
-    { 86400, "day" }, { 3600, "hour" }, { 60, "minute" } }) do
-    if s >= u[1] then
-      local n = math.floor(s / u[1])
-      return ("%d %s%s ago"):format(n, u[2], n == 1 and "" or "s")
-    end
-  end
-  return "just now"
-end
+local ago = ui.ago
 
 --- The date under the cursor in the list, to the second: a float beside
 --- it, gone when the cursor moves. The list draws dates as `YYYY-MM-DD`,

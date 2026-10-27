@@ -5,6 +5,7 @@
 --   :[range]UatisHistory [<path>]  every commit that touched a file,
 --                             a directory, or the lines in range
 --   :UatisAt [<rev>]          the project as it was at a revision
+--   :UatisBlame               who last wrote each line of this buffer
 --   :UatisColors              tune the colours against your scheme, live
 --   require("uatis").setup([opts])
 --   require("uatis").toggle_diff()
@@ -14,6 +15,7 @@
 --   require("uatis").since_commit([rev])
 --   require("uatis").history([opts])
 --   require("uatis").at([rev])
+--   require("uatis").blame()
 --   require("uatis").colors()
 --
 -- The command and the functions are not two ways to do one thing. A
@@ -613,6 +615,12 @@ end
 --- a scheme it has never met -- or when a tint reads wrong on the file
 --- in front of you -- and a key kept for it would be a key kept for
 --- something nobody presses twice in a year.
+--- Who last wrote each line of this buffer, named beside it -- or the
+--- labels taken off again. See `blame.lua`.
+function M.blame()
+  require("uatis.blame").toggle(vim.api.nvim_get_current_buf())
+end
+
 function M.colors()
   return require("uatis.colors").open()
 end
@@ -900,6 +908,8 @@ local function setup_keymaps()
       desc = "[G]it - Review everything [S]ince a revision" },
     { lhs = k.conflicts, rhs = function() M.conflicts() end,
       desc = "[G]it - Toggle merge conflicts review" },
+    { lhs = k.blame, rhs = function() M.blame() end,
+      desc = "[G]it - Toggle who wrote each line (blame)" },
   }
   for _, m in ipairs(mappings) do
     if m.lhs and m.lhs ~= "" then
@@ -988,9 +998,13 @@ function M.setup(opts)
   local group = vim.api.nvim_create_augroup("Uatis", { clear = true })
   setup_keymaps()
   overlay.setup_highlights()
+  require("uatis.blame").setup_highlights()
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = group,
-    callback = overlay.setup_highlights,
+    callback = function()
+      overlay.setup_highlights()
+      require("uatis.blame").setup_highlights()
+    end,
   })
   -- The tabs this plugin opened for itself go before the editor does.
   -- `ExitPre` and not `VimLeavePre`: a session is saved on

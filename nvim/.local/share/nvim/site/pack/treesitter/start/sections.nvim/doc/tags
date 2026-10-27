@@ -1,6 +1,7 @@
 :SectionsJump	sections.txt	/*:SectionsJump*
 sections	sections.txt	/*sections*
 sections-api	sections.txt	/*sections-api*
+sections-config-fold_markers	sections.txt	/*sections-config-fold_markers*
 sections-config-icons	sections.txt	/*sections-config-icons*
 sections-config-indent	sections.txt	/*sections-config-indent*
 sections-config-keymaps	sections.txt	/*sections-config-keymaps*
@@ -14,8 +15,12 @@ sections-introduction	sections.txt	/*sections-introduction*
 sections-json	sections.txt	/*sections-json*
 sections-keymap-close	sections.txt	/*sections-keymap-close*
 sections-keymap-collapse	sections.txt	/*sections-keymap-collapse*
+sections-keymap-collapse-all	sections.txt	/*sections-keymap-collapse-all*
+sections-keymap-collapse-recursive	sections.txt	/*sections-keymap-collapse-recursive*
 sections-keymap-description	sections.txt	/*sections-keymap-description*
 sections-keymap-expand	sections.txt	/*sections-keymap-expand*
+sections-keymap-expand-all	sections.txt	/*sections-keymap-expand-all*
+sections-keymap-expand-recursive	sections.txt	/*sections-keymap-expand-recursive*
 sections-keymap-private	sections.txt	/*sections-keymap-private*
 sections-keymap-select	sections.txt	/*sections-keymap-select*
 sections-keymap-toggle	sections.txt	/*sections-keymap-toggle*

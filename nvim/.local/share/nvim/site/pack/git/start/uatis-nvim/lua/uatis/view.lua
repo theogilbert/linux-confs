@@ -886,8 +886,9 @@ local function step_file(dir)
 end
 
 --- ...and the same for stepping the review a commit at a time, which is
---- a question about the list too and so needs one to exist.
-local function step_commit(dir)
+--- a question about the list too and so needs one to exist. Public for
+--- the old-revision window, which is a file of the review as well.
+function M.step_commit(dir)
   local pane = require("uatis.pane")
   local list = pane.get()
   if list and (list.renders or 0) > 0 then
@@ -1100,9 +1101,9 @@ local function setup_keymaps(view)
       opts = { desc = "Uatis - Previous changed [f]ile" } },
     -- The same list, one size up: `]c` is the next change in this file,
     -- `]C` the next change to the branch.
-    { lhs = k.commit_next, rhs = function() step_commit(1) end,
+    { lhs = k.commit_next, rhs = function() M.step_commit(1) end,
       opts = { desc = "Uatis - Next [C]ommit" } },
-    { lhs = k.commit_prev, rhs = function() step_commit(-1) end,
+    { lhs = k.commit_prev, rhs = function() M.step_commit(-1) end,
       opts = { desc = "Uatis - Previous [C]ommit" } },
     { lhs = k.commit_view, rhs = function() toggle_commits() end,
       opts = { desc = "[G]it - Toggle one commit at a time ([h]istory)" } },

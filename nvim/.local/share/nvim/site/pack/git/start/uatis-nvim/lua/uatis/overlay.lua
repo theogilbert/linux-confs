@@ -430,6 +430,9 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, "UatisStatusD", { link = "DiffDelete" })
   vim.api.nvim_set_hl(0, "UatisStatusM", { link = "DiffChange" })
   vim.api.nvim_set_hl(0, "UatisStatusR", { link = "Special" })
+  -- The name a file had, in its winbar: the same statement as the
+  -- list's `R`, so the same colour.
+  vim.api.nvim_set_hl(0, "UatisRenamed", { link = "UatisStatusR" })
 
   -- A conflict block. Ours takes the addition's green, theirs the
   -- change's blue -- the two colours a diff already taught the reader,

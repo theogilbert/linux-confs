@@ -786,6 +786,14 @@ local function setup_keymaps(view, buf)
     require("uatis.view").leave_move(view, at, to)
     put_cursor(view.win, view.bufnr, to)
   end, "Uatis - Other end of a moved definition")
+  -- The walk through the commits, as in your buffer beside it: which
+  -- commit is on show is a fact about the review, not about which of
+  -- its two windows the cursor happens to be in.
+  local kv = config.keys.view
+  map(kv.commit_next, function() require("uatis.view").step_commit(1) end,
+    "Uatis - Next [C]ommit")
+  map(kv.commit_prev, function() require("uatis.view").step_commit(-1) end,
+    "Uatis - Previous [C]ommit")
 end
 
 local function fill(view, text)

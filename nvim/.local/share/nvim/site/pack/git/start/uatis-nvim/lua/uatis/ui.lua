@@ -774,7 +774,10 @@ local function view_winbar_text(view, width)
 
   add(view.relpath, "UatisHeader")
   if view.old_path and view.old_path ~= view.relpath then
-    add("← " .. view.old_path, "UatisMeta")
+    -- Coloured, not greyed with the counts and dates: the name the file
+    -- had is a change the commit made, and the only one where a rename
+    -- left the content alone -- greyed, a pure rename read as nothing.
+    add("← " .. view.old_path, "UatisRenamed")
   end
   -- Which revision THIS window is showing, when there is another window
   -- showing a different one. In place there is only one window and the

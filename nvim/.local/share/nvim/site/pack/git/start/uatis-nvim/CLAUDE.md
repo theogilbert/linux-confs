@@ -11,31 +11,30 @@ Neovim 0.12+, `git`, and `difft` (difftastic) for structural diffing.
 ## Commands
 
 ```sh
-tests/run.sh                      # build a fixture repo + run the headless suite
-UATIS_FIXTURE=/path tests/run.sh  # reuse/place the fixture elsewhere
-tests/fixture.sh <dir>            # build the fixture only
+tests/run.sh                            # build the fixture, run every spec file
+tests/run.sh tests/uatis/diff_spec.lua  # just the files named
+UATIS_FIXTURE=/path tests/run.sh        # place the fixture elsewhere
+tests/fixture.sh <dir>                  # build the fixture only
 ```
 
-There is no single-test runner: `tests/run.lua` is one script of `do ... end`
-blocks, each printed under a `[section name]` header. To iterate on one
-section, build the fixture once and drive the script directly:
+The suite is plenary.nvim busted specs. `run.sh` clones plenary into the
+gitignored `.tests/` the first time (or uses `PLENARY_DIR`), then runs each
+`*_spec.lua` in a headless nvim of its own, several at once (`UATIS_JOBS`),
+and prints `N passed, M failed, K files` and the failing files. Each nvim
+starts from `tests/minimal_init.lua` with `--noplugin` and an empty
+'packpath' -- so it runs THIS checkout, not a copy in the user's site
+packages -- with filetype detection and syntax off as `-u NONE` has them,
+and a private cache and ShaDa file (with ShaDa off entirely the commit
+walk's date float never opens; with filetype on, an ftplugin moves the list
+cursor under it).
 
-```sh
-nvim --headless -u NONE --cmd 'set packpath=' --cmd "set rtp+=$PWD" \
-  -l tests/run.lua /tmp/uatis-fixture
-```
-
-`packpath=` matters — without it the suite runs against whatever copy of the
-plugin is installed in the user's site packages, not this checkout.
-
-The suite exits nonzero on any failure and prints `N passed, M failed`. It
-skips (not fails) the difftastic and tree-sitter sections when those are
-absent, so a green run without `difft` on PATH is not full coverage.
+The difftastic and tree-sitter cases are `pending` (not failed) when those
+are absent, so a green run without `difft` on PATH is not full coverage.
 
 `:checkhealth uatis` covers the three external requirements, then what
 this repository says about itself — base, fork point, and the git config
 that rewrites `git diff`. `health.facts(dir)` gathers that as data (and
-is what the suite asserts on); `health.report(facts)` says what each fact
+is what `health_spec.lua` asserts on); `health.report(facts)` says what each fact
 means.
 
 ## Architecture
@@ -56,8 +55,8 @@ never appear as reversed changes.
 ### Layers
 
 - `plugin/uatis.lua` — `:Uatis`, `:UatisShow` and `:UatisColors` commands
-  + `setup()`. Not sourced under `-l`,
-  so `tests/run.lua` calls `uatis.setup()` itself.
+  + `setup()`. Not sourced in the suite (`--noplugin`),
+  so `tests/helpers.lua` calls `uatis.setup()` itself.
 - `init.lua` — the public API (`setup`, `run`, `toggle_diff`,
   `set_base_branch`, `open_pane`/`close_pane`, `show_commit`,
   `since_commit`, `colors`, `complete`/`complete_show`, and
@@ -632,13 +631,44 @@ stops on `calc.lua` (different words of adjacent lines — what the wand
 takes) and `helper.lua` (added by both — no base, nothing can). The
 sections that use it run the merge themselves and `merge --abort` after.
 
-`tests/run.sh` gives the run a cache of its own (`XDG_CACHE_HOME`), since
-`checkout.lua` and `at.lua` check commits out under `stdpath("cache")`, and
-the suite releases both before `os.exit`, which fires no `ExitPre`.
+The specs mirror `lua/uatis/`: `tests/uatis/<module>_spec.lua`, with
+`tests/uatis/overlay/` and `tests/uatis/diff/` holding one file per rule
+(rules.md names the same rules). `tests/integration/` is what crosses
+modules on a real review -- moves in a view, one review read start to
+finish (`review_spec.lua`, a single story because one pane is carried
+through it), commits on show, history, leaving the editor. Every file gets
+a private copy of the fixture from `h.repo()`, since they run side by side
+and several merge, commit and switch branches; plenary runs each `it` as it
+is reached, so a describe's `it`s may hand state down in order.
+
+`tests/helpers.lua` holds what they share, above all the PICTURE: a
+render drawn as text, one line per screen row -- `|` a plain row, `+`
+banded added, `~` stepped back, `-` a before-image, `>` a move line --
+with `⟦x⟧` lit and `⟨x⟩` stepped back inside a row (the full legend is in
+helpers.lua). An engine test is a pair of files and the picture they
+draw:
+
+```lua
+h.drawn({ lang = "python", old = [[ ... ]], new = [[ ... ]] }, [[
+  | def f():
+  - ⟨    return a ⟩+⟨ b⟩
+  |     return a ⟦*⟧ b
+]])
+```
+
+`h.draw` renders a backend's answer, or a hand-built `result` where the
+test is about a hunk shape; `h.draw_old` is the side window's picture. To
+write one, leave the picture `h.TODO`, run with `UATIS_ACCEPT=<file>`, then
+`nvim -l tests/accept.lua <file>` writes what was drawn back into the spec
+(or over a picture that differs) -- READ it before keeping it: it is what
+the code does, not what it should.
+
+Releasing checkouts: `os.exit` fires no `ExitPre`, so specs that check
+commits out end with `h.release()`.
 
 The suite asserts on extmarks, buffer contents, window state and mappings —
 never on anything visual. It waits on the `view.renders` counter via
-`wait_for`, never on wall-clock sleeps; new async behaviour needs a
+`h.wait_for`, never on wall-clock sleeps; new async behaviour needs a
 counter or predicate to wait on rather than a timeout.
 
 ## Committing

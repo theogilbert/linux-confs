@@ -237,6 +237,7 @@ IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
     <CR>            jump to the matching row in your file
     <leader>go      back to the inline layout
     q               the same: close it, and the next file opens inline
+    [C  ]C          move within the commit on show, as in your file
 <
 IN A CONFLICTED FILE                                 *uatis-mappings-conflict*
 
@@ -773,6 +774,7 @@ preserve.
     UatisStatusM        modified
     UatisStatusD        deleted
     UatisStatusR        renamed
+    UatisRenamed        the name a renamed file had, in its winbar
     UatisStatusU        unmerged
     UatisOurs           our side of a conflict block
     UatisOursMark       ...and the words it changed

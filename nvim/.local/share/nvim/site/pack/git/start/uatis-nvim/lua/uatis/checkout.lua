@@ -12,8 +12,9 @@
 -- --detach`) rather than one per commit: a language server indexes the
 -- project it is started in, and twenty commits stepped through must not
 -- be twenty servers indexing twenty copies. Moved, the server stays up
--- and re-reads what changed; the buffers read out of the checkout are
--- reloaded, and one whose file the new commit does not have is wiped.
+-- and is TOLD what changed (`announce`); the buffers read out of the
+-- checkout are reloaded, and one whose file the new commit does not have
+-- is wiped.
 --
 -- Read-only, as `at.lua`'s are, and gone with the walk: leaving commit
 -- mode or ending the review removes it, with its buffers and the
@@ -38,10 +39,28 @@ local function repo_dir(root)
 end
 
 --- Where `pane`'s checkout lives: one checkout per review in the
---- repository's folder.
+--- repository's folder, named for the editor that made it (`owner_alive`).
 local function dir_for(pane)
-  return repo_dir(pane.root) .. "/" .. tostring(pane.tab) .. "-"
-    .. tostring(vim.uv.hrtime() % 100000)
+  return repo_dir(pane.root) .. "/" .. vim.uv.os_getpid() .. "-" .. tostring(pane.tab)
+    .. "-" .. tostring(vim.uv.hrtime() % 100000)
+end
+
+--- Whether the editor that made checkout folder `name` is still running.
+--- `held` knows this editor's checkouts only, and a second editor on the
+--- same repository reviewing a walk of its own is no crash to clean up
+--- after: swept as one, its checkout vanished under its buffers and every
+--- git call made from them failed on a missing working directory. A pid
+--- reused by an unrelated process keeps a dead checkout one more
+--- session, which costs disk; the other mistake costs the review. A name
+--- with no pid in it predates this and has no owner to ask after.
+local function owner_alive(name)
+  local pid = tonumber(name:match("^(%d+)%-%d+%-%d+$"))
+  if not pid then
+    return false
+  end
+  local ok, err = vim.uv.kill(pid, 0)
+  -- EPERM: alive, another user's.
+  return ok == 0 or (err ~= nil and err:find("EPERM") ~= nil)
 end
 
 local function under(path, dir)
@@ -125,6 +144,52 @@ local function reload(co)
   end
 end
 
+--- Every file that moved between `from` and `to` announced to the
+--- language servers rooted in the checkout, then `cb()`.
+---
+--- A server learns of a file it has not opened only from the client's
+--- file watcher, and Neovim registers none on Linux
+--- (`didChangeWatchedFiles.dynamicRegistration` is off there): the
+--- reloaded buffers were re-read, and every other file stayed indexed
+--- as the commit before had it -- so a step onto a commit that drops a
+--- definition another file still uses drew a diagnostic for the use
+--- against the definition's old address, or none where one belonged.
+--- Sent unasked, as the watcher would have sent it; a server that did
+--- register one hears the same change twice, which costs it nothing.
+--- `--no-renames`, since the protocol has no rename: a delete and a
+--- create.
+local function announce(co, from, to, cb)
+  local clients = vim.tbl_filter(function(client)
+    return client.root_dir ~= nil and under(client.root_dir, co.dir)
+  end, vim.lsp.get_clients())
+  if #clients == 0 then
+    return cb()
+  end
+  git.run(co.dir, { "diff", "--name-status", "--no-renames", "-z", from, to },
+    function(ok, out)
+      local kinds = vim.lsp.protocol.FileChangeType
+      local changes = {}
+      local fields = ok and vim.split(out, "\0", { plain = true }) or {}
+      for i = 1, #fields - 1, 2 do
+        local status, path = fields[i], fields[i + 1]
+        table.insert(changes, {
+          uri = vim.uri_from_fname(co.dir .. "/" .. path),
+          type = status == "A" and kinds.Created
+            or status == "D" and kinds.Deleted
+            or kinds.Changed,
+        })
+      end
+      if #changes > 0 then
+        for _, client in ipairs(clients) do
+          if not client:is_stopped() then
+            client:notify("workspace/didChangeWatchedFiles", { changes = changes })
+          end
+        end
+      end
+      cb()
+    end)
+end
+
 --- Answers the callers waiting on the sha the checkout is at, and moves
 --- it on to the one wanted last: a step asked while the previous one is
 --- still checking out waits for it, and only the latest is ever reached
@@ -158,9 +223,22 @@ local function pump(co)
       end
       return
     end
+    local from = co.sha
     co.sha = target
-    reload(co)
-    pump(co)
+    -- Announced before the buffers are reloaded: a server re-checking
+    -- a reloaded file should do it against the project it is now in.
+    local function settle()
+      if held[co.pane] ~= co then
+        return
+      end
+      reload(co)
+      pump(co)
+    end
+    if from then
+      announce(co, from, target, settle)
+    else
+      settle()
+    end
   end
   -- No hooks: a `post-checkout` that installs dependencies or rebuilds
   -- something is right for a checkout someone will work in, and seconds
@@ -171,12 +249,13 @@ local function pump(co)
   else
     vim.fn.delete(co.dir, "rf")
     vim.fn.mkdir(vim.fs.dirname(co.dir), "p")
-    -- Checkouts no review here holds are a session's that ended without
+    -- Checkouts whose editor is gone are a session's that ended without
     -- removing them -- killed, crashed -- and git still lists each one
     -- in the repository's worktrees. Gone before another is added.
     for name, kind in vim.fs.dir(repo_dir(co.root)) do
       local stale = repo_dir(co.root) .. "/" .. name
-      if kind == "directory" and stale ~= co.dir and not M.owner_of(stale) then
+      if kind == "directory" and stale ~= co.dir and not M.owner_of(stale)
+          and not owner_alive(name) then
         vim.fn.delete(stale, "rf")
       end
     end

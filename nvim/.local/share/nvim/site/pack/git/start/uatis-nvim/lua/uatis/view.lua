@@ -693,13 +693,38 @@ function M.reveal_top(win)
   end)
 end
 
---- Puts the cursor on `line` in the view's own window, centred.
+--- Where on `row` the change starts: the leftmost mark drawn ON the
+--- row's characters, else its first non-blank.
+---
+--- Column 0 was the start of the indent on every stop, and the edit a
+--- word somewhere along the line -- found again by eye, when the stop
+--- had already been pulled forward to the row so the reader would not
+--- have to. A row band (a wholly new line, the dim under a replacement)
+--- is not a place on the row, and a pure deletion has nothing on it, so
+--- those land where the code begins.
+local function change_col(view, row)
+  local text = vim.api.nvim_buf_get_lines(view.bufnr, row - 1, row, false)[1] or ""
+  local col
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(view.bufnr, overlay.ns,
+    { row - 1, 0 }, { row - 1, -1 }, { details = true })) do
+    local d = m[4]
+    if d.hl_group and d.end_col and (d.end_row or m[2]) == m[2] and d.end_col > m[3]
+      and m[3] < #text and (not col or m[3] < col) then
+      col = m[3]
+    end
+  end
+  return col or (text:find("%S") or 1) - 1
+end
+
+--- Puts the cursor on `line` in the view's own window, at the change on
+--- it, centred.
 local function jump(view, line)
   local win = view.win
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
-  vim.api.nvim_win_set_cursor(win, { math.min(line, vim.api.nvim_buf_line_count(view.bufnr)), 0 })
+  local row = math.min(line, vim.api.nvim_buf_line_count(view.bufnr))
+  vim.api.nvim_win_set_cursor(win, { row, change_col(view, row) })
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! zz")
   end)

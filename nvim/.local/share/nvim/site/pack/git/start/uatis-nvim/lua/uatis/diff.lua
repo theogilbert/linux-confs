@@ -833,17 +833,41 @@ end
 --- to say, and a line diff over a rewritten FILE is the re-pairing by
 --- coincidence that `linematch` is turned off for above. So it has to
 --- bring most of the region back matched before it is taken at all.
-local function realign(rows, old_lines, new_lines, classify)
+local function realign(rows, old_lines, new_lines, classify, in_atom)
   --- A row both sides have and agree on -- what a region is bounded by,
   --- and the only thing a line diff could match anyway.
   local function settled(r)
     return r.lhs ~= nil and r.rhs ~= nil and r.kind == "same"
   end
 
+  --- A line the line diff matched that difftastic itself contradicts:
+  --- the old copy a row it says was removed, the new copy one it says
+  --- was added. That is the reading this whole repair exists to undo --
+  --- a line gone from one place and the same line arrived in another.
+  local function gone_and_back(p)
+    return classify(p.lhs, nil) ~= "same" and classify(nil, p.rhs) ~= "same"
+  end
+
+  -- ...and the plainest form of it: each copy a row difftastic gave no
+  -- partner at all, deleted outright in one place and inserted outright
+  -- in another. A row of a multi-line atom is marked changed whether or
+  -- not it changed -- a docstring's closing `"""` is -- and paired by
+  -- position with a row of the other side's atom; that is its reading of
+  -- the node, not a claim about the line.
+  local alone_a, alone_b = {}, {}
+  for _, r in ipairs(rows) do
+    if r.lhs and not r.rhs then alone_a[r.lhs] = true end
+    if r.rhs and not r.lhs then alone_b[r.rhs] = true end
+  end
+  local function deleted_and_inserted(p)
+    return alone_a[p.lhs] and alone_b[p.rhs] and gone_and_back(p)
+  end
+
   --- Rows `i`..`j - 1` diffed by line: each side's rows and text, how
   --- many of the old ones are not blank, and -- where both sides have
   --- rows -- the pairing the line diff gives, how many non-blank rows
-  --- it matched, and which (`solid`).
+  --- it matched, and which (`solid`, and grouped by the stretch between
+  --- two hunks they were matched in, `runs`).
   local function by_line(i, j)
     -- The region's own lines, in the order the alignment has them,
     -- which for either side is simply that side's rows in file order.
@@ -861,17 +885,20 @@ local function realign(rows, old_lines, new_lines, classify)
       end
     end
 
-    local hunks = (#a_idx > 0 and #b_idx > 0) and vim.diff(
-      terminate(table.concat(a_text, "\n")),
-      terminate(table.concat(b_text, "\n")),
-      { result_type = "indices", algorithm = config.diff.line.algorithm }
-    ) or nil
-
-    local fixed = nil
-    if hunks then
-      fixed = {}
-      local ai, bi, matched, solid = 1, 1, 0, {}
+    local function diffed(a, b)
+      return vim.diff(terminate(table.concat(a, "\n")), terminate(table.concat(b, "\n")),
+        { result_type = "indices", algorithm = config.diff.line.algorithm })
+    end
+    local function walk(hunks)
+      local fixed = {}
+      local ai, bi, matched, solid, runs = 1, 1, 0, {}, {}
       local function context_to(a_stop)
+        -- Each stretch between two hunks is one run of lines matched in
+        -- order, kept apart for the gate below.
+        local run = {}
+        if ai < a_stop then
+          table.insert(runs, run)
+        end
         while ai < a_stop do
           -- Identical by construction -- this is what the line diff
           -- matched -- so `same` whatever difftastic said about the
@@ -882,6 +909,7 @@ local function realign(rows, old_lines, new_lines, classify)
           if a_text[ai]:match("%S") then
             matched = matched + 1
             table.insert(solid, { lhs = a_idx[ai], rhs = b_idx[bi] })
+            table.insert(run, solid[#solid])
           end
           table.insert(fixed, { lhs = a_idx[ai], rhs = b_idx[bi], kind = "same" })
           ai, bi = ai + 1, bi + 1
@@ -903,10 +931,29 @@ local function realign(rows, old_lines, new_lines, classify)
       end
       context_to(#a_idx + 1)
       return { a_idx = a_idx, b_idx = b_idx, a_text = a_text, b_text = b_text,
-        a_solid = a_solid, fixed = fixed, matched = matched, solid = solid }
+        a_solid = a_solid, fixed = fixed, matched = matched, solid = solid, runs = runs }
     end
-    return { a_idx = a_idx, b_idx = b_idx, a_text = a_text, b_text = b_text,
-      a_solid = a_solid }
+    if #a_idx == 0 or #b_idx == 0 then
+      return { a_idx = a_idx, b_idx = b_idx, a_text = a_text, b_text = b_text,
+        a_solid = a_solid }
+    end
+    local m = walk(diffed(a_text, b_text))
+    -- A blank line is a line like any other to the diff, and where it and
+    -- a real one cross, the diff may keep the blank: five rows put in
+    -- above an untouched `# Get request line`, the old blank under the
+    -- comment and the new one above it, and the region matched the
+    -- blanks -- which the tally does not count -- and nothing else. So
+    -- it is diffed again with no blank line able to match, and that
+    -- answer is taken where it matches more lines that are not blank.
+    local function masked(text, side)
+      local out = {}
+      for k, t in ipairs(text) do
+        out[k] = t:match("%S") and t or ("\1" .. side .. k)
+      end
+      return out
+    end
+    local solid_only = walk(diffed(masked(a_text, "a"), masked(b_text, "b")))
+    return solid_only.matched > m.matched and solid_only or m
   end
 
   local out, i = {}, 1
@@ -948,17 +995,11 @@ local function realign(rows, old_lines, new_lines, classify)
       -- Checked over the whole run at once and not a row at a time: the
       -- method that crossed here crossed three of them.
       --
-      -- And only a match difftastic itself contradicts: the old copy a
-      -- row it says was removed and the new copy one it says was added.
-      -- That is the reading this whole repair exists to undo -- a line
-      -- gone from one place and the same line arrived in another. A
-      -- line difftastic left unmarked on either side was in place, and
+      -- And only a match difftastic itself contradicts (`gone_and_back`).
+      -- A line difftastic left unmarked on either side was in place, and
       -- its twin elsewhere is a coincidence the line diff fell into: a
       -- new method calling `self._write_locked()` matched the call an
       -- old method kept.
-      local function gone_and_back(p)
-        return classify(p.lhs, nil) ~= "same" and classify(nil, p.rhs) ~= "same"
-      end
       local ends = { j }
       local e = j
       while e + 1 <= #rows and settled(rows[e]) and not settled(rows[e + 1]) do
@@ -1009,7 +1050,51 @@ local function realign(rows, old_lines, new_lines, classify)
           local was = rows[i + k - 1]
           moved = moved or not was or fixed[k].lhs ~= was.lhs or fixed[k].rhs ~= was.rhs
         end
-        if not moved or matched * 2 < a_solid or matched == 0 then
+        -- ...unless every match it makes is one difftastic contradicts
+        -- itself. The majority gate is against overruling a pairing on
+        -- coincidence, and a line difftastic calls removed here and
+        -- added there, byte for byte the same, overrules nothing: it
+        -- already said the line went and came back. Five rows put in
+        -- above an untouched `# Handle the request` and the block under
+        -- it collapsed to one line matched that comment and nothing
+        -- else -- one row of twelve -- and refused, the comment was
+        -- drawn removed above the insertion and added six rows lower.
+        local contradicted = matched > 0
+        for _, p in ipairs(m.solid or {}) do
+          contradicted = contradicted and deleted_and_inserted(p)
+        end
+        -- ...or where it matches a RUN of such lines: two or more in a
+        -- row, in order on both sides, every copy one difftastic marked.
+        -- That is difftastic's own failure inside a multi-line atom, the
+        -- one this repair is for: a docstring whose middle paragraph went
+        -- from six lines to five paired the `Args:`, `event: ...` and
+        -- `"""` under it each against the row above its twin, and the
+        -- paragraph outweighed them three to six. A lone match stays a
+        -- coincidence: a rewritten docstring's closing `"""` would cut
+        -- it in two.
+        for _, run in ipairs(m.runs or {}) do
+          local all = #run >= 2
+          for _, p in ipairs(run) do
+            all = all and gone_and_back(p)
+          end
+          contradicted = contradicted or all
+        end
+        -- ...or where the lines it matches are statements, each a row of
+        -- its own. A lone match is a coincidence inside a multi-line
+        -- atom, whose rows difftastic pairs by position whatever they
+        -- hold; a statement it pairs with a different statement while
+        -- the same one stands on the other side, also marked, is no
+        -- coincidence of position. An import list reordered paired an
+        -- untouched import with the new one above it, and its twin with
+        -- the one taken out below: drawn removed above itself and lit as
+        -- an edit of another module's import.
+        local statements = matched > 0
+        for _, p in ipairs(m.solid or {}) do
+          statements = statements and gone_and_back(p)
+            and not in_atom("a", p.lhs) and not in_atom("b", p.rhs)
+        end
+        contradicted = contradicted or statements
+        if not moved or (matched * 2 < a_solid and not contradicted) or matched == 0 then
           fixed = nil
         end
       end
@@ -1090,6 +1175,625 @@ local function realign(rows, old_lines, new_lines, classify)
   return out
 end
 
+--- Hangs a removed block below the blank lines that separated it from
+--- the code above, not above them.
+---
+--- difftastic matches blank lines like any others, and around a block
+--- removed whole it tends to keep the blanks AFTER the block and leave
+--- the ones before it unpaired. Both readings are the same edit, but the
+--- before-image is drawn where the alignment puts it: a deleted class
+--- came back hung straight under the last line of the method above it,
+--- the two blank rows that separated them below it, reading as more of
+--- that method. git hangs it after the blanks, and so does this: the old
+--- blank rows just above the block are paired with the new blank rows
+--- just below it, and the old blanks that came after it go unpaired.
+local function slide_deletions(rows, old_lines, new_lines, classify)
+  local function blank(lines, row)
+    return row ~= nil and not (lines[row + 1] or ""):match("%S")
+  end
+  local function old_only(n)
+    return rows[n] and rows[n].lhs and not rows[n].rhs
+  end
+  local i = 1
+  while i <= #rows do
+    if not old_only(i) then
+      i = i + 1
+    else
+      -- The whole run of rows only the old side has, blank rows inside it
+      -- included -- a class's own blank lines are part of what went --
+      -- and the blank rows it opens with.
+      local e = i
+      while old_only(e + 1) do
+        e = e + 1
+      end
+      local d = i
+      while d <= e and blank(old_lines, rows[d].lhs) do
+        d = d + 1
+      end
+      local removed = false
+      for n = d, e do
+        removed = removed or rows[n].kind ~= "same"
+      end
+      -- ...and the blank rows just below it, on either side.
+      local f, after_a, after_b = e, {}, {}
+      while f + 1 <= #rows do
+        local n = rows[f + 1]
+        if (n.lhs and not blank(old_lines, n.lhs)) or (n.rhs and not blank(new_lines, n.rhs))
+          or (n.lhs and not n.rhs) then
+          break
+        end
+        if n.lhs then table.insert(after_a, n.lhs) end
+        if n.rhs then table.insert(after_b, n.rhs) end
+        f = f + 1
+      end
+      -- Only a block that is a sibling of what follows it, starting no
+      -- deeper than the next line kept: the deleted tail of a body
+      -- (`return None` under a method, the method after it four columns
+      -- out) belongs to the code above, before the blank line, and slid
+      -- past it would hang from the next `def` instead.
+      local function indent(text)
+        return #(text:match("^%s*") or "")
+      end
+      local next_kept
+      for n = f + 1, #rows do
+        if rows[n].rhs and not blank(new_lines, rows[n].rhs) then
+          next_kept = new_lines[rows[n].rhs + 1]
+          break
+        end
+      end
+      local sibling = d <= e and (next_kept == nil
+        or indent(old_lines[rows[d].lhs + 1] or "") <= indent(next_kept))
+      local k = math.min(d - i, #after_b)
+      if removed and sibling and k > 0 then
+        local rebuilt = {}
+        for n = 1, i - 1 do
+          table.insert(rebuilt, rows[n])
+        end
+        for n = 0, k - 1 do
+          table.insert(rebuilt, { lhs = rows[i + n].lhs, rhs = after_b[n + 1], kind = "same" })
+        end
+        for n = i + k, e do
+          table.insert(rebuilt, rows[n])
+        end
+        -- What is left below pairs in order where both sides still have
+        -- a blank, and stands alone where only one does.
+        for n = 1, math.max(#after_a, #after_b - k) do
+          local lhs, rhs = after_a[n], after_b[k + n]
+          table.insert(rebuilt, { lhs = lhs, rhs = rhs,
+            kind = (lhs and rhs) and "same" or classify(lhs, rhs) })
+        end
+        for n = f + 1, #rows do
+          table.insert(rebuilt, rows[n])
+        end
+        rows = rebuilt
+      end
+      i = f + 1
+    end
+  end
+  return rows
+end
+
+--- Slides a block one side has whole to where it starts after a blank
+--- line, across lines it ends and begins with that are the same on both
+--- sides.
+---
+--- A test put in above another, both under the same three
+--- `@mock.patch` decorators, can be read two ways that are the same
+--- edit: the new test inserted whole, decorators and all, or the old
+--- test's decorators handed to the new one and a fresh set inserted
+--- under it. difftastic took the second -- the new test's decorators
+--- drawn as old code, and the untouched test below painted as though it
+--- had gained its own -- and git, sliding by where a block starts, the
+--- first. So does this: among the positions the identical lines allow,
+--- the nearest one where the block opens on a line of its own after a
+--- blank one (or the top of the file), and only where the backend's
+--- does not. A row that leaves a pairing for the block is marked whole
+--- (`alone`); difftastic had nothing to say about it, it being one half
+--- of an unchanged pair.
+local function slide_runs(rows, old_lines, new_lines, alone)
+  for _, side in ipairs({ "lhs", "rhs" }) do
+    local other = side == "lhs" and "rhs" or "lhs"
+    local lines = side == "lhs" and old_lines or new_lines
+    local lone = side == "lhs" and alone.a or alone.b
+    local function text(row)
+      return lines[row + 1] or ""
+    end
+    local function blank(row)
+      return not text(row):match("%S")
+    end
+    local function only(n)
+      return rows[n] and rows[n][side] and not rows[n][other]
+    end
+    -- A pair either side of the block that may change places with it:
+    -- byte for byte the same, so nothing it is drawn as depends on
+    -- which copy it is paired with.
+    local function swappable(n)
+      local r = rows[n]
+      return r and r.lhs and r.rhs and r.kind == "same"
+        and old_lines[r.lhs + 1] == new_lines[r.rhs + 1]
+    end
+    local i = 1
+    while i <= #rows do
+      if not only(i) then
+        i = i + 1
+      else
+        local e = i
+        while only(e + 1) do
+          e = e + 1
+        end
+        local first, last = rows[i][side], rows[e][side]
+        -- Lines that went or arrived, every one: a continuation row a
+        -- reflow left on one side carries no change and is not a block
+        -- of anything.
+        local whole = true
+        for n = i, e do
+          whole = whole and (blank(rows[n][side]) or rows[n].kind ~= "same")
+        end
+        -- How far it can go: up while the pair above carries the line
+        -- the block ends with, down while the pair below carries the
+        -- line it starts with.
+        local up = 0
+        while swappable(i - up - 1) and text(rows[i - up - 1][side]) == text(last - up) do
+          up = up + 1
+        end
+        local down = 0
+        while swappable(e + down + 1) and text(rows[e + down + 1][side]) == text(first + down) do
+          down = down + 1
+        end
+        -- Blank lines it opens with are its own: two of them and then a
+        -- `def` is a block that starts after a blank line. Measured from
+        -- the first line, a function put in after two blank lines slid
+        -- up onto the `return` above it.
+        local function starts(top)
+          local t = top
+          while t < top + (last - first) and blank(t) do
+            t = t + 1
+          end
+          return not blank(t) and (t == 0 or blank(t - 1))
+        end
+        -- ...and only across a line that is not blank. Which end of a
+        -- block its blank lines are drawn at is `slide_deletions`' to
+        -- say, and moved for its own sake it took an empty row into an
+        -- inserted block and banded it.
+        local function opens(s)
+          local crossed = false
+          for k = 0, math.abs(s) - 1 do
+            crossed = crossed or not blank(s < 0 and last - k or first + k)
+          end
+          return crossed and starts(first + s)
+        end
+        local s
+        if whole and not starts(first) then
+          for d = 1, math.max(up, down) do
+            if d <= up and opens(-d) then
+              s = -d
+              break
+            elseif d <= down and opens(d) then
+              s = d
+              break
+            end
+          end
+        end
+        if s then
+          -- The pairs crossed keep their other side's rows, in order,
+          -- and take the lines the block gives up at the far end.
+          local lo, hi = math.min(i, i + s), math.max(e, e + s)
+          local crossed = {}
+          for n = lo, hi do
+            if rows[n][other] then
+              table.insert(crossed, rows[n][other])
+            end
+          end
+          local span, rebuilt = last - first + 1, {}
+          local from = first + s
+          local function block()
+            for row = from, from + span - 1 do
+              local kind = blank(row) and "same" or "gap"
+              if kind == "gap" then
+                lone[row] = true
+              end
+              table.insert(rebuilt, { [side] = row, kind = kind })
+            end
+          end
+          -- Rows from `lo` to `hi` cover the block's old and new places;
+          -- the side's rows there run consecutively from `first + min(s, 0)`.
+          local base = first + math.min(s, 0)
+          local k = 1
+          if s > 0 then
+            for _, o in ipairs(crossed) do
+              local row = base + k - 1
+              lone[row] = nil
+              table.insert(rebuilt, { [side] = row, [other] = o, kind = "same" })
+              k = k + 1
+            end
+            block()
+          else
+            block()
+            for _, o in ipairs(crossed) do
+              local row = from + span + k - 1
+              lone[row] = nil
+              table.insert(rebuilt, { [side] = row, [other] = o, kind = "same" })
+              k = k + 1
+            end
+          end
+          local out = {}
+          for n = 1, lo - 1 do
+            table.insert(out, rows[n])
+          end
+          vim.list_extend(out, rebuilt)
+          for n = hi + 1, #rows do
+            table.insert(out, rows[n])
+          end
+          rows = out
+          i = lo + #rebuilt
+        else
+          i = e + 1
+        end
+      end
+    end
+  end
+  return rows
+end
+
+--- Takes the line diff's reading of a stretch where it leaves fewer lines
+--- drawn as removed and added back than difftastic's does.
+---
+--- `realign` repairs difftastic inside the stretches it got wrong, bounded
+--- by the rows it got right. But "right" is its own word, and a function
+--- split in two has two readings that are each right somewhere. Moving the
+--- body of `send_response` into a new `send_response_headers` above it and
+--- leaving the old `def` and docstring to call it: difftastic follows the
+--- BODY -- the new function is the old one renamed -- and draws the
+--- unchanged `def` and fourteen-row docstring red where they were and green
+--- where they are; the line diff follows the lines, and draws the body
+--- moved. The body rows difftastic matched are long agreed runs, so no
+--- region `realign` sees ever holds both copies of the docstring.
+---
+--- So the whole file is diffed by line once, and the two alignments
+--- compared between the rows they agree on. In each stretch between, the
+--- line diff's matches difftastic contradicts -- an identical line it calls
+--- removed on one side and added on the other -- are weighed against
+--- difftastic's own matches the line diff would undo, non-blank lines
+--- only. Where the first outnumber the second, the line diff's reading
+--- leaves fewer lines drawn as both, and it is taken; otherwise the stretch
+--- is left as difftastic read it, which is most of the time, since it
+--- contradicts itself on nothing there.
+local function prefer_lines(rows, old_lines, new_lines, classify)
+  local hunks = vim.diff(
+    terminate(table.concat(old_lines, "\n")),
+    terminate(table.concat(new_lines, "\n")),
+    { result_type = "indices", algorithm = config.diff.line.algorithm })
+  -- The line diff's pairs, 0-based like the rows.
+  local line_b = {}
+  local a, b = 0, 0
+  local function context_to(a_stop)
+    while a < a_stop do
+      line_b[a] = b
+      a, b = a + 1, b + 1
+    end
+  end
+  for _, h in ipairs(hunks) do
+    local sa, ca, sb, cb = h[1], h[2], h[3], h[4]
+    context_to(ca > 0 and sa - 1 or sa)
+    a = a + ca
+    b = (cb > 0 and sb - 1 or sb) + cb
+  end
+  context_to(#old_lines)
+
+  local function solid(lhs)
+    return (old_lines[lhs + 1] or ""):match("%S") ~= nil
+  end
+  local function agreed(r)
+    return r.lhs ~= nil and r.rhs ~= nil and r.kind == "same" and line_b[r.lhs] == r.rhs
+  end
+
+  local paired_a, paired_b, partner_b, partner_a = {}, {}, {}, {}
+  for _, r in ipairs(rows) do
+    if r.lhs and r.rhs then
+      paired_a[r.lhs], paired_b[r.rhs] = true, true
+      partner_b[r.lhs], partner_a[r.rhs] = r.rhs, r.lhs
+    end
+  end
+  local alone = { a = {}, b = {} }
+
+  local count_a, count_b = {}, {}
+  for _, text in ipairs(old_lines) do
+    count_a[text] = (count_a[text] or 0) + 1
+  end
+  for _, text in ipairs(new_lines) do
+    count_b[text] = (count_b[text] or 0) + 1
+  end
+  local function trim(text)
+    return vim.trim(text or "")
+  end
+  local function file_once(la, lb)
+    return count_a[old_lines[la + 1]] == 1 and count_b[new_lines[lb + 1]] == 1
+  end
+
+  local out, i = {}, 1
+  while i <= #rows do
+    if agreed(rows[i]) then
+      table.insert(out, rows[i])
+      i = i + 1
+    else
+      local j = i
+      while j <= #rows and not agreed(rows[j]) do
+        j = j + 1
+      end
+      -- The stretch's rows on each side, in file order.
+      local a_idx, b_idx, identical = {}, {}, {}
+      for k = i, j - 1 do
+        local r = rows[k]
+        if r.lhs then table.insert(a_idx, r.lhs) end
+        if r.rhs then table.insert(b_idx, r.rhs) end
+        -- Byte for byte only. A row difftastic kept across a reindent did
+        -- change -- where the language counts the column, that is the
+        -- edit -- and drawn as changed it claims nothing false.
+        if r.lhs and r.rhs and r.kind == "same" and solid(r.lhs)
+          and old_lines[r.lhs + 1] == new_lines[r.rhs + 1] then
+          table.insert(identical, r)
+        end
+      end
+      local in_b = {}
+      for _, rb in ipairs(b_idx) do
+        in_b[rb] = true
+      end
+      -- ...and where the line diff pairs that same line with another copy
+      -- of it in the stretch, the two readings agree the line stayed and
+      -- differ only on which copy is the old one. A test gaining a sibling
+      -- below it with the same eleven-row setup came back with the setup
+      -- handed to the sibling, under its new name, and the untouched
+      -- test's own body painted added; a function gaining a sibling below
+      -- it that does what it used to do came back, read the line diff's
+      -- way, with its own body handed to the sibling instead. The copy
+      -- that is the old one is the one that keeps the line in step with
+      -- the agreed row ABOVE the stretch -- the `def` it sits under --
+      -- and the reading that picks it is the one that weighs. Above, not
+      -- nearest: a line belongs to the block it is under, and the row
+      -- below a stretch is as often the first line of whatever was
+      -- inserted's neighbour as anything of this block's.
+      local near = rows[i - 1] or rows[j]
+      local function step(lhs, rhs)
+        return near and math.abs((rhs - lhs) - (near.rhs - near.lhs)) or 0
+      end
+      local function weigh(counts)
+        local won, kept, misattributed, sole = 0, 0, false, 0
+        for _, r in ipairs(identical) do
+          if counts(r.lhs) then
+            local lb = line_b[r.lhs]
+            if lb and lb ~= r.rhs and in_b[lb] and step(r.lhs, lb) < step(r.lhs, r.rhs) then
+              won = won + 1
+            else
+              kept = kept + 1
+            end
+          end
+        end
+        for _, la in ipairs(a_idx) do
+          local lb = line_b[la]
+          if lb and in_b[lb] and solid(la) and counts(la) then
+            local a_off = partner_b[la] and new_lines[partner_b[la] + 1] ~= old_lines[la + 1]
+            local b_off = partner_a[lb] and old_lines[partner_a[lb] + 1] ~= new_lines[lb + 1]
+            -- Or paired with different text at BOTH ends, where each file
+            -- has the line once: a test put in above another came back
+            -- with every test below it handed to the one before, the
+            -- untouched `def` drawn as one test renamed into it and as
+            -- another renamed out of it -- a chain with no unpaired end,
+            -- misattributed twice. Once in each, because a `try:` or a
+            -- `)` paired that way is only difftastic choosing another
+            -- copy, and counted, a block wrapped in a new `try:` was
+            -- drawn removed and added back instead of reindented. And
+            -- different past the indentation: the one `return` of that
+            -- block, paired with its reindented self, is a line that
+            -- moved in, not one difftastic gave to something else.
+            local twice = a_off and b_off and file_once(la, lb)
+              and trim(new_lines[partner_b[la] + 1]) ~= trim(old_lines[la + 1])
+              and trim(old_lines[partner_a[lb] + 1]) ~= trim(new_lines[lb + 1])
+            if (a_off and not partner_a[lb]) or (b_off and not partner_b[la]) or twice then
+              won, misattributed = won + 1, true
+              if file_once(la, lb) then
+                sole = sole + 1
+              end
+            elseif not partner_b[la] and not partner_a[lb] and classify(la, nil) ~= "same"
+              and classify(nil, lb) ~= "same" then
+              won = won + 1
+            end
+          end
+        end
+        return won, kept, misattributed, sole
+      end
+      -- The line diff's matches in the stretch, in order, and which
+      -- segment between them each other row falls in.
+      local function cut()
+        local matches, seg_a, seg_b = {}, {}, {}
+        local pos_b = {}
+        for k, rb in ipairs(b_idx) do
+          pos_b[rb] = k
+        end
+        local last_kb = 0
+        for _, la in ipairs(a_idx) do
+          local lb = line_b[la]
+          local kb = lb and pos_b[lb]
+          if kb and kb > last_kb then
+            table.insert(matches, { lhs = la, rhs = lb, kind = "same" })
+            last_kb = kb
+          end
+        end
+        local is_match_a, is_match_b = {}, {}
+        for _, mt in ipairs(matches) do
+          is_match_a[mt.lhs], is_match_b[mt.rhs] = true, true
+        end
+        local s = 0
+        for _, la in ipairs(a_idx) do
+          if is_match_a[la] then s = s + 1 else seg_a[la] = s end
+        end
+        s = 0
+        for _, rb in ipairs(b_idx) do
+          if is_match_b[rb] then s = s + 1 else seg_b[rb] = s end
+        end
+        return matches, seg_a, seg_b
+      end
+      -- Whether taking the line diff's reading would split a pairing of
+      -- a line with itself reindented: that line did not go anywhere,
+      -- and split, it is drawn removed where it was and added where it
+      -- is.
+      local function splits_reindent()
+        local _, seg_a, seg_b = cut()
+        for k = i, j - 1 do
+          local r = rows[k]
+          if r.lhs and r.rhs and seg_a[r.lhs] ~= seg_b[r.rhs]
+            and old_lines[r.lhs + 1] ~= new_lines[r.rhs + 1]
+            and vim.trim(old_lines[r.lhs + 1] or "") == vim.trim(new_lines[r.rhs + 1] or "") then
+            return true
+          end
+        end
+        return false
+      end
+      -- Two at least: one line matched across is the coincidence the
+      -- majority gate in `realign` is against -- a bare `return`
+      -- difftastic paired elsewhere while its twin stood unpaired cut a
+      -- rewrite in two around it.
+      --
+      -- And with nothing of difftastic's to undo but rows it kept across
+      -- a reindent, no misattribution is needed: two blocks that swapped
+      -- places, one of them pushed under a new `if`, came back with the
+      -- reindented one kept and the untouched one -- five lines byte for
+      -- byte the same -- drawn deleted where it was and inserted where it
+      -- is. Where difftastic does keep identical lines, a stretch of
+      -- lines deleted and inserted whole is a definition that moved, and
+      -- `moves.lua` draws that.
+      --
+      -- ...or one, where it is the only copy in each file. A comment
+      -- moved below a block put in above it, its first line untouched
+      -- and the rest reworded, came back with the old comment paired to
+      -- the new block's comment and its own unchanged first line drawn
+      -- removed and added back twelve rows apart. A `return` is a line
+      -- every function has; a sentence the file says once is not a
+      -- coincidence. Not where the reading it carries would split a
+      -- line from its reindented self, though: one assignment moved
+      -- out of a block that was wrapped in a new `try:` would have had
+      -- the whole block drawn removed and added back, where difftastic
+      -- has it reindented.
+      local function taken(won, kept, misattributed, sole)
+        return (won >= 2 or (sole == 1 and not splits_reindent()))
+          and won > kept and (misattributed or kept == 0)
+      end
+      -- Where that count does not carry it, counted again over the lines
+      -- the stretch's old side has once. Tests rewritten in a class
+      -- whose every member ends `try:`, `conn.init()`, `finally:`,
+      -- `conn.sock.close()`, `client.close()` came back with difftastic
+      -- pairing each test with the one AFTER it -- an untouched test
+      -- handed to a new neighbour, and itself painted added -- and
+      -- holding twenty-one identical lines to the line diff's eleven,
+      -- every one of them that boilerplate. A line the old side has four
+      -- of says nothing about which reading is right: either can pair it
+      -- with a copy, and difftastic's pairing of it is wherever the rest
+      -- of its reading put it. A line it has once is where that line
+      -- went, and those all went the line diff's way.
+      local seen = {}
+      for _, la in ipairs(a_idx) do
+        local text = old_lines[la + 1] or ""
+        seen[text] = (seen[text] or 0) + 1
+      end
+      local function once(la)
+        return seen[old_lines[la + 1] or ""] == 1
+      end
+      local won, kept, misattributed, sole = weigh(function() return true end)
+      if not taken(won, kept, misattributed, sole) then
+        won, kept, misattributed, sole = weigh(once)
+      end
+      if taken(won, kept, misattributed, sole) then
+        -- Rebuilt around the line diff's matches. They cut the stretch
+        -- into segments, and every pairing difftastic made inside one
+        -- segment stands -- a signature edited in place is still that
+        -- signature's edit. A pairing that reaches across a match cannot
+        -- stand beside it, and is split: each half then has no partner,
+        -- and what difftastic marked on it described the partner it lost,
+        -- so it is drawn whole (`alone`) -- the body moved into the new
+        -- function is code that function gained, not code it had.
+        local matches, seg_a, seg_b = cut()
+        local function lone_a(lhs)
+          local kind = classify(lhs, nil)
+          if paired_a[lhs] and solid(lhs) then
+            kind, alone.a[lhs] = "gap", true
+          end
+          return { lhs = lhs, kind = kind }
+        end
+        local function lone_b(rhs)
+          local kind = classify(nil, rhs)
+          if paired_b[rhs] and (new_lines[rhs + 1] or ""):match("%S") then
+            kind, alone.b[rhs] = "gap", true
+          end
+          return { rhs = rhs, kind = kind }
+        end
+        local by_seg = {}
+        for n = 0, #matches do
+          by_seg[n] = {}
+        end
+        for k = i, j - 1 do
+          local r = rows[k]
+          local sa = r.lhs and seg_a[r.lhs]
+          local sb = r.rhs and seg_b[r.rhs]
+          if r.lhs and r.rhs and sa and sa == sb then
+            table.insert(by_seg[sa], r)
+          else
+            if sa then table.insert(by_seg[sa], lone_a(r.lhs)) end
+            if sb then table.insert(by_seg[sb], lone_b(r.rhs)) end
+          end
+        end
+        for n = 0, #matches do
+          vim.list_extend(out, by_seg[n])
+          if matches[n + 1] then
+            table.insert(out, matches[n + 1])
+          end
+        end
+      else
+        for k = i, j - 1 do
+          table.insert(out, rows[k])
+        end
+      end
+      i = j
+    end
+  end
+  return out, alone
+end
+
+--- Which rows are part of a string or comment that runs over several:
+--- `in_atom(side, row)`, 0-based, side "a" or "b". Read off the spans --
+--- an atom of that kind reaching the end of one row and the next row's
+--- opening at its first character is one atom carried over -- since the
+--- JSON says what each range is but not where a node starts and ends.
+local function atom_rows(spans, old_lines, new_lines)
+  local edges = { a = {}, b = {} }
+  for _, sp in ipairs(spans) do
+    if sp.atom == "string" or sp.atom == "comment" then
+      local side = sp.kind == "delete" and "a" or "b"
+      local lines = side == "a" and old_lines or new_lines
+      local text = lines[sp.line] or ""
+      local e = edges[side][sp.line] or {}
+      if sp.col_start <= (text:find("%S") or 1) - 1 then e.opens = true end
+      if sp.col_end >= #text then e.closes = true end
+      edges[side][sp.line] = e
+    end
+  end
+  local carried = { a = {}, b = {} }
+  for side, lines in pairs({ a = old_lines, b = new_lines }) do
+    local prev = nil
+    for row = 1, #lines do
+      if lines[row]:match("%S") then
+        local e = edges[side][row]
+        local p = prev and edges[side][prev]
+        if e and e.opens and p and p.closes then
+          carried[side][row], carried[side][prev] = true, true
+        end
+        prev = row
+      end
+    end
+  end
+  return function(side, row)
+    return carried[side][row + 1] == true
+  end
+end
+
 --- Builds hunks and spans from difftastic's JSON.
 ---
 --- `chunks` gives which lines carry real changes (a line can appear in
@@ -1163,7 +1867,28 @@ local function from_json(data, old_lines, new_lines)
     local lhs, rhs = pair[1], pair[2]
     table.insert(rows, { lhs = lhs, rhs = rhs, kind = classify(lhs, rhs) })
   end
-  rows = realign(rows, old_lines, new_lines, classify)
+  rows = realign(rows, old_lines, new_lines, classify, atom_rows(spans, old_lines, new_lines))
+  local alone
+  rows, alone = prefer_lines(rows, old_lines, new_lines, classify)
+  rows = slide_deletions(rows, old_lines, new_lines, classify)
+  rows = slide_runs(rows, old_lines, new_lines, alone)
+  if next(alone.a) or next(alone.b) then
+    local kept = {}
+    for _, span in ipairs(spans) do
+      local side = span.kind == "delete" and alone.a or alone.b
+      if not side[span.line - 1] then
+        table.insert(kept, span)
+      end
+    end
+    for side, how in pairs({ a = { "delete", old_lines }, b = { "add", new_lines } }) do
+      for row in pairs(alone[side]) do
+        local text = how[2][row + 1] or ""
+        local lead = (text:find("%S") or 1) - 1
+        table.insert(kept, { line = row + 1, col_start = lead, col_end = #text, kind = how[1] })
+      end
+    end
+    spans = kept
+  end
 
   -- A row the realignment matched carries no marks, on either side.
   -- difftastic tints every atom of a changed node and it had these rows

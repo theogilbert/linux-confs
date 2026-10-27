@@ -112,7 +112,16 @@ local function candidates(text, lines, lang, rows)
     end
     return false
   end
-  local function visit(node, top)
+  --- Whether `node` is a function of some kind: what is assigned inside
+  --- one is a local, and two locals sharing a name in two functions are
+  --- not one thing. `chunk = await ...` in one method and in a new one
+  --- twelve hundred rows below was paired as a definition moved, and
+  --- the edit made to it where it stood drew nothing there.
+  local function is_function(node)
+    local t = node:type()
+    return t:match("function") ~= nil or t:match("method") ~= nil or t:match("lambda") ~= nil
+  end
+  local function visit(node, top, in_function)
     local sr, sc, er, ec = node:range()
     if ec == 0 and er > sr then
       er = er - 1
@@ -127,6 +136,9 @@ local function candidates(text, lines, lang, rows)
       and not (lines[last] or ""):sub(ec + 1):match("%S")
     if node:named() and whole and last - first + 1 >= min and inside(first, last) then
       local name = name_of(node, text)
+      if name and in_function and node:type():match("assignment") then
+        name = nil
+      end
       -- A node with no name below the top level is a body, an argument
       -- list, a table -- the inside of something that stayed, which a
       -- similar inside elsewhere says nothing about.
@@ -137,13 +149,13 @@ local function candidates(text, lines, lang, rows)
     end
     for child in node:iter_children() do
       if child:named() then
-        visit(child, false)
+        visit(child, false, in_function or is_function(node))
       end
     end
   end
   for child in trees[1]:root():iter_children() do
     if child:named() then
-      visit(child, true)
+      visit(child, true, false)
     end
   end
   return out

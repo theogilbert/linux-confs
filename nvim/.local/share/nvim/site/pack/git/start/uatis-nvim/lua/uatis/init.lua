@@ -56,16 +56,40 @@ end
 --- you ask it. Passed to the view as `on_open` rather than called after
 --- it: opening a view is two git subprocesses deep, and the pane takes
 --- its revision from a view that does not exist yet.
-local function follow_up()
-  if pane.get() then
-    return
-  end
-  if config.pane.auto_open then
-    pane.open({ focus = false })
-  else
-    pane.list()
+---
+--- A list already running is kept, as a rule: `:Uatis <ref>` compares
+--- one file and leaves the review where it was, a view pointed by hand
+--- beside a list measuring something else. `replace` is the exception,
+--- for a request about the whole review (`since_commit`): "changes since
+--- v1.0", then "since v2.0", re-pointed the buffer and left the list on
+--- `v1.0`, annotating every other file at the revision the reader had
+--- just moved off -- the second request looking as though it did
+--- nothing. So the old review goes, its other views with it, and the
+--- list is read again from this view; its window comes back if it had
+--- one. A conflict review is measured against no revision, and one in a
+--- tab of its own takes the tab with it when it closes -- the window
+--- this view is in -- so both are left alone.
+local function follow(replace)
+  return function(v)
+    local p = pane.get()
+    local shown = false
+    if p then
+      if not replace or not v or p.conflicts or p.owns_tab
+        or p.root ~= v.root or p.rev == v.rev then
+        return
+      end
+      shown = p.list_win ~= nil and vim.api.nvim_win_is_valid(p.list_win)
+      view.close_all(p.root, p.rev, p.standalone)
+      pane.close(p)
+    end
+    if shown or config.pane.auto_open then
+      pane.open({ focus = false })
+    else
+      pane.list()
+    end
   end
 end
+local follow_up = follow(false)
 
 --- Opens the list from a buffer with nothing to annotate -- and, from
 --- the empty buffer nvim started in, walks straight into the first file
@@ -122,7 +146,9 @@ function M.run(opts)
   if not view.can_open() then
     return open_list({ resolve = view.ref_resolver(args[1]) })
   end
-  view.open(args[1], { on_open = follow_up })
+  -- `replace` is not the command's: it is `since_commit` saying the
+  -- revision is for the whole review, not for this file.
+  view.open(args[1], { on_open = opts.replace and follow(true) or follow_up })
 end
 
 --- Everything already open against the base branch, re-pointed at the
@@ -573,10 +599,10 @@ end
 --- not re-pointed when the base branch changes.
 function M.since_commit(rev)
   if rev and rev ~= "" then
-    return M.run({ fargs = { rev } })
+    return M.run({ fargs = { rev }, replace = true })
   end
   ask_revision("uatis: changes since", function(text)
-    M.run({ fargs = { text } })
+    M.run({ fargs = { text }, replace = true })
   end)
 end
 

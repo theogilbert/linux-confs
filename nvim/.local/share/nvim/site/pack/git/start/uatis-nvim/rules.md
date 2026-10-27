@@ -65,6 +65,144 @@ difft left unmarked was in place — a new method calling `self._write_locked()`
 otherwise matched the call an old method kept, and two edits either side of it
 were diffed as one with their rows paired off in order.
 
+The majority gate steps aside for one kind of match: a line difft deleted
+outright in one place and inserted outright in another, byte for byte the
+same, each copy a row it gave no partner. Taking that line as unchanged
+overrules nothing — difft already said it went and came back. Five rows put in
+above an untouched `# Handle the request`, with the block under it collapsed to
+one line, matched that comment and nothing else; refused as one row of twelve,
+the comment was drawn removed above the insertion and added six rows lower.
+Unpartnered, not merely marked: every row of a multi-line atom is marked and
+paired by position, and a docstring's closing `"""` matched out of a rewrite
+would cut the rewrite in two.
+
+It steps aside as well for a RUN of such lines: two or more matched in order
+on both sides, every copy a row difft marked. That is its positional walk
+inside a multi-line atom gone wrong: a docstring whose middle paragraph went
+from six lines to five paired its `Args:`, `event: ...` and closing `"""` each
+against the row above its twin, and the reworded paragraph outweighed them.
+A lone match stays a coincidence — inside a multi-line atom.
+
+Outside one it does not. Where every line the line diff matches is a statement
+of its own (no row of a string or comment that runs over several, read off
+difft's spans: an atom of that kind reaching one row's end and the next row's
+start) and difft contradicts each, the repair is taken. Two imports re-sorted
+paired the untouched one with the new import above it and its twin with the
+one taken out below: drawn removed above itself and lit as an edit of another
+module's import. The cost is that a rewrite whose one surviving line is a bare
+`return` is now drawn in two pieces around it, as git draws it.
+
+The line diff of a region is taken twice where it matters: as is, and with no
+blank line able to match anything, the second answer winning where it matches
+more lines that are not blank. A blank line is text like any other to the diff,
+and where one crosses a real line, the diff can keep the blank — five rows put
+in above an untouched `# Get request line`, the old blank under it and the new
+one above, matched the blanks (which no gate counts) and nothing else, and the
+comment was drawn removed above the insertion and added under it.
+
+### `prefer_lines` — `diff.lua`
+
+After `realign`, the whole file is diffed by line once and the two alignments
+are compared between the rows they agree on. A function split in two has two
+readings that are each right about something: moving `send_response`'s body
+into a new `send_response_headers` above it, difft follows the body and calls
+the new function the old one renamed, so the unchanged `def` and fourteen-row
+docstring were red where they were and green where they are, and the moved body
+read as code the new function always had. The agreed body rows keep the two
+copies of the docstring out of any one region `realign` sees.
+
+A stretch between agreed rows takes the line diff's reading only where difft
+has *misattributed* a line there — paired it with different text while its
+byte-identical twin on the other side has no partner at all — and the line
+diff's matches difft contradicts (misattributed, or deleted outright and
+inserted outright) number at least two and outnumber difft's own agreed lines
+it would undo. Misattributed, because a docstring grown in the middle is paired
+by position on both sides and `realign` has it; and a swap of two functions is
+unpaired on both sides, which is a move. A line paired with different text at
+*both* ends is misattributed too — a test put in above another, the one after
+removed, came back with each test handed to the one before it, the kept test's
+`def` drawn as one renamed into it and another renamed out of it — but only a
+line each file has once, and only where both partners differ past the
+indentation: a `try:` or `)` paired that way is difft choosing another copy, and
+a lone `return` paired with its reindented self moved into a new `try:`; counted,
+the wrapped block was drawn removed and added back. difft's agreed lines count only where
+they are byte-identical: a row it kept across a reindent did change, and drawn
+as changed claims nothing false. With none of those in the stretch nothing true
+is undone, and no misattribution is needed: two blocks that swapped places, one
+pushed under a new `if`, came back with the reindented one kept and the
+untouched one drawn deleted and inserted whole.
+
+A byte-identical line both readings match, each to a *different copy* of it, is
+a tie rather than an agreed line: the two agree it stayed and differ only on
+which copy is the old one. A test gaining a sibling below it that repeats its
+eleven-row setup came back with difft handing the setup to the sibling, under
+its new name — the untouched test's body painted added, the sibling's drawn as
+old. The tie goes to the reading that keeps the line in step with the agreed row
+*above* the stretch, the `def` it sits under: counted with the line diff's
+matches where that is the line diff, with difft's agreed lines where it is
+difft (a function whose old body the line diff would hand to a new sibling
+below it keeps it). Above rather than nearest, because the row below a stretch
+is as often the neighbour of whatever was inserted as anything of this block's.
+
+Two at least, as a rule; one is enough where the misattributed line is the only
+copy in each file — a comment moved below a block put in above it, its first
+line untouched, was drawn removed and added back twelve rows apart, and a
+sentence the file says once is not the coincidence a bare `return` is. But not
+where the reading it carries would split a pairing of a line with itself
+reindented: one assignment moved out of a block wrapped in a new `try:` would
+have had the whole block drawn removed and added back.
+
+A stretch that fails that count is counted again over the lines its old side
+has *once*. Tests in a class whose every member ends `try:` / `conn.init()` /
+`finally:` / `conn.sock.close()` / `client.close()` came back with difft
+pairing each old test with the new one after it, so an untouched test was
+painted added and its old rows went to a new neighbour — and difft held
+twenty-one identical lines to the line diff's eleven, every one of them that
+trailer. A line the old side has four of is evidence for neither reading,
+since either can pair it with a copy; a line it has once is where that line
+went. Only as a second count: over every line is the count the cases above
+were settled on, and nothing they took is given back.
+
+In the rebuilt stretch difft's pairings
+that do not cross a match stand; a pairing that does is split, and each half,
+having lost the partner its marks described, is drawn whole.
+
+### `slide_deletions` — `diff.lua`
+
+difft matches blank lines like any others, and around a block removed whole it
+tends to keep the blanks *after* the block and leave the ones before it
+unpaired. Same edit either way, but the before-image hangs where the alignment
+puts it: a class removed from between two others came back hung straight under
+the last line of the method above, the blank rows that had separated them below
+it, reading as more of that method. So the unpaired old blanks a removed run
+opens with are paired with the new blank rows just below it, and the old blanks
+after it go unpaired instead — the block hangs below the blank lines, as git
+draws it.
+
+Only a block that is a *sibling* of what follows, starting no deeper than the
+next line kept. The removed tail of a body (`return None`, the next `def` four
+columns out) belongs with the code above it, before the blank line; slid past
+it, it hangs from the next definition instead.
+
+### `slide_runs` — `diff.lua`
+
+A block one side has whole, bordered by lines that are byte-identical on both
+sides and repeat its own first or last lines, can be drawn at any of several
+places that are all the same edit. A test inserted above another under the same
+three `@mock.patch` decorators: difft kept the decorators paired at the top, so
+the new test's own decorators read as old code and the untouched test below
+was painted as though it had gained them. Among the places the identical lines
+allow, the block goes to the nearest one where its first non-blank line follows
+a blank line (or the top of the file), as git's slider does — only where it
+does not already start that way, only across at least one non-blank line (where
+blank lines go is `slide_deletions`' to say; moved for their own sake one was
+banded inside an inserted block), and only for a block of lines that went or
+arrived, every one, so a reflow's unchanged continuation rows are never
+counted. A row taken off a pairing to join the block is marked whole, since
+difft had nothing to say about one half of an unchanged pair. Measuring the
+start by the first line rather than the first non-blank one slid a function
+inserted after two blank lines up onto the `return` above it.
+
 ### A lone unchanged row between a deletion and an insertion — `diff.lua`
 
 A single unchanged row between two changed ones normally stays inside the hunk,
@@ -138,6 +276,10 @@ directly **above** the run — which is what a wrapper is (`if`, `for`, `with`,
 `try`, a brace all open above the block they take in). A file reindented
 throughout reports no hunks at all; one reindented throughout *and* edited once
 would otherwise light up every row and bury the edit under the reformat.
+Blank rows outside any hunk do not end the run: they have no indentation to
+gain, and a wrapped block has them between its paragraphs. A run that stopped at
+one left everything under the first blank line of a `try:` body reading as
+untouched, and a block a blank line below its wrapper's hunk unmarked entirely.
 `diff.indent_marks` turns it off.
 
 ### `clip_indent` / `indent_delta` — `diff.lua`
@@ -279,6 +421,14 @@ is a positive claim about **which half is old**, and when that is false it
 sends the reader hunting for a correspondence that is not there — the cost a
 patch already charges. So when in doubt, tint whole.
 
+The question is asked of a **node**: consecutive prose rows, carried across a
+blank row only where both sides of it are a string. A docstring's paragraph
+break is a row of the one atom; a blank line after a run of `#` comments ends
+it, and joined through one, a comment added whole above an edited one took the
+edited one's comparison and was drawn dim — five new lines reading as the part
+that had not changed — and a string on a wholly new line had its words stepped
+back because a comment two rows below was compared.
+
 ### Prose mode — `overlay.lua`
 
 In a file difft has no parser for, every atom is a word, so narrowing to the
@@ -325,6 +475,16 @@ So where the two sides correspond row for row, a row that lost something and
 gained nothing overrules the survival test: the before-image is the only place
 that loss can be shown.
 
+"Row for row" is the character comparison, which is offered for twenty rows at
+most — and a docstring is one atom, so difft made all thirty-one rows of one a
+single hunk for three trailing spaces, and they came back dim with nothing
+above them. Past that, the pairing answers for a hunk that is a whitespace
+cleanup and nothing else: every row its own old self, or that with spaces taken
+out at the same indentation and something left on it (`lost_space`), each drawn
+with only the spaces red. Nothing else, because anything more is what the
+survival test is for: a paragraph reflowed *and* cleared of trailing spaces is
+a reflow, and drawn for the spaces it was thirty rows of red passage.
+
 It is asked against a window of rows around the hunk, not the hunk alone,
 because a wrap can come back as a deletion here and an insertion three rows
 down. Two kinds of row are left out of that window: rows another hunk claims
@@ -351,6 +511,16 @@ half its body; the new copy is another hunk, and its lines once excused the
 same lines out of the old copy — the before-image lost its signature and the
 rest hung under the function above, reading as part of it.
 
+The unchanged rows at the TOP of a hunk are left out whatever the majority
+test says: they leave no hole, and the block is hung under their own new
+copies — above the row its first drawn row answers to — so it reads on from
+them as the passage did. A docstring with its middle paragraph reworded was
+drawn in full, its opening line and the blank under it red directly above the
+identical rows. The bottom only where the top went too: the rows there sit under
+the NEW block, so the old one taken off them stops short — a call reflowed down
+to its unchanged `)` would be drawn opening a bracket nothing closes. With both
+ends off it is the inside of something whose ends are both on screen.
+
 ### A moved definition — `moves.lua`
 
 Before any of the above: difftastic aligns in order and so does `vim.diff`,
@@ -361,6 +531,13 @@ wholly inside the other side's added rows — same node type, same name and a
 little alike (`diff.move.named_similarity`), or no name and alike enough
 (`similarity`) — is a move, provided something that stayed sits between the
 two places; otherwise it is a rewrite in place, which the backend had right.
+
+A name is a definition's only where it names something outside a function:
+an assignment's target counts at the top of a file or in a class body
+(`M.foo = function`, a settings class's `desc`), not inside a function, where
+it is a local. A `chunk = await ...` rewritten in one method was paired with a
+new `chunk = await ...` in another twelve hundred rows below, and drawn as
+moved there, while the edit where it stood drew nothing.
 
 The pair in place is still scored, and competes for both nodes: where it is
 the better match it takes them and nothing is drawn. Left out, a definition
@@ -435,7 +612,10 @@ Only where the surviving row was **rewritten** by the fold. Byte for byte the
 same and nothing was folded: the rows simply went, and they went *after* it. A
 file whose whole body was deleted otherwise put every removed row above the one
 line it had left — above the first line of the buffer, where there is nothing
-to scroll to.
+to scroll to. The same past its indentation counts as the same: a row moved
+sideways had nothing folded into it. Two nested `finally:` blocks merged into
+one dedented the call under the inner one, and as a fold the outer `finally:`
+that went was drawn above it together with the call's old self.
 
 Nor where the row belongs to a hunk of its own. A fold leaves the row it went
 into with nothing the backend calls changed, so no hunk claims it; a row that
@@ -492,6 +672,21 @@ that — the marks cover two thirds of the row, under `major_ratio`, and `is`,
 inline and as a banded line side by side. See `narrowed_atoms` below, which
 asks the same question per atom.
 
+A **blank** row has nothing to pick a removal out of, and is removed whole
+unless it was measured and found to survive. A blank line inside a string is a
+row of the string's atom, so difft has a span for it — zero columns wide — and
+taken as source 3 it left the row in the dim band: a class removed whole came
+back with every blank line of its docstring a stripe saying "this row stayed"
+between rows that all went.
+
+The added side has the mirror of it. A blank row of a prose node is part of the
+node, and where the node was compared the blank row's comparison comes back
+empty, which reads as "all of it stayed" and stepped the row back whole: a
+docstring put in where a function had comments was green on every row but its
+blank one. A blank row has no words to step back, and one still marked is not
+the blank line it was (`quiet_unchanged` has taken the marks off one that is),
+so it takes the band.
+
 ### `fitted` / `refit` — `overlay.lua`
 
 Which row a before-image goes above is difft's alignment where the pair
@@ -506,6 +701,15 @@ A line broken over several counts as resembling the piece it was anchored on:
 short to resemble the old line, and re-matched to the argument row it drew
 `f(` as lost. An anchored row difft put nothing on, whose trimmed text is still
 inside the old line, is left where difft put it (`split_from`).
+
+And wherever the before-image lands, it is drawn above where the old line now
+*begins*: if the row above its partner is in the hunk, has no partner but this
+line, and is how the old line starts, it goes above that, as far up as that
+holds. A one-line docstring opened onto three rows is anchored on the opening
+`"""`, but the row carries the changed atom's marks so `split_from` does not
+keep it there, and the re-fit moves it onto the sentence it resembles more — the
+old line hung between the two, the `"""` dim and alone above it. A sentence
+broken in two that difft anchored on the second half did the same.
 
 ### `diff.line.spread_max` — `overlay.lua`
 
@@ -551,6 +755,15 @@ a deletion rather than as a replacement.
 
 Where the red rows hang: above the row they became, below the row they
 followed, and above the first line for a deletion at the top of a file.
+
+A removal that would hang below a row another hunk changed goes ABOVE that
+row when that hunk drew no before-image at all. The rows between them are
+old-side only, so on screen the two are adjacent and one went where the other
+came. A dict reflowed onto one line left the rows under it paired by position,
+the reworded comment below against a row of the old dict that survived in the
+one-liner: nothing was drawn above the comment, and the comment it replaced
+hung below it. A hunk that did draw a before-image -- a block above its first
+row -- has answered its rows, and a removal after it stays below.
 
 ---
 

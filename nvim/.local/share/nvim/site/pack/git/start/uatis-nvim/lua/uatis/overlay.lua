@@ -1052,6 +1052,14 @@ end
 ---   full      the atoms ARE the row, indentation aside
 ---   narrowed  the node this row belongs to had an emphasis somewhere
 function M.prose_marks(spans_by_row, text_of, fine_of, all, about_of)
+  local function has_string(spans)
+    for _, sp in ipairs(spans or {}) do
+      if sp.atom == "string" then
+        return true
+      end
+    end
+    return false
+  end
   local rows, marks = {}, {}
   for row in pairs(spans_by_row) do
     table.insert(rows, row)
@@ -1098,6 +1106,16 @@ function M.prose_marks(spans_by_row, text_of, fine_of, all, about_of)
             joined = false
             break
           end
+        end
+        -- Across a blank row only inside a string. A docstring's
+        -- paragraph break is a row of the one atom; a blank line after
+        -- a run of comments ENDS it, and joined through one a comment
+        -- added whole above an edited one took the edited one's
+        -- comparison and was drawn dim -- five new lines reading as the
+        -- part that had not changed.
+        if joined and row - prev > 1 and not all
+          and not (has_string(spans_by_row[prev]) and has_string(spans_by_row[row])) then
+          joined = false
         end
       end
       if not joined then
@@ -1406,7 +1424,16 @@ local function collapsed_span(result, hunk, old_lines, line_text)
   -- of that body above the one line it had left -- above the FIRST line
   -- of the buffer, where there is nothing for the reader to scroll to
   -- and the removal may as well not have been drawn.
-  if line_text(hunk.start_b - 1) == old_lines[first] then
+  --
+  -- The same past its indentation, too. A row moved sideways had nothing
+  -- folded into it either: two nested `finally:` blocks merged into one
+  -- dedented the access-log call under the inner one, and as a fold the
+  -- outer `finally:` that went came back drawn above it with the call's
+  -- old self -- the line shown removed directly above itself.
+  local function body(text)
+    return ((text or ""):gsub("^%s+", ""))
+  end
+  if body(line_text(hunk.start_b - 1)) == body(old_lines[first]) then
     return nil
   end
   local last = math.min(after - 1, #old_lines)
@@ -1461,6 +1488,19 @@ end
 --- file nothing went out of. Taking them off an unchanged row would say
 --- the row is still there, which is true, by claiming the deletion below
 --- it never happened, which is not.
+--- Whether the row `now`, paired with `was`, is `was` with some of its
+--- whitespace taken out and nothing else: a trailing space gone, a
+--- doubled one closed up. At the same indentation, because a row that
+--- lost columns at its FRONT moved sideways, which is a reindent and not
+--- a removal. And with something left on it: a blank line that lost its
+--- spaces has nothing to draw them against.
+local function lost_space(was, now)
+  return was ~= nil and now ~= nil and was ~= now and #now < #was
+    and now:match("%S") ~= nil
+    and was:match("^%s*") == now:match("^%s*")
+    and was:gsub("%s", "") == now:gsub("%s", "")
+end
+
 local function quiet_unchanged(result, old_lines, text_of)
   if not result.pairs or not result.spans then
     return result
@@ -1743,7 +1783,11 @@ function M.render(bufnr, win, result, old_lines, opts)
     end
   end
 
+  -- Hunks that drew no before-image, by index. See the removal hung
+  -- below a row another hunk changed, in the loop.
+  local silent = {}
   for hidx, hunk in ipairs(result.hunks or {}) do
+    silent[hidx] = true
     -- A hunk that replaces N lines with N lines pairs them up, and a
     -- paired line can be compared against the exact line it replaced.
     -- That is worth doing regardless of backend: it is the only way to
@@ -2307,6 +2351,31 @@ function M.render(bufnr, win, result, old_lines, opts)
           break
         end
       end
+    elseif result.pairs and hunk.count_a == hunk.count_b then
+      -- ...and where the hunk is too long for `inline` -- a docstring
+      -- is one atom, so difftastic makes all thirty-one rows of it one
+      -- hunk for three trailing spaces -- the pairing answers for the
+      -- one case that needs no character comparison: a hunk that is a
+      -- whitespace cleanup and nothing else, every row its own old self
+      -- or that with spaces taken out (`lost_space`). Nothing else,
+      -- because anything more is what `content_survives` is for: a
+      -- paragraph reflowed AND cleared of trailing spaces is a reflow,
+      -- and drawn for the spaces it was thirty rows of red passage.
+      local any = false
+      for i = 0, hunk.count_b - 1 do
+        local row = hunk.start_b + i
+        local was, now = old_lines[result.pairs[row] or -1], line_text(row - 1)
+        if result.pairs[row] ~= hunk.start_a + i then
+          any = false
+          break
+        elseif lost_space(was, now) then
+          any = true
+        elseif was ~= now then
+          any = false
+          break
+        end
+      end
+      lost_only = any
     end
     local pure_insertion = nothing_removed
       or (content_survives and not lost_only and (inline ~= nil or result.precise))
@@ -2555,13 +2624,46 @@ function M.render(bufnr, win, result, old_lines, opts)
             rest = rest + 1
           end
         end
+        local function on_own(old_row)
+          local at = result.anchor[old_row]
+          return at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
+            and line_text(at - 1) == old_lines[old_row]
+        end
         if aligned and not collapsed[hidx] and rest <= config.diff.line.spread_max then
           for old_row in pairs(intact) do
-            local at = result.anchor[old_row]
-            if at and at >= hunk.start_b and at < hunk.start_b + hunk.count_b
-              and line_text(at - 1) == old_lines[old_row] then
+            if on_own(old_row) then
               own[old_row] = true
             end
+          end
+        end
+        -- ...and the unchanged rows at the TOP of the block, which leave
+        -- no hole. A hole is what the majority test is against -- a
+        -- bracket opened in the passage and never closed -- and the
+        -- block, hung under those rows' own new copies (below), reads on
+        -- from them as the passage did. A docstring with its middle
+        -- paragraph reworded was drawn in full, its opening line and the
+        -- blank under it red directly above the identical rows.
+        --
+        -- The bottom only where the top went too. The rows there are
+        -- under the NEW block, not the old one, so the old block taken
+        -- off them stops short: a call reflowed down to its unchanged
+        -- `)` was drawn opening a bracket nothing closed. With both ends
+        -- off it is the inside of something whose ends are both on
+        -- screen around it -- the paragraph, without the `"""` either
+        -- side.
+        if not collapsed[hidx] then
+          local head = false
+          for old_row = hunk.start_a, hunk.start_a + hunk.count_a - 1 do
+            if not (intact[old_row] and on_own(old_row)) then
+              break
+            end
+            own[old_row], head = true, true
+          end
+          for old_row = hunk.start_a + hunk.count_a - 1, hunk.start_a, -1 do
+            if not (head and intact[old_row] and on_own(old_row)) then
+              break
+            end
+            own[old_row] = true
           end
         end
         intact = own
@@ -2685,6 +2787,14 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- inline, which says the statement was replaced rather than
           -- that two names in it were.
           local dels = inline and inline.dels[i + 1]
+          -- ...or, past where `inline` is offered, the row's own pair
+          -- where all it lost was whitespace: drawn whole, three trailing
+          -- spaces off a docstring came back as three solid red rows.
+          local at = result.anchor and result.anchor[old_row]
+          if (not dels or #dels == 0) and at and result.pairs and result.pairs[at] == old_row
+            and lost_space(text, line_text(at - 1)) then
+            dels = diff.inline_diff(text, line_text(at - 1)).dels
+          end
           if (not dels or #dels == 0) and refit[old_row] then
             dels = refit[old_row]
           end
@@ -2799,6 +2909,17 @@ function M.render(bufnr, win, result, old_lines, opts)
           end
           local runs = syn and syn[old_row]
           local chunks = { { marker .. pad, "UatisSign" } }
+          -- A row with nothing on it has nothing to pick a removal out
+          -- of. A blank line inside a docstring is a row of the string's
+          -- atom, so the backend has a span for it -- zero columns wide --
+          -- and taken as one the row was padded in the dim band: in a
+          -- class removed whole, every blank line of its `desc` came
+          -- back as a stripe saying "this row stayed" between rows that
+          -- all went. Unless the row was measured and found to survive,
+          -- it is removed whole, like any blank line outside a string.
+          if not text:match("%S") and not survived then
+            dels = nil
+          end
           if (dels and #dels > 0) or survived then
             -- One band per column range, with the old line's own syntax
             -- colours running through both of them: the two backgrounds
@@ -2866,6 +2987,23 @@ function M.render(bufnr, win, result, old_lines, opts)
           -- in the old file.
           local at = spread and not span
             and ((aligned and result.anchor[old_row]) or (fitted and fitted[old_row]))
+          -- A line split in two is paired with one of its halves, and
+          -- where that is the second the old line hung between them:
+          -- `"""Spawn a new dirty worker."""` opened onto three rows
+          -- came back with the opening `"""` dim and alone above its
+          -- own before-image (`fitted` having moved it off the `"""`,
+          -- which difftastic had right, onto the row that resembles it
+          -- more). Where the row above the partner is in the hunk, has no
+          -- partner but this line and is how the old line STARTS, the
+          -- old line goes above that -- above where it now begins.
+          while at and at - 1 >= hunk.start_b and result.pairs
+            and (result.pairs[at - 1] == nil or result.pairs[at - 1] == old_row) do
+            local head_text = vim.trim(line_text(at - 2))
+            if head_text == "" or vim.trim(text):sub(1, #head_text) ~= head_text then
+              break
+            end
+            at = at - 1
+          end
           if at then
             local anchor = math.min(at - 1, math.max(line_count - 1, 0))
             answered[anchor] = true
@@ -2879,8 +3017,40 @@ function M.render(bufnr, win, result, old_lines, opts)
         end
       end
       local row, above = delete_anchor(hunk, line_count)
+      local after = hunk.count_b == 0 and hunk.start_b > 0 and hunk.start_b - 1 or nil
       if span then
         row, above = math.max(hunk.start_b - 1, 0), true
+      elseif after and not head_tail and (function()
+        for k, h in ipairs(result.hunks) do
+          if k ~= hidx and h.count_b > 0 and after >= h.start_b - 1
+            and after < h.start_b - 1 + h.count_b then
+            return silent[k] == true
+          end
+        end
+      end)() then
+        -- A removal hung below a row another hunk changed, where that hunk
+        -- drew no before-image at all: the rows between them were old-side only,
+        -- so on screen the two are adjacent, and one went where the other
+        -- came. A dict reflowed onto one line left its next rows paired
+        -- by position, the new comment under it against a row of the old
+        -- dict that survived in the one-liner -- so nothing was drawn
+        -- above the comment, and the comment it replaced hung below it.
+        row, above = after, true
+      elseif intact[hunk.start_a] and result.anchor then
+        -- The block's first rows were left out as still on screen, so
+        -- the top of the hunk is one of them: hung there, the reworded
+        -- paragraph sat above the docstring's unchanged first line,
+        -- which then read as its replacement. It goes above the row
+        -- its own first row answers to.
+        for old_row = hunk.start_a, hunk.start_a + hunk.count_a - 1 do
+          if not intact[old_row] and not carried[old_row - hunk.start_a + 1] then
+            local at = result.anchor[old_row]
+            if at and at > hunk.start_b and at < hunk.start_b + hunk.count_b then
+              row, above = at - 1, true
+            end
+            break
+          end
+        end
       end
       if #head > 0 then
         answered[row] = true
@@ -2899,6 +3069,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       if drawn > 0 and hunk.count_b == 0 then
         table.insert(anchors, math.min(math.max(row + 1, 1), math.max(line_count, 1)))
       end
+      silent[hidx] = drawn == 0
     elseif hunk.count_a > 0 and hunk.count_b == 0 and not pure_insertion then
       -- Nothing is drawn here, but something WAS removed here, and `]c`
       -- has to stop for it: side by side, the row it stops on is the row
@@ -2927,6 +3098,15 @@ function M.render(bufnr, win, result, old_lines, opts)
   for _, row in ipairs(order) do
     local p, text = marks[row], line_text(row)
     local band = prose_band[row]
+    -- A blank row has no words for the stepping back to be about. One
+    -- that is still marked is not the blank line it was -- a row the
+    -- same on both sides has had its marks taken off already -- so it
+    -- is new, and stepped back whole it striped a docstring added
+    -- entire: every row green bar the blank one, which read as the one
+    -- line that stayed. The mirror of the removed side's blank rows.
+    if band and not text:match("%S") then
+      p = { narrowed = false }
+    end
     if not p.narrowed then
       if band then
         paint_row(bufnr, M.ns, row, band, {}, text, line_count)
@@ -3062,12 +3242,20 @@ function M.render(bufnr, win, result, old_lines, opts)
       end
     end
 
+    --- A blank row the backend said nothing about. It has no indentation
+    --- to have gained, and a wrapped block has them between its
+    --- paragraphs: a run that stopped at one left everything under the
+    --- first blank line of a `try:` body reading as untouched.
+    local function gap(row)
+      return not touching[row] and row >= 1 and not line_text(row - 1):match("%S")
+    end
+
     for new_row, cols in pairs(shifted) do
       -- The run this row is in, and whether either end of it is against
       -- a hunk. Walked per row rather than grouped up front: the runs
       -- are short and there are at most a handful of them.
       local first = new_row
-      while shifted[first - 1] do
+      while shifted[first - 1] or gap(first - 1) do
         first = first - 1
       end
       if touching[first - 1] then

@@ -222,6 +222,21 @@ M.focus = function(pane_line)
     end
 end
 
+--- Move the cursor of the pane to the given pane line.
+--- @param pane_line integer 1-indexed line within the sections area (not counting header).
+M.set_cursor = function(pane_line)
+    local info = get_pane_info()
+    if info == nil or not vim.api.nvim_win_is_valid(info.pane_win) then
+        return
+    end
+
+    local buf_line = #info.header_lines + pane_line
+    if buf_line > vim.api.nvim_buf_line_count(info.pane_buf) then
+        return
+    end
+    vim.api.nvim_win_set_cursor(info.pane_win, { buf_line, 0 })
+end
+
 M.set_width = function(width)
     local info = get_pane_info()
     if info == nil then

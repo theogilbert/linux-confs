@@ -76,6 +76,13 @@ local function update_current_section_highlight()
     end
 end
 
+local function cursor_to_current_section()
+    local info = get_tab_info()
+    if info ~= nil and info.last_pane_line ~= nil then
+        pane.set_cursor(info.last_pane_line)
+    end
+end
+
 local function render_header(tab_info)
     local header_lines = header.get_lines(tab_info.show_private)
     pane.write_header(header_lines)
@@ -373,6 +380,7 @@ M.toggle = function()
             on_close = clear_tab_info,
         })
         refresh_pane(watched_win, watched_buf, { reset_collapse = true })
+        cursor_to_current_section()
     else
         pane.close()
         clear_tab_info()
@@ -386,6 +394,7 @@ M.focus = function()
         return
     end
     vim.api.nvim_set_current_win(pane_win)
+    cursor_to_current_section()
 end
 
 --- Flattens a sections tree into `{ name, position }` entries in buffer

@@ -289,6 +289,22 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         assert.are.same({ build_class("SimpleClass", { 1, 0 }, { "str", "Enum" }) }, root_nodes)
     end)
 
+    it("should parse methods of class with multiple parent classes", function()
+        local buf = create_python_buf([[
+class Driver(Meta, Base):
+    def run(self):
+        pass
+        ]])
+        local root_nodes = parser.parse_sections(buf)
+
+        root_nodes = drop_node_id(root_nodes)
+        assert.are.same({
+            build_class("Driver", { 1, 0 }, { "Meta", "Base" }, {
+                build_function("run", { 2, 4 }, { "self" }),
+            }),
+        }, root_nodes)
+    end)
+
     it("should parse method with multiple parameters", function()
         local buf = create_python_buf([[
 class Arbiter:

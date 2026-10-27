@@ -172,24 +172,26 @@ local function merge_sections(sections_matches)
     local sections_by_id = {}
 
     for _, section in ipairs(sections_matches) do
-        if #section.children > 1 then
-            section.children = merge_sections(section.children)
-        end
-
         local node_id = section.node:id()
         if sections_by_id[node_id] == nil then
             sections_by_id[node_id] = section
         else
+            local existing = sections_by_id[node_id]
             if section.parameters ~= nil then
                 -- We only expect the param parameter to change
-                local merged_params = utils.merge_tables(sections_by_id[node_id].parameters, section.parameters)
-                sections_by_id[node_id].parameters = merged_params
+                existing.parameters = utils.merge_tables(existing.parameters, section.parameters)
             end
+            -- Children may have been attached to any of the duplicate matches,
+            -- e.g. to the last match of a class with several superclasses
+            vim.list_extend(existing.children, section.children)
         end
     end
 
     local sections = {}
     for _, section in pairs(sections_by_id) do
+        if #section.children > 1 then
+            section.children = merge_sections(section.children)
+        end
         table.insert(sections, section)
     end
 

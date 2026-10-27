@@ -130,30 +130,33 @@ function M.reader(root, width)
 
   local context = config.comments.context or 0
 
-  return function(t)
+  return function(t, more)
     local replaced = replaced_in(t)
-    return threads.render(t, {
-      replaced = replaced,
-      original = function(above, below)
-        return session.original(t, above, below)
-      end,
-      width = width,
-      edge = true,
-      -- By the name of the file the thread is on, which in here is all
-      -- there is to go on: this window is read with no file windows
-      -- open, and a buffer whose filetype could be asked for may not
-      -- exist. Nor is there one to ask whether the line is inside a
-      -- docstring, so the file's own lines answer that -- the ones
-      -- `replaced` is reading anyway.
-      paint = code_in(t),
-      paint_was = quote_in(t),
-      -- Read out of the buffer where the file is open and off the disk
-      -- where it is not, which is what `replaced` reads too: this
-      -- window is read with no file windows open at all, and "the code
-      -- has gone since" is exactly the thing you cannot see for
-      -- yourself from in here.
-      was = replaced and session.quoted(t, file_lines(t.path), context, t.line) or nil,
-    })
+    return threads.render(
+      t,
+      vim.tbl_extend("force", {
+        replaced = replaced,
+        original = function(above, below)
+          return session.original(t, above, below)
+        end,
+        width = width,
+        edge = true,
+        -- By the name of the file the thread is on, which in here is all
+        -- there is to go on: this window is read with no file windows
+        -- open, and a buffer whose filetype could be asked for may not
+        -- exist. Nor is there one to ask whether the line is inside a
+        -- docstring, so the file's own lines answer that -- the ones
+        -- `replaced` is reading anyway.
+        paint = code_in(t),
+        paint_was = quote_in(t),
+        -- Read out of the buffer where the file is open and off the disk
+        -- where it is not, which is what `replaced` reads too: this
+        -- window is read with no file windows open at all, and "the code
+        -- has gone since" is exactly the thing you cannot see for
+        -- yourself from in here.
+        was = replaced and session.quoted(t, file_lines(t.path), context, t.line) or nil,
+      }, more or {})
+    )
   end
 end
 

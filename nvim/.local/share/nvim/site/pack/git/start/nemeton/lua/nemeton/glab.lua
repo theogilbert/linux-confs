@@ -737,7 +737,7 @@ end
 --- Opens a merge request for the branch the repository is on.
 ---
 --- `mr` is what the window collected: `title`, `body`, `target`,
---- `labels` and `draft`. Only the title is required -- everything else
+--- `labels`, `reviewers` (usernames) and `draft`. Only the title is required -- everything else
 --- left out is a question glab answers for itself, which for the target
 --- branch is the project's default and for the rest is "none".
 ---
@@ -771,6 +771,9 @@ function M.mr_create(root, mr, cb)
     -- One flag, comma-separated: glab takes the flag repeated as well,
     -- and a single argument is one thing to read in the log.
     vim.list_extend(args, { "--label", table.concat(mr.labels, ",") })
+  end
+  if mr.reviewers and #mr.reviewers > 0 then
+    vim.list_extend(args, { "--reviewer", table.concat(mr.reviewers, ",") })
   end
   if mr.draft then
     -- The flag rather than a `Draft:` in front of the title. The two
@@ -807,7 +810,23 @@ function M.mr_get(root, iid, cb)
     { cwd = root },
     function(data, err)
       learn(root, data)
-      cb(data, err)
+      if type(data) ~= "table" or type(data.labels) ~= "table" or #data.labels == 0 then
+        cb(data, err)
+        return
+      end
+      -- The merge request names its labels and says nothing of their
+      -- colours; the project does. Asked only when there is a label to
+      -- colour, and a forge that will not say leaves the names plain.
+      M.labels(root, function(all)
+        local details = {}
+        for _, l in ipairs(type(all) == "table" and all or {}) do
+          if l.name then
+            details[l.name] = { color = l.color, text_color = l.text_color }
+          end
+        end
+        data.label_details = details
+        cb(data, err)
+      end)
     end
   )
 end
@@ -1627,6 +1646,19 @@ end
 --- every version, where a field of its own came late.
 function M.retitle(root, iid, title, cb)
   send("PUT", root, ("projects/:fullpath/merge_requests/%d"):format(iid), { title = title }, cb)
+end
+
+--- Replaces who is asked to review it. `ids` are user ids; none at all
+--- is sent as the 0 the forge reads as "nobody", since an empty list
+--- would be encoded as an empty object.
+function M.set_reviewers(root, iid, ids, cb)
+  send(
+    "PUT",
+    root,
+    ("projects/:fullpath/merge_requests/%d"):format(iid),
+    { reviewer_ids = #ids > 0 and ids or { 0 } },
+    cb
+  )
 end
 
 --- Gives it a new description. An empty string is sent as one rather

@@ -167,6 +167,9 @@ A review, end to end:
 :Nemeton describe       Rewrite its description, in the composer.
                         |nemeton-detail-window|
 
+:Nemeton reviewers      Tick who is asked to review it, out of the project's
+                        members. |nemeton-detail-window|
+
 :Nemeton comment        A new thread on the line under the cursor.
 
 :Nemeton reply          A reply into the thread under the cursor.
@@ -499,6 +502,10 @@ that is read from the files on disk, and they are not this merge
 request's until it is opened. The answer is the one `d` counts its
 threads from, so one key after the other is one call, not two.
 
+`<C-d>` and `<C-u>` scroll the pane half a page from the list: the
+cursor stays in the queue, and a long argument goes on past the
+pane's bottom edge. Another row opens at its top.
+
 `p` is the CI column asked what it means: the jobs of the head
 pipeline, grouped under their stages with what each one did and how
 long it took -- the same table |nemeton-jobs-window| draws, on the same
@@ -565,6 +572,8 @@ much of it is yours and unsent.
     d               mark it a draft, or ready
     R               give it a new title
     e               rewrite its description
+    v               ask people to review it, ticked on and off (a list that
+                    comes back with the tick moved until it is dismissed)
     o               open it on GitLab
     r               refetch it: its pipeline, approvals and diff
     q               close
@@ -1143,6 +1152,7 @@ would ask at a prompt, on one screen and in any order:
     draft           whether anybody is being asked to review it yet
     target          the branch it goes into
     labels          the ones the project has
+    reviewers       members of the project, asked to review it
     description     what it is for
 
 The cursor sits on a field and `<CR>` changes it: the title in a

@@ -78,35 +78,8 @@ function M.view(raw)
   }
 end
 
---- The highlight a label is drawn in: its own colours, as a chip, the
---- way the forge draws one. Made the first time a colour is asked for
---- and again after a `:colorscheme`, which clears every group.
-local function label_hl(l)
-  local bg = type(l.color) == "string" and l.color:match("^#%x%x%x%x%x%x$")
-  if not bg then
-    return "NemetonLabel"
-  end
-  local name = "NemetonLabel_" .. bg:sub(2)
-  if vim.tbl_isempty(vim.api.nvim_get_hl(0, { name = name })) then
-    local fg = type(l.text_color) == "string" and l.text_color:match("^#%x%x%x%x%x%x$")
-    vim.api.nvim_set_hl(0, name, { bg = bg, fg = fg or "#FFFFFF" })
-  end
-  return name
-end
-
-M.label_hl = label_hl
-
---- The labels as chips: each in its own colour, a space either side.
-function M.label_chunks(labels)
-  local out = {}
-  for i, l in ipairs(labels) do
-    if i > 1 then
-      table.insert(out, { " " })
-    end
-    table.insert(out, { " " .. l.title .. " ", label_hl(l) })
-  end
-  return out
-end
+M.label_hl = detail.label_hl
+M.label_chunks = detail.label_chunks
 
 -- Wide enough for the longest label, as the merge request's window.
 local LABEL = "%-10s"
@@ -575,22 +548,13 @@ function M.labels(entry)
   end)
 end
 
---- Who it is assigned to, ticked on and off out of the project's
---- members.
-function M.assignees(entry)
-  entry = entry or M.here()
-  if not (entry and entry.view) then
-    return
-  end
-  local had = vim.list_slice(entry.view.assignees)
-  glab.project_users(entry.subject.root, function(data, err)
-    if type(data) ~= "table" then
-      session.notify(
-        "could not ask who is on this project: " .. tostring(err),
-        vim.log.levels.ERROR
-      )
-      return
-    end
+--- A set of the project's members, ticked on and off: usernames drawn
+--- with the name beside them. `done(set, ids)` once, when the list is
+--- dismissed -- the usernames ticked then, and the ids the forge's
+--- fields take. `users` is `glab.project_users`' answer where the
+--- caller has it already, and is asked for where it does not.
+function M.pick_users(root, title, had, done, users)
+  local function pick(data)
     local names, ids, full = {}, {}, {}
     for _, u in ipairs(data) do
       if u.username then
@@ -602,33 +566,60 @@ function M.assignees(entry)
     local function shown(n)
       return full[n] and full[n] ~= n and ("%s  %s"):format(n, full[n]) or n
     end
-    M.pick_set("assignees", names, had, shown, function(set)
-      if same(set, had) then
-        return
-      end
+    M.pick_set(title, names, had, shown, function(set)
       local list = {}
       for _, n in ipairs(set) do
         if ids[n] then
           table.insert(list, ids[n])
         end
       end
-      glab.issue_update(
-        entry.subject.root,
-        entry.subject.iid,
-        { assignee_ids = list },
-        function(got, why)
-          if not got then
-            session.notify(
-              "could not change who it is assigned to: " .. tostring(why),
-              vim.log.levels.ERROR
-            )
-            return
-          end
-          took(entry, got)
-          session.notify(#list > 0 and "assigned" or "unassigned")
-        end
-      )
+      done(set, list)
     end)
+  end
+  if type(users) == "table" then
+    pick(users)
+    return
+  end
+  glab.project_users(root, function(data, err)
+    if type(data) ~= "table" then
+      session.notify(
+        "could not ask who is on this project: " .. tostring(err),
+        vim.log.levels.ERROR
+      )
+      return
+    end
+    pick(data)
+  end)
+end
+
+--- Who it is assigned to, ticked on and off out of the project's
+--- members.
+function M.assignees(entry)
+  entry = entry or M.here()
+  if not (entry and entry.view) then
+    return
+  end
+  local had = vim.list_slice(entry.view.assignees)
+  M.pick_users(entry.subject.root, "assignees", had, function(set, list)
+    if same(set, had) then
+      return
+    end
+    glab.issue_update(
+      entry.subject.root,
+      entry.subject.iid,
+      { assignee_ids = list },
+      function(got, why)
+        if not got then
+          session.notify(
+            "could not change who it is assigned to: " .. tostring(why),
+            vim.log.levels.ERROR
+          )
+          return
+        end
+        took(entry, got)
+        session.notify(#list > 0 and "assigned" or "unassigned")
+      end
+    )
   end)
 end
 

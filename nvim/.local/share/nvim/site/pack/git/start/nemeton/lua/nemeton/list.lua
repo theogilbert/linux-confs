@@ -660,6 +660,21 @@ local function draw_preview(lines, hls)
   vim.api.nvim_buf_set_lines(M.preview.buf, 0, -1, false, lines)
   vim.bo[M.preview.buf].modifiable = false
   marks.paint(M.preview.buf, hls or {})
+  -- Another row is read from its top, wherever the last one was
+  -- scrolled to.
+  vim.api.nvim_win_set_cursor(M.preview.win, { 1, 0 })
+end
+
+--- Half a pane down, or up. From the list, because the pane cannot be
+--- gone into; `<C-d>` in it rather than a count of lines, so the half
+--- is the pane's own and not the list's.
+function M.scroll_preview(down)
+  if not preview_open() then
+    return
+  end
+  vim.api.nvim_win_call(M.preview.win, function()
+    vim.cmd("normal! " .. vim.keycode(down and "<C-d>" or "<C-u>"))
+  end)
 end
 
 -- Which fetch the pane is still interested in. The cursor moves faster
@@ -844,6 +859,20 @@ local function open_window()
     })
   end
   vim.list_extend(bindings, {
+    {
+      keys.scroll_down,
+      function()
+        M.scroll_preview(true)
+      end,
+      "scroll the pane under the list down",
+    },
+    {
+      keys.scroll_up,
+      function()
+        M.scroll_preview(false)
+      end,
+      "scroll it back up",
+    },
     {
       keys.state,
       function()

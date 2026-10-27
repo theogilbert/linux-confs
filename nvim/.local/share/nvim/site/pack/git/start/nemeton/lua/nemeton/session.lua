@@ -781,6 +781,12 @@ function M.took(mr, data)
   if data.merge_when_pipeline_succeeds ~= nil then
     mr.merge_when_pipeline_succeeds = data.merge_when_pipeline_succeeds
   end
+  if type(data.reviewers) == "table" then
+    mr.reviewers = data.reviewers
+  end
+  if type(data.labels) == "table" then
+    mr.labels, mr.label_details = data.labels, data.label_details
+  end
   if data.draft ~= nil or data.work_in_progress ~= nil then
     mr.draft = data.draft or data.work_in_progress or false
   end
@@ -1190,6 +1196,9 @@ function M.open(iid, opts)
       -- ...and whether it is a draft, which nothing can merge.
       -- `work_in_progress` is the same fact on a forge before 14.0.
       draft = mr.draft or mr.work_in_progress or false,
+      labels = mr.labels,
+      reviewers = mr.reviewers,
+      label_details = mr.label_details,
       -- What CI last said about the branch. Kept whole rather than as
       -- a status string: the pipeline's own URL is the next thing you
       -- want after "failed".

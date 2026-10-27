@@ -1106,6 +1106,13 @@ return {
       -- reads differently from one with a long argument. Not `c`, as it
       -- is in the merge request's own window: here that is the commits.
       comments = "n",
+      -- The pane, scrolled from the list: it is not focusable, so the
+      -- comments of a long argument are below its bottom edge with no
+      -- other way down to them. The keys a picker scrolls its preview
+      -- with, which in a queue a page or two long are not missed as
+      -- motions.
+      scroll_down = "<C-d>",
+      scroll_up = "<C-u>",
     },
     -- The window holding every comment on the merge request, one line
     -- each. The same keys as the every-thread window below, because it
@@ -1156,6 +1163,7 @@ return {
       -- on the command line, the description in the composer.
       retitle = "R",
       describe = "e",
+      reviewers = "v", -- who is asked to review it, ticked on and off
       browser = "o",
       refresh = "r",
       quit = "q",

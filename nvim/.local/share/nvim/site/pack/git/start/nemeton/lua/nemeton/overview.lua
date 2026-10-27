@@ -175,6 +175,13 @@ function M.open()
         "give it a new title",
       },
       {
+        k.reviewers,
+        function()
+          require("nemeton").reviewers(M.redraw)
+        end,
+        "ask people to review it",
+      },
+      {
         k.describe,
         instead(back, function(again)
           -- Redrawn when the answer lands: the window is back up before

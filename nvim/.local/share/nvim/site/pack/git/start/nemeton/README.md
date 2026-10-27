@@ -119,6 +119,7 @@ rest.
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
 | `:Nemeton retitle` | give it a new title |
 | `:Nemeton describe` | rewrite its description, in the composer |
+| `:Nemeton reviewers` | ask project members to review it, ticked on and off |
 | `:Nemeton peek` | the thread under the cursor, in a float |
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
@@ -273,7 +274,8 @@ question starts and "which job" is usually the answer to whether to open
 it at all. `n` shows what has been said on it, every thread under the
 file and line it is on — without the code each is about, which is read
 from the files on disk and those are not this branch's until it is
-opened. `s` walks the queue through opened → merged
+opened. `<C-d>` and `<C-u>` scroll that pane from the list, which keeps
+the cursor. `s` walks the queue through opened → merged
 → closed → all (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
 on the screen, `+` writes one of your own for the branch you are on,
@@ -517,7 +519,7 @@ themselves, fenced in their language.
 
 `+` in the list, or `:Nemeton create`, is a window for a merge request
 that does not exist yet: the title, whether it is a draft, the
-description, the branch it goes to and the labels, each a field the
+description, the branch it goes to, the labels and the reviewers, each a field the
 cursor sits on and `<CR>` changes — a title in a prompt, the description
 in the composer, the branch and the labels picked from what the project
 has. The labels are a dropdown that comes back with the tick moved until

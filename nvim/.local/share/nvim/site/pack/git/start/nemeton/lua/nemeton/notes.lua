@@ -89,25 +89,47 @@ function M.foldexpr(lnum)
   return rows[lnum - 1] == t and "1" or ">1"
 end
 
---- Every thread, in reading order: the ones on code by file and line,
---- then the ones on the merge request as a whole. Unsent comments of
---- your own sit among them, where they will be once they are sent.
+--- When a thread last moved: its newest note. An unsent one has no
+--- date yet, and is the newest thing there is.
+local function moved(t)
+  local last = t.notes and t.notes[#t.notes]
+  return last and last.created_at or "9999"
+end
+
+--- Every thread, in reading order: the ones still being argued first,
+--- the most recently spoken in at the top, and the resolved ones under
+--- them, the same way round. Unsent comments of your own sit among
+--- them, where they will be once they are sent.
+---
+--- By when it last moved and not where it is: the question this window
+--- answers is what to read next, and what was said an hour ago is the
+--- likelier answer than what is on line 3.
 local function everything()
   local mr = session.current
   if not mr then
     return {}
   end
-  local inline = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
-  table.sort(inline, function(a, b)
-    if a.path ~= b.path then
-      return (a.path or "") < (b.path or "")
+  local all = vim.list_extend(vim.list_slice(mr.inline or {}), mr.drafts or {})
+  vim.list_extend(all, mr.overview or {})
+  vim.list_extend(all, mr.draft_overview or {})
+  -- Decorated with where it came from first, because `table.sort` is
+  -- not stable and two threads that moved at the same second would
+  -- otherwise swap places on every redraw.
+  local order = {}
+  for i, t in ipairs(all) do
+    order[t] = i
+  end
+  table.sort(all, function(a, b)
+    if (a.resolved == true) ~= (b.resolved == true) then
+      return b.resolved == true
     end
-    return (a.line or 0) < (b.line or 0)
+    local x, y = moved(a), moved(b)
+    if x ~= y then
+      return x > y
+    end
+    return order[a] < order[b]
   end)
-  return vim.list_extend(
-    inline,
-    vim.list_extend(vim.list_slice(mr.overview or {}), mr.draft_overview or {})
-  )
+  return all
 end
 
 --- The rule a thread is drawn under: where it sits, across the
@@ -155,6 +177,9 @@ function M.foldtext()
   if age then
     add(" · " .. age, "NemetonMeta")
   end
+  if t.resolved then
+    add("  ✓ resolved", "NemetonResolved")
+  end
   local used = 0
   for _, c in ipairs(chunks) do
     used = used + vim.fn.strdisplaywidth(c[1])
@@ -197,7 +222,10 @@ local function render()
     -- where the thread is.
     table.insert(chunks, rule(t, width))
     map[#chunks] = t
-    for _, line in ipairs(draw(t)) do
+    -- A resolved thread is its opening comment and how many answers
+    -- were left out, marked as resolved: it is history, and what is
+    -- read in here is the argument that is not.
+    for _, line in ipairs(draw(t, t.resolved and { summary = true } or nil)) do
       table.insert(chunks, line)
       map[#chunks] = t
       notes[#chunks] = line.note

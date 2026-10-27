@@ -1042,6 +1042,42 @@ M.retitle = with_session(function(cb)
   end)
 end)
 
+--- Who is asked to review it, ticked on and off out of the project's
+--- members: a list that comes back with the tick moved until it is
+--- dismissed, and one change sent then.
+M.reviewers = with_session(function(cb)
+  local mr = session.current
+  local had = {}
+  for _, u in ipairs(mr.reviewers or {}) do
+    table.insert(had, u.username)
+  end
+  require("nemeton.issue").pick_users(mr.root, "reviewers", had, function(set, ids)
+    local was = {}
+    for _, n in ipairs(had) do
+      was[n] = true
+    end
+    local changed = #set ~= #had
+    for _, n in ipairs(set) do
+      changed = changed or not was[n]
+    end
+    if not changed then
+      return
+    end
+    glab.set_reviewers(mr.root, mr.iid, ids, function(data, err)
+      if not data then
+        session.refused("could not change the reviewers", err)
+        return
+      end
+      session.took(mr, data)
+      require("nemeton.detail").forget()
+      session.notify(#ids > 0 and "reviewers changed" or "no reviewers")
+      if cb then
+        cb()
+      end
+    end)
+  end)
+end)
+
 --- The description rewritten, in the composer, starting from what it
 --- says now. Sent rather than kept: there is no such thing as an unsent
 --- edit of a description on the forge, and a review is not waiting on
@@ -1406,6 +1442,9 @@ local SUBCOMMANDS = {
   end,
   retitle = function()
     M.retitle()
+  end,
+  reviewers = function()
+    M.reviewers()
   end,
   notes = M.notes,
   threads = M.threads,

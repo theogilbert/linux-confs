@@ -60,6 +60,7 @@ local function form(branch)
       description = "",
       target = nil,
       labels = {},
+      reviewers = {},
       -- What has been fetched about the branch, kept beside what was
       -- typed so that closing the window and opening it again shows
       -- the facts it had rather than a row of dots.
@@ -150,6 +151,15 @@ function M.lines(f, branch)
   end)
   at("labels", function()
     field(out, hls, "labels", #f.labels > 0 and table.concat(f.labels, ", ") or nil)
+  end)
+  at("reviewers", function()
+    field(
+      out,
+      hls,
+      "reviewers",
+      #f.reviewers > 0 and table.concat(f.reviewers, ", ") or nil,
+      "NemetonAuthor"
+    )
   end)
   table.insert(out, "")
   at("description", function()
@@ -496,6 +506,18 @@ function edit.labels()
   end)
 end
 
+function edit.reviewers()
+  local f = state.form
+  if not state.users then
+    session.notify("still asking the forge who is on this project")
+    return
+  end
+  require("nemeton.issue").pick_users(state.root, "reviewers", f.reviewers, function(set)
+    f.reviewers = set
+    draw()
+  end, state.users)
+end
+
 --- Opens it, with everything the window collected.
 local function submit()
   local f, root, branch = state.form, state.root, state.branch
@@ -512,6 +534,7 @@ local function submit()
     body = f.description,
     target = f.target,
     labels = f.labels,
+    reviewers = f.reviewers,
     draft = f.draft,
   }, function(url, err)
     if not url then
@@ -543,7 +566,11 @@ end
 --- keys turn on: a project with no labels is a question to ask another
 --- way, and a call still in flight is one to wait for.
 function M.choices()
-  return { branches = state and state.branches, labels = state and state.labels }
+  return {
+    branches = state and state.branches,
+    labels = state and state.labels,
+    users = state and state.users,
+  }
 end
 
 --- The window. Everything typed into it before is still in it.
@@ -567,6 +594,7 @@ function M.open()
     branches = state and state.branch == branch and state.branches or nil,
     labels = state and state.branch == branch and state.labels or nil,
     labels_error = state and state.branch == branch and state.labels_error or nil,
+    users = state and state.branch == branch and state.users or nil,
   }
 
   local width = math.min(math.floor(vim.o.columns * 0.7), 84)
@@ -648,6 +676,13 @@ function M.open()
       end
       state.labels = names
       state.labels_error = not data and tostring(err or "no answer") or nil
+    end)
+  end
+  if not state.users then
+    glab.project_users(root, function(data)
+      state.users = vim.tbl_filter(function(u)
+        return u.username ~= nil
+      end, type(data) == "table" and data or {})
     end)
   end
   return M.win

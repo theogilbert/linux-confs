@@ -670,15 +670,32 @@ it. The buffer is handed to git as it stands, so a line you have typed and
 not written is `new`, and every other line keeps its commit through the
 edit.
 
-Each run of lines from one commit gets its short sha in a column at the
-left of the gutter, on the run's first row, and a bracket down the rest of
-it: `┌` `│` `└`, or `╶` for one row (`marker.blame` to change them). Each
-commit has a colour of its own, taken from your colourscheme's syntax
-groups, and a commit is never given the colour of the run above it -- one
-met again further down keeps the colour it already has. The run under the
-cursor is drawn bold with a heavier bracket, `┏` `┃` `┗`, so the lines it
-covers are read off the gutter. Nothing is drawn past the end of a line:
-who, when and why are `gK` away.
+Each run of lines from one commit is named in a column at the left of the
+gutter, on the run's first row -- how long ago it was written (`today`,
+`3d ago`, `2w ago`, `5m ago`, `2y ago`) and its author's initials -- and a
+bracket down the rest of it: `┌` `│` `└`, or `╶` for one row
+(`marker.blame` to change them). Each commit has a colour of its own,
+taken from your colourscheme's syntax groups, and a commit is never given
+the colour of the run above it -- one met again further down keeps the
+colour it already has. The commit under the cursor is drawn bold with a
+heavier bracket, `┏` `┃` `┗`, so the lines it covers are read off the
+gutter. Nothing is drawn past the end of a line: who, when and why are
+`gK` away.
+
+A commit's lines with only NEWER lines between them -- a block edited
+later in the middle -- are one bracket, and the newer lines' brackets are
+drawn inside it, one column to the right: >
+
+    ┌─      commit 1
+    │┌      commit 2
+    │└      commit 2
+    └─      commit 1
+<
+The newest are furthest right. A run of a commit resumed below newer lines
+is `├`, and a corner, `├` or a one-row `╶` is drawn out to the column's
+edge with `─`. An older line between two runs of a commit means the commit
+was not there, and they are two brackets. Four columns at most: a line
+nested deeper is drawn `────`.
 
 The column is 'statuscolumn'. It is put in front of whatever the window
 already had, never in its place, and what was there is put back when the
@@ -688,8 +705,17 @@ blame goes off.
 |:UatisShow| does, with the cursor on that line as the commit has it -- the
 row it had then, not the one it has now. `gK` opens the run in a float: the
 commit, who and exactly when, the rows it covers here and in that commit,
-the whole message, and what that commit did to these lines (`git log -L`).
+the whole message, and what that commit did to these lines (`git log -L`),
+in the file's own syntax colours over an added or removed band.
 `gK` again goes into the float; moving the cursor closes it.
+
+A window of three rows above the blamed one keeps the run under the cursor
+described: commit, who and when, the commit date where it differs, and the
+subject, after a filled gutter as wide as the code's -- redrawn as the
+cursor enters another run. It stays over the window it opened above, and
+that one alone: split it and the pane moves back on top of it. Its status
+line is a rule. `q` in it puts it away until the blame is next turned on;
+`blame.pane = false` never opens it.
 
 Lines moved within the file keep the commit that wrote them (`-M`);
 lines copied from another file are named by the commit that copied them,
@@ -832,10 +858,12 @@ preserve.
     UatisBase           the base between them, where the markers carry one
     UatisMarker         the marker rows
     UatisBlame          the quiet rows of the blame float |uatis-blame|
-    UatisBlame1..N      a commit's sha and bracket, one per distinct colour
+    UatisBlame1..N      a commit's label and bracket, one per distinct colour
                         your scheme gives Function, String, Type, ...
     UatisBlame1Current  ...the same, bold, for the run under the cursor
     UatisBlameUncommitted  a line not committed yet
+    UatisBlameGutter    the blame pane's gutter, filled to the code's width
+    UatisBlameRule      the rule under the blame pane, for a status line
 <
 Set any of them yourself after `setup()` and the derivation for that group is
 what you replace.

@@ -3369,30 +3369,24 @@ function M.review_conflicts(opts)
   end)
 end
 
---- ...and the same key taking it away again -- but only from inside it.
+--- ...and the same key taking it away again, from wherever it is pressed.
 ---
---- Three states, not two, because "the list is on screen" and "I am
---- looking at it" are different places to be pressing this from. With no
---- window, it wants one. With a window it is not standing in, it wants
---- to get there -- reaching the list is the common thing to want, and
---- closing a window you are not even in would be a strange answer to a
---- key you pressed to see something. From inside, it means what `q`
---- means there: this window is in my way.
+--- Two states, not three: no window, it opens one and stands in it; a
+--- window, it goes. An earlier version walked a window you were not in
+--- to the list first, which made reaching the list and closing it two
+--- presses of a key the reader had to count -- open, focus, close -- and
+--- `focus_code` is already the way back to the file.
 ---
---- The WINDOW, not the review, in every one of them. The list goes on
---- being followed and stepped by `]f` either way, and ending the review
---- is still `<leader>gu`.
+--- The WINDOW, not the review. The list goes on being followed and
+--- stepped by `]f` either way, and ending the review is still
+--- `<leader>gu`.
 ---
 --- Read from the window rather than from a flag of its own, so a list
 --- whose window the user closed by hand toggles back on rather than off.
 function M.toggle(opts)
   local pane = M.get()
   if pane and pane.list_win and vim.api.nvim_win_is_valid(pane.list_win) then
-    if vim.api.nvim_get_current_win() == pane.list_win then
-      M.hide(pane)
-    else
-      vim.api.nvim_set_current_win(pane.list_win)
-    end
+    M.hide(pane)
     return pane
   end
   return M.open(opts)

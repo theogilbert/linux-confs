@@ -1037,4 +1037,25 @@ function M.ago(epoch)
   return "just now"
 end
 
+--- How long ago `epoch` was in whole calendar days and the coarser units
+--- above them, one letter each as Go writes a duration: `today`, `3d
+--- ago`, `2w ago`, `5m ago`, `2y ago` -- a gutter column is paid for in
+--- its widest label. Days counted between dates, not 86400s spans, so
+--- last night at 23:00 is 1d ago at 08:00 this morning.
+function M.days_ago(epoch)
+  local function noon(t)
+    local d = os.date("*t", t)
+    return os.time({ year = d.year, month = d.month, day = d.day, hour = 12 })
+  end
+  local days = math.floor((noon(os.time()) - noon(epoch)) / 86400 + 0.5)
+  if days <= 0 then
+    return "today"
+  end
+  for _, u in ipairs({ { 365, "y" }, { 30, "m" }, { 7, "w" }, { 1, "d" } }) do
+    if days >= u[1] then
+      return ("%d%s ago"):format(math.floor(days / u[1]), u[2])
+    end
+  end
+end
+
 return M

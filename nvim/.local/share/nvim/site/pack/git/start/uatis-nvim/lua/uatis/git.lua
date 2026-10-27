@@ -531,7 +531,9 @@ function M.line_patch(root, sha, path, from, to, cb)
   run(root, { "log", "-1", "--format=", "--no-color", "--no-ext-diff",
     "-L", string.format("%d,%d:%s", from, to, path), sha }, function(ok, out)
     local lines, started = {}, false
-    for line in ((ok and out) or ""):gmatch("[^\n]*") do
+    -- `vim.split`, not `gmatch("[^\n]*")`: LuaJIT's gmatch also yields
+    -- the empty match at every newline, a blank row under each line.
+    for _, line in ipairs(vim.split((ok and out) or "", "\n", { plain = true })) do
       started = started or line:match("^@@") ~= nil
       if started then
         table.insert(lines, line)

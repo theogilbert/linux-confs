@@ -187,6 +187,12 @@ return {
     remember_read = true,
   },
 
+  blame = {
+    -- A window above the blamed one describing the run under the
+    -- cursor: its commit, who, when and its subject.
+    pane = true,
+  },
+
   show = {
     -- Open `<leader>gA` / `:UatisShow`, and a history, in a new tab.
     tab = true,
@@ -377,12 +383,13 @@ return {
     delete = "-",
     -- Drawn in the sign column along a definition that moved.
     move = "▎",
-    -- Drawn in the blame column along a run of lines: its first row,
-    -- the rows between, its last row, and a run of one row -- and the
-    -- same for the run under the cursor.
+    -- Drawn in the blame column along a commit's lines: its first row,
+    -- the rows between, its last row, a run of one row, a run of it
+    -- resumed below newer lines, and the line from a corner out to the
+    -- column's edge -- and the same for the commit under the cursor.
     blame = {
-      first = "┌", mid = "│", last = "└", single = "╶",
-      current = { first = "┏", mid = "┃", last = "┗", single = "╺" },
+      first = "┌", mid = "│", last = "└", single = "╶", resume = "├", fill = "─",
+      current = { first = "┏", mid = "┃", last = "┗", single = "╺", resume = "┣", fill = "━" },
     },
   },
 }

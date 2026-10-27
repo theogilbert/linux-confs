@@ -313,9 +313,8 @@ end
 
 --- Both of those on one key, which is what `keys.view.files` is bound to:
 --- a window you asked for is a window you can ask to go away again,
---- without having to remember which of the two you are looking at. From
---- outside the list it puts you in it rather than closing it -- see
---- `pane.toggle`.
+--- without having to remember which of the two you are looking at. Open
+--- means open and focused; anything else closes -- see `pane.toggle`.
 function M.toggle_pane()
   return pane.toggle()
 end

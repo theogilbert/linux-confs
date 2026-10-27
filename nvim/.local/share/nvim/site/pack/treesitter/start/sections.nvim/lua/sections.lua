@@ -250,13 +250,27 @@ local function show_description()
         return
     end
 
-    if section.description == nil then
+    if section.description == nil and section.signature == nil then
         vim.notify("No description for section " .. section.name, vim.log.levels.INFO)
         return
     end
 
-    local lines = { "**" .. section.name .. "**", "" }
-    vim.list_extend(lines, vim.split(section.description, "\n", { plain = true }))
+    local lines
+    if section.signature ~= nil then
+        -- The signature is highlighted as code of the watched buffer's language
+        local lang = vim.treesitter.language.get_lang(vim.bo[info.watched_buf].filetype) or ""
+        lines = { "```" .. lang }
+        vim.list_extend(lines, vim.split(section.signature, "\n", { plain = true }))
+        table.insert(lines, "```")
+    else
+        lines = { "**" .. section.name .. "**", "" }
+    end
+    if section.description ~= nil then
+        if section.signature ~= nil then
+            table.insert(lines, "---")
+        end
+        vim.list_extend(lines, vim.split(section.description, "\n", { plain = true }))
+    end
     vim.lsp.util.open_floating_preview(lines, "markdown", { border = "rounded", focus_id = "sections_description" })
 end
 

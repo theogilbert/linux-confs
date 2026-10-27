@@ -213,6 +213,15 @@ describe("parsing python sections", function()
         return create_buf_with_text(text, "python")
     end
 
+    -- Signatures are asserted by dedicated tests
+    local function drop_signatures(sections)
+        for _, section in ipairs(sections) do
+            section.signature = nil
+            section.children = drop_signatures(section.children)
+        end
+        return sections
+    end
+
     local function build_function(name, pos, params)
         return {
             name = name,
@@ -250,7 +259,7 @@ describe("parsing python sections", function()
         local buf = create_python_buf("def foo():\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_function("foo", { 1, 0 }) }, root_nodes)
     end)
 
@@ -261,7 +270,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
             ]])
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_function("foo", { 1, 0 }, { "arg1", "arg2", "arg3", "arg4", "arg5" }) }, root_nodes)
     end)
 
@@ -269,7 +278,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass:\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_class("SimpleClass", { 1, 0 }) }, root_nodes)
     end)
 
@@ -277,7 +286,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass(Enum):\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_class("SimpleClass", { 1, 0 }, { "Enum" }) }, root_nodes)
     end)
 
@@ -285,7 +294,7 @@ def foo(arg1: int, arg2: str, arg3, arg4=None, arg5: int = 1):
         local buf = create_python_buf("class SimpleClass(str, Enum):\n  pass")
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_class("SimpleClass", { 1, 0 }, { "str", "Enum" }) }, root_nodes)
     end)
 
@@ -297,7 +306,7 @@ class Driver(Meta, Base):
         ]])
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({
             build_class("Driver", { 1, 0 }, { "Meta", "Base" }, {
                 build_function("run", { 2, 4 }, { "self" }),
@@ -313,7 +322,7 @@ class Arbiter:
         ]])
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({
             build_class("Arbiter", { 1, 0 }, nil, {
                 build_function("kill_worker", { 2, 4 }, { "self", "pid", "sig" }),
@@ -330,7 +339,7 @@ class SimpleClass:
 ]])
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({
             build_class("SimpleClass", { 1, 0 }, nil, {
                 build_attribute("FOO1", "str", { 2, 4 }),
@@ -348,7 +357,7 @@ FOO3: int = 2
 ]])
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({
             build_attribute("FOO1", "str", { 1, 0 }),
             build_attribute("FOO2", nil, { 2, 0 }),
@@ -366,7 +375,7 @@ def foo():
 
         local root_nodes = parser.parse_sections(buf)
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ build_function("foo", { 1, 0 }) }, root_nodes)
     end)
 
@@ -379,7 +388,7 @@ def _foo():
         local expected_fn = build_function("_foo", { 1, 0 })
         expected_fn.private = true
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ expected_fn }, root_nodes)
     end)
 
@@ -392,7 +401,7 @@ class _Foo:
         local expected_cls = build_class("_Foo", { 1, 0 })
         expected_cls.private = true
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ expected_cls }, root_nodes)
     end)
 
@@ -405,7 +414,7 @@ class Foo:
         local expected_attr = build_attribute("_BAR", "int", { 2, 4 })
         expected_attr.private = true
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({
             build_class("Foo", { 1, 0 }, nil, { expected_attr }),
         }, root_nodes)
@@ -419,8 +428,65 @@ _BAR = 123
         local expected_attr = build_attribute("_BAR", nil, { 1, 0 })
         expected_attr.private = true
 
-        root_nodes = drop_node_id(root_nodes)
+        root_nodes = drop_node_id(drop_signatures(root_nodes))
         assert.are.same({ expected_attr }, root_nodes)
+    end)
+
+    it("should expose the signature and docstring of a function", function()
+        local buf = create_python_buf([[
+@decorator
+def foo(a: int,
+        b=None) -> str:
+    """Do foo.
+
+    Longer text,
+      indented.
+    """
+    return ""
+]])
+        local root_nodes = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same("@decorator\ndef foo(a: int,\n        b=None) -> str:", root_nodes[1].signature)
+        assert.are.same("Do foo.\n\nLonger text,\n  indented.", root_nodes[1].description)
+    end)
+
+    it("should expose the signature and docstring of a class", function()
+        local buf = create_python_buf([[
+class Foo(Base, metaclass=Meta):
+    "Foo things."
+
+    def bar(self): ...
+]])
+        local root_nodes = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same("class Foo(Base, metaclass=Meta):", root_nodes[1].signature)
+        assert.are.same("Foo things.", root_nodes[1].description)
+        assert.are.same("def bar(self):", root_nodes[1].children[1].signature)
+        assert.is_nil(root_nodes[1].children[1].description)
+    end)
+
+    it("should unindent the signature of a method", function()
+        local buf = create_python_buf([[
+class Foo:
+    @property
+    def bar(self,
+            x) -> int: ...
+]])
+        local root_nodes = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same("@property\ndef bar(self,\n        x) -> int:", root_nodes[1].children[1].signature)
+    end)
+
+    it("should not take a string that is not first in the body as a docstring", function()
+        local buf = create_python_buf([[
+def foo():
+    x = 1
+    "not a docstring"
+]])
+        local root_nodes = drop_node_id(parser.parse_sections(buf))
+
+        assert.are.same("def foo():", root_nodes[1].signature)
+        assert.is_nil(root_nodes[1].description)
     end)
 end)
 

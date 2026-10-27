@@ -243,6 +243,8 @@ Parameters are shown after the name. >lua
 Python:~
 - Functions and methods, with their parameters
 - Classes, with their base classes
+- `K` on a function or class shows its signature (decorators included),
+  highlighted as Python, and its docstring
 - Class attributes (assignments in a class body), with their type annotation
 - Module-level attributes, with their type annotation
 Names starting with `_` are private. >python

@@ -9,9 +9,12 @@
         (typed_default_parameter name: (identifier) @section.param)
       ]
     )?
+    body: (block . (string (string_content) @section.description)?) @section.body
   ) @section
   (#not-match? @section.name "^_")
   (#set! type "function")
+  (#set! signature "true")
+  (#set! docstring "true")
 )
 
 (
@@ -25,10 +28,13 @@
         (typed_default_parameter name: (identifier) @section.param)
       ]
     )?
+    body: (block . (string (string_content) @section.description)?) @section.body
   ) @section
   (#match? @section.name "^_")
   (#set! private "true")
   (#set! type "function")
+  (#set! signature "true")
+  (#set! docstring "true")
 )
 
 
@@ -36,19 +42,25 @@
   (class_definition
     name: (identifier) @section.name
     superclasses: (argument_list (identifier) @section.param)*
+    body: (block . (string (string_content) @section.description)?) @section.body
   ) @section
   (#not-match? @section.name "^_")
   (#set! type "class")
+  (#set! signature "true")
+  (#set! docstring "true")
 )
 
 (
   (class_definition
     name: (identifier) @section.name
     superclasses: (argument_list (identifier) @section.param)*
+    body: (block . (string (string_content) @section.description)?) @section.body
   ) @section
   (#match? @section.name "^_")
   (#set! private "true")
   (#set! type "class")
+  (#set! signature "true")
+  (#set! docstring "true")
 )
 
 (

@@ -117,7 +117,7 @@ require("sections").setup({
 | `za` | Toggle section collapse |
 | `zC` / `zO` | Collapse / expand section and its nested sections |
 | `zM` / `zR` | Collapse / expand all sections |
-| `K` | Show section description |
+| `K` | Show section description (for Python functions and classes: signature and docstring) |
 | `q` | Close the pane |
 | `p` | Toggle private sections visibility |
 
@@ -128,8 +128,8 @@ See `:help sections-languages` for an example of each.
 | Language | Sections | Type |
 |----------|----------|------|
 | Lua | `function M.name()` (public); `function M:name()`, `function name()`, `local function name()`, `name = function()` (private) | function |
-| Python | Functions and methods (private if named `_*`) | function |
-| | Classes, with base classes (private if named `_*`) | class |
+| Python | Functions and methods, with docstring (private if named `_*`) | function |
+| | Classes, with base classes and docstring (private if named `_*`) | class |
 | | Class and module attributes, with type annotation (private if named `_*`) | attribute |
 | Markdown | ATX headers (`#`), nested by level | header |
 | JSON | Object keys, nested | header |
@@ -212,12 +212,15 @@ Example query for functions:
 - `@section.type_annotation` - Type annotations (optional)
 - `@section.level` - Section level, from the length of its (usually `#gsub!`-rewritten) text (optional)
 - `@section.description` - Section description, shown with `K` (optional)
+- `@section.body` - Body of a definition, where its signature ends (optional, see `signature` below)
 
 ### Query Metadata
 
 - `(#set! type "function"|"class"|"attribute"|"header")` - Section type
 - `(#set! private "true")` - Mark section as private
 - `(#set! level "1")` - Section level: nest under the closest preceding section of a lower level
+- `(#set! signature "true")` - Show the source of the section up to its `@section.body` (decorators included) above its description
+- `(#set! docstring "true")` - The `@section.description` is a docstring: its indentation is stripped
 - `(#set! description_prefix "<pattern>")` - The comment lines right below the section are its description, stripped of this Lua pattern
 - `(#sections-banner? @rule @name @close)` - `@rule` opens a banner of line comments, with `@name` on the next line and `@close` on the one after
 - `(#sections-own-line? @node)` - `@node` is alone on its line, not trailing code

@@ -88,6 +88,41 @@ local function normalize_description(lines)
     return #out > 0 and table.concat(out, "\n") or nil
 end
 
+-- Strips the indentation shared by the lines of a docstring, the first line
+-- (which follows the opening quotes) aside, like `inspect.cleandoc`.
+local function dedent_docstring(text)
+    local lines = vim.split(text, "\n", { plain = true })
+    local indent
+    for i = 2, #lines do
+        if lines[i]:match("%S") then
+            local width = #lines[i]:match("^%s*")
+            indent = indent and math.min(indent, width) or width
+        end
+    end
+    for i = 2, #lines do
+        lines[i] = lines[i]:sub((indent or 0) + 1)
+    end
+    return table.concat(lines, "\n")
+end
+
+-- The source of a definition up to its body, e.g. `def f(x: int) -> str:`,
+-- preceded by its decorators.
+local function definition_signature(section, buf_id)
+    local start_node = section.node
+    local parent = start_node:parent()
+    if parent ~= nil and parent:type() == "decorated_definition" then
+        start_node = parent
+    end
+    local sr, sc = start_node:start()
+    local br, bc = section.body:start()
+    local lines = vim.api.nvim_buf_get_text(buf_id, sr, sc, br, bc, {})
+    -- Continuation lines are indented like the definition itself
+    for i = 2, #lines do
+        lines[i] = lines[i]:gsub("^" .. (" "):rep(sc), "")
+    end
+    return vim.trim(table.concat(lines, "\n"))
+end
+
 -- `(#set! description_prefix <pattern>)`: the section's description is the
 -- run of comment lines right below its header (its last captured node), each
 -- stripped of <pattern> and of an optional closing box. The run ends at a blank line, code, a rule, or a line
@@ -138,12 +173,18 @@ local function build_section(match, metadata, query_info, buf_id)
                 current_section.type = metadata.type
                 current_section.private = (metadata.private == "true")
                 current_section.node = node
+            elseif capture_name == "section.body" then
+                current_section.body = node
             elseif capture_name == "section.param" then
                 if current_section.parameters == nil then
                     current_section.parameters = {}
                 end
 
-                table.insert(current_section.parameters, ts.get_node_text(node, buf_id))
+                local row, col = node:start()
+                table.insert(
+                    current_section.parameters,
+                    { text = ts.get_node_text(node, buf_id), row = row, col = col }
+                )
             elseif vim.startswith(capture_name, "section.") then
                 local attr_name = string.sub(capture_name, 9)
                 if vim.tbl_contains(SUPPORTED_CAPTURES, capture_name) then
@@ -164,6 +205,12 @@ local function build_section(match, metadata, query_info, buf_id)
     -- @section.level text, e.g. `##` is level 2
     current_section.level = tonumber(metadata.level) or (current_section.level and #current_section.level)
     current_section.description_prefix = metadata.description_prefix
+    if metadata.docstring == "true" and current_section.description ~= nil then
+        current_section.description = dedent_docstring(current_section.description)
+    end
+    if metadata.signature == "true" and current_section.body ~= nil then
+        current_section.signature = definition_signature(current_section, buf_id)
+    end
 
     return current_section
 end
@@ -247,12 +294,29 @@ local function remove_after_nth_index(table, idx)
     end
 end
 
+-- Matches come in no particular order, so parameters are put back in source order
+local function sorted_parameter_names(parameters)
+    table.sort(parameters, function(p1, p2)
+        if p1.row ~= p2.row then
+            return p1.row < p2.row
+        end
+        return p1.col < p2.col
+    end)
+    return vim.tbl_map(function(parameter)
+        return parameter.text
+    end, parameters)
+end
+
 local function cleanup_internal_data_from_sections(sections)
     for i = 1, #sections do
+        if sections[i].parameters ~= nil then
+            sections[i].parameters = sorted_parameter_names(sections[i].parameters)
+        end
         sections[i].node_id = sections[i].node:id()
         sections[i].node = nil
         sections[i].level = nil
         sections[i].header_end = nil
+        sections[i].body = nil
         sections[i].description_prefix = nil
         sections[i].children = cleanup_internal_data_from_sections(sections[i].children)
     end

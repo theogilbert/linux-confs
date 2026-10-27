@@ -10,10 +10,10 @@ end
 local function get_section_name(section)
     local suffix = ""
     if section.type == "function" or section.type == "class" then
-        if section.parameters == nil then
-            suffix = "()"
-        else
+        if section.parameters ~= nil then
             suffix = "(" .. table.concat(section.parameters, ", ") .. ")"
+        elseif section.type == "function" then
+            suffix = "()"
         end
     elseif section.type == "attribute" and section.type_annotation ~= nil then
         suffix = ": " .. section.type_annotation

@@ -40,7 +40,7 @@ local function define_syntax_match_rules(buf)
             vim.cmd(cmd)
         end
 
-        vim.cmd([[syntax match SectionsParameters /([^)]*)/]])
+        vim.cmd([[syntax match SectionsParameters /(\zs[^)]*\ze)/]])
         for _, marker in pairs(cfg.fold_markers) do
             vim.cmd(string.format([[syntax match SectionsFoldMarker /^\s*\V%s/]], vim.fn.escape(marker, "/\\")))
         end

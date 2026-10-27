@@ -117,6 +117,21 @@ describe("should display sections", function()
         assert.are.same({ "   Foo(str)" }, lines)
     end)
 
+    it("should format class section without base classes", function()
+        local sections = {
+            {
+                name = "Foo",
+                type = "class",
+                node_id = "1",
+                children = {},
+            },
+        }
+
+        local lines = formatter.format(sections, {}, true)
+
+        assert.are.same({ "   Foo" }, lines)
+    end)
+
     it("should format attribute section", function()
         local sections = {
             {

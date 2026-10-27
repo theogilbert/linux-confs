@@ -1414,6 +1414,20 @@ local function collapsed_span(result, hunk, old_lines, line_text)
   if first > from or last < to or (first == from and last == to) then
     return nil
   end
+  -- ...and only where the row is not another hunk's. A fold leaves the
+  -- row it collapsed onto with nothing the backend calls changed -- the
+  -- tokens on it all came from the old rows -- so no hunk claims it. A
+  -- row inside a hunk of its own was rewritten by THAT hunk, which draws
+  -- its old version already: a line-for-line rewrite followed by two
+  -- blank lines and a class header taken out came back with the
+  -- rewrite's last old row and the blanks drawn a second time, above
+  -- it, as though they had all been folded into it.
+  for _, h in ipairs(result.hunks or {}) do
+    if h ~= hunk and h.count_b > 0 and hunk.start_b >= h.start_b
+      and hunk.start_b < h.start_b + h.count_b then
+      return nil
+    end
+  end
   return first, last
 end
 

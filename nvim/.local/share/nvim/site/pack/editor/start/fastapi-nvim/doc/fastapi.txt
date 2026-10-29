@@ -1,0 +1,284 @@
+*fastapi.txt*  FastAPI routes, tests and apps inside Neovim      *fastapi* *fastapi.nvim*
+
+==============================================================================
+CONTENTS                                                     *fastapi-contents*
+
+    1. Introduction ............................ |fastapi-intro|
+    2. Requirements ............................ |fastapi-requirements|
+    3. Setup ................................... |fastapi-setup|
+    4. Configuration ........................... |fastapi-config|
+    5. Commands ................................ |fastapi-commands|
+    6. Mappings ................................ |fastapi-mappings|
+    7. Test lenses ............................. |fastapi-lens|
+    8. Pickers ................................. |fastapi-pickers|
+    9. Highlights .............................. |fastapi-highlights|
+   10. Health .................................. |fastapi-health|
+   11. API ..................................... |fastapi-api|
+
+==============================================================================
+1. Introduction                                                 *fastapi-intro*
+
+fastapi.nvim reads the Python code of a workspace and shows its FastAPI apps:
+the routers an app includes, the routes they declare, and the tests that call
+them. It is a port of the non-cloud features of the fastapi-vscode extension.
+
+Everything is static: no Python is run. Files are analyzed when a Python file
+is opened and again when one is saved. Nothing runs in buffers that are not
+Python files, and the plugin never uses the network.
+
+==============================================================================
+2. Requirements                                             *fastapi-requirements*
+
+- Neovim 0.12 or newer, on Linux (paths are assumed to use `/`).
+- The `python` tree-sitter parser, so that `vim.treesitter.language.add("python")`
+  succeeds.
+- `rg` (ripgrep) in `$PATH`. Without it, apps are only found through a
+  `[tool.fastapi]` entrypoint, and the test lenses and jumps are empty. The
+  plugin tells you once, and |:checkhealth| fastapi explains what is missing.
+
+==============================================================================
+3. Setup                                                        *fastapi-setup*
+
+Calling |fastapi.setup()| is optional. Without it the defaults of
+|fastapi-config| apply. The plugin finds the apps of the current working
+directory: the entrypoint of `[tool.fastapi]` in `pyproject.toml` when there
+is one, otherwise every `FastAPI()` app that a search of the Python files
+finds. >lua
+    require("fastapi").setup({ explorer = { width = 50 } })
+<
+A pyproject entrypoint is `module:variable`; the variable is optional: >toml
+    [tool.fastapi]
+    entrypoint = "my_app.main:app"
+<
+==============================================================================
+4. Configuration                                               *fastapi-config*
+
+The options are validated and deep merged into these defaults: >lua
+    {
+        explorer = {
+            position = "right",
+            width = 40,
+            keys = {
+                open = "<CR>", definition = "gd", copy = "y", toggle_all = "E",
+                fold_toggle = "za", fold_open = "zo", fold_open_recursive = "zO",
+                fold_close = "zc", fold_close_recursive = "zC",
+                fold_open_all = "zR", fold_close_all = "zM",
+                refresh = "R", search = "s", docs = "K", close = "q",
+            },
+        },
+        lens = { enabled = true, position = "above" },
+        refresh = { debounce_ms = 300 },
+        register = "+",
+        exclude_dirs = {
+            ".venv", "venv", "__pycache__", "node_modules", ".git",
+            ".mypy_cache", ".pytest_cache",
+        },
+    }
+<
+                                                *fastapi-config-explorer.position*
+explorer.position   `"left"` or `"right"`: the side of the explorer split.
+
+                                                *fastapi-config-explorer.width*
+explorer.width      Width of the explorer, in columns.
+
+                                                *fastapi-config-explorer.keys*
+explorer.keys       Buffer-local keys of the explorer, by action name: `open`,
+                    `definition`, `copy`, `toggle_all`, `fold_toggle`,
+                    `fold_open`, `fold_open_recursive`, `fold_close`,
+                    `fold_close_recursive`, `fold_open_all`, `fold_close_all`,
+                    `refresh`, `search`, `docs` and `close`. See
+                    |fastapi-explorer-keys|.
+
+                                                *fastapi-config-lens.enabled*
+lens.enabled        Set to `false` to turn the test lenses off. Python buffers
+                    are then left alone, and opening one does not start a scan.
+
+                                                *fastapi-config-lens.position*
+lens.position       `"above"` draws each lens on a virtual line above the route
+                    or test call, `"eol"` at the end of its line.
+
+                                                *fastapi-config-refresh.debounce_ms*
+refresh.debounce_ms Delay, in milliseconds, between the last save and the
+                    refresh it triggers. Saves within the delay share one
+                    refresh.
+
+                                                *fastapi-config-register*
+register            Register that `y` in the explorer writes to. When it is
+                    `+` or `*` and Neovim has no clipboard, `"` is used.
+
+                                                *fastapi-config-exclude_dirs*
+exclude_dirs        Directory names that the search for apps and test files
+                    skips, at any depth.
+
+==============================================================================
+5. Commands                                                  *fastapi-commands*
+
+                                                                     *:FastAPI*
+:FastAPI {subcommand}   Run a subcommand. Completion lists them; an unknown
+                        one is reported as an error.
+
+                                                            *:FastAPI-explorer*
+:FastAPI explorer       Open the route explorer, or close it when it is open.
+
+                                                              *:FastAPI-search*
+:FastAPI search         Choose among all the routes with fzf-lua or
+                        |vim.ui.select()| and jump to the one you pick. See
+                        |fastapi-pickers|.
+
+                                                             *:FastAPI-refresh*
+:FastAPI refresh        Scan the workspace again. Unchanged files come from a
+                        cache, so this is cheap. It also recovers after
+                        installing `rg`, without a restart.
+
+                                                                *:FastAPI-jump*
+:FastAPI jump           On a test client call, go to the route it calls. In a
+                        route, go to the tests that call it. With several
+                        targets you choose one with |vim.ui.select()|.
+
+==============================================================================
+6. Mappings                                                  *fastapi-mappings*
+
+There are no default mappings. The plugin provides these |<Plug>| maps, for
+Normal mode: >lua
+    vim.keymap.set("n", "<leader>fe", "<Plug>(fastapi-explorer)")
+<
+                                                  *<Plug>(fastapi-explorer)*
+<Plug>(fastapi-explorer)    Same as `:FastAPI explorer`.
+                                                    *<Plug>(fastapi-search)*
+<Plug>(fastapi-search)      Same as `:FastAPI search`.
+                                                   *<Plug>(fastapi-refresh)*
+<Plug>(fastapi-refresh)     Same as `:FastAPI refresh`.
+                                                      *<Plug>(fastapi-jump)*
+<Plug>(fastapi-jump)        Same as `:FastAPI jump`.
+
+                                                       *fastapi-explorer-keys*
+The explorer is a `nofile` buffer named `fastapi://explorer` with the
+filetype `fastapi-explorer`. Apps and routers can be folded; routers start
+collapsed. Its keys can be changed with |fastapi-config-explorer.keys|:
+
+    open        `<CR>`  Open the route, or fold or unfold the node.
+    definition  `gd`    Go to the router or app definition.
+    copy        `y`     Copy the route path or router prefix, without a
+                        leading dynamic prefix such as `{settings.API}`.
+    toggle_all  `E`     Unfold all routers, or fold them again.
+    fold_toggle `za`    Fold or unfold the node. On a route, fold its parent.
+    fold_open   `zo`    Unfold the node.
+    fold_open_recursive
+                `zO`    Unfold the node and every router below it.
+    fold_close  `zc`    Fold the node. On a route or a folded node, fold its
+                        parent and move the cursor to it.
+    fold_close_recursive
+                `zC`    Fold the node, or the parent of a route, and every
+                        router below it.
+    fold_open_all
+                `zR`    Unfold every app and router.
+    fold_close_all
+                `zM`    Fold every app and router.
+    refresh     `R`     Same as `:FastAPI refresh`.
+    search      `s`     Same as `:FastAPI search`.
+    docs        `K`     Show the route, highlighted as in the explorer, its
+                        location and its docstring in a floating window. It
+                        closes when the cursor moves.
+    close       `q`     Close the explorer.
+
+Locations open in the previous window, or in a new split when the explorer
+is the only window.
+
+==============================================================================
+7. Test lenses                                                    *fastapi-lens*
+
+Virtual text in Python buffers links routes and the tests that call them,
+above the line or at its end (|fastapi-config-lens.position|):
+
+- On a route that tests call: `3 tests` (or `1 test`).
+- On a test client call that matches a route: `→ GET /items/{item_id}`,
+  with several routes joined by `, `.
+
+A test call is any `client.get("/path")`-style call (the HTTP methods
+and `websocket` or `websocket_connect`, with the path as first argument or
+`url=`). Paths are compared segment by segment, and `{param}` segments match
+anything.
+
+Lenses come from the last saved state of the files; unsaved edits are not
+analyzed, and they redraw when a refresh finishes or a buffer is shown.
+
+Known limit: a test call is not tied to an app, because that would mean
+following fixtures and imports to find the app that a `TestClient` wraps. A
+call matches the routes of every app, so a route's count includes calls that
+also match other apps. When a call matches routes in several apps, each label
+starts with `[app]`.
+
+==============================================================================
+8. Pickers                                                     *fastapi-pickers*
+
+`:FastAPI search` and `:FastAPI jump` use fzf-lua when it is installed: their
+entries are colored with the explorer's highlight groups
+(|fastapi-highlights|), they have no preview, and the window opens near the
+top, only as large as its entries need, up to 40% of the lines and 90% of the
+columns. Otherwise they use
+|vim.ui.select()|, so they follow the picker you configured (dressing.nvim,
+snacks, telescope-ui-select, ...). `:FastAPI jump` opens no picker when there
+is a single choice.
+The `kind` option tells your override what it is showing: `fastapi.route`
+for the items that are routes, and `fastapi.test_call` for test client calls.
+Route items are tables with `method`, `path`, `func`, `location`,
+`deprecated` and `docstring`; test call items have `method`, `path` and
+`location`. A `location` is `{ file, line, col }`, with a 1-based line.
+
+Route items read `GET /items/{item_id}  get_item  app/items.py:12`, with
+`WS` in place of the method for websocket routes.
+Test call items read `tests/test_items.py:8  client.get("/items/1")`.
+
+==============================================================================
+9. Highlights                                                *fastapi-highlights*
+
+The groups are linked with `default`, so a colorscheme or your config wins:
+
+    FastAPIApp              Title                   app names
+    FastAPIRouter           Directory               router labels
+    FastAPIPath             Identifier              route paths
+    FastAPIFunc             Function                handler names
+    FastAPIMethodGet        DiagnosticInfo
+    FastAPIMethodPost       DiagnosticOk
+    FastAPIMethodPut        DiagnosticWarn
+    FastAPIMethodPatch      DiagnosticHint
+    FastAPIMethodDelete     DiagnosticError
+    FastAPIMethodOptions    Comment
+    FastAPIMethodHead       Comment
+    FastAPIMethodWebsocket  Special                 `WS` of websocket routes
+    FastAPIDeprecated       DiagnosticDeprecated    deprecated routes
+    FastAPILens             Comment                 test lenses
+    FastAPICount            Comment                 route counts
+
+==============================================================================
+10. Health                                                      *fastapi-health*
+
+`:checkhealth fastapi` reports the plugin and Neovim versions, the python
+parser, `rg` (with its version, or what stops working without it), and the
+apps of the current directory with how they were found (`pyproject` or
+`search`), plus the errors of the last scan.
+
+==============================================================================
+11. API                                                            *fastapi-api*
+
+                                                             *fastapi.setup()*
+require("fastapi").setup({opts})   Set options; see |fastapi-config|.
+                                                              *fastapi.apps()*
+require("fastapi").apps()          The apps found so far: a list of tables
+                                   with `name`, `file`, `source`, `routers`
+                                   and `routes`. It is empty until the first
+                                   scan has finished.
+                                                          *fastapi.refresh()*
+require("fastapi").refresh()       Same as `:FastAPI refresh`.
+                                                         *fastapi.explorer()*
+require("fastapi").explorer()      Same as `:FastAPI explorer`.
+                                                           *fastapi.search()*
+require("fastapi").search()        Same as `:FastAPI search`.
+                                                             *fastapi.jump()*
+require("fastapi").jump()          Same as `:FastAPI jump`.
+
+                                                          *fastapi-events*
+|User| autocmds: `FastAPIScanning` when a scan starts and `FastAPIRefreshed`
+when new results are in.
+
+ vim:tw=78:ts=8:ft=help:norl:

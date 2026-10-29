@@ -136,6 +136,7 @@ wk.add({
 	{ "<leader>S", desc = "[S]cratch file actions" },
 	{ "<leader>b", desc = "Data[b]ase operations" },
 	{ "<leader>m", desc = "[M]erge requests operations" },
+	{ "<leader>F", desc = "[F]astAPI bindings" },
 })
 -- uatis binds <leader>x… in a conflicted file while its conflict review
 -- is on, and nowhere else. The group is added per buffer as one joins
@@ -207,4 +208,8 @@ require("nemeton").setup({
             end
         end,
     }
+})
+
+require("fastapi").setup({
+    lens = { position = "eol" }
 })

@@ -320,3 +320,8 @@ vim.keymap.set({"n", "v"}, "<leader>bs", grannos.save_query, { desc = "Data[b]as
 vim.keymap.set({"n", "v"}, "<leader>bl", grannos.load_query, { desc = "Data[b]ase - [l]oad query" })
 vim.keymap.set("n", "<leader>bp", grannos.open_session_settings, { desc = "Data[b]ase - session [p]arameters" })
 
+
+vim.keymap.set("n", "<leader>Fe", "<Plug>(fastapi-explorer)", { desc = "FastAPI explorer" })
+vim.keymap.set("n", "<leader>Fs", "<Plug>(fastapi-search)", { desc = "FastAPI search" })
+vim.keymap.set("n", "<leader>Fr", "<Plug>(fastapi-refresh)", { desc = "FastAPI refresh" })
+vim.keymap.set("n", "<leader>Fj", "<Plug>(fastapi-jump)", { desc = "FastAPI jump" })

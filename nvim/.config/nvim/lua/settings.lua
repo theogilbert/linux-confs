@@ -22,6 +22,10 @@ for _, tmp in ipairs(vim.fn.glob(shada_dir .. '*.shada.tmp.*', true, true)) do
 end
 vim.g.bytes_info_statusline = false
 
+-- Must be set before the colorscheme loads: sonokai picks its palette from it,
+-- and nvim only auto-detects truecolor support after init.lua has run.
+vim.opt.termguicolors = true
+
 vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff', 'xml', 'yaml', 'yml=yaml'}
 
 -- xml/html also fold by syntax: see after/ftplugin/

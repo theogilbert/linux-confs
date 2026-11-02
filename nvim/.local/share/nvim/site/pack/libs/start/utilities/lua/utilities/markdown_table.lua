@@ -151,6 +151,65 @@ function M.format_at_cursor()
     M.format_range(first, last)
 end
 
+--- Find the tables among `lines`: runs of lines containing a `|` whose second
+--- line is a separator row, outside of fenced code blocks.
+--- @param lines string[]
+--- @return {first: integer, last: integer}[] tables Line ranges, indexed in `lines`
+function M.find_tables(lines)
+    local tables = {}
+    local fence = nil
+    local i = 1
+    while i <= #lines do
+        local line = lines[i]
+        local marker = line:match("^%s*(```+)") or line:match("^%s*(~~~+)")
+        if fence then
+            if marker and marker:sub(1, 1) == fence:sub(1, 1) and #marker >= #fence then
+                fence = nil
+            end
+            i = i + 1
+        elseif marker then
+            fence = marker
+            i = i + 1
+        elseif line:find("|", 1, true) then
+            local last = i
+            while lines[last + 1] and lines[last + 1]:find("|", 1, true) do
+                last = last + 1
+            end
+            if last > i and is_separator(split_row(lines[i + 1])) then
+                table.insert(tables, { first = i, last = last })
+            end
+            i = last + 1
+        else
+            i = i + 1
+        end
+    end
+    return tables
+end
+
+--- Format every table of the current buffer overlapping lines `first` to
+--- `last` (1-indexed, inclusive). Tables are formatted as a whole, even when
+--- they only partly overlap.
+--- @param first integer
+--- @param last integer
+function M.format_tables(first, last)
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    -- Bottom-up, so that line numbers of the remaining tables stay valid
+    local tables = M.find_tables(lines)
+    for t = #tables, 1, -1 do
+        local tbl = tables[t]
+        if tbl.last >= first and tbl.first <= last then
+            M.format_range(tbl.first, tbl.last)
+        end
+    end
+end
+
+--- 'operatorfunc' for `=` in markdown buffers, formatting the tables in range.
+--- Native `=` is not run: markdown has no 'indentexpr', so it would fall back
+--- to C-indenting, which flattens nested lists.
+function M.equal_operator()
+    M.format_tables(vim.fn.line("'["), vim.fn.line("']"))
+end
+
 --- Format the visually selected lines.
 function M.format_selection()
     local first, last = vim.fn.line("v"), vim.fn.line(".")

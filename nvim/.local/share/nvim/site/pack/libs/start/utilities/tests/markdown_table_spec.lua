@@ -56,3 +56,24 @@ describe("markdown-table", function()
         }, md_table.format({ "  |a|", "  |-|" }))
     end)
 end)
+
+describe("markdown-table find_tables", function()
+    local md_table = require("utilities.markdown_table")
+
+    it("should only find runs of pipes with a separator row, outside code fences", function()
+        assert.are.same({ { first = 3, last = 5 } }, md_table.find_tables({
+            "prose with a | pipe",
+            "",
+            "| a | b |",
+            "|---|---|",
+            "| 1 | 2 |",
+            "",
+            "```",
+            "| x | y |",
+            "|---|---|",
+            "```",
+            "a | b",
+            "c | d",
+        }))
+    end)
+end)

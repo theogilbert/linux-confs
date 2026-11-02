@@ -5,6 +5,8 @@ See the routes of your FastAPI apps, and the tests that call them, without leavi
 A Neovim port of the non-cloud features of the
 [fastapi-vscode](https://github.com/fastapi/fastapi-vscode) extension.
 
+![The route explorer](docs/captures/explorer.gif)
+
 ## Features
 
 - Route explorer: a sidebar tree of apps, routers and routes, with the router prefixes resolved.
@@ -17,7 +19,7 @@ A Neovim port of the non-cloud features of the
 ## Requirements
 
 - Neovim 0.12 or newer, on Linux.
-- The `python` tree-sitter parser.
+- The [`python` tree-sitter parser](https://github.com/tree-sitter/tree-sitter-python).
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) in `$PATH`.
 
 There are no Lua dependencies. The plugin never downloads or installs anything: if something is
@@ -52,6 +54,19 @@ in a `parser/` directory of your `runtimepath`. `:checkhealth fastapi` confirms 
 2. Run `:FastAPI explorer`.
 3. Press `<CR>` on a route to open it, `K` for its docstring, `s` to search.
 
+### Search
+
+`:FastAPI search` lists every route of the workspace:
+
+![Searching the routes](docs/captures/search.gif)
+
+### Jump between routes and tests
+
+`:FastAPI jump` on a route goes to the tests that call it, and on a test client call to the routes
+it matches. With several choices, it asks which one:
+
+![Jumping from a route to its tests and back](docs/captures/jump.gif)
+
 ## Commands
 
 | Command | Action |
@@ -82,6 +97,7 @@ make check       # lint, typecheck, specs and the 90% coverage threshold
 make test        # specs only
 make fmt         # format with stylua
 make bench       # overhead budgets (not part of check)
+make captures    # record the GIFs of docs/captures with vhs, locally (not part of check)
 ```
 
 `make check` needs `stylua`, `luacheck`, `luacov`, `lua-language-server`, `rg` and `cc`;

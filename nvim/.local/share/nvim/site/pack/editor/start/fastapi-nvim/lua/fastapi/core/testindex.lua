@@ -9,6 +9,7 @@ local M = {}
 ---@class fastapi.TestCall
 ---@field method string         lowercase, as written
 ---@field path string
+---@field test string?          the function that makes the call
 ---@field location fastapi.Location
 
 ---@alias fastapi.TestIndex table<string, fastapi.TestCall[]>
@@ -59,6 +60,7 @@ function M.update(index, path)
         return {
             method = found.method,
             path = found.path,
+            test = found.test,
             location = { file = path, line = found.line + 1, col = found.col },
         }
     end, calls)

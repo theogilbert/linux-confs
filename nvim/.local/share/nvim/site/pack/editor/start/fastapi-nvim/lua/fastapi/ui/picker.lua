@@ -68,6 +68,13 @@ end
 ---@return fastapi.Segment[]
 function M.call_segments(call)
     local at = call.location
+    if call.test then
+        return {
+            { text = call.test, hl = "FastAPIFunc" },
+            { text = "  " },
+            { text = location_text(at.file, at.line), hl = "FastAPICount" },
+        }
+    end
     local text = source_line(at.file, at.line)
     return {
         { text = location_text(at.file, at.line), hl = "FastAPICount" },

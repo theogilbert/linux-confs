@@ -501,9 +501,21 @@ local function analyze_tree(root, src, file)
     return analysis
 end
 
+---@param node TSNode
+---@param src string
+---@return string?  the name of the function that contains the node
+local function enclosing_function(node, src)
+    local parent = node:parent()
+    while parent and parent:type() ~= "function_definition" do
+        parent = parent:parent()
+    end
+    local name = parent and ts.field(parent, "name")
+    return name and ts.text(name, src) or nil
+end
+
 ---@param root TSNode
 ---@param src string
----@return { method: string, path: string, line: integer, col: integer }[]
+---@return { method: string, path: string, test: string?, line: integer, col: integer }[]
 function M.find_test_calls(root, src)
     local by_type = collect(root)
     local ctx = { src = src, consts = string_constants(by_type, src) }
@@ -517,10 +529,13 @@ function M.find_test_calls(root, src)
         local path = method and HTTP_METHODS[method] and arg_at(call_args(node), 1, "url", src)
         if path then
             local line, col = node:start()
-            table.insert(
-                calls,
-                { method = method, path = path_of(path, ctx), line = line, col = col }
-            )
+            table.insert(calls, {
+                method = method,
+                path = path_of(path, ctx),
+                test = enclosing_function(node, src),
+                line = line,
+                col = col,
+            })
         end
     end
     return calls

@@ -321,6 +321,24 @@ local function setup_autocommands()
         end,
     })
 
+    -- When the watched window switches to another buffer, watch that buffer instead
+    vim.api.nvim_create_autocmd("BufWinEnter", {
+        group = group,
+        callback = function(args)
+            local info = get_tab_info()
+            if info == nil or args.buf == info.watched_buf then
+                return
+            end
+
+            local win = vim.api.nvim_get_current_win()
+            if win ~= info.watched_win or vim.api.nvim_win_get_buf(win) ~= args.buf then
+                return
+            end
+
+            refresh_pane(win, args.buf, { reset_collapse = true })
+        end,
+    })
+
     -- When moving the cursor in the watched buffer, highlight the current section in the pane
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
         group = group,

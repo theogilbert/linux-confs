@@ -156,9 +156,24 @@ vim.api.nvim_create_autocmd("User", {
 -- optionally enable 24-bit colour
 vim.opt.termguicolors = true
 
--- Default nvim-tree config.
--- Options can be provided to the plugin.
-require("nvim-tree").setup()
+-- Dotfiles hidden by default (toggle with H).
+-- Git-ignored files are shown (toggle with I), their names colored.
+require("nvim-tree").setup({
+    filters = { dotfiles = true, git_ignored = false },
+    renderer = { highlight_git = "name", highlight_hidden = "name" },
+})
+
+local function set_nvim_tree_hls()
+    -- Colors from the sonokai palette.
+    -- Folder groups link to these file groups by default.
+    vim.api.nvim_set_hl(0, "NvimTreeGitFileDirtyHL", { fg = "#f39660" })   -- modified: orange
+    vim.api.nvim_set_hl(0, "NvimTreeGitFileNewHL", { fg = "#9ed072" })     -- new: green
+    vim.api.nvim_set_hl(0, "NvimTreeGitFileStagedHL", { fg = "#76cce0" })  -- staged: blue
+    vim.api.nvim_set_hl(0, "NvimTreeGitFileIgnoredHL", { fg = "#e7c664" }) -- ignored: yellow
+    vim.api.nvim_set_hl(0, "NvimTreeHiddenFileHL", { fg = "#7f8490" })    -- dotfiles: grey
+end
+set_nvim_tree_hls()
+vim.api.nvim_create_autocmd("ColorScheme", { callback = set_nvim_tree_hls })
 
 require("neotest").setup({
 	adapters = {

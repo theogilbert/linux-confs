@@ -25,6 +25,7 @@ local M = {}
 ---@field tags string[]
 ---@field line integer
 ---@field col integer
+---@field factory string?  the function that creates the router, if any
 
 ---@class fastapi.FileAnalysis
 ---@field file string
@@ -369,6 +370,18 @@ local function prefix_and_tags(call, ctx)
 end
 
 ---@param node TSNode
+---@param src string
+---@return string?  the name of the function that contains the node
+local function enclosing_function(node, src)
+    local parent = node:parent()
+    while parent and parent:type() ~= "function_definition" do
+        parent = parent:parent()
+    end
+    local name = parent and ts.field(parent, "name")
+    return name and ts.text(name, src) or nil
+end
+
+---@param node TSNode
 ---@param ctx fastapi.Context
 ---@param fastapi table<string, true>
 ---@param routers table<string, true>
@@ -391,6 +404,7 @@ local function extract_assignment(node, ctx, fastapi, routers, analysis)
             tags = tags,
             line = line,
             col = col,
+            factory = enclosing_function(node, ctx.src),
         })
     elseif fn and fn:type() == "identifier" and not has_ancestor(node, DEFINITIONS) then
         table.insert(analysis.call_assignments, {
@@ -499,18 +513,6 @@ local function analyze_tree(root, src, file)
         extract_method_call(node, ctx, analysis)
     end
     return analysis
-end
-
----@param node TSNode
----@param src string
----@return string?  the name of the function that contains the node
-local function enclosing_function(node, src)
-    local parent = node:parent()
-    while parent and parent:type() ~= "function_definition" do
-        parent = parent:parent()
-    end
-    local name = parent and ts.field(parent, "name")
-    return name and ts.text(name, src) or nil
 end
 
 ---@param root TSNode

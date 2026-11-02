@@ -87,13 +87,13 @@ end
 
 ---@param file string
 ---@param name string
----@return fastapi.Import?
+---@return fastapi.Import?, string?  the import, and the name it imports
 local function reexporting_import(file, name)
     local analysis = extract.analyze(file)
     for _, import in ipairs(analysis and analysis.imports or {}) do
         for _, item in ipairs(import.names) do
             if (item.alias or item.name) == name then
-                return import
+                return import, item.name
             end
         end
     end
@@ -102,17 +102,20 @@ end
 ---@param init_file string  a package's __init__.py
 ---@param name string
 ---@param root string
----@return string?
+---@return string?, string?  the file, and the name of the object in it
 function M.resolve_reexport(init_file, name, root)
-    local import = reexporting_import(init_file, name)
-    return import and M.resolve(import, init_file, root)
+    local import, original = reexporting_import(init_file, name)
+    local file = import and M.resolve(import, init_file, root)
+    if file then
+        return file, original
+    end
 end
 
 ---@param import fastapi.Import
 ---@param name string
 ---@param from_file string
 ---@param root string
----@return string?
+---@return string?, string?  the file, and the name of the object in it when it differs from `name`
 function M.resolve_named(import, name, from_file, root)
     local base = M.resolve(import, from_file, root)
     local is_init = base ~= nil and vim.endswith(base, "/__init__.py")
@@ -123,7 +126,13 @@ function M.resolve_named(import, name, from_file, root)
             return submodule
         end
     end
-    return is_init and M.resolve_reexport(assert(base), name, root) or base
+    if is_init then
+        local file, original = M.resolve_reexport(assert(base), name, root)
+        if file then
+            return file, original
+        end
+    end
+    return base
 end
 
 return M

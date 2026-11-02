@@ -104,7 +104,7 @@ local function find_import(analysis, name)
     end
 end
 
-local build_internal, resolve_reference
+local build_internal, resolve_reference, expand
 
 ---@param ctx fastapi.GraphContext
 ---@param file string
@@ -134,26 +134,105 @@ local function process_includes(analysis, owner, file, ctx)
     end
 end
 
----@param reference string  `router` or `module.router`
+-- Mounts owned by `owner`; with `all`, also the mounts whose owner is not another app of the file,
+-- so that a root reached through a factory keeps the mounts of its inner variable.
+---@param analysis fastapi.FileAnalysis
+---@param owner fastapi.RouterNode
+---@param file string
+---@param ctx fastapi.GraphContext
+---@param all boolean?
+local function process_mounts(analysis, owner, file, ctx, all)
+    local apps = {}
+    for _, router in ipairs(analysis.routers) do
+        if router.kind == "FastAPI" then
+            apps[router.var] = true
+        end
+    end
+    for _, mount in ipairs(analysis.mounts) do
+        if mount.owner == owner.var or (all and not apps[mount.owner]) then
+            local child = resolve_reference(mount.app, analysis, file, ctx, "mounted")
+            if child then
+                table.insert(owner.children, { node = child, prefix = mount.path, tags = {} })
+            end
+        end
+    end
+end
+
+---@param node fastapi.RouterNode
+---@param analysis fastapi.FileAnalysis
+---@param file string
+---@param ctx fastapi.GraphContext
+---@return fastapi.RouterNode
+function expand(node, analysis, file, ctx)
+    process_includes(analysis, node, file, ctx)
+    if node.kind == "FastAPI" then
+        process_mounts(analysis, node, file, ctx)
+    end
+    return node
+end
+
+-- The app that a function of the file creates, for `app = create_app()`.
+---@param analysis fastapi.FileAnalysis
+---@param callee string
+---@return fastapi.RouterDecl?
+local function local_factory_app(analysis, callee)
+    for _, router in ipairs(analysis.routers) do
+        if router.kind == "FastAPI" and router.factory == callee then
+            return router
+        end
+    end
+end
+
+-- `app.mount("/api", create_api())`: the app that the factory, local or imported, builds.
+---@param callee string  `create_api` or `module.create_api`
+---@param analysis fastapi.FileAnalysis
+---@param file string
+---@param ctx fastapi.GraphContext
+---@return fastapi.RouterNode?
+local function resolve_factory_call(callee, analysis, file, ctx)
+    local router = local_factory_app(analysis, callee)
+    if router then
+        local key = file .. "#" .. router.var
+        if ctx.visited[key] then
+            return nil
+        end
+        ctx.visited[key] = true
+        return expand(new_node(router, analysis, file), analysis, file, ctx)
+    end
+    local import, item = find_import(analysis, (callee:match("^[^.]+")))
+    local target = import and item and imports.resolve_named(import, item.name, file, ctx.root)
+    return target and build_internal(target, ctx)
+end
+
+---@param reference string  `router`, `module.router`, or for a mount `factory()`
 ---@param analysis fastapi.FileAnalysis
 ---@param file string
 ---@param ctx fastapi.GraphContext
 ---@param kind "included"|"mounted"
 ---@return fastapi.RouterNode?
 function resolve_reference(reference, analysis, file, ctx, kind)
+    local callee = reference:match("^([%w_.]+)%s*%(.*%)$")
+    if callee then
+        return kind == "mounted" and resolve_factory_call(callee, analysis, file, ctx) or nil
+    end
     local name, attribute = reference:match("^([^.]+)%.?(.*)$")
     for _, router in ipairs(analysis.routers) do
         if router.var == name and router.kind == "APIRouter" then
-            local node = new_node(router, analysis, file)
-            process_includes(analysis, node, file, ctx)
-            return node
+            return expand(new_node(router, analysis, file), analysis, file, ctx)
+        elseif router.var == name and kind == "mounted" and attribute == "" then
+            local key = file .. "#" .. name
+            if ctx.visited[key] then
+                return nil
+            end
+            ctx.visited[key] = true
+            return expand(new_node(router, analysis, file), analysis, file, ctx)
         end
     end
     local import, item = find_import(analysis, name)
     if not (import and item) then
         return nil
     end
-    local target = imports.resolve_named(import, item.name, file, ctx.root)
+    local target, original = imports.resolve_named(import, item.name, file, ctx.root)
     if not target then
         return nil
     end
@@ -169,12 +248,10 @@ function resolve_reference(reference, analysis, file, ctx, kind)
                 return nil
             end
             ctx.visited[key] = true
-            local node = new_node(router, target_analysis, target)
-            process_includes(target_analysis, node, target, ctx)
-            return node
+            return expand(new_node(router, target_analysis, target), target_analysis, target, ctx)
         end
     end
-    return build_internal(target, ctx, item.name)
+    return build_internal(target, ctx, original or item.name)
 end
 
 ---@param analysis fastapi.FileAnalysis
@@ -184,6 +261,11 @@ local function infer_factory_app(analysis, var)
     for _, route in ipairs(analysis.routes) do
         if route.owner == var then
             return { var = var, kind = "FastAPI", prefix = "", tags = {}, line = 0, col = 0 }
+        end
+    end
+    for _, call in ipairs(analysis.call_assignments) do
+        if call.var == var then
+            return local_factory_app(analysis, call.callee)
         end
     end
 end
@@ -257,14 +339,10 @@ function build_internal(entry, ctx, var)
     if not router then
         return nil
     end
+    ctx.visited[file .. "#" .. router.var] = true
     local root = new_node(router, analysis, file)
     process_includes(analysis, root, file, ctx)
-    for _, mount in ipairs(analysis.mounts) do
-        local child = resolve_reference(mount.app, analysis, file, ctx, "mounted")
-        if child then
-            table.insert(root.children, { node = child, prefix = mount.path, tags = {} })
-        end
-    end
+    process_mounts(analysis, root, file, ctx, true)
     return root
 end
 

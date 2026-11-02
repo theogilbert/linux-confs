@@ -1,0 +1,7 @@
+local md_table = require("utilities.markdown_table")
+vim.keymap.set("n", "<leader>Mf", md_table.format_at_cursor, { buffer = true, desc = "[M]arkdown - [f]ormat table" })
+vim.keymap.set("x", "<leader>Mf", md_table.format_selection, { buffer = true, desc = "[M]arkdown - [f]ormat table" })
+local notes_todo = require("notes-todo")
+vim.keymap.set("n", "]t", notes_todo.next, { buffer = true, desc = "Next TODO" })
+vim.keymap.set("n", "[t", notes_todo.prev, { buffer = true, desc = "Previous TODO" })
+vim.keymap.set("n", "<leader>T", notes_todo.show, { buffer = true, desc = "List [T]ODOs" })

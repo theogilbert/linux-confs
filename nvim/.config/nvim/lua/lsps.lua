@@ -1,4 +1,4 @@
-M = {}
+local M = {}
 
 local lsp_sort = require("utilities.lsp_sort")
 lsp_sort.sort_workspace_symbols()
@@ -22,8 +22,6 @@ vim.diagnostic.config({
 })
 
 local cursorHoverGroup = vim.api.nvim_create_augroup("CursorHover", {})
-
-vim.api.nvim_clear_autocmds({ group = cursorHoverGroup })
 vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	pattern = { "*.py" },
 	group = cursorHoverGroup,
@@ -81,23 +79,7 @@ vim.keymap.set("n", "K", function()
     end
 end, { silent = true })
 
-local capabilities = require("cmp_nvim_lsp").default_capabilities()
-
-vim.lsp.config("basedpyright", {
-	settings = {
-		basedpyright = {
-			disableOrganizeImports = true, -- Using Ruff
-                        typeCheckingMode = "strict",
-		},
-		python = {
-			analysis = {
-				ignore = { "*" }, -- Using Ruff
-				typeCheckingMode = "on",
-			},
-		},
-	},
-	capabilities = capabilities,
-})
+vim.lsp.config("*", { capabilities = require("cmp_nvim_lsp").default_capabilities() })
 
 vim.lsp.config("ty", {
     -- ty returns no attribute completions when the cursor is inside an identifier
@@ -109,7 +91,6 @@ vim.lsp.config("ty", {
             },
         }
     },
-    capabilities = capabilities,
 })
 
 vim.lsp.enable("ty")
@@ -117,7 +98,6 @@ vim.lsp.enable("ty")
 local augroup = vim.api.nvim_create_augroup("LspFormatting", {})
 
 vim.lsp.config("ruff", {
-	capabilities = capabilities,
         init_options = {
             settings = {
                 codeAction = { disableRuleComment = { enable = false}},
@@ -168,23 +148,28 @@ local function ruff_format_on_save(args)
     vim.lsp.buf.format({ async = false, bufnr = buf, name = "ruff" })
 end
 
-local function toggle_ruff_watcher()
+---@param quiet boolean|nil Do not notify (used when enabling at startup)
+local function toggle_ruff_watcher(quiet)
     ruff_watcher_enabled = not ruff_watcher_enabled
+    local msg
     if ruff_watcher_enabled then
         vim.api.nvim_create_autocmd("BufWritePre", {
             group = augroup,
             pattern = "*.py",
             callback = ruff_format_on_save,
         })
-        vim.notify("Ruff file watcher enabled for Python files")
+        msg = "Ruff file watcher enabled for Python files"
     else
         vim.api.nvim_clear_autocmds({ group = augroup, pattern = "*.py" })
-        vim.notify("Ruff file watcher disabled")
+        msg = "Ruff file watcher disabled"
+    end
+    if not quiet then
+        vim.notify(msg)
     end
 end
 
 if vim.fn.executable("ruff") == 1 then
-    toggle_ruff_watcher()
+    toggle_ruff_watcher(true)
     vim.keymap.set("n", "<leader>lw", toggle_ruff_watcher, { desc = "Toggle ruff file[w]atcher" })
 end
 

@@ -24,35 +24,14 @@ vim.g.bytes_info_statusline = false
 
 vim.g.markdown_fenced_languages = {'bash=sh', 'javascript', 'js=javascript', 'json=javascript', 'typescript', 'ts=typescript', 'html', 'css', 'rust', 'python', 'ini=cfg', 'cfg', 'diff', 'xml', 'yaml', 'yml=yaml'}
 
+-- xml/html also fold by syntax: see after/ftplugin/
 vim.g.xml_syntax_folding = 1
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = { "xml", "html" },
-  callback = function()
-    vim.opt_local.foldmethod = "syntax"
-  end,
-})
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "markdown",
-  callback = function()
-    vim.keymap.set(
-        "v", "<leader>Mf", [[:! tr -s " " | column -t -s '|' -o '|'<CR>]],
-        { buffer = true, desc = "[M]arkdown - [f]ormat" }
-    )
-    local notes_todo = require("notes-todo")
-    vim.keymap.set("n", "]t", notes_todo.next, { buffer = true, desc = "Next TODO" })
-    vim.keymap.set("n", "[t", notes_todo.prev, { buffer = true, desc = "Previous TODO" })
-    vim.keymap.set("n", "<leader>T", notes_todo.show, { buffer = true, desc = "List [T]ODOs" })
-  end,
-})
 
 
 vim.opt.fillchars:append({ diff = ' ' })
 
 vim.opt.shiftwidth = 4
-vim.opt.smarttab = true
 vim.opt.expandtab = true
-vim.opt.tabstop = 8
-vim.opt.softtabstop = 0
 
 vim.opt.completeopt = 'menuone,noinsert,preview'
 
@@ -62,7 +41,6 @@ vim.opt.splitright = true
 vim.opt.foldmethod = "expr"
 vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 vim.opt.foldlevelstart = 99
-vim.opt.foldlevel = 99
 
 vim.opt.wildmode = "list:longest"
 
@@ -140,8 +118,6 @@ vim.opt.inccommand = "split"
 -- Show which line your cursor is on
 vim.opt.cursorline = true
 -- vim.opt.cursorcolumn = true
-
-vim.opt.syntax = "on"
 
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.opt.scrolloff = 2

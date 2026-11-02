@@ -14,12 +14,7 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 
 
 
-local function set_hls()
-    vim.api.nvim_set_hl(0, "Flash", { bg = "#e0af68", fg = "#1a1b26" })
-    vim.api.nvim_set_hl(0, "CurrentCursorLine", { bg = "#505050" })
-    vim.api.nvim_set_hl(0, "MiniStatuslineInactive", { fg = "#b0adb5", bg = "#49464e" })
-end
-
+-- Flash and CurrentCursorLine are defined in highlights.lua
 local FlashRule = "CursorLine:Flash"
 local CurrentCLRule = "CursorLine:CurrentCursorLine"
 
@@ -52,9 +47,6 @@ local function clear_winhl_rule(win, rule)
     vim.wo[win].winhighlight = new_rule
 end
 
-
-set_hls()
-vim.api.nvim_create_autocmd("ColorScheme", { callback = set_hls })
 
 vim.api.nvim_create_autocmd({"VimEnter", "WinEnter"}, {
     callback = function()

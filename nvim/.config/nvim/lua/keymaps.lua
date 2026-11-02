@@ -113,7 +113,7 @@ vim.keymap.set("n", "<leader>sli", fzflua.lsp_incoming_calls, { desc = "[S]earch
 
 local lsp_settings = require("lsps")
 
-vim.keymap.set("n", "<leader>q", lsp_settings.run_code_actions, { desc = "Open diagnostic [Q]uickfix list" })
+vim.keymap.set("n", "<leader>q", lsp_settings.run_code_actions, { desc = "Run code actions" })
 
 vim.keymap.set("n", "<leader>sfd", fzflua.lsp_document_diagnostics, { desc = "[S]earch [F]ile [D]iagnostics" })
 vim.keymap.set("n", "<leader>sfs", fzflua.lsp_document_symbols, { desc = "[S]earch [F]ile [S]ymbols" })
@@ -126,7 +126,7 @@ vim.keymap.set("n", "<leader>k", function()
         local supported_kinds = {'Class', 'Interface', 'Enum', 'Function', 'Constant', 'Method'}
         return vim.tbl_contains(supported_kinds, item.kind)
     end})
-end, { desc = "[S]earch Workspace [S]ymbols" })
+end, { desc = "Search workspace classes, functions, constants" })
 local function files_deprioritize_tests(opts)
     opts = opts or {}
     -- Pipe fd through awk to output non-test files first, test files last.
@@ -145,7 +145,6 @@ vim.keymap.set("n", "<leader>sGb", fzflua.git_blame, { desc = "[S]earch [G]it bu
 
 vim.keymap.set("n", "<leader>sdb", fzflua.dap_breakpoints, { desc = "[S]earch [D]AP [b]reakpoints" })
 
-local runner = require("utilities.runner")
 local session = require("session")
 vim.keymap.set("n", "<leader>vsl", session.try_load_session, { desc = "[v]im [s]ession - [l]oad" })
 vim.keymap.set("n", "<leader>vsc", session.reset_session, { desc = "[v]im [s]ession - [c]lear session" })
@@ -234,12 +233,10 @@ vim.keymap.set({"n", "v"}, "<leader>de", dapui.eval, { desc = "[E]valuate expres
 vim.keymap.set({"n", "v"}, "<leader>dE", require("utilities.dap").peek_string_value, { desc = "[E]valuate expression (multiline string)" })
 vim.keymap.set("n", "<leader>dc", dap.focus_frame, { desc = "Focus [c]urrent frame" })
 
-vim.keymap.set("n", "<leader>dpv", dap_settings.show_scopes_pane, { desc = "Show [D]AP [p]ane - [v]ariables" })
-vim.keymap.set("n", "<leader>dpw", dap_settings.show_watches_pane, { desc = "Show [D]AP [p]ane - [w]atches" })
-vim.keymap.set("n", "<leader>dps", dap_settings.show_stacks_pane, { desc = "Show [D]AP [p]ane - [s]tack" })
-vim.keymap.set("n", "<leader>dpr", dap_settings.show_repl_pane, { desc = "Show [D]AP [p]ane - [r]epl" })
-vim.keymap.set("n", "<leader>dpb", dap_settings.show_breakpoints_pane, { desc = "Show [D]AP [p]ane - [b]reakpoints" })
-vim.keymap.set("n", "<leader>dpc", dap_settings.show_console_pane, { desc = "Show [D]AP [p]ane - [c]onsole" })
+for key, pane in pairs({ v = "scopes", w = "watches", s = "stacks", r = "repl", b = "breakpoints", c = "console" }) do
+    vim.keymap.set("n", "<leader>dp" .. key, function() dap_settings.set_bottom_pane(pane) end,
+        { desc = "Show [D]AP [p]ane - " .. pane })
+end
 vim.keymap.set("n", "<leader>dpd", dap_settings.show_dataframe_pane, { desc = "Toggle [D]AP [p]ane - [d]ataframe" })
 
 local dap_df = require("nvim-dap-df-pane")
@@ -297,15 +294,7 @@ vim.keymap.set({ "n", "x", "o" }, "s", function() require("flash").jump() end, {
 vim.keymap.set({ "n", "x", "o" }, "S", function() require("flash").treesitter() end, { desc = "Flash Treesitter" })
 vim.keymap.set({ "o" }, "r", function() require("flash").remote() end, { desc = "Remote Flash" })
 vim.keymap.set({ "o", "x" }, "R", function() require("flash").treesitter_search() end, { desc = "Treesitter Search" })
-vim.keymap.set({ "n", "x", "o" }, "<c-s>", function() require("flash").toggle() end, { desc = "Toggle Flash Search" })
-
-vim.api.nvim_create_autocmd("FileType", {
-    pattern = "python",
-    callback = function()
-        vim.keymap.set("n", "<leader>r", runner.run_python_file, { buf = 0, desc ="[R]un python file" })
-        vim.keymap.set("v", "<leader>r", runner.send_selection_to_repl, { buf = 0, desc ="[R]un selection in REPL" })
-    end,
-})
+vim.keymap.set("c", "<c-s>", function() require("flash").toggle() end, { desc = "Toggle Flash Search" })
 
 local grannos = require("grannos")
 vim.keymap.set("n", "<leader>bC", grannos.open_connections, { desc = "Data[b]ase - [c]onnections" })

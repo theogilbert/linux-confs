@@ -226,24 +226,6 @@ function M.set_bottom_pane(scope)
     dapui.open({layout = indices[scope]})
 end
 
-M.show_scopes_pane = function()
-    M.set_bottom_pane('scopes')
-end
-M.show_watches_pane = function()
-    M.set_bottom_pane('watches')
-end
-M.show_stacks_pane = function()
-    M.set_bottom_pane('stacks')
-end
-M.show_repl_pane = function()
-    M.set_bottom_pane('repl')
-end
-M.show_breakpoints_pane = function()
-    M.set_bottom_pane('breakpoints')
-end
-M.show_console_pane = function()
-    M.set_bottom_pane('console')
-end
 M.show_dataframe_pane = function()
     dapui.close()
     dap_df.open()
@@ -252,10 +234,10 @@ end
 
 
 dap.listeners.before.attach.dapui_config = function()
-  M.show_console_pane()
+  M.set_bottom_pane('console')
 end
 dap.listeners.before.launch.dapui_config = function()
-  M.show_console_pane()
+  M.set_bottom_pane('console')
 end
 -- debugpy debugs spawned python subprocesses as child sessions; their exit
 -- must not close the UI while the parent session is still running.

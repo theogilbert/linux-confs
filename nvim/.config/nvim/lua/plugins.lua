@@ -147,7 +147,12 @@ vim.api.nvim_create_autocmd("User", {
 -- Git-ignored files are shown (toggle with I), their names colored (see highlights.lua).
 require("nvim-tree").setup({
     filters = { dotfiles = true, git_ignored = false },
-    renderer = { highlight_git = "name", highlight_hidden = "name" },
+    renderer = {
+        highlight_git = "name",
+        highlight_hidden = "name",
+        -- New and staged files are already identified by their name color.
+        icons = { glyphs = { git = { untracked = "", staged = "" } } },
+    },
 })
 
 

@@ -132,7 +132,7 @@ local function files_deprioritize_tests(opts)
     -- Pipe fd through awk to output non-test files first, test files last.
     -- Combined with --tiebreak=index, fzf prefers non-test files on tied scores.
     -- When "test" is in the query, test files naturally score higher and rise to the top.
-    opts.raw_cmd = "fd --color=never --type f --type l --exclude .git --exclude .jj --hidden"
+    opts.cmd = "fd --color=never --type f --type l --exclude .git --exclude .jj --hidden"
         .. [[ | awk '/(^|\/)tests?\// {t[++n]=$0; next} {print} END {for(i=1;i<=n;i++) print t[i]}']]
     opts.fzf_opts = vim.tbl_extend("force", opts.fzf_opts or {}, { ["--tiebreak"] = "index" })
     return fzflua.files(opts)

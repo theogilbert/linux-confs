@@ -72,8 +72,6 @@ vim.g.sonokai_colors_override = { bg0 = { '#262626', '235' } }
 vim.cmd.colorscheme("sonokai")
 
 -- fzf-lua
-local actions = require("fzf-lua").actions
-
 require("fzf-lua").setup({
 	desc = "Custom FZF profile",
 	manpages = { previewer = "man_native" },
@@ -89,15 +87,6 @@ require("fzf-lua").setup({
 			["ctrl-d"] = "preview-half-page-down",
 			["ctrl-u"] = "preview-half-page-up",
 			["ctrl-q"] = "select-all+accept",
-		},
-	},
-	actions = {
-		files = {
-			["enter"] = actions.file_edit_or_qf,
-			["ctrl-b"] = actions.file_split,
-			["ctrl-v"] = actions.file_vsplit,
-			["ctrl-t"] = actions.file_tabedit,
-			["alt-q"] = actions.file_sel_to_qf,
 		},
 	},
 })

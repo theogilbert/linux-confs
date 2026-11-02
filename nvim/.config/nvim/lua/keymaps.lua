@@ -211,6 +211,7 @@ vim.keymap.set("n", "<leader>lR", function()
 	vim.cmd("lsp restart")
 end, { desc = "[L]SP - [R]estart" })
 vim.keymap.set("n", "<leader>lr", vim.lsp.buf.rename, { desc = "[L]SP - [R]ename symbol under cursor" })
+vim.keymap.set("n", "<leader>ls", require("salmon").trace, { desc = "[L]SP - Trace [S]ymbol origin (salmon)" })
 
 local dap = require("dap")
 local dapui = require("dapui")

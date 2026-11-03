@@ -70,6 +70,7 @@ require("cmp-plugins")
 vim.cmd("packadd! sonokai")
 vim.g.sonokai_style = "shusia"
 vim.g.sonokai_colors_override = { bg0 = { '#262626', '235' } }
+vim.g.sonokai_disable_terminal_colors = 1 -- keep the terminal emulator palette in :terminal (e.g. lazygit)
 vim.cmd.colorscheme("sonokai")
 
 -- fzf-lua

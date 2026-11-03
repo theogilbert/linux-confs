@@ -78,6 +78,19 @@ require("fzf-lua").setup({
 	desc = "Custom FZF profile",
 	manpages = { previewer = "man_native" },
 	helptags = { previewer = "help_native" },
+	winopts = {
+		-- sonokai terminal colors are disabled globally (for lazygit), but fzf-lua
+		-- renders git icons etc. with plain ANSI colors: give its buffer the sonokai palette.
+		on_create = function(e)
+			local p = vim.fn["sonokai#get_palette"](vim.g.sonokai_style, vim.g.sonokai_colors_override)
+			local ansi = { "black", "red", "green", "yellow", "blue", "purple", "orange", "fg" }
+			for i, name in ipairs(ansi) do
+				vim.b[e.bufnr]["terminal_color_" .. (i - 1)] = p[name][1]
+				vim.b[e.bufnr]["terminal_color_" .. (i + 7)] = p[name][1]
+			end
+			vim.b[e.bufnr].terminal_color_8 = p.grey[1]
+		end,
+	},
 	keymap = {
 		builtin = {
 			true,

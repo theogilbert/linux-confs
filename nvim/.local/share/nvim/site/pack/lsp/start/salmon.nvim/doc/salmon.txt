@@ -32,17 +32,40 @@ window left, it quits too, like `:q`.
 Nodes are expanded lazily (only when opened), so deep or branching chains
 stay cheap. While a node has a single expandable child, expansion continues
 automatically (see |salmon-config| `auto_expand`).
+
+                                                                *salmon-chain*
+The chain reads top to bottom, in the order the value travels: where it
+starts at the top, the traced symbol at the bottom. Above each step, a line
+says in words how the value got there (see |salmon-labels|).
 >
-  ▾ SYM a  main.py:5
-    ▾ PRM def compute(a, b):  main.py:4
-      ▾ ARG result = compute(offset, b=5)  main.py:14
-        ▾ ALS offset = base  main.py:13
-          · DEF base = 10  main.py:10
-          · CND DEF base = 20  main.py:12
+  ╷ defined
+  ╪ base = 10                      main.py:10
+  │ maybe defined (in a branch)
+  ╪ base = 20                      main.py:12
+  │ copied from another variable
+  ┿ offset = base                  main.py:13
+  │ passed as argument
+  ┿ result = compute(offset, b=5)  main.py:14
+  │ function parameter
+  ┿ def compute(a, b):             main.py:4
+  │ traced
+  ╋ a                              main.py:5
 <
-A variable's history reads as a flat timeline: its base DEF, then each UPD
-and MUT in source order. A pandas-style chain such as `df = df.foo()` followed
-by `df = df.bar()` does not nest one level per step.
+Markers (box-drawing junctions, so the chain stays one unbroken line and
+lines up in any font with box drawing; see `icons` in |salmon-config|):
+  ╋   The traced symbol.
+  ╪   End of the chain: nothing further upstream.
+  ┼   More upstream, hidden: expand it.
+  ┿   Expanded.
+A step that may not happen (inside a branch or loop) says "maybe".
+
+When a step has several inputs (derive mode, or the other inputs of an
+update), the extra ones branch off to the right and merge back in with
+`├─╯`.
+
+A variable's history reads as a timeline on one line: its base DEF, then
+each UPD and MUT in source order. A pandas-style chain such as
+`df = df.foo()` followed by `df = df.bar()` stays on one line.
 
 ==============================================================================
 2. REQUIREMENTS                                          *salmon-requirements*
@@ -52,7 +75,8 @@ by `df = df.bar()` does not nest one level per step.
 - An LSP server (optional, recommended). Used for `documentHighlight` (exact
   read/write occurrences), `definition` (imports, cross-file functions,
   globals) and `references` (call sites). Without one, salmon falls back to
-  same-file, name-based tree-sitter heuristics.
+  same-file, name-based tree-sitter heuristics, and follows imports by
+  resolving relative module paths (Python, JS/TS, Lua `require`).
 
 salmon has no per-language tables. It relies on conventions shared by
 tree-sitter grammars: node type names (`if_statement`, `call_expression`)
@@ -68,9 +92,9 @@ and field names (`left`/`right`, `name`/`value`, `function`, `arguments`,
 :Salmon toggle          Close the pane if open, otherwise trace.
 :Salmon close           Close the pane.
 :Salmon derive          Toggle derive mode (see |salmon-derive|) and refresh.
-:Salmon refresh         Rebuild the tree from the current root.
-:Salmon next            Step to the next node (like `]s`).
-:Salmon prev            Step to the previous node (like `[s`).
+:Salmon refresh         Rebuild the chain from the current root.
+:Salmon next            Step forward, towards the traced symbol (like `]s`).
+:Salmon prev            Step back, towards the definition (like `[s`).
 
 ==============================================================================
 4. LABELS                                                      *salmon-labels*
@@ -90,7 +114,8 @@ and field names (`left`/`right`, `name`/`value`, `function`, `arguments`,
   PRM   Function parameter. Expands to the call sites.
   ARG   Argument passed for that parameter at a call site.
   FOR   Loop variable. Expands to the iterated value.
-  IMP   Imported name. Expands to its definition in the other module.
+  IMP   Import line (`from m import x`, `import { x }`,
+        `x = require("m")`). Expands to the definition in the other module.
   SRC   A variable a derived expression depends on (derive mode).
   FN    A function a derived expression calls (derive mode). Expands to its
         RET nodes.
@@ -110,31 +135,36 @@ inputs are shown.
 While the pane is open, these are mapped globally (any mapping they shadow,
 such as the built-in spelling motions, is restored on close):
 
-  ]s            Step to the next node and show it in the source window.
-                Stepping onto a collapsed node expands it first, so pressing
-                `]s` repeatedly swims upstream through the chain.
-  [s            Step back to the previous node.
+  [s            Step back (up the pane, towards the definition) and show
+                the step in the source window. A collapsed step is
+                expanded first, so pressing `[s` repeatedly swims up the
+                whole chain.
+  ]s            Step forward, towards the traced symbol.
+
+Jumps (`[s`, `]s`, <CR>, `p`) center the step in the source window when it
+lands in another file or near the top or bottom edge.
 
 In the pane:
 
   <CR>          Jump to the node (sets a jumplist entry).
   p             Preview: jump but keep focus in the pane.
   o <Tab> l     Expand / collapse.
-  h             Collapse, or go to the parent.
+  h             Collapse, or go to the step it flows into.
   R             Re-root the trace at this node.
   d             Toggle derive mode.
   r             Refresh.
   q             Close.
   g?            Show help and the label legend.
   K             Hover: what the node's labels mean, its location, the path
-                from the root, whether it can be followed further (and
+                from the traced symbol, whether it can be followed further (and
                 why not), and the full source statement.
 
 All of these can be changed via `keymaps` in |salmon-config|.
 
                                                                 *salmon-folds*
-The standard fold commands act on the tree. A node "fold" is the node itself
-when expanded, otherwise the node containing it:
+The standard fold commands act on the chain. A "fold" is a step and
+everything drawn above it (its upstream): the step itself when expanded,
+otherwise the step it flows into:
 
   zo            Expand the node.
   zO            Expand recursively (up to `fold_depth` levels).
@@ -148,7 +178,8 @@ when expanded, otherwise the node containing it:
   zm            Collapse all expanded nodes at the deepest level.
   zi            Toggle between zR and zM.
   zj / zk       Move to the next / previous expandable node.
-  [z / ]z       Move to the start / end of the current fold.
+  [z / ]z       Move to the top / bottom (the step itself) of the current
+                fold.
   zv            No-op (every node is always visible).
 
 Fold creation and deletion (zf, zF, zd, zD, zE) do not apply.
@@ -166,6 +197,9 @@ Calling `setup()` is optional. Defaults: >lua
     width = 60,
     position = "right",  -- or "left"
     max_text = 60,       -- truncate source snippets
+    -- step markers in the chain
+    icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪",
+              loading = "╂" },
     keymaps = {
       jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
       collapse = { "h" }, reroot = { "R" }, derive = { "d" },
@@ -181,16 +215,31 @@ See |salmon-api| for mapping it.
 7. HIGHLIGHTS                                              *salmon-highlights*
 
 One group per label, `SalmonDEF`, `SalmonCND`, ... `SalmonRET`, plus
-`SalmonLocation` for the file:line suffix.
+`SalmonLocation` for the file:line suffix and `SalmonGraph` for the chain's
+lines (links to `Comment`).
 
 In source buffers, while the pane is open:
   `SalmonOrigin`    Line of the traced symbol (dim background, links to
                   `CursorLine`).
-  `SalmonSymbol`    Every occurrence of the traced variable, including the
-                  one you traced from (links to `LspReferenceText`).
-  `SalmonSelected`  The node selected in the pane (links to `Visual`). They are linked to standard
-groups by default (`default = true`), so a colorscheme or your config can
-override them.
+  `SalmonSymbol`    Every occurrence of the traced variable (links to
+                  `Search`).
+  `SalmonSymbolOrigin`  The occurrence you traced from (links to
+                  `IncSearch`).
+  `SalmonSource`    With a node selected in a derivation source's upstream
+                  (derive mode), every occurrence of that source's
+                  variable (links to `DiffText`).
+  `SalmonSelected`  The node selected in the pane (links to `Visual`).
+  `SalmonFlowStep`  Step numbers in the sign column (links to `Title`).
+  `SalmonFlow`      Lines between steps (links to `Special`).
+
+The sign column shows the flow from the selected node down to the traced
+symbol: each step is numbered (`4+` when more steps share a line), with a line between consecutive steps in
+the same file. Its last segment has a heavy half (`╽` or `╿`) pointing at
+the next step. With the traced symbol selected, the
+flow starts at the top of the main chain.
+
+All groups are linked to standard groups by default (`default = true`), so a
+colorscheme or your config can override them.
 
 ==============================================================================
 8. LUA API AND <PLUG> MAPPINGS                                    *salmon-api*
@@ -219,10 +268,10 @@ salmon.close()             Close the pane.
                                                          *salmon.is_open()*
 salmon.is_open()           Whether the pane is open.
                                                          *salmon.refresh()*
-salmon.refresh()           Rebuild the tree from the current root.
+salmon.refresh()           Rebuild the chain from the current root.
                                               *salmon.next()* *salmon.prev()*
-salmon.next() / prev()     Step along the chain, like `]s` / `[s`. No-op when
-                           the pane is closed.
+salmon.next() / prev()     Step forward / back along the chain, like `]s` /
+                           `[s`. No-op when the pane is closed.
                                                           *salmon.derive()*
 salmon.derive()            Current derive mode (boolean).
                                                       *salmon.set_derive()*

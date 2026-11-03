@@ -20,6 +20,7 @@ end
 ---@field children salmon.Node[]|nil
 ---@field expanded boolean
 ---@field loading boolean
+---@field seq boolean|nil children are a timeline, not parallel inputs
 ---@field resolve fun(node: salmon.Node, cb: fun(children: salmon.Node[]))|nil
 
 local function new(tags, buf, tsnode, resolve, text)
@@ -72,32 +73,98 @@ local function expr_resolver(buf, exprs, exclude)
   end
 end
 
+-- Nodes for definition sites: a function shows its definition and return
+-- statements; anything else is classified like any other write.
+local function def_nodes(locs)
+  local out = {}
+  for _, loc in ipairs(locs) do
+    local n = ts.node_at(loc.buf, loc.row, loc.col)
+    local fn = n and (ts.is_function(n) and n or (n:parent() and ts.is_function(n:parent()) and n:parent()))
+    if fn then
+      out[#out + 1] = new({ "DEF" }, loc.buf, n)
+      local rets = ts.returns(fn)
+      for _, r in ipairs(rets) do
+        out[#out + 1] = new({ "RET" }, loc.buf, r.node, expr_resolver(loc.buf, r.exprs))
+      end
+      if #rets == 0 then
+        out[#out].note = "no return"
+      end
+      -- Definition, then its returns: read as one sequence.
+      out.seq = true
+    elseif n then
+      local cls = ts.classify(n, true, loc.buf) or { kind = "other" }
+      out[#out + 1] = write_node(loc.buf, n, cls, false)
+    end
+  end
+  return out
+end
+
+--- The import line that binds `name` in `buf`, as a chain node (or nil when
+--- the name is defined locally).
+local function import_node(buf, name)
+  if #ts.find_defs(buf, name) > 0 then
+    return nil
+  end
+  local imp = ts.find_import(buf, name)
+  return imp and write_node(buf, imp, ts.classify(imp, false, buf), false)
+end
+
+--- Where an import points to: ask the LSP, else resolve the module path.
+local function import_resolver(buf, id)
+  return function(_, cb)
+    local row, col = id:start()
+    lsp.definition(buf, row, col, function(locs)
+      locs = vim.tbl_filter(function(l)
+        return not (l.buf == buf and l.row == row)
+      end, locs)
+      if #locs > 0 then
+        return cb(def_nodes(locs))
+      end
+      local info = ts.import_info(id, buf)
+      local file = info and ts.resolve_module(buf, info.module)
+      if not file then
+        return cb({}, info and ("module " .. info.module .. " not found") or nil)
+      end
+      local tbuf = vim.fn.bufadd(file)
+      if not ts.ensure_parsed(tbuf) then
+        return cb({}, "no parser for " .. vim.fn.fnamemodify(file, ":t"))
+      end
+      if info.name then
+        locs = ts.find_defs(tbuf, info.name)
+        if #locs == 0 then
+          for _, n in ipairs(ts.top_level_writes(tbuf, info.name)) do
+            local r, c = n:start()
+            locs[#locs + 1] = { buf = tbuf, row = r, col = c }
+          end
+        end
+        return cb(def_nodes(locs), #locs == 0 and (info.name .. " not found in " .. info.module) or nil)
+      end
+      -- Whole module: what it returns (Lua), else the file itself.
+      local out = {}
+      for _, r in ipairs(ts.module_returns(tbuf)) do
+        out[#out + 1] = new({ "RET" }, tbuf, r.node, expr_resolver(tbuf, r.exprs))
+      end
+      if #out == 0 then
+        local root = ts.node_at(tbuf, 0, 0):tree():root()
+        out[1] = new({ "DEF" }, tbuf, root, nil, "module " .. vim.fn.fnamemodify(file, ":~:."))
+      end
+      cb(out)
+    end)
+  end
+end
+
 local function fn_resolver(buf, name_node)
   return function(_, cb)
+    local imp = import_node(buf, ts.text(name_node, buf))
+    if imp then
+      return cb({ imp })
+    end
     local row, col = name_node:start()
     lsp.definition(buf, row, col, function(locs)
       if #locs == 0 then
         locs = ts.find_defs(buf, ts.text(name_node, buf))
       end
-      local out = {}
-      for _, loc in ipairs(locs) do
-        local n = ts.node_at(loc.buf, loc.row, loc.col)
-        local fn = n and (ts.is_function(n) and n or (n:parent() and ts.is_function(n:parent()) and n:parent()))
-        if fn then
-          out[#out + 1] = new({ "DEF" }, loc.buf, n)
-          local rets = ts.returns(fn)
-          for _, r in ipairs(rets) do
-            out[#out + 1] = new({ "RET" }, loc.buf, r.node, expr_resolver(loc.buf, r.exprs))
-          end
-          if #rets == 0 then
-            out[#out].note = "no return"
-          end
-        elseif n then
-          local cls = ts.classify(n, true) or { kind = "other" }
-          out[#out + 1] = write_node(loc.buf, n, cls, false)
-        end
-      end
-      cb(out)
+      cb(def_nodes(locs))
     end)
   end
 end
@@ -182,22 +249,7 @@ write_node = function(buf, w, cls, cond)
   elseif cls.kind == "fndef" then
     tags = { "DEF" }
   elseif cls.kind == "import" then
-    tags = { "IMP" }
-    resolve = function(_, cb)
-      local row, col = w:start()
-      lsp.definition(buf, row, col, function(locs)
-        local out = {}
-        for _, loc in ipairs(locs) do
-          if not (loc.buf == buf and loc.row == row) then
-            local n = ts.node_at(loc.buf, loc.row, loc.col)
-            if n then
-              out[#out + 1] = write_node(loc.buf, n, ts.classify(n, true) or { kind = "other" }, false)
-            end
-          end
-        end
-        cb(out)
-      end)
-    end
+    tags, resolve = { "IMP" }, import_resolver(buf, w)
   elseif cls.kind == "for" then
     tags, resolve = { "FOR" }, expr_resolver(buf, cls.iter)
   elseif cls.kind == "assign" then
@@ -236,7 +288,7 @@ local function timeline(buf, writes, occ, known)
   local out, cur, guard = {}, occ, 0
   while cur and guard < 100 do
     guard = guard + 1
-    local reach = ts.reaching(writes, cur, known)
+    local reach = ts.reaching(writes, cur, known, buf)
     for i = #reach, 1, -1 do
       if cur ~= occ then
         reach[i].cond = reach[i].cond or ts.is_conditional(reach[i].node, occ)
@@ -267,7 +319,7 @@ end
 ---@param opts { as_read: boolean|nil }
 trace = function(buf, occ, opts, cb)
   if not opts.as_read then
-    local cls = ts.classify(occ, false)
+    local cls = ts.classify(occ, false, buf)
     if cls then
       local node = write_node(buf, occ, cls, false)
       if not is_update(buf, occ, cls) then
@@ -308,10 +360,16 @@ trace = function(buf, occ, opts, cb)
     for _, it in ipairs(items) do
       out[#out + 1] = it.mut and mut_node(buf, it.node, it.mut, it.cond) or write_node(buf, it.node, it.cls, it.cond)
     end
+    out.seq = true
     if #tl > 0 then
       return cb(out)
     end
 
+    -- Imported: the import line is the next step.
+    local imp = import_node(buf, ts.text(occ, buf))
+    if imp then
+      return cb({ imp })
+    end
     -- No local write reaches here (global, closure, builtin...): ask the LSP.
     lsp.definition(buf, row, col, function(locs)
       if #locs == 0 and not hl then
@@ -325,11 +383,13 @@ trace = function(buf, occ, opts, cb)
         if not (loc.buf == buf and loc.row == row and loc.col == col) then
           local n = ts.node_at(loc.buf, loc.row, loc.col)
           if n then
-            defs[#defs + 1] = write_node(loc.buf, n, ts.classify(n, true) or { kind = "other" }, false)
+            defs[#defs + 1] = write_node(loc.buf, n, ts.classify(n, true, loc.buf) or { kind = "other" }, false)
           end
         end
       end
-      cb(vim.list_extend(defs, out))
+      defs = vim.list_extend(defs, out)
+      defs.seq = true
+      cb(defs)
     end)
   end)
 end
@@ -370,6 +430,8 @@ function M.expand(node, auto, on_change, done)
     node.loading = false
     node.expanded = true
     node.children = children
+    -- Timeline (successive versions of one variable) vs parallel inputs.
+    node.seq = children.seq == true
     node.note = node.note or note or (#children == 0 and "nothing found" or nil)
     for _, c in ipairs(children) do
       c.parent = node

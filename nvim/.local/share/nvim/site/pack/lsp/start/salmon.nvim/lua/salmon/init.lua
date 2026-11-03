@@ -11,6 +11,16 @@ M.config = {
   width = 60,
   position = "right", -- "right" | "left"
   max_text = 60,
+  -- Step markers. Box-drawing junctions keep the chain one unbroken line and
+  -- render aligned in any font with box drawing (unlike ●/◆, often missing
+  -- from coding fonts and drawn from a fallback font).
+  icons = {
+    traced = "╋", -- the symbol being traced
+    expanded = "┿", -- its upstream is shown above
+    collapsed = "┼", -- more upstream, hidden: expand it
+    done = "╪", -- end of the chain: nothing further upstream
+    loading = "╂",
+  },
   keymaps = {
     jump = { "<CR>" },
     preview = { "p" },
@@ -45,8 +55,13 @@ local HL = {
   SalmonRET = "Keyword",
   SalmonLocation = "Comment",
   SalmonOrigin = "CursorLine",
-  SalmonSymbol = "LspReferenceText",
+  SalmonSymbol = "Search",
+  SalmonSymbolOrigin = "IncSearch",
+  SalmonSource = "DiffText",
   SalmonSelected = "Visual",
+  SalmonGraph = "Comment",
+  SalmonFlow = "Special",
+  SalmonFlowStep = "Title",
 }
 
 local function set_highlights()
@@ -133,7 +148,7 @@ function M.is_open()
   return ui().is_open()
 end
 
---- Rebuild the tree from the current root (e.g. after editing).
+--- Rebuild the chain from the current root (e.g. after editing).
 function M.refresh()
   local root = ui().state.root
   if root and M.is_open() then
@@ -141,12 +156,14 @@ function M.refresh()
   end
 end
 
---- Step to the next node along the chain and show it (no-op if closed).
+--- Step forward along the chain, towards the traced symbol, and show it
+--- (no-op if closed).
 function M.next()
   ui().step(1)
 end
 
---- Step to the previous node along the chain and show it (no-op if closed).
+--- Step back along the chain, towards the definition, expanding collapsed
+--- steps on the way, and show it (no-op if closed).
 function M.prev()
   ui().step(-1)
 end

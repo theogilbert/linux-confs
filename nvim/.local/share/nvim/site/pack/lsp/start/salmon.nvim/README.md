@@ -7,18 +7,55 @@ on its way to the cursor: assignments, aliases, parameters and the arguments
 callers pass to them, loop variables, imports, and optionally the expressions it
 was derived from. Nodes expand lazily, so deep or branching chains stay cheap.
 
+The chain reads top to bottom, in the order the value travels: where it starts
+at the top, the traced symbol (`╋`) at the bottom, joined by one unbroken line. Above each step, a line says
+how the value got there.
+
 ```
-▾ SYM a  main.py:5
-  ▾ PRM def compute(a, b):  main.py:4
-    ▾ ARG result = compute(offset, b=5)  main.py:14
-      ▾ ALS offset = base  main.py:13
-        · DEF base = 10  main.py:10
-        · CND DEF base = 20  main.py:12
+╷ defined
+╪ base = 10                      main.py:10
+│ maybe defined (in a branch)
+╪ base = 20                      main.py:12
+│ copied from another variable
+┿ offset = base                  main.py:13
+│ passed as argument
+┿ result = compute(offset, b=5)  main.py:14
+│ function parameter
+┿ def compute(a, b):             main.py:4
+│ traced
+╋ a                              main.py:5
+```
+
+Markers: `╪` end of the chain (nothing further upstream), `┼` more upstream
+hidden (expand it), `┿` expanded. They are box-drawing characters, so they line
+up in any font that has box drawing; change them with the `icons` option. A
+step that may not happen (inside a branch) says "maybe". When a step has several
+inputs, the extra ones branch off to the right and merge back in (derive mode, `count += offset`):
+
+```
+╷ defined
+╪ count = 0        main.py:18
+│ ╷ defined
+│ ╪ base = 10      main.py:10
+│ │ maybe defined (in a branch)
+│ ╪ base = 20      main.py:12
+│ │ copied from another variable
+│ ┿ offset = base  main.py:13
+│ │ uses variable
+│ ┿ offset         main.py:19
+├─╯
+│ updated from its previous value
+┿ count += offset  main.py:19
+│ traced
+╋ count            main.py:20
 ```
 
 The pane closes with the source window it was opened from.
 
 ## Labels
+
+Each step has a label, shown in words in the pane and as a short code in the
+hover (`K`) and help (`g?`):
 
 | Label | Meaning |
 |-------|---------|
@@ -32,23 +69,29 @@ The pane closes with the source window it was opened from.
 | `PRM` | function parameter; expands to the call sites |
 | `ARG` | argument passed for that parameter at a call site |
 | `FOR` | loop variable; expands to the iterated value |
-| `IMP` | imported name; expands to its definition in the other module |
+| `IMP` | import line (`from m import x`, `import { x }`, `x = require("m")`); expands to the definition in the other module |
 | `SRC` | a variable a derived expression depends on (derive mode) |
 | `FN`  | a function a derived expression calls (derive mode); expands to its `RET`s |
 | `RET` | a return statement of that function |
 
-A variable's history reads as a flat timeline: its base `DEF`, then each
-`UPD`/`MUT` in source order. A chain like `df = df.foo(); df = df.bar()` does
-not nest one level per step. Under `UPD`/`MUT` nodes, the variable itself and
-the methods called on it are hidden; only the other inputs are shown.
+A variable's history reads as a timeline on one line: its base `DEF`, then
+each `UPD`/`MUT` in source order. The other inputs of an update branch off to
+the side. Under `UPD`/`MUT` nodes, the variable itself and the methods called
+on it are hidden; only the other inputs are shown.
 
 ```
-▾ SYM df  frames.py:14
-  · DEF df = pd.read_csv(path)  frames.py:5
-  · UPD df = df.dropna()  frames.py:6
-  ▸ UPD df = df.rename(columns=mapping)  frames.py:7
-  · MUT df["total"] = df.a + df.b  frames.py:8
-  ▸ CND UPD df = pd.concat([df, extra])  frames.py:10
+╷ defined
+╪ df = pd.read_csv(path)           frames.py:5
+│ updated from its previous value
+╪ df = df.dropna()                 frames.py:6
+│ updated from its previous value
+╪ df = df.rename(columns=mapping)  frames.py:7
+│ mutated in place
+╪ df["total"] = df.a + df.b        frames.py:8
+│ maybe updated from its previous value (in a branch)
+╪ df = pd.concat([df, extra])      frames.py:10
+│ traced
+╋ df                               frames.py:14
 ```
 
 Rule of thumb: a bare identifier flowing into something (`a = b`, `f(b)`,
@@ -62,7 +105,8 @@ expression is a *transformation* and is only followed in derive mode.
 - An LSP server (optional but recommended). Used for `documentHighlight`
   (precise read/write occurrences), `definition` (imports, cross-file
   functions, globals) and `references` (call sites). Without one, salmon falls
-  back to same-file, name-based tree-sitter heuristics.
+  back to same-file, name-based tree-sitter heuristics, and follows imports by
+  resolving relative module paths (Python, JS/TS, Lua `require`).
 
 No language-specific tables: salmon relies on conventions shared by tree-sitter
 grammars (node type names such as `if_statement` / `call_expression`, and
@@ -102,18 +146,18 @@ Pane keymaps:
 
 | Key | Action |
 |-----|--------|
-| `]s` / `[s` | step along the chain, showing each node in the source window. Global while the pane is open; expands collapsed nodes when stepping down |
+| `[s` / `]s` | step back (up the pane, towards the definition) / forward (towards the traced symbol), showing each step in the source window (centered when it lands in another file or near the window's edge). Global while the pane is open; `[s` expands collapsed steps, so repeating it swims up the whole chain |
 | `<CR>` | jump to the node (jumplist-friendly) |
 | `p` | preview: jump but keep focus in the pane |
 | `o` `<Tab>` `l` | expand / collapse |
-| `h` | collapse, or go to parent |
+| `h` | collapse, or go to the step it flows into |
 | `R` | re-root the trace at this node |
 | `d` | toggle derive mode |
 | `r` | refresh |
 | `q` | close |
 | `g?` | help / legend |
-| `zo` `zO` `zc` `zC` `za` `zA` `zR` `zM` `zr` `zm` `zn` `zN` `zi` `zx` `zX` `zj` `zk` `[z` `]z` | standard fold commands, acting on the tree. Recursive ones stop at `fold_depth` (see `:h salmon-folds`) |
-| `K` | hover: label meanings, location, path from the root, upstream status, full source statement |
+| `zo` `zO` `zc` `zC` `za` `zA` `zR` `zM` `zr` `zm` `zn` `zN` `zi` `zx` `zX` `zj` `zk` `[z` `]z` | standard fold commands, acting on the chain. Recursive ones stop at `fold_depth` (see `:h salmon-folds`) |
+| `K` | hover: label meanings, location, path from the traced symbol, upstream status, full source statement |
 
 ## Configuration
 
@@ -125,6 +169,7 @@ require("salmon").setup({
   width = 60,
   position = "right",  -- or "left"
   max_text = 60,       -- truncate source snippets
+  icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪", loading = "╂" },
   keymaps = { jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
               collapse = { "h" }, reroot = { "R" }, derive = { "d" },
               refresh = { "r" }, close = { "q" }, help = { "g?" },
@@ -132,14 +177,24 @@ require("salmon").setup({
 })
 ```
 
-Highlight groups (`SalmonDEF`, `SalmonCND`, …, `SalmonLocation`) are linked to
+Highlight groups (`SalmonDEF`, `SalmonCND`, …, `SalmonLocation`, `SalmonGraph`) are linked to
 standard groups by default and can be overridden.
 
 While the pane is open, the traced symbol's line gets a dim background
 (`SalmonOrigin`, linked to `CursorLine`). Every occurrence of the traced
-variable is highlighted, including the one you traced from (`SalmonSymbol`,
-linked to `LspReferenceText`). The node selected in the pane is
-highlighted in its source buffer (`SalmonSelected`, linked to `Visual`).
+variable is highlighted (`SalmonSymbol`, linked to `Search`), and the one you
+traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). The node
+selected in the pane is
+highlighted in its source buffer (`SalmonSelected`, linked to `Visual`). When
+it is a derivation source (`SRC`) or upstream of one, every occurrence of that
+source's variable is highlighted too (`SalmonSource`, linked to `DiffText`).
+
+The sign column shows the flow from the selected node down to the traced
+symbol: each step is numbered (`SalmonFlowStep`, linked to `Title`; `4+` when
+more steps share the line), with a
+line between consecutive steps in the same file, ending in a heavy half
+(`╽`/`╿`) that points at the next one (`SalmonFlow`, linked to `Special`). With the traced symbol selected, the flow
+starts at the top of the main chain.
 
 ## Limitations
 

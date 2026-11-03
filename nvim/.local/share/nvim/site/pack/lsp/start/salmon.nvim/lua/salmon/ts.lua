@@ -42,6 +42,7 @@ local FUNC = set({ "function", "method", "lambda", "closure", "func", "arrow", "
 local CLASS = set({ "class", "struct", "enum", "interface", "trait", "impl" })
 local CALL = set({ "call", "invocation" })
 local IMPORT = set({ "import", "require", "use", "include" })
+local REQUIRE = set({ "require", "import", "dofile" })
 local ASSIGN = set({ "assignment", "assign", "declarator", "declaration", "binding", "let", "named", "spec" })
 local BOUNDARY = set({ "statement", "block", "module", "program", "chunk", "source", "body", "suite" })
 local RETURN = set({ "return" })
@@ -229,8 +230,9 @@ end
 --- Classify an identifier as a binding site.
 ---@param id TSNode
 ---@param known_write boolean the LSP already told us this occurrence is a write
+---@param buf integer|nil needed to recognise `x = require("m")` as an import
 ---@return table|nil { kind = "param"|"fndef"|"import"|"for"|"assign"|"other", ... }
-function M.classify(id, known_write)
+function M.classify(id, known_write, buf)
   local child, p, depth = id, id:parent(), 0
   while p and depth < 12 do
     local field = field_of(p, child)
@@ -263,10 +265,17 @@ function M.classify(id, known_write)
         or (field == nil and op ~= nil and before(child, op))
       if is_lhs then
         local optext = op and op:type() or "="
+        local rhs = rhs_of(p, op)
+        -- `x = require("m")`: an import, not a derivation.
+        local call = buf and #rhs == 1 and M.is_call(rhs[1]) and rhs[1]
+        local callee = call and M.callee(call)
+        if callee and M.is_identifier(callee) and REQUIRE[M.text(callee, buf)] then
+          return { kind = "import", stmt = p, require = call }
+        end
         return {
           kind = "assign",
           stmt = p,
-          rhs = rhs_of(p, op),
+          rhs = rhs,
           augmented = has_token(p, set({ "augmented", "compound", "update" }))
             or (optext ~= "=" and optext ~= ":="),
         }
@@ -307,7 +316,7 @@ function M.same_name_writes(buf, occ)
     for c in n:iter_children() do
       if c:named() then
         if M.is_identifier(c) then
-          if M.text(c, buf) == name and M.classify(c, false) then
+          if M.text(c, buf) == name and M.classify(c, false, buf) then
             out[#out + 1] = c
           end
         elseif not M.is_function(c) then
@@ -352,11 +361,11 @@ end
 --- Writes that may reach `occ`: the last unconditional one plus any
 --- conditional ones after it.
 ---@return { node: TSNode, cls: table, cond: boolean }[]
-function M.reaching(writes, occ, known_write)
+function M.reaching(writes, occ, known_write, buf)
   local cands = {}
   for _, w in ipairs(writes) do
     if not w:equal(occ) and before(w, occ) then
-      local cls = M.classify(w, known_write)
+      local cls = M.classify(w, known_write, buf)
       if cls and not (cls.kind == "assign" and M.contains(cls.stmt, occ)) then
         cands[#cands + 1] = { node = w, cls = cls }
       end
@@ -501,6 +510,25 @@ function M.match_arg(call, buf, info)
   return found
 end
 
+-- Values of a return statement (Lua wraps them in an expression_list).
+local function return_exprs(ret)
+  local exprs = {}
+  for e in ret:iter_children() do
+    if e:named() and e:type() ~= "comment" then
+      if e:type() == "expression_list" then
+        for v in e:iter_children() do
+          if v:named() then
+            exprs[#exprs + 1] = v
+          end
+        end
+      else
+        exprs[#exprs + 1] = e
+      end
+    end
+  end
+  return exprs
+end
+
 --- Return expressions of a function (not of nested functions).
 function M.returns(fn)
   local out = {}
@@ -512,13 +540,7 @@ function M.returns(fn)
     for c in n:iter_children() do
       if c:named() then
         if has_token(c, RETURN) then
-          local exprs = {}
-          for e in c:iter_children() do
-            if e:named() and e:type() ~= "comment" then
-              exprs[#exprs + 1] = e
-            end
-          end
-          out[#out + 1] = { node = c, exprs = exprs }
+          out[#out + 1] = { node = c, exprs = return_exprs(c) }
         elseif not M.is_function(c) then
           walk(c)
         end
@@ -537,7 +559,7 @@ function M.top_level_writes(buf, name)
     for c in n:iter_children() do
       if c:named() then
         if M.is_identifier(c) then
-          if M.text(c, buf) == name and M.classify(c, false) then
+          if M.text(c, buf) == name and M.classify(c, false, buf) then
             out[#out + 1] = c
           end
         elseif M.is_function(c) then
@@ -640,7 +662,7 @@ function M.find_defs(buf, name)
     for c in n:iter_children() do
       if c:named() then
         if M.is_identifier(c) then
-          local cls = M.text(c, buf) == name and M.classify(c, false)
+          local cls = M.text(c, buf) == name and M.classify(c, false, buf)
           if cls and cls.kind == "fndef" then
             local row, col = c:start()
             out[#out + 1] = { buf = buf, row = row, col = col }
@@ -674,6 +696,153 @@ function M.find_calls(buf, name)
     end
   end
   walk(M.node_at(buf, 0, 0):tree():root())
+  return out
+end
+
+--- Import binding `name` in this file (`from m import name`, `import name`,
+--- `local name = require(...)`).
+function M.find_import(buf, name)
+  local found
+  local function walk(n)
+    for c in n:iter_children() do
+      if found then
+        return
+      end
+      if c:named() then
+        if M.is_identifier(c) then
+          local cls = M.text(c, buf) == name and M.classify(c, false, buf)
+          if cls and cls.kind == "import" then
+            found = c
+          end
+        elseif not M.is_function(c) then
+          walk(c)
+        end
+      end
+    end
+  end
+  walk(M.node_at(buf, 0, 0):tree():root())
+  return found
+end
+
+local function unquote(node, buf)
+  return (M.text(node, buf):gsub("^['\"`]+", ""):gsub("['\"`]+$", ""))
+end
+
+local function first_string(node, buf)
+  if node:type():match("string") then
+    return unquote(node, buf)
+  end
+  for c in node:iter_children() do
+    if c:named() then
+      local s = first_string(c, buf)
+      if s then
+        return s
+      end
+    end
+  end
+end
+
+--- What an import identifier refers to: the module path, and the name it
+--- imports from it (nil when it binds the whole module).
+---@return { module: string, name: string|nil }|nil
+function M.import_info(id, buf)
+  local cls = M.classify(id, false, buf)
+  if not cls or cls.kind ~= "import" then
+    return nil
+  end
+  -- `import_specifier`/`aliased_import` -> the whole import statement.
+  local stmt = cls.stmt
+  while stmt:parent() and stmt:parent():type():match("import") do
+    stmt = stmt:parent()
+  end
+  local mod_node = stmt:field("module_name")[1] or stmt:field("source")[1]
+  local module
+  if mod_node then
+    module = mod_node:type():match("string") and unquote(mod_node, buf) or M.text(mod_node, buf)
+  elseif cls.require then
+    module = first_string(cls.require, buf)
+  else
+    local n = stmt:field("name")[1]
+    n = n and (n:field("name")[1] or n)
+    module = n and M.text(n, buf)
+  end
+  if not module then
+    return nil
+  end
+  if mod_node and M.contains(mod_node, id) then
+    return { module = module }
+  end
+  -- Named import: `from m import name [as alias]`, `import { name [as alias] }`.
+  local child, p = id, id:parent()
+  while p and not p:equal(stmt) do
+    if p:type():match("specifier") or (stmt:type():match("from") and field_of(p, child) == "alias") then
+      local nm = p:field("name")[1]
+      return { module = module, name = nm and M.text(nm, buf):match("[%w_$]+$") or M.text(id, buf) }
+    end
+    child, p = p, p:parent()
+  end
+  if stmt:type():match("from") and field_of(stmt, child) == "name" then
+    return { module = module, name = M.text(id, buf) }
+  end
+  return { module = module }
+end
+
+local EXTS = { "py", "ts", "tsx", "js", "jsx", "mjs", "cjs", "lua" }
+
+--- File a module path resolves to, searched from the importing file (no LSP).
+function M.resolve_module(buf, module)
+  local file = vim.api.nvim_buf_get_name(buf)
+  local dir = vim.fn.fnamemodify(file, ":p:h")
+  local exts = { vim.fn.fnamemodify(file, ":e") }
+  vim.list_extend(exts, EXTS)
+  local bases = {}
+  if module:match("^%.?%.?/") then
+    bases = { vim.fs.normalize(dir .. "/" .. module) }
+  elseif module:match("^%.") then
+    -- Python relative import: one dot per package level.
+    local dots, rest = module:match("^(%.+)(.*)$")
+    local d = dir
+    for _ = 2, #dots do
+      d = vim.fn.fnamemodify(d, ":h")
+    end
+    bases = { d .. "/" .. rest:gsub("%.", "/") }
+  else
+    local p = module:gsub("%.", "/")
+    local cwd = vim.fn.getcwd()
+    bases = { dir .. "/" .. p, cwd .. "/" .. p, cwd .. "/lua/" .. p, cwd .. "/src/" .. p }
+    -- Project files first, then Lua modules on the runtime path.
+    for _, f in ipairs(vim.api.nvim_get_runtime_file("lua/" .. p .. ".lua", true)) do
+      bases[#bases + 1] = f:sub(1, -5)
+    end
+  end
+  for _, base in ipairs(bases) do
+    local cands = {}
+    for _, e in ipairs(exts) do
+      cands[#cands + 1] = base .. "." .. e
+    end
+    for _, idx in ipairs({ "__init__.py", "init.lua", "index.ts", "index.tsx", "index.js" }) do
+      cands[#cands + 1] = base .. "/" .. idx
+    end
+    if vim.fn.filereadable(base) == 1 then
+      return base
+    end
+    for _, c in ipairs(cands) do
+      if vim.fn.filereadable(c) == 1 then
+        return c
+      end
+    end
+  end
+end
+
+--- Top-level return statements of a module (Lua `return M`).
+function M.module_returns(buf)
+  local root = M.node_at(buf, 0, 0):tree():root()
+  local out = {}
+  for c in root:iter_children() do
+    if c:named() and has_token(c, RETURN) then
+      out[#out + 1] = { node = c, exprs = return_exprs(c) }
+    end
+  end
   return out
 end
 

@@ -5,7 +5,7 @@ local M = {}
 local ns = vim.api.nvim_create_namespace("salmon")
 local ns_pos = vim.api.nvim_create_namespace("salmon_positions")
 
-local state = { buf = nil, win = nil, origin_win = nil, root = nil, lines = {} }
+local state = { buf = nil, win = nil, origin_win = nil, root = nil, lines = {}, rows = {} }
 M.state = state
 
 local LEGEND = {
@@ -29,53 +29,171 @@ local function config()
   return require("salmon").config
 end
 
-local function visible(root)
-  local out = {}
-  local function walk(n, depth)
-    out[#out + 1] = { node = n, depth = depth }
-    if n.expanded and n.children then
-      for _, c in ipairs(n.children) do
-        walk(c, depth + 1)
-      end
-    end
+-- What each step means, in words, shown above it in the chain.
+local SAYS = {
+  SYM = "traced",
+  DEF = "defined",
+  ALS = "copied from another variable",
+  DRV = "computed from an expression",
+  UPD = "updated from its previous value",
+  MUT = "mutated in place",
+  PRM = "function parameter",
+  ARG = "passed as argument",
+  FOR = "loop variable",
+  IMP = "imported",
+  SRC = "uses variable",
+  FN = "calls function",
+  RET = "returned",
+}
+
+local function is_cond(n)
+  return n.tags[1] == "CND"
+end
+
+local function main_tag(n)
+  return n.tags[#n.tags]
+end
+
+local function has_upstream(n)
+  return n.expanded and n.children ~= nil and #n.children > 0
+end
+
+-- A line is a list of { text, hl } segments plus the node it belongs to;
+-- `step` marks the node's own line (as opposed to its label or graph lines).
+local function says_line(n, ch)
+  local words = SAYS[main_tag(n)] or main_tag(n)
+  local segs = { { ch .. " ", "SalmonGraph" } }
+  if is_cond(n) then
+    segs[#segs + 1] = { "maybe ", "SalmonCND" }
+    segs[#segs + 1] = { words, "Salmon" .. main_tag(n) }
+    segs[#segs + 1] = { " (in a branch)", "SalmonCND" }
+  else
+    segs[#segs + 1] = { words, "Salmon" .. main_tag(n) }
   end
-  walk(root, 0)
+  return { node = n, segs = segs }
+end
+
+local function step_line(n, is_root)
+  -- Markers are junctions the line runs through, so the chain stays one
+  -- uninterrupted line.
+  local icons = config().icons
+  local marker
+  if n.loading then
+    marker = icons.loading
+  elseif is_root then
+    marker = icons.traced
+  elseif has_upstream(n) then
+    marker = icons.expanded
+  elseif not n.expanded and (n.resolve or n.children) then
+    marker = icons.collapsed
+  else
+    marker = icons.done
+  end
+  local text = n.text
+  if #text > config().max_text then
+    text = text:sub(1, config().max_text - 1) .. "…"
+  end
+  local fname = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(n.buf), ":t")
+  local loc = ("%s:%d"):format(fname, n.row + 1)
+  if n.note then
+    loc = loc .. "  (" .. n.note .. ")"
+  end
+  return {
+    node = n,
+    step = true,
+    segs = { { marker .. " ", "Salmon" .. main_tag(n) }, { text, nil } },
+    loc = loc,
+  }
+end
+
+-- Shift lines one column right (the main line keeps running on the left)
+-- and join them back into it.
+local function side(lines)
+  local out = {}
+  for _, l in ipairs(lines) do
+    local segs = { { "│ ", "SalmonGraph" } }
+    vim.list_extend(segs, l.segs)
+    out[#out + 1] = { node = l.node, step = l.step, segs = segs, loc = l.loc }
+  end
+  out[#out + 1] = { node = lines[#lines].node, segs = { { "├─╯", "SalmonGraph" } } }
   return out
 end
 
---- Render the tree as plain lines (+ highlight spans). Pure; used by tests.
-function M.render_lines(root)
-  local lines, hls, map = {}, {}, {}
-  for i, item in ipairs(visible(root)) do
-    local n = item.node
-    local icon = n.loading and "…" or (n.resolve or n.children) and (n.expanded and "▾" or "▸") or "·"
-    local prefix = string.rep("  ", item.depth) .. icon .. " "
-    local parts, spans = { prefix }, {}
-    local col = #prefix
-    for i, t in ipairs(n.tags) do
-      local sep = i > 1 and " " or ""
-      spans[#spans + 1] = { col + #sep, col + #sep + #t, "Salmon" .. t }
-      parts[#parts + 1] = sep .. t
-      col = col + #sep + #t
-    end
-    local text = n.text
-    if #text > config().max_text then
-      text = text:sub(1, config().max_text - 1) .. "…"
-    end
-    parts[#parts + 1] = " " .. text
-    col = col + 1 + #text
-    local fname = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(n.buf), ":t")
-    local loc = ("  %s:%d"):format(fname, n.row + 1)
-    if n.note then
-      loc = loc .. "  (" .. n.note .. ")"
-    end
-    spans[#spans + 1] = { col, col + #loc, "SalmonLocation" }
-    parts[#parts + 1] = loc
-    lines[i] = table.concat(parts)
-    hls[i] = spans
-    map[i] = n
+local block
+
+-- Everything that feeds into `n`, drawn above it in its own column. The
+-- first child continues the main line; a timeline (successive versions of
+-- one variable) stays on it, while parallel inputs and the inputs of later
+-- versions branch off and merge back in.
+local function upstream(n)
+  local out = {}
+  if not has_upstream(n) then
+    return out
   end
-  return lines, hls, map
+  local cs = n.children
+  vim.list_extend(out, block(cs[1], true))
+  for i = 2, #cs do
+    local c = cs[i]
+    if n.seq then
+      local up = upstream(c)
+      if #up > 0 then
+        vim.list_extend(out, side(up))
+      end
+      out[#out + 1] = says_line(c, "│")
+      out[#out + 1] = step_line(c)
+    else
+      vim.list_extend(out, side(block(c, true)))
+    end
+  end
+  return out
+end
+
+block = function(n, top, is_root)
+  local out = upstream(n)
+  local ch = (top and #out == 0 and not is_root) and "╷" or "│"
+  out[#out + 1] = says_line(n, ch)
+  out[#out + 1] = step_line(n, is_root)
+  return out
+end
+
+--- Render the chain as plain lines (+ highlight spans). The earliest point
+--- is at the top, the traced symbol at the bottom. Pure; used by tests.
+---@return string[] lines, table[] spans, salmon.Node[] line_to_node, table<salmon.Node, integer> node_to_row
+function M.render_lines(root)
+  local lines, hls, map, rows = {}, {}, {}, {}
+  local all = block(root, true, true)
+  -- Line the file:line locations up in one column.
+  local width = 0
+  for _, l in ipairs(all) do
+    if l.loc then
+      local w = 0
+      for _, seg in ipairs(l.segs) do
+        w = w + vim.fn.strdisplaywidth(seg[1])
+      end
+      l.width = w
+      width = math.max(width, w)
+    end
+  end
+  for _, l in ipairs(all) do
+    if l.loc then
+      l.segs[#l.segs + 1] = { string.rep(" ", width - l.width + 2) .. l.loc, "SalmonLocation" }
+    end
+  end
+  for i, l in ipairs(all) do
+    local parts, spans, col = {}, {}, 0
+    for _, seg in ipairs(l.segs) do
+      parts[#parts + 1] = seg[1]
+      if seg[2] then
+        spans[#spans + 1] = { col, col + #seg[1], seg[2] }
+      end
+      col = col + #seg[1]
+    end
+    lines[i], hls[i], map[i] = table.concat(parts), spans, l.node
+    if l.step then
+      rows[l.node] = i
+    end
+  end
+  return lines, hls, map, rows
 end
 
 local function cursor_node()
@@ -85,13 +203,24 @@ local function cursor_node()
   return state.lines[vim.api.nvim_win_get_cursor(state.win)[1]]
 end
 
+--- Nodes in display order (top to bottom), each once.
+local function shown_nodes()
+  local out = {}
+  for i, n in ipairs(state.lines) do
+    if state.rows[n] == i then
+      out[#out + 1] = n
+    end
+  end
+  return out
+end
+
 function M.render()
   if not (state.buf and vim.api.nvim_buf_is_valid(state.buf) and state.root) then
     return
   end
   local current = cursor_node()
-  local lines, hls, map = M.render_lines(state.root)
-  state.lines = map
+  local lines, hls, map, rows = M.render_lines(state.root)
+  state.lines, state.rows = map, rows
   vim.bo[state.buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, lines)
   vim.bo[state.buf].modifiable = false
@@ -101,13 +230,8 @@ function M.render()
       vim.api.nvim_buf_set_extmark(state.buf, ns, i - 1, s[1], { end_col = s[2], hl_group = s[3] })
     end
   end
-  if current and state.win and vim.api.nvim_win_is_valid(state.win) then
-    for i, n in ipairs(map) do
-      if n == current then
-        vim.api.nvim_win_set_cursor(state.win, { i, 0 })
-        break
-      end
-    end
+  if current and rows[current] and state.win and vim.api.nvim_win_is_valid(state.win) then
+    vim.api.nvim_win_set_cursor(state.win, { rows[current], 0 })
   end
   M.update_positions()
 end
@@ -115,6 +239,10 @@ end
 -- Source-side highlights: the traced symbol's line (dim background) and the
 -- node selected in the pane.
 local marked = {}
+-- Above the LSP's own reference highlights (`vim.hl.priorities.user`), which
+-- would otherwise paint their background over the traced symbol while the
+-- cursor sits on it.
+local PRIO = vim.hl.priorities.user
 local function clear_positions()
   for buf in pairs(marked) do
     if vim.api.nvim_buf_is_valid(buf) then
@@ -133,46 +261,171 @@ local function mark(node, opts)
   marked[node.buf] = true
 end
 
+--- The flow from `node` down to the traced symbol: the node, the later
+--- versions of the same variable (timeline siblings), then where that flows
+--- into, and so on. Without a node, starts at the top of the main chain.
+function M.flow_path(root, node)
+  if not node or node == root then
+    node = root
+    while node.expanded and node.children and node.children[1] do
+      node = node.children[1]
+    end
+  end
+  local path, n = { node }, node
+  while n.parent do
+    local p = n.parent
+    if p.seq then
+      local after = false
+      for _, c in ipairs(p.children) do
+        if after then
+          path[#path + 1] = c
+        end
+        after = after or c == n
+      end
+    end
+    path[#path + 1] = p
+    n = p
+  end
+  return path
+end
+
+-- Gutter: number each step of the flow and draw lines between consecutive
+-- steps in the same buffer; the heavy half of the last segment (╽/╿) points
+-- at the destination.
+local function draw_flow(path)
+  local signs = {} -- buf -> row -> { text, hl, rank }
+  local function put(buf, row, text, hl, rank)
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    signs[buf] = signs[buf] or {}
+    local cur = signs[buf][row]
+    if not cur or rank >= cur[3] then
+      signs[buf][row] = { text, hl, rank }
+    end
+  end
+  -- Several steps can sit on one line (`count += offset` reads `offset` and
+  -- updates `count`): show the first one, with a `+` for the others.
+  local first, more = {}, {}
+  for i, n in ipairs(path) do
+    local key = n.buf .. ":" .. n.row
+    if first[key] then
+      more[key] = true
+    else
+      first[key] = i
+    end
+  end
+  for i, n in ipairs(path) do
+    local key = n.buf .. ":" .. n.row
+    if first[key] == i then
+      local text = i > 99 and "··" or tostring(i)
+      if more[key] and #text < 2 then
+        text = text .. "+"
+      end
+      put(n.buf, n.row, text, "SalmonFlowStep", 3)
+    end
+    local nxt = path[i + 1]
+    if nxt and nxt.buf == n.buf and nxt.row ~= n.row then
+      local dir = nxt.row > n.row and 1 or -1
+      for r = n.row + dir, nxt.row - dir, dir do
+        put(n.buf, r, r == nxt.row - dir and (dir > 0 and "╽" or "╿") or "│", "SalmonFlow", r == nxt.row - dir and 2 or 1)
+      end
+    end
+  end
+  for buf, rows in pairs(signs) do
+    for row, s in pairs(rows) do
+      pcall(vim.api.nvim_buf_set_extmark, buf, ns_pos, row, 0, { sign_text = s[1], sign_hl_group = s[2], priority = 100 })
+    end
+    marked[buf] = true
+  end
+end
+
+local function number_pane(path)
+  if not (state.buf and vim.api.nvim_buf_is_valid(state.buf)) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(state.buf, ns_pos, 0, -1)
+  for i, n in ipairs(path) do
+    local row = state.rows[n]
+    if row then
+      vim.api.nvim_buf_set_extmark(state.buf, ns_pos, row - 1, 0, {
+        sign_text = i > 99 and "··" or tostring(i),
+        sign_hl_group = "SalmonFlowStep",
+      })
+    end
+  end
+end
+
+local load_occurrences
+
 function M.update_positions()
   clear_positions()
   local root = state.root
   if not (root and M.is_open()) then
     return
   end
-  mark(root, { line_hl_group = "SalmonOrigin", priority = 100 })
-  for _, occ in ipairs(state.symbol or {}) do
-    mark(occ, { hl_group = "SalmonSymbol", priority = 150 })
+  -- Not `line_hl_group`: that is painted over every other highlight on the
+  -- line and would hide the symbol highlights below.
+  if vim.api.nvim_buf_is_valid(root.buf) then
+    pcall(vim.api.nvim_buf_set_extmark, root.buf, ns_pos, root.row, 0,
+      { end_row = root.row + 1, end_col = 0, hl_eol = true, hl_group = "SalmonOrigin", priority = 100 })
+    marked[root.buf] = true
   end
+  for _, occ in ipairs(load_occurrences(root)) do
+    mark(occ, { hl_group = "SalmonSymbol", priority = PRIO + 10 })
+  end
+  mark(root, { hl_group = "SalmonSymbolOrigin", priority = PRIO + 20 })
   local sel = cursor_node()
-  if sel then
-    mark(sel, { hl_group = "SalmonSelected", priority = 200 })
+  -- Inside a derivation source's upstream, that source's variable is the one
+  -- being followed: highlight its occurrences too.
+  local src = sel
+  while src and src ~= root and main_tag(src) ~= "SRC" do
+    src = src.parent
+  end
+  if src and src ~= root then
+    for _, occ in ipairs(load_occurrences(src)) do
+      mark(occ, { hl_group = "SalmonSource", priority = PRIO + 5 })
+    end
+  end
+  local path = M.flow_path(root, sel)
+  draw_flow(path)
+  number_pane(path)
+  if sel and sel ~= root then
+    mark(sel, { hl_group = "SalmonSelected", priority = PRIO + 30 })
   end
 end
 
--- Every occurrence of the traced variable in its buffer, origin included.
-local function load_symbol(root)
+-- Every occurrence of the variable at `node` in its buffer, cached on the
+-- node as `occ`; `M.update_positions` runs once they are known.
+load_occurrences = function(node)
+  if node.occ then
+    return node.occ
+  end
   local ts, lsp = require("salmon.ts"), require("salmon.lsp")
-  state.symbol = {}
-  lsp.highlights(root.buf, root.row, root.col, function(hl)
-    if state.root ~= root then
+  node.occ = {}
+  lsp.highlights(node.buf, node.row, node.col, function(hl)
+    if not vim.api.nvim_buf_is_valid(node.buf) then
       return
     end
     local nodes = {}
     if hl then
       for _, h in ipairs(hl) do
-        nodes[#nodes + 1] = ts.node_at(root.buf, h.row, h.col)
+        nodes[#nodes + 1] = ts.node_at(node.buf, h.row, h.col)
       end
     else
-      local occ = ts.node_at(root.buf, root.row, root.col)
-      nodes = occ and ts.same_name_occurrences(root.buf, occ) or {}
+      local occ = ts.node_at(node.buf, node.row, node.col)
+      nodes = occ and ts.same_name_occurrences(node.buf, occ) or {}
     end
     for _, n in ipairs(nodes) do
       local row, col = n:start()
       local end_row, end_col = n:end_()
-      state.symbol[#state.symbol + 1] = { buf = root.buf, row = row, col = col, end_row = end_row, end_col = end_col }
+      node.occ[#node.occ + 1] = { buf = node.buf, row = row, col = col, end_row = end_row, end_col = end_col }
     end
-    M.update_positions()
+    if state.root then
+      M.update_positions()
+    end
   end)
+  return node.occ
 end
 
 local function target_win()
@@ -195,19 +448,30 @@ local function jump(node, keep_focus)
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! m'")
   end)
+  local other_file = vim.api.nvim_win_get_buf(win) ~= node.buf
   vim.api.nvim_win_set_buf(win, node.buf)
   vim.api.nvim_win_set_cursor(win, { node.row + 1, node.col })
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! zv")
+    -- Center when landing in another file or near the top/bottom edge, so
+    -- the step is shown with its context.
+    local height = vim.api.nvim_win_get_height(win)
+    -- 'scrolloff' keeps the cursor that far from the edge: count it as edge.
+    local margin = math.max(1, math.floor(height / 5), vim.wo[win].scrolloff + 1)
+    local line = vim.fn.winline()
+    if other_file or line <= margin or line > height - margin then
+      vim.cmd("normal! zz")
+    end
   end)
   if not keep_focus then
     vim.api.nvim_set_current_win(win)
   end
 end
 
---- Move the pane selection by `delta` rows and show that node in the source
---- window. Stepping down onto a collapsed node expands it first, so repeated
---- `]s` swims upstream through the chain.
+--- Move the pane selection by `delta` steps and show that step in the source
+--- window. Negative goes back up the chain (`[s`), towards the definition;
+--- a collapsed step is expanded first, so repeated `[s` swims all the way
+--- upstream. Positive goes forward (`]s`), towards the traced symbol.
 function M.step(delta)
   if not M.is_open() or #state.lines == 0 then
     return
@@ -216,14 +480,20 @@ function M.step(delta)
   if cur ~= state.win then
     state.origin_win = cur
   end
-  local row = vim.api.nvim_win_get_cursor(state.win)[1]
-  local node = state.lines[row]
+  local node = cursor_node()
   local function move()
-    local target = math.max(1, math.min(#state.lines, row + delta))
-    vim.api.nvim_win_set_cursor(state.win, { target, 0 })
-    jump(state.lines[target], true)
+    local nodes = shown_nodes()
+    local idx = 1
+    for i, n in ipairs(nodes) do
+      if n == node then
+        idx = i
+      end
+    end
+    local target = nodes[math.max(1, math.min(#nodes, idx + delta))]
+    vim.api.nvim_win_set_cursor(state.win, { state.rows[target], 0 })
+    jump(target, true)
   end
-  if delta > 0 and node and node.resolve and not node.expanded then
+  if delta < 0 and node and node.resolve and not node.expanded then
     trace.expand(node, 0, M.render, move)
   else
     move()
@@ -282,23 +552,15 @@ local function collapse_or_parent(node)
   if node.expanded then
     node.expanded = false
     M.render()
-  elseif node.parent then
-    for i, n in ipairs(state.lines) do
-      if n == node.parent then
-        vim.api.nvim_win_set_cursor(state.win, { i, 0 })
-      end
-    end
+  elseif node.parent and state.rows[node.parent] then
+    vim.api.nvim_win_set_cursor(state.win, { state.rows[node.parent], 0 })
   end
 end
 
 -- Fold-style tree manipulation ---------------------------------------------
 
 local function row_of(node)
-  for i, n in ipairs(state.lines) do
-    if n == node then
-      return i
-    end
-  end
+  return state.rows[node]
 end
 
 local function goto_node(node)
@@ -401,12 +663,13 @@ end
 -- zr: open every visible collapsed node at the shallowest collapsed depth.
 local function zr()
   local best
-  for _, n in ipairs(state.lines) do
+  local nodes = shown_nodes()
+  for _, n in ipairs(nodes) do
     if expandable(n) and not n.expanded then
       best = math.min(best or math.huge, depth(n))
     end
   end
-  for _, n in ipairs(vim.list_extend({}, state.lines)) do
+  for _, n in ipairs(nodes) do
     if best and expandable(n) and not n.expanded and depth(n) == best then
       trace.expand(n, 0, M.render)
     end
@@ -416,7 +679,8 @@ end
 -- zm: close every expanded node at the deepest expanded depth (root stays).
 local function zm()
   local best = 0
-  for _, n in ipairs(state.lines) do
+  local nodes = shown_nodes()
+  for _, n in ipairs(nodes) do
     if n.expanded and n ~= state.root and n.children and #n.children > 0 then
       best = math.max(best, depth(n))
     end
@@ -425,7 +689,7 @@ local function zm()
     return
   end
   local cur = cursor_node()
-  for _, n in ipairs(state.lines) do
+  for _, n in ipairs(nodes) do
     if n.expanded and depth(n) == best then
       n.expanded = false
     end
@@ -441,31 +705,28 @@ end
 -- zj / zk: next / previous node that can be expanded or collapsed.
 local function zj(dir)
   local row = vim.api.nvim_win_get_cursor(state.win)[1]
-  local i = row + dir
-  while state.lines[i] do
-    if expandable(state.lines[i]) then
-      return vim.api.nvim_win_set_cursor(state.win, { i, 0 })
+  local found
+  for _, n in ipairs(shown_nodes()) do
+    if expandable(n) and (dir > 0 and state.rows[n] > row or dir < 0 and state.rows[n] < row) then
+      found = found and dir > 0 and found or n
     end
-    i = i + dir
   end
+  goto_node(found)
 end
 
--- [z / ]z: start / end of the fold the cursor is in.
+-- [z / ]z: start / end of the fold the cursor is in. A fold is a node and
+-- everything drawn above it (its upstream), so it starts at the top of its
+-- main line and ends at the node itself.
 local function fold_start(node)
-  local f = node.parent
-  goto_node(f)
+  local top = node.parent
+  while top and has_upstream(top) do
+    top = top.children[1]
+  end
+  goto_node(top)
 end
 
 local function fold_end(node)
-  local f = node.parent
-  if not f then
-    return
-  end
-  local last = f.children[#f.children]
-  while last.expanded and last.children and #last.children > 0 do
-    last = last.children[#last.children]
-  end
-  goto_node(last)
+  goto_node(node.parent)
 end
 
 local FOLD_KEYS = {
@@ -545,7 +806,7 @@ local function hover(node)
     status = "end of chain"
     local n = not require("salmon").config.derive and node.tags[#node.tags] == "DEF"
       and ts.node_at(node.buf, node.row, node.col)
-    local cls = n and ts.classify(n, true)
+    local cls = n and ts.classify(n, true, node.buf)
     if cls and cls.kind == "assign" and #ts.sources(cls.rhs, node.buf) > 0 then
       status = status .. " (derived: press `d` to follow derivations)"
     end
@@ -585,7 +846,13 @@ local function hover(node)
 end
 
 local function help()
-  local msg = { "salmon: ]s/[s step along chain  K hover  z* folds  <CR> jump  p preview  o/<Tab>/l expand  h collapse  R re-root  d derive  r refresh  q close", "" }
+  local msg = {
+    "salmon: the value flows top to bottom; the traced symbol is at the bottom.",
+    ("%s traced  %s end of chain  %s more upstream (expand)  %s expanded"):format(
+      config().icons.traced, config().icons.done, config().icons.collapsed, config().icons.expanded),
+    "[s/]s step back/forward  K hover  z* folds  <CR> jump  p preview  o/<Tab>/l expand  h collapse  R re-root  d derive  r refresh  q close",
+    "",
+  }
   for _, t in ipairs({ "SYM", "DEF", "CND", "ALS", "DRV", "UPD", "MUT", "PRM", "ARG", "FOR", "IMP", "SRC", "FN", "RET" }) do
     msg[#msg + 1] = ("%-3s  %s"):format(t, LEGEND[t])
   end
@@ -707,7 +974,7 @@ local function ensure_win()
   local wo = vim.wo[state.win]
   wo.number = false
   wo.relativenumber = false
-  wo.signcolumn = "no"
+  wo.signcolumn = "auto"
   wo.foldcolumn = "0"
   wo.wrap = false
   wo.list = false
@@ -741,7 +1008,7 @@ function M.open(root, origin_win, focus)
   M.render()
   vim.api.nvim_win_set_cursor(state.win, { 1, 0 })
   set_global_maps()
-  load_symbol(root)
+  load_occurrences(root)
   trace.expand(root, config().auto_expand, M.render)
   if focus == false and state.origin_win and vim.api.nvim_win_is_valid(state.origin_win) then
     vim.api.nvim_set_current_win(state.origin_win)

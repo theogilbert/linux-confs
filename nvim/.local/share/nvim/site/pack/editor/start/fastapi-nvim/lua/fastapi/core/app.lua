@@ -66,7 +66,7 @@ end
 local function collect_flat(node, parent_prefix, out)
     local prefix = parent_prefix .. node.prefix
     local routes = to_routes(node, prefix, node.file)
-    if node.kind == "APIRouter" and #routes > 0 then
+    if #routes > 0 then
         table.insert(out, {
             name = node.var,
             prefix = prefix,

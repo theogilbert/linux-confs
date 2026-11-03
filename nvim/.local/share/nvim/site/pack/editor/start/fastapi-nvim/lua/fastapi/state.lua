@@ -162,8 +162,9 @@ local function discover(job, workspace, errors, missing)
     elseif entry then
         return { entry }
     end
+    local opts = { exclude_dirs = config.options.exclude_dirs }
     local files, rg_err = job.await(function(cb)
-        discovery.candidates(workspace, { exclude_dirs = config.options.exclude_dirs }, cb)
+        discovery.candidates(workspace, opts, cb)
     end)
     if not files then
         note_rg_failure(rg_err, "discovery", errors, missing)
@@ -173,6 +174,15 @@ local function discover(job, workspace, errors, missing)
     for _, file in ipairs(files) do
         job.tick()
         vim.list_extend(found, discovery.apps_in_file(file))
+    end
+    local factories = discovery.factories(found)
+    local callers = #factories > 0
+        and job.await(function(cb)
+            discovery.factory_candidates(factories, workspace, opts, cb)
+        end)
+    for _, file in ipairs(callers or {}) do
+        job.tick()
+        vim.list_extend(found, discovery.factory_apps_in_file(file, factories))
     end
     return discovery.finalize(found, workspace, job.tick)
 end

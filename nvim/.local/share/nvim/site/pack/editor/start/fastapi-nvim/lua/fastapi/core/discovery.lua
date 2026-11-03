@@ -87,13 +87,14 @@ end
 
 ---@param workspace string
 ---@param opts { exclude_dirs: string[] }
+---@param pattern string
 ---@param cb fun(files: string[]?, err: string?)
-function M.candidates(workspace, opts, cb)
+local function search_files(workspace, opts, pattern, cb)
     local args = { "--files-with-matches", "--type", "py" }
     for _, dir in ipairs(opts.exclude_dirs) do
         vim.list_extend(args, { "-g", "!" .. dir })
     end
-    vim.list_extend(args, { "-e", "\\bFastAPI\\b" })
+    vim.list_extend(args, { "-e", pattern })
     rg.files(args, workspace, function(files, err)
         if not files then
             return cb(nil, err)
@@ -102,6 +103,67 @@ function M.candidates(workspace, opts, cb)
             return not testindex.is_test_file(file)
         end, files))
     end)
+end
+
+---@param workspace string
+---@param opts { exclude_dirs: string[] }
+---@param cb fun(files: string[]?, err: string?)
+function M.candidates(workspace, opts, cb)
+    search_files(workspace, opts, "\\bFastAPI\\b", cb)
+end
+
+-- The functions that create `apps`, as in `def build_server(): app = FastAPI()`.
+---@param apps fastapi.DiscoveredApp[]
+---@return string[]  sorted
+function M.factories(apps)
+    local seen = {}
+    for _, app in ipairs(apps) do
+        local analysis = extract.analyze(app.file)
+        for _, router in ipairs(analysis and analysis.routers or {}) do
+            if router.var == app.var and router.factory then
+                seen[router.factory] = true
+            end
+        end
+    end
+    local names = vim.tbl_keys(seen)
+    table.sort(names)
+    return names
+end
+
+-- The files that may call `factories`; they need not mention `FastAPI`: `app = build_server()`.
+---@param factories string[]  not empty
+---@param workspace string
+---@param opts { exclude_dirs: string[] }
+---@param cb fun(files: string[]?, err: string?)
+function M.factory_candidates(factories, workspace, opts, cb)
+    local pattern = "\\b(?:" .. table.concat(factories, "|") .. ")\\s*\\("
+    search_files(workspace, opts, pattern, cb)
+end
+
+-- Module-level `var = factory()` assignments, with `factory` imported from another module.
+---@param path string
+---@param factories string[]
+---@return fastapi.DiscoveredApp[]
+function M.factory_apps_in_file(path, factories)
+    local analysis = extract.analyze(path)
+    if not analysis then
+        return {}
+    end
+    local callees = {}
+    for _, import in ipairs(analysis.imports) do
+        for _, item in ipairs(import.names) do
+            if vim.tbl_contains(factories, item.name) then
+                callees[item.alias or item.name] = true
+            end
+        end
+    end
+    local apps = {}
+    for _, call in ipairs(analysis.call_assignments) do
+        if callees[call.callee] then
+            apps[#apps + 1] = { file = path, var = call.var, source = "search" }
+        end
+    end
+    return apps
 end
 
 ---@param path string

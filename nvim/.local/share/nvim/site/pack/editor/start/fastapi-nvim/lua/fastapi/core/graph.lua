@@ -270,24 +270,29 @@ local function infer_factory_app(analysis, var)
     end
 end
 
+-- `app = build_server()` with `build_server` imported: a declaration for `app`, and the graph of the
+-- app that the factory creates, when the factory assigns it to a variable.
 ---@param entry string
 ---@param analysis fastapi.FileAnalysis
 ---@param var string
 ---@param ctx fastapi.GraphContext
----@return fastapi.RouterNode?
-local function follow_imported_factory(entry, analysis, var, ctx)
+---@return fastapi.RouterDecl?, fastapi.RouterNode?
+local function imported_factory(entry, analysis, var, ctx)
     for _, call in ipairs(analysis.call_assignments) do
         local import, item = find_import(analysis, call.callee)
         if call.var == var and import and item then
+            local decl = {
+                var = var,
+                kind = "FastAPI",
+                prefix = "",
+                tags = {},
+                line = call.line,
+                col = call.col,
+            }
             local file = imports.resolve_named(import, item.name, entry, ctx.root)
-            if not file or ctx.visited[file] then
-                return nil
-            end
-            local graph = build_internal(file, ctx)
-            if graph then
-                graph.var = var
-            end
-            return graph
+            local target = file and analyze(ctx, file)
+            local made = target and local_factory_app(target, item.name)
+            return decl, made and build_internal(assert(file), ctx, made.var)
         end
     end
 end
@@ -330,17 +335,19 @@ function build_internal(entry, ctx, var)
             file, analysis, router = behind, behind_analysis, behind_router
         end
     end
+    local factory
     if not router and var then
-        router = infer_factory_app(analysis, var)
-    end
-    if not router and var then
-        return follow_imported_factory(entry, analysis, var, ctx)
+        router, factory = imported_factory(entry, analysis, var, ctx)
+        router = router or infer_factory_app(analysis, var)
     end
     if not router then
         return nil
     end
     ctx.visited[file .. "#" .. router.var] = true
     local root = new_node(router, analysis, file)
+    if factory then
+        table.insert(root.children, { node = factory, prefix = "", tags = {} })
+    end
     process_includes(analysis, root, file, ctx)
     process_mounts(analysis, root, file, ctx, true)
     return root

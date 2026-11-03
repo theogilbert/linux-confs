@@ -3,29 +3,18 @@ local hl = require("sections.hl")
 local M = {}
 
 M.PANE_FILETYPE = "sections-pane"
-local pane_infos = {}
+-- Every open pane, keyed by its window. A pane is a table holding:
+-- * `pane_win`, `pane_buf`: its window and buffer
+-- * `header_lines`: the lines currently written as header
+-- * `on_close`: called once the pane is closed
+local panes = {}
 
-local function init_pane_info(pane_win, pane_buf, on_close)
-    local tab = vim.api.nvim_get_current_tabpage()
-    pane_infos[tab] = {
-        header_lines = {},
-        pane_win = pane_win,
-        pane_buf = pane_buf,
-        on_close = on_close,
-    }
-end
-local function get_pane_info()
-    local cur_tab = vim.api.nvim_get_current_tabpage()
-    return pane_infos[cur_tab]
+--- @return table|nil pane The pane displayed in `win`, if any
+M.get_by_win = function(win)
+    return panes[win]
 end
 
-local function clear_pane_info()
-    local cur_tab = vim.api.nvim_get_current_tabpage()
-    pane_infos[cur_tab] = nil
-end
-
-M.get_selected_section = function()
-    local info = get_pane_info()
+M.get_selected_section = function(info)
     if info == nil then
         return nil, "Cannot get the current line: section pane is not open"
     end
@@ -36,8 +25,8 @@ M.get_selected_section = function()
     return (section_number >= 1) and section_number or nil
 end
 
-local function write_lines(lines, start, end_)
-    local pane_info = get_pane_info()
+local function write_lines(info, lines, start, end_)
+    local pane_info = info
     if pane_info == nil then
         return false, "Cannot write lines: pane is not open"
     end
@@ -57,14 +46,14 @@ local function write_lines(lines, start, end_)
     return true, nil
 end
 
-M.write_header = function(lines)
-    local pane_info = get_pane_info()
+M.write_header = function(info, lines)
+    local pane_info = info
 
     if pane_info == nil then
         return false, "Cannot write header lines: section pane is not open"
     end
 
-    local success, err = write_lines(lines, 0, #pane_info.header_lines)
+    local success, err = write_lines(info, lines, 0, #pane_info.header_lines)
     if not success then
         return false, err
     end
@@ -73,14 +62,14 @@ M.write_header = function(lines)
     return true, nil
 end
 
-M.write_sections = function(lines)
-    local pane_info = get_pane_info()
+M.write_sections = function(info, lines)
+    local pane_info = info
 
     if pane_info == nil then
         return false, "Cannot write sections lines: section pane is not open"
     end
 
-    local success, err = write_lines(lines, #pane_info.header_lines, -1)
+    local success, err = write_lines(info, lines, #pane_info.header_lines, -1)
     if not success then
         return false, err
     end
@@ -88,14 +77,14 @@ M.write_sections = function(lines)
     return true, nil
 end
 
-M.write_error = function(lines)
-    local pane_info = get_pane_info()
+M.write_error = function(info, lines)
+    local pane_info = info
 
     if pane_info == nil then
         return false, "Cannot write error lines: section pane is not open"
     end
 
-    local success, err = write_lines(lines, 0, -1)
+    local success, err = write_lines(info, lines, 0, -1)
     if not success then
         return false, err
     end
@@ -109,8 +98,7 @@ end
 --     or string accepted by |getpos()|
 --   - `finish` (string|integer[]): End of region as a (line, column) tuple
 --     or string accepted by |getpos()|
-M.apply_highlight = function(hl_rules)
-    local info = get_pane_info()
+M.apply_highlight = function(info, hl_rules)
     if info == nil then
         return
     end
@@ -148,14 +136,17 @@ M.open = function(opts)
         end
     end
 
-    init_pane_info(winid, bufid, opts.on_close)
+    local info = { header_lines = {}, pane_win = winid, pane_buf = bufid, on_close = opts.on_close }
+    panes[winid] = info
+    return info
 end
 
-M.close = function()
-    local info = get_pane_info()
-    if info == nil then
-        return -- Nothing to do
+M.close = function(info)
+    if info == nil or panes[info.pane_win] ~= info then
+        return -- Nothing to do, or already being closed
     end
+    -- Unregister first: deleting the buffer below triggers WinClosed again
+    panes[info.pane_win] = nil
 
     if vim.api.nvim_buf_is_valid(info.pane_buf) then
         vim.api.nvim_buf_delete(info.pane_buf, { force = true })
@@ -167,14 +158,11 @@ M.close = function()
     if info.on_close ~= nil then
         info.on_close()
     end
-
-    clear_pane_info()
 end
 
 --- Highlights the section at the given pane line, clearing any previous highlight.
 --- @param pane_line integer|nil 1-indexed line within the sections area (not counting header), or nil to only clear
-M.highlight_section = function(pane_line)
-    local info = get_pane_info()
+M.highlight_section = function(info, pane_line)
     if info == nil then
         return
     end
@@ -193,8 +181,7 @@ end
 
 --- Move the viewport of the pane to display the given pane line at the middle of the window.
 --- @param pane_line integer 1-indexed line within the sections area (not counting header).
-M.focus = function(pane_line)
-    local info = get_pane_info()
+M.focus = function(info, pane_line)
     if info == nil then
         return
     end
@@ -224,8 +211,7 @@ end
 
 --- Move the cursor of the pane to the given pane line.
 --- @param pane_line integer 1-indexed line within the sections area (not counting header).
-M.set_cursor = function(pane_line)
-    local info = get_pane_info()
+M.set_cursor = function(info, pane_line)
     if info == nil or not vim.api.nvim_win_is_valid(info.pane_win) then
         return
     end
@@ -237,8 +223,7 @@ M.set_cursor = function(pane_line)
     vim.api.nvim_win_set_cursor(info.pane_win, { buf_line, 0 })
 end
 
-M.set_width = function(width)
-    local info = get_pane_info()
+M.set_width = function(info, width)
     if info == nil then
         return
     end
@@ -246,8 +231,7 @@ M.set_width = function(width)
     vim.api.nvim_win_set_width(info.pane_win, width)
 end
 
-M.get_width = function()
-    local info = get_pane_info()
+M.get_width = function(info)
     if info == nil then
         return 0
     end
@@ -255,44 +239,23 @@ M.get_width = function()
     return vim.api.nvim_win_get_width(info.pane_win)
 end
 
-M.get_win = function()
-    local info = get_pane_info()
-    if info == nil then
-        return nil
-    end
-
-    return info.pane_win
-end
-
 M.setup = function()
     local group = vim.api.nvim_create_augroup("SectionsPaneCleanup", { clear = true })
 
     vim.api.nvim_create_autocmd("BufWinEnter", {
         group = group,
-        callback = function()
-            local info = get_pane_info()
-            if info == nil then
-                return
-            end
-
-            local win = vim.api.nvim_get_current_win()
-            if win == info.pane_win then
+        callback = function(args)
+            local info = panes[vim.api.nvim_get_current_win()]
+            if info ~= nil and args.buf ~= info.pane_buf then
                 -- Prevent switching to another buffer from the pane window, by closing the pane.
-                M.close()
+                M.close(info)
             end
         end,
     })
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
         callback = function(args)
-            local info = get_pane_info()
-            if info == nil then
-                return
-            end
-
-            if args.buf == info.pane_buf then
-                M.close()
-            end
+            M.close(panes[tonumber(args.match)])
         end,
     })
 end

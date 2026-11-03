@@ -140,7 +140,7 @@ Open/close the sections panel:~
     :lua require("sections").toggle()
 <
 The panel opens directly to the right of the current window, and closes
-along with it.
+along with it. Each window of a tab can have its own panel.
 
 Jump to a section by name (the panel does not need to be open):~
 >
@@ -418,10 +418,12 @@ Of course, a Tree-sitter parser also needs to be available for this language.
         {config} (table|nil) Configuration table, see |sections-configuration|
 
 *sections.toggle()*
-    Toggle the sections panel open or closed for the current tab.
+    Toggle the sections panel of the current window: open one watching it,
+    or close it when the current window is a panel or already has one.
 
 *sections.focus()*
-    Move the cursor into the sections panel.
+    Move the cursor into the sections panel of the current window, or into
+    the first panel of the current tab when the window has none.
 
 *sections.jump({name})*                                          *:SectionsJump*
     Move the cursor to a section of the current buffer, recording the jump

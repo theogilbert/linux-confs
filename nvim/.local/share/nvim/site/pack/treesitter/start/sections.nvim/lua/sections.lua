@@ -7,36 +7,26 @@ local formatter = require("sections.formatter")
 
 local M = {}
 
-local tab_infos = {}
--- Keeps various information related to the tab, such as:
--- * Which window is currently being watched
--- * Which buffer is currently being watched
--- * Parsed sections to display
--- * Whether or not to display private sections
---
--- The key is the tab number. If the tab number is not present, it means
--- that the section pane is not open.
+-- One state per open pane, keyed by the window it watches. Several panes may be
+-- open in the same tab, one per watched window. A state holds:
+-- * `watched_win`, `watched_buf`: the window being watched, and the buffer it shows
+-- * `pane`: the pane handle (see `sections.pane`)
+-- * `sections`: parsed sections to display
+-- * `collapsed`, `show_private`: display options
+local states = {}
 
-local function init_tab_info(watched_win, watched_buf)
-    local cur_tab = vim.api.nvim_get_current_tabpage()
-
-    tab_infos[cur_tab] = {
-        watched_win = watched_win,
-        watched_buf = watched_buf,
-        sections = {},
-        collapsed = {},
-        show_private = true,
-    }
-end
-
-local function get_tab_info()
-    local cur_tab = vim.api.nvim_get_current_tabpage()
-    return tab_infos[cur_tab]
-end
-
-local function clear_tab_info()
-    local cur_tab = vim.api.nvim_get_current_tabpage()
-    tab_infos[cur_tab] = nil
+--- @return table|nil state The state of the pane watching `win`, or displayed in `win`
+local function get_state(win)
+    win = win or vim.api.nvim_get_current_win()
+    if states[win] ~= nil then
+        return states[win]
+    end
+    for _, state in pairs(states) do
+        if state.pane.pane_win == win then
+            return state
+        end
+    end
+    return nil
 end
 
 local IGNORED_BUFTYPES = { "nofile", "terminal", "quickfix", "help", "prompt" }
@@ -52,8 +42,7 @@ local function supports_buf(buf)
     return true
 end
 
-local function update_current_section_highlight()
-    local info = get_tab_info()
+local function update_current_section_highlight(info)
     if info == nil or not vim.api.nvim_win_is_valid(info.watched_win) then
         return
     end
@@ -70,31 +59,34 @@ local function update_current_section_highlight()
     end
     info.last_pane_line = pane_line
 
-    pane.highlight_section(pane_line)
+    pane.highlight_section(info.pane, pane_line)
     if pane_line ~= nil then
-        pane.focus(pane_line)
+        pane.focus(info.pane, pane_line)
     end
 end
 
-local function cursor_to_current_section()
-    local info = get_tab_info()
+local function cursor_to_current_section(info)
     if info ~= nil and info.last_pane_line ~= nil then
-        pane.set_cursor(info.last_pane_line)
+        pane.set_cursor(info.pane, info.last_pane_line)
     end
 end
 
-local function render_header(tab_info)
-    local header_lines = header.get_lines(tab_info.show_private)
-    pane.write_header(header_lines)
-    pane.apply_highlight(header.get_hl_rules(tab_info.show_private))
+local function render_header(info)
+    local header_lines = header.get_lines(info.show_private)
+    pane.write_header(info.pane, header_lines)
+    pane.apply_highlight(info.pane, header.get_hl_rules(info.show_private))
 end
 
-local function refresh_pane(win, buf, opts)
+local function refresh_pane(info, opts)
     opts = opts or {}
-    local info = get_tab_info()
-    if info == nil or win == nil or buf == nil then
+    if info == nil then
         return
     end
+    local win = info.watched_win
+    if not vim.api.nvim_win_is_valid(win) then
+        return
+    end
+    local buf = vim.api.nvim_win_get_buf(win)
 
     local win_cfg = vim.api.nvim_win_get_config(win)
     if win_cfg.relative ~= "" then
@@ -109,7 +101,7 @@ local function refresh_pane(win, buf, opts)
 
     local sections, err = parser.parse_sections(buf)
     if err ~= nil then
-        pane.write_error({ err })
+        pane.write_error(info.pane, { err })
         return
     end
 
@@ -119,33 +111,32 @@ local function refresh_pane(win, buf, opts)
     end
 
     local sections_lines = formatter.format(sections, info.collapsed, info.show_private)
-    pane.write_sections(sections_lines)
+    pane.write_sections(info.pane, sections_lines)
 
     local name_width = formatter.get_max_name_width(sections, info.collapsed, info.show_private)
-    local pane_width = pane.get_width()
+    local pane_width = pane.get_width(info.pane)
     local total_width = vim.api.nvim_win_get_width(win) + pane_width
     local max_width = math.floor(total_width / 2)
     local header_width = vim.api.nvim_strwidth(header.get_lines(info.show_private)[1])
     local padding = 2
     local min_width = header_width + padding
-    pane.set_width(math.max(min_width, math.min(name_width + padding, max_width)))
+    pane.set_width(info.pane, math.max(min_width, math.min(name_width + padding, max_width)))
 
-    info.watched_win = win
     info.watched_buf = buf
     info.sections = sections
     info.last_pane_line = nil
     info.cached_sequence = nil
 
-    update_current_section_highlight()
+    update_current_section_highlight(info)
 end
 
 local function select_section()
-    local info = get_tab_info()
+    local info = get_state()
     if info == nil then
         return
     end
 
-    local section_number, err = pane.get_selected_section()
+    local section_number, err = pane.get_selected_section(info.pane)
     if err ~= nil then
         vim.notify("Failed to select section: " .. err, vim.log.levels.ERROR)
         return
@@ -169,12 +160,12 @@ end
 ---@param collapse boolean|nil true to collapse, false to expand, nil to toggle
 ---@param recursive boolean|nil true to also apply it to every nested section
 local function set_section_collapse(collapse, recursive)
-    local info = get_tab_info()
+    local info = get_state()
     if info == nil then
         return
     end
 
-    local section_line, err = pane.get_selected_section()
+    local section_line, err = pane.get_selected_section(info.pane)
     if err ~= nil then
         vim.notify("Cannot select section: " .. err, vim.log.levels.ERROR)
         return
@@ -208,15 +199,15 @@ local function set_section_collapse(collapse, recursive)
     info.cached_sequence = nil
 
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
-    pane.write_sections(sections_lines)
+    pane.write_sections(info.pane, sections_lines)
 
-    update_current_section_highlight()
+    update_current_section_highlight(info)
 end
 
 --- Collapses or expands every section in the pane, nested ones included.
 ---@param collapse boolean true to collapse, false to expand
 local function set_all_collapse(collapse)
-    local info = get_tab_info()
+    local info = get_state()
     if info == nil then
         return
     end
@@ -228,18 +219,18 @@ local function set_all_collapse(collapse)
     info.cached_sequence = nil
 
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
-    pane.write_sections(sections_lines)
+    pane.write_sections(info.pane, sections_lines)
 
-    update_current_section_highlight()
+    update_current_section_highlight(info)
 end
 
 local function show_description()
-    local info = get_tab_info()
+    local info = get_state()
     if info == nil then
         return
     end
 
-    local section_line, err = pane.get_selected_section()
+    local section_line, err = pane.get_selected_section(info.pane)
     if err ~= nil then
         vim.notify("Cannot select section: " .. err, vim.log.levels.ERROR)
         return
@@ -276,16 +267,17 @@ end
 
 -- Closes the pane and returns to the code window it watches
 local function close_pane()
-    local info = get_tab_info()
+    local info = get_state()
     local watched_win = info and info.watched_win
-    pane.close()
+    -- A pane left behind by its closed watched window has no state anymore
+    pane.close(info and info.pane or pane.get_by_win(vim.api.nvim_get_current_win()))
     if watched_win ~= nil and vim.api.nvim_win_is_valid(watched_win) then
         vim.api.nvim_set_current_win(watched_win)
     end
 end
 
 local function toggle_private()
-    local info = get_tab_info()
+    local info = get_state()
     if info == nil then
         return
     end
@@ -297,136 +289,158 @@ local function toggle_private()
     render_header(info)
 
     local sections_lines = formatter.format(info.sections, info.collapsed, info.show_private)
-    pane.write_sections(sections_lines)
+    pane.write_sections(info.pane, sections_lines)
 
-    update_current_section_highlight()
+    update_current_section_highlight(info)
 end
 
 local function setup_autocommands()
     local group = vim.api.nvim_create_augroup("SectionsAutoRefresh", { clear = true })
 
-    -- When saving a file, refresh the pane if the file is currently watched
+    -- When saving a file, refresh every pane watching it
     vim.api.nvim_create_autocmd("BufWritePost", {
         group = group,
         callback = function(args)
-            local info = get_tab_info()
-            if info == nil then
-                return
-            end
-
-            if args.buf == info.watched_buf then
-                local win = vim.api.nvim_get_current_win()
-                refresh_pane(win, args.buf)
+            for _, info in pairs(states) do
+                if args.buf == info.watched_buf then
+                    refresh_pane(info)
+                end
             end
         end,
     })
 
-    -- When the watched window switches to another buffer, watch that buffer instead
+    -- When a watched window switches to another buffer, watch that buffer instead
     vim.api.nvim_create_autocmd("BufWinEnter", {
         group = group,
         callback = function(args)
-            local info = get_tab_info()
-            if info == nil or args.buf == info.watched_buf then
-                return
-            end
-
             local win = vim.api.nvim_get_current_win()
-            if win ~= info.watched_win or vim.api.nvim_win_get_buf(win) ~= args.buf then
+            local info = states[win]
+            if info == nil or args.buf == info.watched_buf or vim.api.nvim_win_get_buf(win) ~= args.buf then
                 return
             end
 
-            refresh_pane(win, args.buf, { reset_collapse = true })
+            refresh_pane(info, { reset_collapse = true })
         end,
     })
 
-    -- When moving the cursor in the watched buffer, highlight the current section in the pane
+    -- When moving the cursor in a watched window, highlight the current section in its pane
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
         group = group,
         callback = function(args)
-            local info = get_tab_info()
+            local info = states[vim.api.nvim_get_current_win()]
             if info == nil or args.buf ~= info.watched_buf then
                 return
             end
 
-            update_current_section_highlight()
+            update_current_section_highlight(info)
         end,
     })
 
-    -- When quitting the watched window while the pane is the only other window of the tab,
+    -- When quitting a watched window while its pane is the only other window of the tab,
     -- close the pane first: doing it from WinClosed would make the quit abort (E855),
     -- as the watched window would then be the last one.
     vim.api.nvim_create_autocmd("QuitPre", {
         group = group,
         callback = function()
-            local info = get_tab_info()
-            if info == nil or vim.api.nvim_get_current_win() ~= info.watched_win then
+            local info = states[vim.api.nvim_get_current_win()]
+            if info == nil then
                 return
             end
 
             if #vim.api.nvim_tabpage_list_wins(0) == 2 then
-                pane.close()
+                pane.close(info.pane)
             end
         end,
     })
 
-    -- When the watched window is closed, close the pane along with it
+    -- When a watched window is closed, close its pane along with it
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
         callback = function(args)
-            local info = get_tab_info()
-            if info == nil or tonumber(args.match) ~= info.watched_win then
+            local info = states[tonumber(args.match)]
+            if info == nil then
                 return
             end
 
-            if #vim.api.nvim_tabpage_list_wins(0) > 2 then
-                pane.close()
+            local tab = vim.api.nvim_win_get_tabpage(info.watched_win)
+            if #vim.api.nvim_tabpage_list_wins(tab) > 2 then
+                pane.close(info.pane)
+            else
+                -- The pane is left as the last window: it can no longer follow anything
+                states[info.watched_win] = nil
             end
         end,
     })
 end
 
+--- Opens a pane watching the current window, or closes the pane of the current
+--- window when it has one (the current window being either the pane or the
+--- window it watches). Each window of a tab may have its own pane.
 M.toggle = function()
-    local info = get_tab_info()
-    local cfg = config.get_config()
-
-    if info == nil then
-        local watched_buf = vim.api.nvim_get_current_buf()
-        local watched_win = vim.api.nvim_get_current_win()
-        init_tab_info(watched_win, watched_buf)
-        pane.open({
-            win = watched_win,
-            width = cfg.width,
-            keymaps = {
-                { cfg.keymaps.select_section, select_section },
-                { cfg.keymaps.collapse_section, function() set_section_collapse(true) end },
-                { cfg.keymaps.expand_section, function() set_section_collapse(false) end },
-                { cfg.keymaps.toggle_section_collapse, function() set_section_collapse(nil) end },
-                { cfg.keymaps.collapse_section_recursive, function() set_section_collapse(true, true) end },
-                { cfg.keymaps.expand_section_recursive, function() set_section_collapse(false, true) end },
-                { cfg.keymaps.collapse_all, function() set_all_collapse(true) end },
-                { cfg.keymaps.expand_all, function() set_all_collapse(false) end },
-                { cfg.keymaps.toggle_private, toggle_private },
-                { cfg.keymaps.show_description, show_description },
-                { cfg.keymaps.close, close_pane },
-            },
-            on_close = clear_tab_info,
-        })
-        refresh_pane(watched_win, watched_buf, { reset_collapse = true })
-        cursor_to_current_section()
-    else
-        pane.close()
-        clear_tab_info()
+    local info = get_state()
+    local cur_win = vim.api.nvim_get_current_win()
+    if info ~= nil or pane.get_by_win(cur_win) ~= nil then
+        pane.close(info and info.pane or pane.get_by_win(cur_win))
+        return
     end
+
+    local cfg = config.get_config()
+    local watched_win = vim.api.nvim_get_current_win()
+    info = {
+        watched_win = watched_win,
+        watched_buf = vim.api.nvim_win_get_buf(watched_win),
+        sections = {},
+        collapsed = {},
+        show_private = true,
+    }
+    states[watched_win] = info
+
+    info.pane = pane.open({
+        win = watched_win,
+        width = cfg.width,
+        keymaps = {
+            { cfg.keymaps.select_section, select_section },
+            { cfg.keymaps.collapse_section, function() set_section_collapse(true) end },
+            { cfg.keymaps.expand_section, function() set_section_collapse(false) end },
+            { cfg.keymaps.toggle_section_collapse, function() set_section_collapse(nil) end },
+            { cfg.keymaps.collapse_section_recursive, function() set_section_collapse(true, true) end },
+            { cfg.keymaps.expand_section_recursive, function() set_section_collapse(false, true) end },
+            { cfg.keymaps.collapse_all, function() set_all_collapse(true) end },
+            { cfg.keymaps.expand_all, function() set_all_collapse(false) end },
+            { cfg.keymaps.toggle_private, toggle_private },
+            { cfg.keymaps.show_description, show_description },
+            { cfg.keymaps.close, close_pane },
+        },
+        on_close = function()
+            if states[watched_win] == info then
+                states[watched_win] = nil
+            end
+        end,
+    })
+    refresh_pane(info, { reset_collapse = true })
+    cursor_to_current_section(info)
 end
 
+--- Moves the cursor into the pane of the current window or, when it has none,
+--- into the first pane found in the current tab.
 M.focus = function()
-    local pane_win = pane.get_win()
-    if pane_win == nil then
+    local info = get_state()
+    if info == nil then
+        local tab = vim.api.nvim_get_current_tabpage()
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+            if states[win] ~= nil then
+                info = states[win]
+                break
+            end
+        end
+    end
+
+    if info == nil then
         vim.notify("No sections pane is currently open")
         return
     end
-    vim.api.nvim_set_current_win(pane_win)
-    cursor_to_current_section()
+    vim.api.nvim_set_current_win(info.pane.pane_win)
+    cursor_to_current_section(info)
 end
 
 --- Flattens a sections tree into `{ name, position }` entries in buffer

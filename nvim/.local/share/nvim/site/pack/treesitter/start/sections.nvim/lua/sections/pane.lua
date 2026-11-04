@@ -141,18 +141,31 @@ M.open = function(opts)
     return info
 end
 
-M.close = function(info)
+--- @param closing boolean|nil true when Neovim is already closing the pane window (WinClosed)
+M.close = function(info, closing)
     if info == nil or panes[info.pane_win] ~= info then
         return -- Nothing to do, or already being closed
     end
     -- Unregister first: deleting the buffer below triggers WinClosed again
     panes[info.pane_win] = nil
 
-    if vim.api.nvim_buf_is_valid(info.pane_buf) then
-        vim.api.nvim_buf_delete(info.pane_buf, { force = true })
-    end
-    if vim.api.nvim_win_is_valid(info.pane_win) then
-        vim.api.nvim_win_close(info.pane_win, true)
+    if closing then
+        -- Deleting the buffer now would free the window in the middle of its own
+        -- WinClosed, and the handlers after this one would be handed a dead window id
+        -- (vim.lsp.util's floating preview handler errors on it). Let the close finish.
+        local buf = info.pane_buf
+        vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(buf) then
+                vim.api.nvim_buf_delete(buf, { force = true })
+            end
+        end)
+    else
+        if vim.api.nvim_buf_is_valid(info.pane_buf) then
+            vim.api.nvim_buf_delete(info.pane_buf, { force = true })
+        end
+        if vim.api.nvim_win_is_valid(info.pane_win) then
+            vim.api.nvim_win_close(info.pane_win, true)
+        end
     end
 
     if info.on_close ~= nil then
@@ -255,7 +268,7 @@ M.setup = function()
     vim.api.nvim_create_autocmd("WinClosed", {
         group = group,
         callback = function(args)
-            M.close(panes[tonumber(args.match)])
+            M.close(panes[tonumber(args.match)], true)
         end,
     })
 end

@@ -78,6 +78,26 @@ local function empty_lines(snapshot, extra)
     return vim.list_extend(out, extra)
 end
 
+-- The path split into its static parts and its `{param}` parts, each in its own group.
+---@param path string
+---@return fastapi.Segment[]
+local function path_segments(path)
+    local segments, pos = {}, 1
+    while pos <= #path do
+        local open, close = path:find("{[^}]*}", pos)
+        local static = path:sub(pos, (open or #path + 1) - 1)
+        if static ~= "" then
+            segments[#segments + 1] = { text = static, hl = "FastAPIPath" }
+        end
+        if not open then
+            break
+        end
+        segments[#segments + 1] = { text = path:sub(open, close), hl = "FastAPIPathParam" }
+        pos = close + 1
+    end
+    return segments
+end
+
 ---@param route fastapi.Route
 ---@return fastapi.Segment[]
 local function route_segments(route)
@@ -89,8 +109,12 @@ local function route_segments(route)
     local segments = {
         { text = websocket and "WS" or route.method, hl = method_hl },
         { text = " " },
-        { text = path, hl = dim or "FastAPIPath" },
     }
+    if dim then
+        segments[#segments + 1] = { text = path, hl = dim }
+    else
+        vim.list_extend(segments, path_segments(path))
+    end
     segments[#segments + 1] = { text = "  " }
     segments[#segments + 1] = { text = route.func, hl = dim or "FastAPIFunc" }
     if route.deprecated then

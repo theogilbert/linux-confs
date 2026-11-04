@@ -237,6 +237,8 @@ The groups are linked with `default`, so a colorscheme or your config wins:
     FastAPIApp              Title                   app names
     FastAPIRouter           Directory               router labels
     FastAPIPath             Identifier              route paths
+    FastAPIPathParam        Special                 `{param}` parts of paths
+                                                    in the explorer
     FastAPIFunc             Function                handler names
     FastAPIMethodGet        DiagnosticInfo
     FastAPIMethodPost       DiagnosticOk

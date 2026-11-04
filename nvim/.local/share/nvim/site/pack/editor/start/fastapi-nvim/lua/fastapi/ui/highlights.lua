@@ -5,6 +5,7 @@ local LINKS = {
     FastAPIApp = "Title",
     FastAPIRouter = "Directory",
     FastAPIPath = "Identifier",
+    FastAPIPathParam = "Special",
     FastAPIFunc = "Function",
     FastAPIMethodGet = "DiagnosticInfo",
     FastAPIMethodPost = "DiagnosticOk",

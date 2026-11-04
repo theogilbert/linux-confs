@@ -79,6 +79,34 @@ vim.keymap.set("n", "K", function()
     end
 end, { silent = true })
 
+-- Hover floats render markdown with conceal.  The bundled markdown_inline query
+-- hides the brackets of reference links, but without a link definition (never
+-- in a hover) `[x]` is literal text: Python lists, `[section]`, `x[0][1]`...
+-- Rebuild the query (bundled one + after/queries extensions) without them.
+do
+    local kept, stripped = {}, 0
+    for _, file in ipairs(vim.treesitter.query.get_files("markdown_inline", "highlights")) do
+        -- Blocks are separated by blank lines
+        for _, block in ipairs(vim.split(table.concat(vim.fn.readfile(file), "\n"), "\n\n", { plain = true })) do
+            local is_ref_conceal = block:find("conceal", 1, true) and (
+                block:find("\n(full_reference_link\n", 1, true)
+                or block:find("\n(collapsed_reference_link\n", 1, true)
+                or block:find("\n(shortcut_link\n", 1, true))
+            if is_ref_conceal then
+                stripped = stripped + 1
+            else
+                table.insert(kept, block)
+            end
+        end
+    end
+    if stripped == 3 then
+        vim.treesitter.query.set("markdown_inline", "highlights", table.concat(kept, "\n\n"))
+    else
+        vim.notify("lsps.lua: bundled markdown_inline query changed, reference links stay concealed",
+            vim.log.levels.WARN)
+    end
+end
+
 vim.lsp.config("*", { capabilities = require("cmp_nvim_lsp").default_capabilities() })
 
 vim.lsp.config("ty", {

@@ -636,6 +636,22 @@ function M.mutation(id)
   end
 end
 
+--- The call this occurrence is passed to as an argument (`f(x)`, `f(k=x)`).
+function M.passed_to(id)
+  local a = id:parent()
+  for depth = 1, 2 do
+    local call = a and a:parent()
+    if call and M.is_call(call) and M.args_of(call):equal(a) then
+      return call
+    end
+    -- One wrapper allowed: a keyword/named argument.
+    if depth == 1 and not (a and a:type():find("argument")) then
+      return nil
+    end
+    a = call
+  end
+end
+
 --- The statement containing `node` (stops below blocks/bodies/functions).
 function M.statement(node)
   local cur = node

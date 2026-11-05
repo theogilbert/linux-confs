@@ -9,7 +9,7 @@ M.config = {
   -- so unbounded recursion could fan out across the codebase.
   fold_depth = 6,
   width = 60,
-  position = "right", -- "right" | "left"
+  position = "left", -- "left" | "right"
   max_text = 60,
   -- Step markers. Box-drawing junctions keep the chain one unbroken line and
   -- render aligned in any font with box drawing (unlike ●/◆, often missing
@@ -35,6 +35,9 @@ M.config = {
     -- Global while the pane is open (restored on close).
     next = { "]s" },
     prev = { "[s" },
+    -- Cycle between the paths leading to the selected step.
+    next_path = { "]r" },
+    prev_path = { "[r" },
   },
 }
 
@@ -46,6 +49,7 @@ local HL = {
   SalmonDRV = "Type",
   SalmonUPD = "Type",
   SalmonMUT = "DiagnosticHint",
+  SalmonRD = "Comment",
   SalmonPRM = "Special",
   SalmonARG = "Constant",
   SalmonFOR = "Repeat",
@@ -62,6 +66,7 @@ local HL = {
   SalmonGraph = "Comment",
   SalmonFlow = "Special",
   SalmonFlowStep = "Title",
+  SalmonOffPath = "Comment",
 }
 
 local function set_highlights()
@@ -166,6 +171,17 @@ end
 --- steps on the way, and show it (no-op if closed).
 function M.prev()
   ui().step(-1)
+end
+
+--- Show the next path leading to the selected step: changes the sign column
+--- and where `[s` leads (no-op if closed).
+function M.next_path()
+  ui().cycle_path(1)
+end
+
+--- Show the previous path leading to the selected step (no-op if closed).
+function M.prev_path()
+  ui().cycle_path(-1)
 end
 
 ---@return boolean

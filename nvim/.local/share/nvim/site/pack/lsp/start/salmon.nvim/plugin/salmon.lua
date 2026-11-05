@@ -25,6 +25,12 @@ local subcommands = {
   prev = function()
     require("salmon").prev()
   end,
+  next_path = function()
+    require("salmon").next_path()
+  end,
+  prev_path = function()
+    require("salmon").prev_path()
+  end,
 }
 
 -- <Plug> mappings, e.g. vim.keymap.set("n", "<leader>lt", "<Plug>(salmon-trace)")
@@ -36,6 +42,8 @@ local plugs = {
   ["salmon-derive"] = "toggle_derive",
   ["salmon-next"] = "next",
   ["salmon-prev"] = "prev",
+  ["salmon-next-path"] = "next_path",
+  ["salmon-prev-path"] = "prev_path",
 }
 for name, fn in pairs(plugs) do
   vim.keymap.set("n", "<Plug>(" .. name .. ")", function()

@@ -30,7 +30,12 @@ Markers: `╪` end of the chain (nothing further upstream), `┼` more upstream
 hidden (expand it), `┿` expanded. They are box-drawing characters, so they line
 up in any font that has box drawing; change them with the `icons` option. A
 step that may not happen (inside a branch) says "maybe". When a step has several
-inputs, the extra ones branch off to the right and merge back in (derive mode, `count += offset`):
+inputs, the extra ones branch off to the right and merge back in (derive mode, `count += offset`).
+Parallel inputs (call sites, several definitions) are ordered by closeness to
+the traced symbol: same file first (nearest line first), then other files,
+non-test before test files (a `test`/`tests` word in the path), nearest
+directory first. The closest one continues the main line, which `[s` follows;
+the next ones branch off nearest the step they feed into:
 
 ```
 ╷ defined
@@ -66,6 +71,7 @@ hover (`K`) and help (`g?`):
 | `DRV` | derived from an expression (`c = f(a, b)`); only in derive mode, otherwise shown as `DEF` |
 | `UPD` | update: a new value computed from the variable's own previous value (`df = df.dropna()`, `x += 1`) |
 | `MUT` | mutated in place (`x[k] = v`, `x.a = v`, `x.append(y)`: a method call whose result is discarded) |
+| `RD`  | read on the way to the traced use (`f(x)` says "passed to a function", `y = x + 1` says "read"); end of chain |
 | `PRM` | function parameter; expands to the call sites |
 | `ARG` | argument passed for that parameter at a call site |
 | `FOR` | loop variable; expands to the iterated value |
@@ -75,7 +81,7 @@ hover (`K`) and help (`g?`):
 | `RET` | a return statement of that function |
 
 A variable's history reads as a timeline on one line: its base `DEF`, then
-each `UPD`/`MUT` in source order. The other inputs of an update branch off to
+each `UPD`/`MUT`, and each place it is read (`RD`), in source order. The other inputs of an update branch off to
 the side. Under `UPD`/`MUT` nodes, the variable itself and the methods called
 on it are hidden; only the other inputs are shown.
 
@@ -90,6 +96,8 @@ on it are hidden; only the other inputs are shown.
 ╪ df["total"] = df.a + df.b        frames.py:8
 │ maybe updated from its previous value (in a branch)
 ╪ df = pd.concat([df, extra])      frames.py:10
+│ passed to a function
+╪ items.append(len(df))            frames.py:12
 │ traced
 ╋ df                               frames.py:14
 ```
@@ -133,20 +141,22 @@ vim.keymap.set("n", "<leader>lS", function() salmon.trace({ derive = true }) end
 ```
 
 Lua API: `trace(opts)`, `trace_at(buf, row, col, opts)`, `toggle(opts)`,
-`close()`, `is_open()`, `refresh()`, `next()`, `prev()`, `derive()`,
+`close()`, `is_open()`, `refresh()`, `next()`, `prev()`, `next_path()`, `prev_path()`, `derive()`,
 `set_derive(bool)`, `toggle_derive()`. `opts` takes `{ derive = bool, focus = bool }`;
 with `focus = false` you stay in the source window and step with `]s`/`[s`.
 
 `<Plug>` mappings: `(salmon-trace)`, `(salmon-toggle)`, `(salmon-close)`,
-`(salmon-refresh)`, `(salmon-derive)`, `(salmon-next)`, `(salmon-prev)`.
+`(salmon-refresh)`, `(salmon-derive)`, `(salmon-next)`, `(salmon-prev)`,
+`(salmon-next-path)`, `(salmon-prev-path)`.
 
-Commands: `:Salmon [trace|toggle|close|derive|refresh|next|prev]` (default `trace`).
+Commands: `:Salmon [trace|toggle|close|derive|refresh|next|prev|next_path|prev_path]` (default `trace`).
 
 Pane keymaps:
 
 | Key | Action |
 |-----|--------|
-| `[s` / `]s` | step back (up the pane, towards the definition) / forward (towards the traced symbol), showing each step in the source window (centered when it lands in another file or near the window's edge). Global while the pane is open; `[s` expands collapsed steps, so repeating it swims up the whole chain |
+| `[s` / `]s` | step back (towards the definition) / forward (towards the traced symbol) along the path shown in the sign column, showing each step in the source window (centered when it lands in another file or near the window's edge). Global while the pane is open; `[s` expands collapsed steps, so repeating it swims up the whole chain |
+| `[r` / `]r` | previous / next path leading to the selected step: changes the path in the sign column and where `[s` leads. Global while the pane is open |
 | `<CR>` | jump to the node (jumplist-friendly) |
 | `p` | preview: jump but keep focus in the pane |
 | `o` `<Tab>` `l` | expand / collapse |
@@ -167,13 +177,14 @@ require("salmon").setup({
   auto_expand = 4,     -- auto-expand single-child chains this many levels
   fold_depth = 6,      -- depth limit for zO, zA, zR, zn
   width = 60,
-  position = "right",  -- or "left"
+  position = "left",  -- or "right"
   max_text = 60,       -- truncate source snippets
   icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪", loading = "╂" },
   keymaps = { jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
               collapse = { "h" }, reroot = { "R" }, derive = { "d" },
               refresh = { "r" }, close = { "q" }, help = { "g?" },
-              hover = { "K" }, next = { "]s" }, prev = { "[s" } },
+              hover = { "K" }, next = { "]s" }, prev = { "[s" },
+              next_path = { "]r" }, prev_path = { "[r" } },
 })
 ```
 
@@ -183,18 +194,25 @@ standard groups by default and can be overridden.
 While the pane is open, the traced symbol's line gets a dim background
 (`SalmonOrigin`, linked to `CursorLine`). Every occurrence of the traced
 variable is highlighted (`SalmonSymbol`, linked to `Search`), and the one you
-traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). The node
+traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). When the
+selected step is in another file, the occurrences of its variable there are
+highlighted the same way. The node
 selected in the pane is
 highlighted in its source buffer (`SalmonSelected`, linked to `Visual`). When
 it is a derivation source (`SRC`) or upstream of one, every occurrence of that
 source's variable is highlighted too (`SalmonSource`, linked to `DiffText`).
 
-The sign column shows the flow from the selected node down to the traced
-symbol: each step is numbered (`SalmonFlowStep`, linked to `Title`; `4+` when
+The sign column shows one path through the selected node, from the top of the
+chain down to the traced symbol; `[s`/`]s` walk along it. It is kept while the
+selection stays on it; selecting a step off it switches to the main line
+through that step. Each step is numbered (`SalmonFlowStep`, linked to `Title`; `4+` when
 more steps share the line), with a
 line between consecutive steps in the same file, ending in a heavy half
-(`╽`/`╿`) that points at the next one (`SalmonFlow`, linked to `Special`). With the traced symbol selected, the flow
-starts at the top of the main chain.
+(`╽`/`╿`) that points at the next one (`SalmonFlow`, linked to `Special`). Where the
+path continues in another file, the line turns off to the left below the step
+(`─╯`); where it arrives from another file, it comes in from the left above the
+step (`─╮`). In the pane, steps off that path (other paths, see `]r`) are
+dimmed (`SalmonOffPath`, linked to `Comment`).
 
 ## Limitations
 

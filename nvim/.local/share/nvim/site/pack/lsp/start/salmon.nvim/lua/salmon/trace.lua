@@ -315,6 +315,35 @@ local function mutations(occs, occ, lower)
   return out
 end
 
+--- Reads of the variable between `lower` (exclusive) and `occ`, outside the
+--- statements already shown (`stmts`): the value passing through other uses
+--- (`f(x)`, `print(x)`) on its way to `occ`.
+local function reads(buf, occs, writes, occ, lower, stmts)
+  local out = {}
+  for _, o in ipairs(occs) do
+    local skip = o:equal(occ) or not ts.before(o, occ) or (lower and not ts.before(lower, o))
+      or not ts.same_scope(o, occ) or ts.mutation(o) or ts.classify(o, false, buf)
+    for _, w in ipairs(writes) do
+      skip = skip or w:equal(o)
+    end
+    local stmt = not skip and ts.statement(o)
+    skip = skip or ts.contains(stmt, occ)
+    for _, st in ipairs(stmts) do
+      skip = skip or ts.contains(st, o)
+    end
+    if not skip then
+      -- Judged on the statement: a read in an `if` condition always happens.
+      local parent = stmt:parent()
+      local c = parent and parent:field("condition")[1]
+      if c and c:equal(stmt) then
+        stmt = parent
+      end
+      out[#out + 1] = { node = o, read = true, call = ts.passed_to(o), cond = ts.is_conditional(stmt, occ) }
+    end
+  end
+  return out
+end
+
 --- Where does the value of identifier `occ` come from?
 ---@param opts { as_read: boolean|nil }
 trace = function(buf, occ, opts, cb)
@@ -352,13 +381,27 @@ trace = function(buf, occ, opts, cb)
     end
 
     local tl = timeline(buf, writes, occ, known)
-    local items = vim.list_extend(vim.list_extend({}, tl), mutations(occs, occ, tl[1] and tl[1].node))
+    local muts = mutations(occs, occ, tl[1] and tl[1].node)
+    local items = vim.list_extend(vim.list_extend({}, tl), muts)
+    local stmts = {}
+    for _, it in ipairs(items) do
+      stmts[#stmts + 1] = ts.statement(it.node)
+    end
+    if #tl > 0 then
+      vim.list_extend(items, reads(buf, occs, writes, occ, tl[1].node, stmts))
+    end
     table.sort(items, function(a, b)
       return ts.before(a.node, b.node)
     end)
     local out = {}
     for _, it in ipairs(items) do
-      out[#out + 1] = it.mut and mut_node(buf, it.node, it.mut, it.cond) or write_node(buf, it.node, it.cls, it.cond)
+      if it.read then
+        local n = new(it.cond and { "CND", "RD" } or { "RD" }, buf, it.node)
+        n.passed = it.call ~= nil
+        out[#out + 1] = n
+      else
+        out[#out + 1] = it.mut and mut_node(buf, it.node, it.mut, it.cond) or write_node(buf, it.node, it.cls, it.cond)
+      end
     end
     out.seq = true
     if #tl > 0 then
@@ -393,6 +436,54 @@ trace = function(buf, occ, opts, cb)
     end)
   end)
 end
+
+--- A path is a test file when a word in it is `test` or `tests`
+--- (`tests/`, `test_x.py`, `x_test.go`, `x.test.ts`).
+local function is_test(path)
+  path = path:lower()
+  return path:find("%f[%a]tests?%f[%A]") ~= nil
+end
+
+--- Directory steps between two files (up to their common ancestor, then
+--- down), and the path of `b` below that ancestor.
+local function dir_distance(a, b)
+  local da = vim.split(vim.fn.fnamemodify(a, ":p:h"), "/", { trimempty = true })
+  local pb = vim.split(vim.fn.fnamemodify(b, ":p"), "/", { trimempty = true })
+  local common = 0
+  while da[common + 1] and da[common + 1] == pb[common + 1] and common < #pb - 1 do
+    common = common + 1
+  end
+  return (#da - common) + (#pb - 1 - common), table.concat(pb, "/", common + 1)
+end
+
+--- Order parallel inputs by closeness to the traced symbol `root`: same file
+--- first (nearest line first), then non-test files, then nearest directory.
+--- Ties keep their order.
+local function prioritize(children, root)
+  local rname = vim.api.nvim_buf_get_name(root.buf)
+  local keys = {}
+  for i, c in ipairs(children) do
+    if c.buf == root.buf then
+      keys[c] = { 0, math.abs(c.row - root.row), 0, i }
+    else
+      -- Only the part below the shared directory counts as test or not, so
+      -- a project that itself lives under `tests/` is not all tests.
+      local dist, rel = dir_distance(rname, vim.api.nvim_buf_get_name(c.buf))
+      keys[c] = { 1, is_test(rel) and 1 or 0, dist, i }
+    end
+  end
+  table.sort(children, function(a, b)
+    local ka, kb = keys[a], keys[b]
+    for j = 1, 4 do
+      if ka[j] ~= kb[j] then
+        return ka[j] < kb[j]
+      end
+    end
+    return false
+  end)
+end
+
+M.is_test, M.dir_distance = is_test, dir_distance
 
 local function key(n)
   return ("%d:%d:%d:%s"):format(n.buf, n.row, n.col, table.concat(n.tags, ","))
@@ -432,6 +523,13 @@ function M.expand(node, auto, on_change, done)
     node.children = children
     -- Timeline (successive versions of one variable) vs parallel inputs.
     node.seq = children.seq == true
+    if not node.seq and #children > 1 then
+      local root = node
+      while root.parent do
+        root = root.parent
+      end
+      prioritize(children, root)
+    end
     node.note = node.note or note or (#children == 0 and "nothing found" or nil)
     for _, c in ipairs(children) do
       c.parent = node

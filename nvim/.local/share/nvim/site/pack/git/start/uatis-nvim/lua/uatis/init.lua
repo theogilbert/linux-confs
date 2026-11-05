@@ -307,6 +307,13 @@ end
 --- The window, not the review: the list goes on listing, `]f` goes on
 --- stepping it and the files you open go on being annotated. `toggle_diff`
 --- is what ends a review.
+--- Picks a file of the review in this tab by name and opens it, as the
+--- list's own row would. A review or a conflict review; outside one it
+--- says so.
+function M.pick_file()
+  require("uatis.pick").files()
+end
+
 function M.close_pane()
   return pane.hide()
 end
@@ -897,6 +904,8 @@ local function setup_keymaps()
     { lhs = k.base_branch, rhs = M.set_base_branch, desc = "[G]it - Set review [B]ase branch and subtree" },
     { lhs = k.toggle_diff, rhs = M.toggle_diff, desc = "[G]it - Toggle [u]atis diff view" },
     { lhs = k.open_pane, rhs = M.open_pane, desc = "[G]it - Open changed files list" },
+    { lhs = k.pick_file, rhs = function() M.pick_file() end,
+      desc = "[G]it - [P]ick a file of the review" },
     { lhs = k.show_commit, rhs = function() M.show_commit() end,
       desc = "[G]it - Show one commit ([A]gainst its parent)" },
     { lhs = k.at, rhs = function() M.at() end,

@@ -103,6 +103,7 @@ move to the new fork point together. Views you named a revision for with
 | `<leader>go` | side by side / in place |
 | `<leader>gm` | structural / line diff |
 | `<leader>gf` | the changed-file list, on and off |
+| `<leader>gp` | pick a file of the review by name (fzf-lua, else `vim.ui.select`) |
 | `<leader>gh` | read the review one commit at a time, on / off |
 | `]C` / `[C` | within that, the next / previous commit |
 

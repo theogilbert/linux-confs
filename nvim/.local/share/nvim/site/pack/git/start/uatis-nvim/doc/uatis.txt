@@ -188,6 +188,8 @@ press a buffer-local key in. >
     <leader>gx      start or end a review of the conflicts a merge left
     <leader>gi      name who wrote each line of this buffer, or stop
                     |uatis-blame|
+    <leader>gp      pick a file of the review in this tab by name
+                    |uatis-pick|
 <
 IN A REVIEWED FILE                                       *uatis-mappings-view*
 >
@@ -281,6 +283,14 @@ annotates that file, at the list's own revision. So it is read whenever a
 comparison is turned on -- window or no window; `pane.auto_open` only decides
 whether you see it. `q` hides the window and leaves the review running;
 `<leader>gu` ends the review.
+
+                                                                *uatis-pick*
+`<leader>gp` is the same list by name rather than by tree, from anywhere in
+the tab: every file of the review -- or of the conflict review -- as its
+directory, its name and its count, filtered as you type. Picking one opens it
+as its row in the list would. With fzf-lua installed a file read through is
+drawn receded and the counts in their colours, as the list draws them;
+without it the rows go to |vim.ui.select| as plain text.
 
                                                           *uatis-list-sources*
 It counts three things, and the last wins where they disagree:
@@ -940,6 +950,7 @@ comment on each saying what it controls. The commonly-changed ones: >lua
           at = "<leader>gw",
           conflicts = "<leader>gx",
           blame = "<leader>gi",
+          pick_file = "<leader>gp",
         },
         view = { layout = "<leader>go", diff_mode = "<leader>gm" },
         conflict = { next = "]x", prev = "[x", resolve = "<leader>xw" },
@@ -955,6 +966,7 @@ The functions behind the mappings, for binding yourself: >lua
     require("uatis").open_pane()
     require("uatis").close_pane()
     require("uatis").toggle_pane()
+    require("uatis").pick_file()
     require("uatis").show_commit([rev])
     require("uatis").since_commit([rev])
     require("uatis").history([{ path, range, line1, line2 }])

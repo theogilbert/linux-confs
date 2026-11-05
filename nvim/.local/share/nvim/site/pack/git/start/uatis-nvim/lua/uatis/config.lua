@@ -44,6 +44,9 @@ return {
       -- Open the changed-file list. Off by default; the view binds
       -- `keys.view.files`, which toggles.
       open_pane = false,
+      -- Pick a file of the review in this tab by name: fzf-lua where it
+      -- is installed, `vim.ui.select` otherwise.
+      pick_file = "<leader>gp",
       -- One commit against its parent, in a tab of its own.
       show_commit = "<leader>gA",
       -- Everything since a revision you pick, in your own buffers.

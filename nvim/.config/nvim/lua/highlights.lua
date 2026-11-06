@@ -12,6 +12,11 @@ local function set_hls()
     vim.api.nvim_set_hl(0, "NvimTreeGitFileStagedHL", { fg = "#76cce0" })  -- staged: blue
     vim.api.nvim_set_hl(0, "NvimTreeGitFileIgnoredHL", { fg = "#e7c664" }) -- ignored: yellow
     vim.api.nvim_set_hl(0, "NvimTreeHiddenFileHL", { fg = "#7f8490" })    -- dotfiles: grey
+    -- Folders default to Directory, which sonokai colors like a new file: cyan blue,
+    -- deeper than the palette blue, which is too close to the staged color above.
+    for _, group in ipairs({ "NvimTreeFolderName", "NvimTreeOpenedFolderName", "NvimTreeEmptyFolderName" }) do
+        vim.api.nvim_set_hl(0, group, { fg = "#5aa9e6" })
+    end
 end
 
 set_hls()

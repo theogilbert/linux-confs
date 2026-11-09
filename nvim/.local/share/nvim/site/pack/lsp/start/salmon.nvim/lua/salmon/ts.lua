@@ -387,12 +387,55 @@ function M.reaching(writes, occ, known_write, buf)
   return out
 end
 
+local RECEIVERS = set({ "self", "this" })
+local MEMBER = set({ "attribute", "member", "field", "dot", "selector" })
+
+--- `self.x` / `this.x`: the member's name node (`x`), else nil.
+function M.self_member(node, buf)
+  if not MEMBER[node:type():match("^[^_]+")] or node:named_child_count() ~= 2 then
+    return nil
+  end
+  local obj, prop = node:named_child(0), node:named_child(1)
+  if obj:named_child_count() == 0 and prop:named_child_count() == 0 and RECEIVERS[M.text(obj, buf)] then
+    return prop
+  end
+end
+
+--- `self.x = ...` assignments to the member named by `prop`, in the
+--- enclosing class (the whole file in languages without class nodes).
+---@return { node: TSNode, cls: table }[]
+function M.member_writes(prop, buf)
+  local scope = prop
+  while scope:parent() and not has_token(scope, CLASS) do
+    scope = scope:parent()
+  end
+  local name, out = M.text(prop, buf), {}
+  local function walk(n)
+    for c in n:iter_children() do
+      if c:named() then
+        local p = M.self_member(c, buf)
+        if p then
+          local cls = M.text(p, buf) == name and M.classify(p, false, buf)
+          if cls then
+            out[#out + 1] = { node = p, cls = cls }
+          end
+        else
+          walk(c)
+        end
+      end
+    end
+  end
+  walk(scope)
+  return out
+end
+
 --- Identifiers an expression depends on. Callees are reported as "fn".
+--- `self.x` counts as one source, named by its member `x`.
 ---@return { node: TSNode, kind: "src"|"fn", name: string }[]
 function M.sources(nodes, buf)
   local out, seen = {}, {}
-  local function add(n, kind, callee)
-    local name = M.text(n, buf)
+  local function add(n, kind, callee, name)
+    name = name or M.text(n, buf)
     if not seen[kind .. name] then
       seen[kind .. name] = true
       local receiver
@@ -429,6 +472,11 @@ function M.sources(nodes, buf)
     end
     if M.is_identifier(n) then
       add(n, "src")
+      return
+    end
+    local prop = M.self_member(n, buf)
+    if prop then
+      add(prop, "src", nil, M.text(n, buf))
       return
     end
     if M.is_function(n) then
@@ -478,6 +526,8 @@ function M.param_info(params, param, buf)
   end
   return {
     index = target and (target - offset) or nil,
+    -- `self`/`cls`: bound to the object the method is called on.
+    receiver = offset == 1 and target == 0,
     name = M.text(name_node, buf),
     splat = has_token(param, SPLAT) or has_token(param, set({ "list", "dictionary" })),
   }
@@ -485,6 +535,11 @@ end
 
 --- The argument expression bound to a parameter at a call site.
 function M.match_arg(call, buf, info)
+  if info.receiver then
+    -- `obj` in `obj.method(...)`.
+    local callee = M.callee(call)
+    return callee and callee:named_child_count() == 2 and callee:named_child(0) or nil
+  end
   local args = M.args_of(call)
   if not args then
     return nil

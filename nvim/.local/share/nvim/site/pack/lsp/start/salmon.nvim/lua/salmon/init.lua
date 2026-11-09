@@ -3,6 +3,8 @@ local M = {}
 M.config = {
   -- Follow derivations (`c = f(a, b)` -> a, b, f) instead of stopping at them.
   derive = false,
+  -- Show the places the variable is read on the way (RD steps).
+  reads = true,
   -- Keep auto-expanding while a node has a single expandable child.
   auto_expand = 4,
   -- Depth limit for recursive opening (zO, zA, zR, zn): nodes resolve lazily,
@@ -26,9 +28,10 @@ M.config = {
     preview = { "p" },
     toggle = { "o", "<Tab>", "l" },
     collapse = { "h" },
-    reroot = { "R" },
+    track = { "t" },
     derive = { "d" },
-    refresh = { "r" },
+    reads = { "r" },
+    refresh = { "R" },
     close = { "q" },
     help = { "g?" },
     hover = { "K" },
@@ -67,6 +70,9 @@ local HL = {
   SalmonFlow = "Special",
   SalmonFlowStep = "Title",
   SalmonOffPath = "Comment",
+  SalmonModeOn = "DiagnosticOk",
+  SalmonModeOff = "Comment",
+  SalmonHelpKey = "Special",
 }
 
 local function set_highlights()
@@ -97,12 +103,16 @@ end
 
 ---@class salmon.TraceOpts
 ---@field derive? boolean Set derive mode before tracing (persists, like set_derive()).
+---@field reads? boolean Show reads before tracing (persists, like set_reads()).
 ---@field focus? boolean Move focus to the pane (default: true).
 
 local function apply(opts)
   opts = type(opts) == "table" and opts or {}
   if opts.derive ~= nil then
     M.config.derive = opts.derive
+  end
+  if opts.reads ~= nil then
+    M.config.reads = opts.reads
   end
   return opts
 end
@@ -189,16 +199,37 @@ function M.derive()
   return M.config.derive
 end
 
+local function set_mode(name, enabled)
+  M.config[name] = enabled and true or false
+  vim.notify(("salmon: %s %s"):format(name, M.config[name] and "on" or "off"))
+  ui().update_winbar()
+  M.refresh()
+end
+
 --- Enable/disable derive mode; refreshes an open pane.
 ---@param enabled boolean
 function M.set_derive(enabled)
-  M.config.derive = enabled and true or false
-  vim.notify("salmon: derive " .. (M.config.derive and "on" or "off"))
-  M.refresh()
+  set_mode("derive", enabled)
 end
 
 function M.toggle_derive()
   M.set_derive(not M.config.derive)
+end
+
+---@return boolean
+function M.reads()
+  return M.config.reads
+end
+
+--- Show/hide the places the variable is read on the way (RD steps);
+--- refreshes an open pane.
+---@param enabled boolean
+function M.set_reads(enabled)
+  set_mode("reads", enabled)
+end
+
+function M.toggle_reads()
+  M.set_reads(not M.config.reads)
 end
 
 return M

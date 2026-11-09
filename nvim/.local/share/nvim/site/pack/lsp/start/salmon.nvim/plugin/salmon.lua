@@ -16,6 +16,9 @@ local subcommands = {
   derive = function()
     require("salmon").toggle_derive()
   end,
+  reads = function()
+    require("salmon").toggle_reads()
+  end,
   refresh = function()
     require("salmon").refresh()
   end,
@@ -40,6 +43,7 @@ local plugs = {
   ["salmon-close"] = "close",
   ["salmon-refresh"] = "refresh",
   ["salmon-derive"] = "toggle_derive",
+  ["salmon-reads"] = "toggle_reads",
   ["salmon-next"] = "next",
   ["salmon-prev"] = "prev",
   ["salmon-next-path"] = "next_path",

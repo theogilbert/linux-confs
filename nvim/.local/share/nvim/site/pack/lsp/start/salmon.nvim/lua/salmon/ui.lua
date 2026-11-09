@@ -123,18 +123,18 @@ end
 
 local block
 
--- Everything that feeds into `n`, drawn above it in its own column. The
--- first child continues the main line; a timeline (successive versions of
--- one variable) stays on it, while parallel inputs and the inputs of later
--- versions branch off and merge back in.
+-- Everything that feeds into `n`, drawn above it in its own column. A
+-- timeline (successive versions of one variable) stays on the line, while the
+-- inputs of later versions branch off and merge back in. Parallel inputs
+-- branch off too, the top priority one closest to `n`.
 local function upstream(n)
   local out = {}
   if not has_upstream(n) then
     return out
   end
   local cs = n.children
-  vim.list_extend(out, block(cs[1], true))
   if n.seq then
+    vim.list_extend(out, block(cs[1], true))
     for i = 2, #cs do
       local c = cs[i]
       local up = upstream(c)
@@ -145,9 +145,10 @@ local function upstream(n)
       out[#out + 1] = step_line(c)
     end
   else
-    -- Parallel inputs are in priority order: the first continues the main
-    -- line, the next ones branch off closest to `n`.
-    for i = #cs, 2, -1 do
+    -- Parallel inputs are in priority order, drawn last to first. Branches
+    -- must merge below the line's own step, or they would read as its inputs.
+    vim.list_extend(out, block(cs[#cs], true))
+    for i = #cs - 1, 1, -1 do
       vim.list_extend(out, side(block(cs[i], true)))
     end
   end
@@ -220,6 +221,18 @@ local function shown_nodes()
   return out
 end
 
+-- Header line: the modes that shape the chain.
+local function update_winbar()
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+    return
+  end
+  local function flag(name, on)
+    return ("%s: %%#%s#%s%%*"):format(name, on and "SalmonModeOn" or "SalmonModeOff", on and "on" or "off")
+  end
+  vim.wo[state.win].winbar = " " .. flag("derive", config().derive) .. "  " .. flag("reads", config().reads)
+end
+M.update_winbar = update_winbar
+
 function M.render()
   if not (state.buf and vim.api.nvim_buf_is_valid(state.buf) and state.root) then
     return
@@ -227,6 +240,7 @@ function M.render()
   local current = cursor_node()
   local lines, hls, map, rows = M.render_lines(state.root)
   state.lines, state.rows = map, rows
+  update_winbar()
   vim.bo[state.buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, lines)
   vim.bo[state.buf].modifiable = false
@@ -521,18 +535,18 @@ function M.update_positions()
   end
   mark(root, { hl_group = "SalmonSymbolOrigin", priority = PRIO + 20 })
   local sel = cursor_node()
-  -- In another file, the variable followed there stands in for the traced
-  -- symbol: highlight its occurrences the same way.
-  if sel and sel.buf ~= root.buf and vim.api.nvim_buf_is_loaded(sel.buf) then
-    for _, occ in ipairs(load_occurrences(sel)) do
-      mark(occ, { hl_group = "SalmonSymbol", priority = PRIO + 10 })
-    end
-  end
   -- Inside a derivation source's upstream, that source's variable is the one
   -- being followed: highlight its occurrences too.
   local src = sel
   while src and src ~= root and main_tag(src) ~= "SRC" do
     src = src.parent
+  end
+  -- Elsewhere (another function or file), the variable followed there stands
+  -- in for the traced symbol: highlight its occurrences the same way.
+  if sel and sel ~= root and sel ~= src and vim.api.nvim_buf_is_loaded(sel.buf) then
+    for _, occ in ipairs(load_occurrences(sel)) do
+      mark(occ, { hl_group = "SalmonSymbol", priority = PRIO + 10 })
+    end
   end
   if src and src ~= root then
     for _, occ in ipairs(load_occurrences(src)) do
@@ -560,7 +574,8 @@ load_occurrences = function(node)
       return
     end
     local nodes = {}
-    if hl then
+    -- An empty answer is no proof: a server may not have indexed the file yet.
+    if hl and #hl > 0 then
       for _, h in ipairs(hl) do
         nodes[#nodes + 1] = ts.node_at(node.buf, h.row, h.col)
       end
@@ -622,6 +637,38 @@ local function jump(node, keep_focus)
   end
 end
 
+--- Scroll the pane so the steps before and after `node` on the path are in
+--- view. The step upstream (with its label) wins over the one downstream when
+--- they do not both fit, and `node` itself always stays in view.
+local function reveal(node)
+  local path = M.current_path()
+  local row, idx = state.rows[node], index_in(path, node)
+  if not (row and idx) then
+    return
+  end
+  local up, down = state.rows[path[idx - 1]], state.rows[path[idx + 1]]
+  vim.api.nvim_win_call(state.win, function()
+    local height = vim.api.nvim_win_get_height(0)
+    local top = math.max(vim.fn.line("w0"), (down or row) - height + 1)
+    top = math.min(top, up and up - 1 or row)
+    top = math.max(top, row - height + 1, 1)
+    vim.fn.winrestview({ topline = top })
+  end)
+end
+
+--- Show where the next step leads: reveal the steps around `node` and, at the
+--- top of the path, expand it so the step `[s` would land on is known.
+local function show_surroundings(node)
+  reveal(node)
+  if M.current_path()[1] == node and node.resolve and not node.expanded and not node.loading then
+    trace.expand(node, 0, M.render, function()
+      if M.is_open() and cursor_node() == node then
+        reveal(node)
+      end
+    end)
+  end
+end
+
 --- Move the selection by `delta` steps along the path shown in the gutter
 --- and show that step in the source window. Negative goes back up the path
 --- (`[s`), towards the definition; a collapsed step is expanded first, so
@@ -637,14 +684,19 @@ function M.step(delta)
   end
   local node = cursor_node() or state.root
   local function move()
+    -- Expanding may finish after the pane closed or the selection moved on.
+    if not M.is_open() then
+      return
+    end
     local path = M.current_path()
-    local idx = index_in(path, node) or #path
+    local idx = index_in(path, cursor_node() or state.root) or #path
     local target = path[math.max(1, math.min(#path, idx + delta))]
     if not state.rows[target] then
       return
     end
     vim.api.nvim_win_set_cursor(state.win, { state.rows[target], 0 })
     jump(target, true)
+    show_surroundings(target)
   end
   -- Expanding a step in the middle of the path keeps the path (its inputs
   -- become other paths for `]r`); expanding the top extends it upwards.
@@ -671,6 +723,7 @@ function M.cycle_path(delta)
   local i = ((index_in(tops, state.top) or 1) - 1 + delta) % #tops + 1
   state.top = tops[i]
   M.update_positions()
+  reveal(node)
   vim.api.nvim_echo({ { ("salmon: path %d/%d"):format(i, #tops) } }, false, {})
 end
 
@@ -896,12 +949,13 @@ local function zj(dir)
 end
 
 -- [z / ]z: start / end of the fold the cursor is in. A fold is a node and
--- everything drawn above it (its upstream), so it starts at the top of its
--- main line and ends at the node itself.
+-- everything drawn above it (its upstream), so it starts at its topmost step
+-- and ends at the node itself.
 local function fold_start(node)
   local top = node.parent
   while top and has_upstream(top) do
-    top = top.children[1]
+    -- Parallel inputs are drawn last to first (see `upstream`).
+    top = top.children[top.seq and 1 or #top.children]
   end
   goto_node(top)
 end
@@ -1027,17 +1081,93 @@ local function hover(node)
 end
 
 local function help()
+  local icons = config().icons
   local msg = {
-    "salmon: the value flows top to bottom; the traced symbol is at the bottom.",
+    "The value flows top to bottom; the traced symbol is at the bottom.",
+    "",
     ("%s traced  %s end of chain  %s more upstream (expand)  %s expanded"):format(
-      config().icons.traced, config().icons.done, config().icons.collapsed, config().icons.expanded),
-    "[s/]s step back/forward  [r/]r other path  K hover  z* folds  <CR> jump  p preview  o/<Tab>/l expand  h collapse  R re-root  d derive  r refresh  q close",
+      icons.traced, icons.done, icons.collapsed, icons.expanded),
+    "",
+    "[s ]s      step back / forward",
+    "[r ]r      other path",
+    "<CR>       jump",
+    "p          preview",
+    "o <Tab> l  expand",
+    "h          collapse",
+    "z*         folds",
+    "K          hover",
+    "t          track symbol under cursor",
+    "d          toggle derive",
+    "r          toggle reads",
+    "R          refresh",
+    "q          close",
     "",
   }
   for _, t in ipairs({ "SYM", "DEF", "CND", "ALS", "DRV", "UPD", "MUT", "RD", "PRM", "ARG", "FOR", "IMP", "SRC", "FN", "RET" }) do
     msg[#msg + 1] = ("%-3s  %s"):format(t, LEGEND[t])
   end
-  vim.api.nvim_echo({ { table.concat(msg, "\n") } }, false, {})
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, msg)
+  local function hl(row, s, e, group)
+    vim.api.nvim_buf_set_extmark(buf, ns, row, s, { end_col = e, hl_group = group })
+  end
+  -- Markers in the legend line.
+  for _, icon in ipairs({ icons.traced, icons.done, icons.collapsed, icons.expanded }) do
+    local s = msg[3]:find(icon, 1, true)
+    if s then
+      hl(2, s - 1, s - 1 + #icon, "SalmonHelpKey")
+    end
+  end
+  for i, l in ipairs(msg) do
+    local code = l:match("^(%u+)  ")
+    if code and LEGEND[code] then
+      -- Label codes, in the color of their marker in the pane.
+      hl(i - 1, 0, #code, "Salmon" .. code)
+    elseif l:match("^%S.-  ") and i > 4 then
+      -- Keys: everything before the description column.
+      local keys = l:match("^(.-)%s%s+%S")
+      hl(i - 1, 0, #keys, "SalmonHelpKey")
+    end
+  end
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].bufhidden = "wipe"
+
+  local width = 0
+  for _, l in ipairs(msg) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  -- Leave room for the border; a shorter screen scrolls instead.
+  width = math.min(width, vim.o.columns - 2)
+  local height = math.min(#msg, vim.o.lines - vim.o.cmdheight - 2)
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = math.floor((vim.o.lines - vim.o.cmdheight - height) / 2) - 1,
+    col = math.floor((vim.o.columns - width) / 2) - 1,
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " salmon ",
+    title_pos = "center",
+  })
+
+  local function close()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+  local keys = vim.list_extend({ "q", "<Esc>" }, vim.deepcopy(config().keymaps.help))
+  for _, k in ipairs(keys) do
+    vim.keymap.set("n", k, close, { buffer = buf, nowait = true, silent = true })
+  end
+  vim.api.nvim_create_autocmd("WinLeave", {
+    buffer = buf,
+    once = true,
+    callback = function()
+      vim.schedule(close)
+    end,
+  })
 end
 
 local function map(lhs, fn)
@@ -1082,7 +1212,7 @@ local function ensure_buf()
   for _, k in ipairs(km.collapse) do
     map(k, collapse_or_parent)
   end
-  for _, k in ipairs(km.reroot) do
+  for _, k in ipairs(km.track) do
     map(k, function(n)
       salmon.trace_at(n.buf, n.row, n.col)
     end)
@@ -1090,6 +1220,11 @@ local function ensure_buf()
   for _, k in ipairs(km.derive) do
     map(k, function()
       salmon.toggle_derive()
+    end)
+  end
+  for _, k in ipairs(km.reads) do
+    map(k, function()
+      salmon.toggle_reads()
     end)
   end
   for _, k in ipairs(km.refresh) do

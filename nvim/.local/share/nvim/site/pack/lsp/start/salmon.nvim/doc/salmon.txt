@@ -67,9 +67,9 @@ Parallel inputs (call sites, several definitions) are ordered by closeness
 to the traced symbol: same file first (nearest line first), then other
 files, non-test before test files (a `test` or `tests` word in the path
 below the directory shared with the traced file), nearest directory first.
-The closest one continues the main line, which `[s` follows; the next ones
-branch off nearest the step they feed into, in order (`]r` cycles through
-them in that order).
+The closest one is drawn right above the step it feeds into, and is the one
+`[s` follows; the others go further up, the furthest on the left line (`]r`
+cycles through them from closest to furthest).
 
 A variable's history reads as a timeline on one line: its base DEF, then
 each UPD and MUT, and each place it is read (RD), in source order. A pandas-style chain such as
@@ -100,6 +100,7 @@ and field names (`left`/`right`, `name`/`value`, `function`, `arguments`,
 :Salmon toggle          Close the pane if open, otherwise trace.
 :Salmon close           Close the pane.
 :Salmon derive          Toggle derive mode (see |salmon-derive|) and refresh.
+:Salmon reads           Toggle reads (RD steps) and refresh.
 :Salmon refresh         Rebuild the chain from the current root.
 :Salmon next            Step forward, towards the traced symbol (like `]s`).
 :Salmon prev            Step back, towards the definition (like `[s`).
@@ -137,7 +138,12 @@ and field names (`left`/`right`, `name`/`value`, `function`, `arguments`,
                                                                *salmon-derive*
 A bare identifier flowing into something (`a = b`, `f(b)`, `for x in b`,
 `return b`) is a passage and is always followed. Any other expression is a
-transformation and is only followed in derive mode. Under UPD and MUT nodes,
+transformation and is only followed in derive mode. A member of the current
+object (`self.x`, `this.x`) counts as a bare identifier: it leads to every
+assignment to that member in the class (the whole file in languages without
+classes, like Lua), else to the LSP's definition, and, as the last input, to
+the object itself (`self`), which leads to the method's callers (`store` in
+`store.query()`). Under UPD and MUT nodes,
 the variable itself and the methods called on it are hidden; only the other
 inputs are shown.
 
@@ -150,7 +156,9 @@ such as the built-in spelling motions, is restored on close):
 
   [s            Step back along the path shown in the sign column
                 (towards the definition) and show the step in the source
-                window. A collapsed top is expanded first, so pressing `[s`
+                window. The top of the path is expanded on landing, and the
+                pane scrolls to keep the steps before and after in view, so
+                it shows where the next `[s` or `]s` leads. Pressing `[s`
                 repeatedly swims up the whole chain.
   ]s            Step forward along that path, towards the traced symbol.
   ]r            Show the next path leading to the selected step: when
@@ -162,17 +170,22 @@ such as the built-in spelling motions, is restored on close):
 Jumps (`[s`, `]s`, <CR>, `p`) center the step in the source window when it
 lands in another file or near the top or bottom edge.
 
+The pane's header line (|'winbar'|) shows whether derive mode and reads
+are on.
+
 In the pane:
 
   <CR>          Jump to the node (sets a jumplist entry).
   p             Preview: jump but keep focus in the pane.
   o <Tab> l     Expand / collapse.
   h             Collapse, or go to the step it flows into.
-  R             Re-root the trace at this node.
+  t             Track symbol under cursor: start a new trace from
+                this step.
   d             Toggle derive mode.
-  r             Refresh.
+  r             Toggle reads: show or hide the RD steps.
+  R             Refresh.
   q             Close.
-  g?            Show help and the label legend.
+  g?            Show help and the label legend in a floating window.
   K             Hover: what the node's labels mean, its location, the path
                 from the traced symbol, whether it can be followed further (and
                 why not), and the full source statement.
@@ -210,6 +223,7 @@ Calling `setup()` is optional. Defaults: >lua
 
   require("salmon").setup({
     derive = false,      -- follow derivations (DRV/SRC/FN/RET)
+    reads = true,        -- show where the variable is read on the way (RD)
     auto_expand = 4,     -- auto-expand single-child chains this many levels
     fold_depth = 6,      -- depth limit for zO, zA, zR, zn
     width = 60,
@@ -220,8 +234,8 @@ Calling `setup()` is optional. Defaults: >lua
               loading = "╂" },
     keymaps = {
       jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
-      collapse = { "h" }, reroot = { "R" }, derive = { "d" },
-      refresh = { "r" }, close = { "q" }, help = { "g?" },
+      collapse = { "h" }, track = { "t" }, derive = { "d" },
+      reads = { "r" }, refresh = { "R" }, close = { "q" }, help = { "g?" },
       hover = { "K" },
       next = { "]s" }, prev = { "[s" },  -- global while the pane is open
       next_path = { "]r" }, prev_path = { "[r" },  -- likewise
@@ -241,8 +255,8 @@ In source buffers, while the pane is open:
   `SalmonOrigin`    Line of the traced symbol (dim background, links to
                   `CursorLine`).
   `SalmonSymbol`    Every occurrence of the traced variable (links to
-                  `Search`). When the selected step is in another file,
-                  the occurrences of its variable there.
+                  `Search`), and of the selected step's variable, in
+                  another function or file.
   `SalmonSymbolOrigin`  The occurrence you traced from (links to
                   `IncSearch`).
   `SalmonSource`    With a node selected in a derivation source's upstream
@@ -253,6 +267,9 @@ In source buffers, while the pane is open:
   `SalmonFlow`      Lines between steps (links to `Special`).
   `SalmonOffPath`   In the pane, steps off the path shown in the sign column
                   (links to `Comment`).
+  `SalmonModeOn`    "on" in the pane's header line (links to `DiagnosticOk`).
+  `SalmonModeOff`   "off" in the pane's header line (links to `Comment`).
+  `SalmonHelpKey`   Keys and markers in the help float (links to `Special`).
 
 The sign column shows one path through the selected node, from the top of
 the chain down to the traced symbol; `[s`/`]s` walk along it. It is kept
@@ -280,6 +297,8 @@ salmon.trace({opts})       Trace the identifier under the cursor and open the
                            pane. {opts} (optional table):
                              `derive`  boolean: set derive mode first
                                        (persists, like |salmon.set_derive()|).
+                             `reads`   boolean: show reads first
+                                       (persists, like |salmon.set_reads()|).
                              `focus`   boolean: move focus to the pane
                                        (default true). With `false` you stay
                                        in the source and can use `]s`/`[s`.
@@ -307,6 +326,12 @@ salmon.derive()            Current derive mode (boolean).
 salmon.set_derive({bool})  Set derive mode; refreshes an open pane.
                                                    *salmon.toggle_derive()*
 salmon.toggle_derive()     Toggle derive mode.
+                                                           *salmon.reads()*
+salmon.reads()             Whether reads (RD steps) are shown (boolean).
+                                                       *salmon.set_reads()*
+salmon.set_reads({bool})   Show or hide reads; refreshes an open pane.
+                                                    *salmon.toggle_reads()*
+salmon.toggle_reads()      Toggle reads.
 
                                                                 *salmon-plug*
 <Plug> mappings, for Vimscript users or plugin managers that take keys: >lua
@@ -318,6 +343,7 @@ salmon.toggle_derive()     Toggle derive mode.
   <Plug>(salmon-close)      |salmon.close()|
   <Plug>(salmon-refresh)    |salmon.refresh()|
   <Plug>(salmon-derive)     |salmon.toggle_derive()|
+  <Plug>(salmon-reads)      |salmon.toggle_reads()|
   <Plug>(salmon-next)       |salmon.next()|
   <Plug>(salmon-prev)       |salmon.prev()|
   <Plug>(salmon-next-path)  |salmon.next_path()|

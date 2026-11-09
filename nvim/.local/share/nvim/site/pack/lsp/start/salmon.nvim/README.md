@@ -34,8 +34,9 @@ inputs, the extra ones branch off to the right and merge back in (derive mode, `
 Parallel inputs (call sites, several definitions) are ordered by closeness to
 the traced symbol: same file first (nearest line first), then other files,
 non-test before test files (a `test`/`tests` word in the path), nearest
-directory first. The closest one continues the main line, which `[s` follows;
-the next ones branch off nearest the step they feed into:
+directory first. The closest one is drawn right above the step it feeds into,
+and is the one `[s` follows; the others go further up, the furthest on the left
+line. Here `offset` is an extra input of `count`:
 
 ```
 ╷ defined
@@ -71,7 +72,7 @@ hover (`K`) and help (`g?`):
 | `DRV` | derived from an expression (`c = f(a, b)`); only in derive mode, otherwise shown as `DEF` |
 | `UPD` | update: a new value computed from the variable's own previous value (`df = df.dropna()`, `x += 1`) |
 | `MUT` | mutated in place (`x[k] = v`, `x.a = v`, `x.append(y)`: a method call whose result is discarded) |
-| `RD`  | read on the way to the traced use (`f(x)` says "passed to a function", `y = x + 1` says "read"); end of chain |
+| `RD`  | read on the way to the traced use (`f(x)` says "passed to a function", `y = x + 1` says "read"); end of chain. Hidden with `reads = false` (`r`) |
 | `PRM` | function parameter; expands to the call sites |
 | `ARG` | argument passed for that parameter at a call site |
 | `FOR` | loop variable; expands to the iterated value |
@@ -105,6 +106,14 @@ on it are hidden; only the other inputs are shown.
 Rule of thumb: a bare identifier flowing into something (`a = b`, `f(b)`,
 `for x in b`, `return b`) is a *passage* and is always followed. Any other
 expression is a *transformation* and is only followed in derive mode.
+
+A member of the current object (`self.x`, `this.x`) counts as a bare
+identifier: it leads to every assignment to that member in the class (the whole
+file in languages without classes, like Lua), such as `self.x = ...` in
+`__init__`. When the class has none, the LSP's definition is used (e.g. a base
+class). The object itself (`self`) is shown last, as another input: it leads to
+the method's callers, where `self` is the object the method is called on
+(`store` in `store.query()`).
 
 ## Requirements
 
@@ -142,28 +151,32 @@ vim.keymap.set("n", "<leader>lS", function() salmon.trace({ derive = true }) end
 
 Lua API: `trace(opts)`, `trace_at(buf, row, col, opts)`, `toggle(opts)`,
 `close()`, `is_open()`, `refresh()`, `next()`, `prev()`, `next_path()`, `prev_path()`, `derive()`,
-`set_derive(bool)`, `toggle_derive()`. `opts` takes `{ derive = bool, focus = bool }`;
+`set_derive(bool)`, `toggle_derive()`, `reads()`, `set_reads(bool)`, `toggle_reads()`.
+`opts` takes `{ derive = bool, reads = bool, focus = bool }`;
 with `focus = false` you stay in the source window and step with `]s`/`[s`.
 
 `<Plug>` mappings: `(salmon-trace)`, `(salmon-toggle)`, `(salmon-close)`,
-`(salmon-refresh)`, `(salmon-derive)`, `(salmon-next)`, `(salmon-prev)`,
+`(salmon-refresh)`, `(salmon-derive)`, `(salmon-reads)`, `(salmon-next)`, `(salmon-prev)`,
 `(salmon-next-path)`, `(salmon-prev-path)`.
 
-Commands: `:Salmon [trace|toggle|close|derive|refresh|next|prev|next_path|prev_path]` (default `trace`).
+Commands: `:Salmon [trace|toggle|close|derive|reads|refresh|next|prev|next_path|prev_path]` (default `trace`).
+
+The pane's header line shows whether derive mode and reads are on.
 
 Pane keymaps:
 
 | Key | Action |
 |-----|--------|
-| `[s` / `]s` | step back (towards the definition) / forward (towards the traced symbol) along the path shown in the sign column, showing each step in the source window (centered when it lands in another file or near the window's edge). Global while the pane is open; `[s` expands collapsed steps, so repeating it swims up the whole chain |
+| `[s` / `]s` | step back (towards the definition) / forward (towards the traced symbol) along the path shown in the sign column, showing each step in the source window (centered when it lands in another file or near the window's edge). Global while the pane is open. The top of the path is expanded on landing and the pane scrolls to keep the steps before and after in view, so it shows where the next press leads; repeating `[s` swims up the whole chain |
 | `[r` / `]r` | previous / next path leading to the selected step: changes the path in the sign column and where `[s` leads. Global while the pane is open |
 | `<CR>` | jump to the node (jumplist-friendly) |
 | `p` | preview: jump but keep focus in the pane |
 | `o` `<Tab>` `l` | expand / collapse |
 | `h` | collapse, or go to the step it flows into |
-| `R` | re-root the trace at this node |
+| `t` | track symbol under cursor: start a new trace from this step |
 | `d` | toggle derive mode |
-| `r` | refresh |
+| `r` | toggle reads: show or hide the `RD` steps |
+| `R` | refresh |
 | `q` | close |
 | `g?` | help / legend |
 | `zo` `zO` `zc` `zC` `za` `zA` `zR` `zM` `zr` `zm` `zn` `zN` `zi` `zx` `zX` `zj` `zk` `[z` `]z` | standard fold commands, acting on the chain. Recursive ones stop at `fold_depth` (see `:h salmon-folds`) |
@@ -174,6 +187,7 @@ Pane keymaps:
 ```lua
 require("salmon").setup({
   derive = false,      -- follow derivations (DRV/SRC/FN/RET)
+  reads = true,        -- show where the variable is read on the way (RD)
   auto_expand = 4,     -- auto-expand single-child chains this many levels
   fold_depth = 6,      -- depth limit for zO, zA, zR, zn
   width = 60,
@@ -181,8 +195,8 @@ require("salmon").setup({
   max_text = 60,       -- truncate source snippets
   icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪", loading = "╂" },
   keymaps = { jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
-              collapse = { "h" }, reroot = { "R" }, derive = { "d" },
-              refresh = { "r" }, close = { "q" }, help = { "g?" },
+              collapse = { "h" }, track = { "t" }, derive = { "d" },
+              reads = { "r" }, refresh = { "R" }, close = { "q" }, help = { "g?" },
               hover = { "K" }, next = { "]s" }, prev = { "[s" },
               next_path = { "]r" }, prev_path = { "[r" } },
 })
@@ -194,10 +208,9 @@ standard groups by default and can be overridden.
 While the pane is open, the traced symbol's line gets a dim background
 (`SalmonOrigin`, linked to `CursorLine`). Every occurrence of the traced
 variable is highlighted (`SalmonSymbol`, linked to `Search`), and the one you
-traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). When the
-selected step is in another file, the occurrences of its variable there are
-highlighted the same way. The node
-selected in the pane is
+traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). The
+occurrences of the selected step's variable, in another function or file, are
+highlighted the same way. The node selected in the pane is
 highlighted in its source buffer (`SalmonSelected`, linked to `Visual`). When
 it is a derivation source (`SRC`) or upstream of one, every occurrence of that
 source's variable is highlighted too (`SalmonSource`, linked to `DiffText`).

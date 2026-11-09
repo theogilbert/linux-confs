@@ -41,7 +41,7 @@ local function new(tags, buf, tsnode, resolve, text)
   }
 end
 
-local trace, expr_children, write_node
+local trace, expr_children, write_node, member_resolver
 
 -- Children for an expression flowing into a node: a bare identifier is a
 -- plain passage and is always followed; anything else is a derivation and is
@@ -61,6 +61,11 @@ local function wanted_sources(buf, exprs, exclude)
 end
 
 local function expr_resolver(buf, exprs, exclude)
+  -- `self.x`, like a bare identifier, is a plain passage.
+  local prop = #exprs == 1 and ts.self_member(exprs[1], buf)
+  if prop then
+    return member_resolver(buf, prop)
+  end
   if #exprs == 1 and ts.is_identifier(exprs[1]) and ts.text(exprs[1], buf) ~= exclude then
     return function(_, cb)
       trace(buf, exprs[1], {}, cb)
@@ -169,6 +174,40 @@ local function fn_resolver(buf, name_node)
   end
 end
 
+--- Where `self.x` (`prop` is `x`) gets its value: the assignments to it in
+--- the class, else the LSP's definition (e.g. set in a base class). The
+--- object itself (`self`) comes last: where it comes from (the method's
+--- callers) is another way in.
+member_resolver = function(buf, prop)
+  return function(_, cb)
+    local obj = prop:parent():named_child(0)
+    local receiver = new({ "SRC" }, buf, obj, function(_, rcb)
+      trace(buf, obj, {}, rcb)
+    end, ts.text(obj, buf))
+    receiver.last = true
+    local out = {}
+    for _, w in ipairs(ts.member_writes(prop, buf)) do
+      if not w.node:equal(prop) then
+        out[#out + 1] = write_node(buf, w.node, w.cls, false)
+      end
+    end
+    if #out > 0 then
+      out[#out + 1] = receiver
+      return cb(out)
+    end
+    local row, col = prop:start()
+    lsp.definition(buf, row, col, function(locs)
+      locs = vim.tbl_filter(function(l)
+        return not (l.buf == buf and l.row == row)
+      end, locs)
+      out = def_nodes(locs)
+      out.seq = nil
+      out[#out + 1] = receiver
+      cb(out, #locs == 0 and "no assignment found" or nil)
+    end)
+  end
+end
+
 expr_children = function(buf, exprs, exclude)
   local out = {}
   for _, s in ipairs(wanted_sources(buf, exprs, exclude)) do
@@ -217,6 +256,12 @@ local function callers_resolver(buf, cls)
   end
 end
 
+--- The variable written at `w`: `self.x` for the member `x` of `self.x`.
+local function var_name(buf, w)
+  local parent = w:parent()
+  return ts.text(parent and ts.self_member(parent, buf) and parent or w, buf)
+end
+
 --- `x = f(x, ...)` / `x += ...`: a new version of the same variable.
 local function is_update(buf, w, cls)
   if cls.kind ~= "assign" then
@@ -225,7 +270,7 @@ local function is_update(buf, w, cls)
   if cls.augmented then
     return true
   end
-  local name = ts.text(w, buf)
+  local name = var_name(buf, w)
   for _, s in ipairs(ts.sources(cls.rhs, buf)) do
     if s.kind == "src" and s.name == name then
       return true
@@ -237,7 +282,7 @@ end
 write_node = function(buf, w, cls, cond)
   local tags, resolve
   if is_update(buf, w, cls) then
-    local name = ts.text(w, buf)
+    local name = var_name(buf, w)
     tags = { "UPD" }
     if config().derive and #wanted_sources(buf, cls.rhs, name) > 0 then
       resolve = function(_, cb)
@@ -254,11 +299,9 @@ write_node = function(buf, w, cls, cond)
     tags, resolve = { "FOR" }, expr_resolver(buf, cls.iter)
   elseif cls.kind == "assign" then
     local rhs = cls.rhs
-    if #rhs == 1 and ts.is_identifier(rhs[1]) and not cls.augmented then
+    if #rhs == 1 and (ts.is_identifier(rhs[1]) or ts.self_member(rhs[1], buf)) and not cls.augmented then
       tags = { "ALS" }
-      resolve = function(_, cb)
-        trace(buf, rhs[1], {}, cb)
-      end
+      resolve = expr_resolver(buf, rhs)
     elseif config().derive and #ts.sources(rhs, buf) > 0 then
       tags = { "DRV" }
       resolve = function(_, cb)
@@ -361,6 +404,12 @@ trace = function(buf, occ, opts, cb)
       end)
     end
   end
+  -- `x` in `self.x`: the assignments to the member, across the class.
+  local parent = occ:parent()
+  local member = parent and ts.self_member(parent, buf)
+  if member and member:equal(occ) then
+    return member_resolver(buf, occ)(nil, cb)
+  end
   local row, col = occ:start()
 
   lsp.highlights(buf, row, col, function(hl)
@@ -387,7 +436,7 @@ trace = function(buf, occ, opts, cb)
     for _, it in ipairs(items) do
       stmts[#stmts + 1] = ts.statement(it.node)
     end
-    if #tl > 0 then
+    if #tl > 0 and config().reads then
       vim.list_extend(items, reads(buf, occs, writes, occ, tl[1].node, stmts))
     end
     table.sort(items, function(a, b)
@@ -458,23 +507,24 @@ end
 
 --- Order parallel inputs by closeness to the traced symbol `root`: same file
 --- first (nearest line first), then non-test files, then nearest directory.
---- Ties keep their order.
+--- Nodes marked `last` (a member's object) go last. Ties keep their order.
 local function prioritize(children, root)
   local rname = vim.api.nvim_buf_get_name(root.buf)
   local keys = {}
   for i, c in ipairs(children) do
+    local last = c.last and 1 or 0
     if c.buf == root.buf then
-      keys[c] = { 0, math.abs(c.row - root.row), 0, i }
+      keys[c] = { last, 0, math.abs(c.row - root.row), 0, i }
     else
       -- Only the part below the shared directory counts as test or not, so
       -- a project that itself lives under `tests/` is not all tests.
       local dist, rel = dir_distance(rname, vim.api.nvim_buf_get_name(c.buf))
-      keys[c] = { 1, is_test(rel) and 1 or 0, dist, i }
+      keys[c] = { last, 1, is_test(rel) and 1 or 0, dist, i }
     end
   end
   table.sort(children, function(a, b)
     local ka, kb = keys[a], keys[b]
-    for j = 1, 4 do
+    for j = 1, 5 do
       if ka[j] ~= kb[j] then
         return ka[j] < kb[j]
       end
@@ -500,7 +550,15 @@ local function in_ancestors(node)
 end
 
 --- Expand a node (async). `auto` > 0 keeps expanding single-child chains.
+--- While the node is loading, `done` waits for that expansion instead.
 function M.expand(node, auto, on_change, done)
+  if node.loading then
+    if done then
+      node.waiting = node.waiting or {}
+      table.insert(node.waiting, done)
+    end
+    return
+  end
   if node.children then
     node.expanded = true
     on_change()
@@ -539,6 +597,11 @@ function M.expand(node, auto, on_change, done)
       end
     end
     on_change()
+    local waiting = node.waiting or {}
+    node.waiting = nil
+    for _, w in ipairs(waiting) do
+      w()
+    end
     local only = children[1]
     if #children == 1 and only.resolve and auto > 0 then
       M.expand(only, auto - 1, on_change, done)
@@ -556,7 +619,7 @@ function M.root(buf, row, col)
   end
   local node = new({ "SYM" }, buf, occ, function(_, cb)
     trace(buf, occ, {}, cb)
-  end, ts.text(occ, buf))
+  end, var_name(buf, occ))
   node.origin = { row = row, col = col }
   return node
 end

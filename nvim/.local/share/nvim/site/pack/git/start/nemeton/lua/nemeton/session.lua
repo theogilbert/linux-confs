@@ -40,6 +40,31 @@ function M.root()
   return root_cache
 end
 
+--- Which forge to ask for what is yours rather than a project's --
+--- the to-do list, the merge requests you are in: the repository's, when the editor is in one the
+--- forge knows as a project, and `glab.backup_host` otherwise.
+--- `cb(where, project)`, or `cb(nil)` with neither.
+function M.locate(cb)
+  local function backup()
+    local host = glab.backup_host()
+    cb(host and { host = host } or nil)
+  end
+  local root = M.root()
+  if not root then
+    backup()
+    return
+  end
+  -- Asked once a repository and kept, so this is a round trip on the
+  -- first keypress only.
+  glab.project_path(root, function(path)
+    if path then
+      cb({ root = root }, path)
+    else
+      backup()
+    end
+  end)
+end
+
 local function notify(msg, level)
   vim.notify("nemeton: " .. msg, level or vim.log.levels.INFO)
 end

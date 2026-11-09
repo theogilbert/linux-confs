@@ -77,6 +77,13 @@ function M.todos()
   require("nemeton.todos").open()
 end
 
+--- The open merge requests you are in, across every project. Not
+--- `with_session`: like the to-do list, it is yours.
+function M.involved()
+  ready()
+  require("nemeton.involved").open()
+end
+
 -- What the issue prompt completes over: the issues the cache has, as it
 -- had them when the prompt opened.
 local issue_store = nil
@@ -1462,6 +1469,7 @@ local SUBCOMMANDS = {
   issue = M.issue,
   issues = M.issues,
   todos = M.todos,
+  involved = M.involved,
   ["new-issue"] = function()
     M.new_issue()
   end,
@@ -1611,6 +1619,7 @@ function M.setup(opts)
   global("list", { n = { M.list, "merge requests" } })
   global("issues", { n = { M.issues, "issues" } })
   global("todos", { n = { M.todos, "to-do list" } })
+  global("involved", { n = { M.involved, "merge requests you are in" } })
   global("link", {
     n = { M.link, "copy a link to this line" },
     x = { M.link_lines, "copy a link to these lines" },

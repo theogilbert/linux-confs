@@ -203,11 +203,15 @@ end
 --- going to do anyway. Only for a read: a POST that timed out may
 --- still have landed, and sending it again is the comment posted
 --- twice; and `mr checkout` killed half way through is git killed
---- holding its index lock.
+--- holding its index lock. `mr create` is a POST that `method` cannot
+--- see: killed once it has landed and sent again, the second is refused
+--- as a duplicate and the merge request that exists is reported as one
+--- that could not be made.
 local function timeouts(args, method)
   local t = config.glab.timeout
   local steps = type(t) == "table" and t or { t }
-  local reads = method == "GET" and not (args[1] == "mr" and args[2] == "checkout")
+  local writes = args[1] == "mr" and (args[2] == "checkout" or args[2] == "create")
+  local reads = method == "GET" and not writes
   return reads and steps or { steps[#steps] }
 end
 
@@ -281,6 +285,15 @@ local NOISE = {
   "^Compressing objects",
   "^Unpacking objects",
   "^Aborting$", -- git's full stop, after it has already said why
+  -- `mr create --push` narrating itself. The push worked, whatever it
+  -- printed, and the first of these is what a refusal used to read as.
+  "^Everything up%-to%-date$",
+  "^warning: redirecting to ",
+  "^Creating .*merge request for ",
+  -- ...and a remedy for somebody at glab's own prompt: this window keeps
+  -- what was typed, and has no `--recover`.
+  "^Failed to create merge request%. Created recovery file",
+  "^Run the command again with the '%-%-recover' option",
 }
 
 --- What GitLab put inside its refusal, as a sentence.
@@ -547,6 +560,60 @@ end
 
 M.run = run
 
+--- The JSON values `text` holds one after another, each as its own
+--- text: `[1,2][3]` is `{ "[1,2]", "[3]" }`.
+---
+--- What `--paginate` prints is each page as the forge sent it, back to
+--- back with nothing between -- whatever glab's help says about a
+--- single array -- and that is no one JSON document. Split by walking
+--- the brackets, strings skipped, since a `][` inside somebody's
+--- comment is not the end of a page.
+function M.values(text)
+  local out, depth, start, i = {}, 0, nil, 1
+  while true do
+    local at, _, c = text:find('([%[%]{}"])', i)
+    if not at then
+      break
+    end
+    if c == '"' then
+      -- To the quote that closes it: the next one not escaped, which is
+      -- the next one after an even run of backslashes.
+      local j = at + 1
+      while true do
+        local q = text:find('"', j, true)
+        if not q then
+          return out
+        end
+        local slashes = #text:sub(j, q - 1):match("\\*$")
+        j = q + 1
+        if slashes % 2 == 0 then
+          break
+        end
+      end
+      i = j
+    else
+      if c == "[" or c == "{" then
+        start = depth == 0 and at or start
+        depth = depth + 1
+      else
+        depth = depth - 1
+        if depth == 0 and start then
+          table.insert(out, text:sub(start, at))
+          start = nil
+        end
+      end
+      i = at + 1
+    end
+  end
+  return out
+end
+
+local function decode(text)
+  return pcall(vim.json.decode, text, {
+    luanil = { object = true, array = true },
+  })
+end
+
 --- The same, with the stdout decoded. cb(data|nil, err|nil).
 ---
 --- `luanil` on both object and array is not a detail: GitLab returns
@@ -567,9 +634,20 @@ local function json(args, opts, cb)
       cb(nil, "glab returned nothing")
       return
     end
-    local decoded_ok, decoded = pcall(vim.json.decode, out, {
-      luanil = { object = true, array = true },
-    })
+    local decoded_ok, decoded = decode(out)
+    -- Pages, one after another: one list of everything on them.
+    if not decoded_ok and vim.tbl_contains(args, "--paginate") then
+      local all = {}
+      for _, page in ipairs(M.values(out)) do
+        local page_ok, items = decode(page)
+        if not (page_ok and vim.islist(items)) then
+          decoded_ok, decoded = false, page_ok and "a page that is not a list" or items
+          break
+        end
+        vim.list_extend(all, items)
+        decoded_ok, decoded = true, all
+      end
+    end
     if not decoded_ok then
       cb(nil, "could not read glab's json: " .. tostring(decoded))
       return
@@ -1995,6 +2073,48 @@ end
 --- stands.
 function M.todo_done(where, id, cb)
   json({ "api", "--method", "POST", ("todos/%d/mark_as_done"):format(id) }, at(where), cb)
+end
+
+--- The open merge requests of the whole forge that `scope` says are
+--- yours to look at: `assigned_to_me` or `reviews_for_me`. Like the
+--- to-do list, the user's rather than a project's.
+function M.my_mrs(where, scope, cb)
+  json(
+    { "api", ("merge_requests?scope=%s&state=opened&per_page=100"):format(scope) },
+    at(where),
+    cb
+  )
+end
+
+--- The to-dos about merge requests, pending or done. Done ones too,
+--- because what this is asked for is who has said your name, and
+--- marking that to-do done did not unsay it.
+function M.mr_todos(where, state, cb)
+  json({ "api", ("todos?type=MergeRequest&state=%s&per_page=100"):format(state) }, at(where), cb)
+end
+
+--- One page of the comments you have written, newest first, as events:
+--- the only record the API keeps of where you have commented, since no
+--- list of merge requests can be narrowed to the ones you spoke on.
+--- Not narrowed by `target_type` either: that matches the class name,
+--- and a comment on a line of a diff is a `DiffNote`, not a `Note`.
+function M.comment_events(where, page, cb)
+  json({ "api", ("events?action=commented&per_page=100&page=%d"):format(page) }, at(where), cb)
+end
+
+--- The ones of `iids` in project `id` that are still open.
+function M.open_mrs(where, id, iids, cb)
+  local q = table.concat(
+    vim.tbl_map(function(i)
+      return "iids[]=" .. i
+    end, iids),
+    "&"
+  )
+  json(
+    { "api", ("projects/%d/merge_requests?state=opened&per_page=100&%s"):format(id, q) },
+    at(where),
+    cb
+  )
 end
 
 return M

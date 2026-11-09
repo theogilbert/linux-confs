@@ -261,6 +261,13 @@ A review, end to end:
                         GitLab repository, |nemeton-config-backup-host|.
                         |nemeton-todos-window|
 
+:Nemeton involved       The open merge requests you are in, every
+                        project's: assigned, a review asked of you, a
+                        comment that named you, one you commented on.
+                        Needs no review open; outside a GitLab
+                        repository, |nemeton-config-backup-host|.
+                        |nemeton-involved-window|
+
 :Nemeton new-issue      A window for an issue of your own.
                         |nemeton-issue-create-window|
 :'<,'>Nemeton new-issue The same, its description starting with a link
@@ -291,6 +298,8 @@ ALWAYS                                               *nemeton-mappings-global*
                     |nemeton-issues-window|
     <leader>moi     open one by number, asked for |:Nemeton| issue
     <leader>mt      your to-do list |nemeton-todos-window|
+    <leader>mM      the merge requests you are in, every project's
+                    |nemeton-involved-window|
     <leader>mL      a link to this line, or (visual) to these lines, on
                     the clipboard
 
@@ -701,6 +710,33 @@ an approval asked of you, mentions a comment that names you, build a
 pipeline that failed or a merge request that no longer merges. One the
 forge adds later is other, in GitLab's own words. It is the pending
 to-dos, a hundred at most; the title says `100+` when there are more.
+
+THE MERGE REQUESTS YOU ARE IN                        *nemeton-involved-window*
+
+`<leader>mM`, or `:Nemeton involved`. The open merge requests of every
+project on the forge that you are in: assigned to you, a review asked
+of you, a comment that named you -- a to-do, pending or done, since
+marking it done did not unsay it -- or one you have commented on, out
+of your last five hundred comments. It is asked of the same forge the
+to-do list is |nemeton-todos-window|, and does not open outside a
+GitLab repository without |nemeton-config-backup-host| either. One row
+a merge request however many of those found it: why, a word each --
+`review`, `assigned`, `@you`, `commented` -- then `group/proj!12`, its
+title, its author, and when it last moved, the most recent first.
+
+    <CR>            open it: one of the repository you are in opens
+                    here, anything else on GitLab
+    f               one way in at a time: review, assigned, mentioned,
+                    commented, and all again -- skipping the ones with
+                    nothing in them
+    o               open it on GitLab
+    r               ask again
+    q               close
+    g?              these keys
+
+It is several calls, drawn as each lands; the title ends in `…` until
+the last has. One that fails says so under the rows rather than
+instead of them.
 
 AN ISSUE OF YOUR OWN                             *nemeton-issue-create-window*
 
@@ -2402,9 +2438,9 @@ KEYS                                                     *nemeton-config-keys*
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
 `keys.issue_list`, `keys.issue`, `keys.issue_comments`, `keys.issue_create`,
 `keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`,
-`keys.history`, `keys.todos`, `keys.create` and `keys.compose`, each a
-table of what is listed in |nemeton-mappings| and |nemeton-windows|. Any of them
-can be `false`:
+`keys.history`, `keys.todos`, `keys.involved`, `keys.create` and
+`keys.compose`, each a table of what is listed in |nemeton-mappings|
+and |nemeton-windows|. Any of them can be `false`:
 >
     require("nemeton").setup({
       keys = {
@@ -2498,8 +2534,9 @@ you review across two instances, leave it nil.
                                                   *nemeton-config-backup-host*
 `backup_host` -- a string, or a function returning one: the forge to
 ask where there is no project to ask it of, which is the to-do list
-|nemeton-todos-window| opened outside a GitLab repository. Unset, the
-list refuses to open there. Its token is glab's own for that host
+|nemeton-todos-window| or the merge requests you are in
+|nemeton-involved-window| opened outside a GitLab repository. Unset,
+they refuse to open there. Its token is glab's own for that host
 (`glab auth login --hostname`), not `token` -- unless `host` names the
 same one -- and a 401 from it does not prompt: a token configured or
 typed for one forge is not sent to another.
@@ -2887,7 +2924,7 @@ One rotation, at `log.max_bytes`: past it the file becomes
     resolvable in practice, so resolving lives on the gutter.
   - Pagination in the list. The first `list.per_page`, ordered by
     what was touched last.
-  - A to-do of another project, here. It opens on GitLab: opening it
+  - A to-do or a merge request of another project, here. It opens on GitLab: opening it
     in the editor means finding or cloning that project's checkout
     first.
 

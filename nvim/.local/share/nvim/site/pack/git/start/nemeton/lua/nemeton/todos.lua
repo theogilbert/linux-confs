@@ -246,30 +246,6 @@ local function open(todo)
   end
 end
 
---- Which forge to ask: the repository's, when the editor is in one the
---- forge knows as a project, and `glab.backup_host` otherwise.
---- `cb(where, project)`, or `cb(nil)` with neither.
-local function locate(cb)
-  local function backup()
-    local host = glab.backup_host()
-    cb(host and { host = host } or nil)
-  end
-  local root = session.root()
-  if not root then
-    backup()
-    return
-  end
-  -- Asked once a repository and kept, so this is a round trip on the
-  -- first keypress only.
-  glab.project_path(root, function(path)
-    if path then
-      cb({ root = root }, path)
-    else
-      backup()
-    end
-  end)
-end
-
 local function show()
   back = win.came_from()
   filter = nil
@@ -399,7 +375,7 @@ function M.open()
     vim.api.nvim_set_current_win(M.win)
     return
   end
-  locate(function(found, project)
+  session.locate(function(found, project)
     if not found then
       session.notify(
         "not in a GitLab project, and no glab.backup_host to ask instead — "

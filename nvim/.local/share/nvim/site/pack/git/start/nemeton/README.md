@@ -143,6 +143,7 @@ rest.
 | `:Nemeton issue 12` | issue #12, in a tab of its own; needs no review open |
 | `:Nemeton issue` | ask which, completing with the issue search as you type |
 | `:Nemeton todos` | your to-do list on GitLab, every project's, a kind at a time; needs no review open; outside a GitLab repository, `glab.backup_host` |
+| `:Nemeton involved` | the open merge requests you are in, every project's: assigned, a review asked of you, a comment that named you, one you commented on; needs no review open; outside a GitLab repository, `glab.backup_host` |
 | `:Nemeton new-issue` | a window for an issue of your own; over a range, its description starts with a link to the lines and the lines |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
@@ -157,7 +158,8 @@ and by title, for when you already know it is "the proxy one" and the
 number is the thing you would have to go and look up.
 `<leader>mom` (`keys.global.open`) is the same thing on a key, and
 `<leader>mi` (`keys.global.issues`) is the project's issues, and
-`<leader>mt` (`keys.global.todos`) your to-do list.
+`<leader>mt` (`keys.global.todos`) your to-do list, and
+`<leader>mM` (`keys.global.involved`) the merge requests you are in.
 `<leader>moi` (`keys.global.issue`) asks for an issue the same way,
 completing with the issue search as it is typed — `proxy` offers the
 proxy one — on what the cache has, so it is up on the keypress.
@@ -480,6 +482,21 @@ queue and the issue list do, and anything else — another project's, a
 commit, an epic — on GitLab, at the comment where there is one. It is
 the pending ones, a hundred at most; the title says `100+` when there
 are more.
+
+`<leader>mM`, or `:Nemeton involved`, is the **merge requests you are
+in**, across every project of the forge: the open ones assigned to you,
+the ones you are asked to review, the ones where a comment named you
+(a to-do, pending or done — marking it done did not unsay it) and the
+ones you have commented on (your last five hundred comments). One row
+each however many of those found it: why, in a word each — `review`,
+`assigned`, `@you`, `commented` — then `group/proj!12`, its title, its
+author and when it last moved, the most recent first. It asks the same
+forge the to-do list does, and like it does not open outside a GitLab
+repository without `glab.backup_host`. `f` walks the ways in — review →
+assigned → mentioned → commented → all; `<CR>` opens one of the
+repository you are in here and anything else on GitLab; `o` opens it on
+GitLab; `r` asks again; `q` closes. A call that fails says so under the
+rows rather than instead of them.
 
 `:Nemeton issue 12` opens an issue of the project — no review needed —
 in a **tab** of its own rather than a float: an issue is the thing being
@@ -1336,8 +1353,9 @@ login` keeps a token in the system keyring.
   repository correspond to the GITLAB_HOST environment variable"). If you
   review across two instances, leave it nil.
 - **`backup_host`** — a string or a function: the forge to ask where
-  there is no project to ask it of, which is the to-do list opened
-  outside a GitLab repository. Unset, the list refuses to open there.
+  there is no project to ask it of, which is the to-do list or the merge
+  requests you are in, opened outside a GitLab repository. Unset, they
+  refuse to open there.
   Its token is glab's own for that host (`glab auth login --hostname`),
   not `token` below — unless `host` names the same one — and a 401 from
   it does not prompt: a token configured or typed for one forge is not
@@ -1587,7 +1605,7 @@ git config core.hooksPath .githooks
 - **Resolvable state per note.** A thread is "resolved" here when every
   resolvable note in it is; GitLab is slightly more subtle.
 - **Pagination in the list.** First 30, ordered by last touched.
-- **A to-do of another project, here.** It opens on GitLab: opening it
+- **A to-do or a merge request of another project, here.** It opens on GitLab: opening it
   in the editor means finding or cloning that project's checkout first.
 - **More of an issue.** Its labels and assignees are edited here; its
   milestone, due date, weight, epic, time tracking and links to other

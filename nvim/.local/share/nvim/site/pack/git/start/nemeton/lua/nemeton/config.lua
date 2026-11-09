@@ -987,6 +987,11 @@ return {
       -- that name you, pipelines of yours that broke -- across every
       -- project, so it needs no review open and no repository either.
       todos = "<leader>mt",
+      -- The open merge requests you are in, across every project:
+      -- assigned to you, a review asked of you, a comment that named
+      -- you, or one you wrote. Capital, beside the queue's `<leader>ml`
+      -- that is this project's.
+      involved = "<leader>mM",
       -- A permalink to the line, or to the selection, on the clipboard:
       -- what you paste into a comment to point at code the comment is
       -- not on, or into a chat window to point at code at all. Global
@@ -1343,6 +1348,16 @@ return {
       body = "p", -- what it says, in a float
       done = "d", -- mark it done
       filter = "f", -- show one kind of to-do, and the next, and all again
+      browser = "o", -- open it on GitLab
+      refresh = "r",
+      quit = "q",
+      help = "g?", -- every key above, in a float
+    },
+
+    -- The merge requests you are in, across the forge.
+    involved = {
+      open = "<CR>", -- open it: here if it is of this repository, on GitLab if not
+      filter = "f", -- show one way in, and the next, and all again
       browser = "o", -- open it on GitLab
       refresh = "r",
       quit = "q",

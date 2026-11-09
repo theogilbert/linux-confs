@@ -1316,6 +1316,21 @@ function M.recheck(pane)
             break
           end
         end
+        -- Still in the walk, and so against the same parent -- a commit
+        -- found by its sha in a first-parent walk always is -- and
+        -- nothing the reader is looking at has moved: only the count. So
+        -- only the count is redrawn. `show` would open the file again,
+        -- a navigation nobody asked for: it takes the cursor out of
+        -- whatever window the reader came back to, and puts the file
+        -- into a window that may no longer be the code's.
+        if at and parent_of(p, at) == p.rev then
+          p.commit, p.commit_idx = p.commits[at], at
+          if p.list_buf then
+            filelist.render(p)
+          end
+          p.renders = (p.renders or 0) + 1
+          return
+        end
         show(p, at, current_path(p))
       end)
     else
@@ -1406,25 +1421,62 @@ end
 --- any other window in the tab matters more than it looks -- the pane can
 --- outlive the window it came from, and editing a file INTO the pane
 --- itself would replace the list with the file it was listing.
+--- Whether a file may be opened over what `win` holds.
+---
+--- Not over another plugin's buffer that is something being written --
+--- a commit message, a review comment, a terminal. That is a split of
+--- the tab like any other, so it is the first window left once the
+--- code's own is closed, and opening a file there either fails (E37: a
+--- modified buffer that is wiped when hidden) or puts away what the
+--- reader was typing. Nor over a modified buffer that cannot be hidden,
+--- for the same E37. A `nofile` buffer is fine: that is what this
+--- plugin's own copies of the past are.
+local function holds_code(win)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local bt = vim.bo[buf].buftype
+  if bt == "acwrite" or bt == "terminal" or bt == "prompt" or bt == "quickfix" then
+    return false
+  end
+  if vim.bo[buf].modified then
+    local bh = vim.bo[buf].bufhidden
+    if bh == "unload" or bh == "delete" or bh == "wipe" or (bh == "" and not vim.o.hidden) then
+      return false
+    end
+  end
+  return true
+end
+
 local function target_win(pane)
   if pane.code_win and vim.api.nvim_win_is_valid(pane.code_win)
     and pane.code_win ~= pane.list_win
-    and vim.api.nvim_win_get_tabpage(pane.code_win) == pane.tab then
+    and vim.api.nvim_win_get_tabpage(pane.code_win) == pane.tab
+    and holds_code(pane.code_win) then
     return pane.code_win
   end
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(pane.tab)) do
-    if win ~= pane.list_win and vim.api.nvim_win_get_config(win).relative == "" then
+    if win ~= pane.list_win and vim.api.nvim_win_get_config(win).relative == ""
+      and holds_code(win) then
       pane.code_win = win
       return win
     end
   end
-  -- Only reachable when the list has a window and it is the only one
-  -- left; a list with no window of its own always has somewhere to open
-  -- a file, since the reader is standing in it.
+  -- Nowhere to open a file but the list or windows that are not the
+  -- code's: a window of its own, beside the list where it has one...
   if pane.list_win and vim.api.nvim_win_is_valid(pane.list_win) then
     vim.api.nvim_set_current_win(pane.list_win)
     vim.cmd("rightbelow vsplit")
     pane.code_win = vim.api.nvim_get_current_win()
+    return pane.code_win
+  end
+  -- ...and otherwise above the first window passed over, without
+  -- entering it: `in_code_win` decides whether the cursor goes there.
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(pane.tab)) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      local scratch = vim.api.nvim_create_buf(false, true)
+      vim.bo[scratch].bufhidden = "wipe"
+      pane.code_win = vim.api.nvim_open_win(scratch, false, { split = "above", win = win })
+      break
+    end
   end
   return pane.code_win
 end

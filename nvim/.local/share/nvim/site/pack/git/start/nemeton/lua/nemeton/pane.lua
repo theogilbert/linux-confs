@@ -145,15 +145,7 @@ end
 --- would replace is read at the line the marker is on now, because
 --- that is the code the comment is now about.
 local function moved(bufnr)
-  local out = {}
-  local known = marks.line_of_mark[bufnr] or {}
-  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, marks.ns, 0, -1, {})) do
-    local line = known[mark[1]]
-    if line then
-      out[line] = mark[2] + 1
-    end
-  end
-  return out
+  return marks.rows(bufnr)
 end
 
 --- The thread the pane's cursor is in. A conversation is several lines
@@ -287,6 +279,12 @@ end
 ---
 --- `place` is where it sits, as words: the file and line for a thread
 --- on code, and what it is on instead for one that is on none.
+--- Which way the walk goes, as a piece of a winbar.
+local function walking()
+  local key = config.keys.session.next or "walk"
+  return { ("%s %s "):format(key, session.walks_resolved() and "all" or "open"), "NemetonHint" }
+end
+
 local function header(list, place, width)
   local first = list[1]
   local unsent = threads.unsent(first)
@@ -321,12 +319,21 @@ local function header(list, place, width)
   -- column of the file name's room for ever after, and neither had room
   -- for the four keys that have since been added. `g?` is what vim
   -- already asks this with, and it costs seven columns.
+  --
+  -- ...and before it, which way the walk goes: whether `]m` stops at a
+  -- settled conversation too. Said here because it is a mode, and a
+  -- mode nothing on the screen admits to is a key that skips threads
+  -- for no reason anybody can see. Kept longer than the help.
+  local right = { walking() }
   local help = config.keys.pane.help
   if help and help ~= "" then
-    local right = { { help, "NemetonKey" }, { " help ", "NemetonHint" } }
+    vim.list_extend(right, { { help, "NemetonKey" }, { " help ", "NemetonHint" } })
+  end
+  while #right > 0 do
     if measure(left) + measure(right) + 2 <= width then
       return bar(left) .. "%=" .. bar(right)
     end
+    right = #right > 1 and { right[1] } or {}
   end
   if #much > 0 and measure(left) > width then
     table.remove(left)
@@ -360,7 +367,7 @@ function M.render()
   local overall = at and at.thread and session.overall(at.thread) or nil
 
   local chunks, map, notes, ground = {}, {}, {}, {}
-  local head = bar({ { " nothing being read ", "NemetonMeta" } })
+  local head = bar({ { " nothing being read ", "NemetonMeta" } }) .. "%=" .. bar({ walking() })
   if overall then
     -- A conversation on the merge request as a whole: no line to quote
     -- and no gutter to mark, but the same window to read and answer it
@@ -533,12 +540,17 @@ end
 --- that was a thread. It is not one most of the time -- a review is
 --- read and answered from the code -- and then the pane is left showing
 --- what it was showing.
-function M.show(win)
+---
+--- `line` names the place outright rather than asking the cursor: two
+--- markers pinned to one row -- threads past the end of a file that
+--- has since got shorter -- are two stops of the walk on one row, and
+--- the cursor alone can only ever name the first of them.
+function M.show(win, line)
   if not (valid() and vim.api.nvim_win_is_valid(win)) then
     return false
   end
   local bufnr = vim.api.nvim_win_get_buf(win)
-  local line = covers(bufnr, vim.api.nvim_win_get_cursor(win)[1])
+  line = line or covers(bufnr, vim.api.nvim_win_get_cursor(win)[1])
   if not line then
     return false
   end
@@ -834,6 +846,13 @@ function M.open(at)
   end
   vim.list_extend(bindings, {
     {
+      k.walk_resolved,
+      function()
+        session.toggle_walk_resolved()
+      end,
+      "]m stops at resolved threads too, or steps over them",
+    },
+    {
       k.refresh,
       function()
         session.refresh()
@@ -966,8 +985,9 @@ end
 --- Reads `thread` in the pane, and puts the cursor there.
 ---
 --- For a conversation that is on no line, which is the one kind the
---- walk never reaches and the code never shows: the comments window
---- lists it, and this is what its enter key does with one. The pane
+--- code never shows: the comments window lists it, and this is what
+--- its enter key does with one. The walk reaches it too, but leaves
+--- the cursor in the code -- see `session.jump`. The pane
 --- is opened if it is not, and the mode goes with it -- it is the same
 --- pane, and the key that folds the conversations away folds this one
 --- too.

@@ -612,6 +612,12 @@ return {
     -- either way -- toggling this is a redraw, not a refetch.
     show_resolved = true,
 
+    -- Whether `]m` and `[m` stop at a resolved thread as well. Off: the
+    -- walk is "what is left", and a settled conversation is history.
+    -- This is only where an editor session starts -- `S` in the pane
+    -- flips it, and the pane's header says which way it is.
+    walk_resolved = false,
+
     -- Whether a link to a commit is drawn as the commit's short sha.
     --
     -- A permalink is a hundred characters whose only content is the
@@ -1299,6 +1305,10 @@ return {
       -- it is the same gesture, and a comment is what is under the
       -- cursor in here.
       link = "<leader>mL",
+      -- Whether `]m` steps over resolved threads or stops at them too,
+      -- for the rest of the session (`comments.walk_resolved`). On the
+      -- pane because the pane's header is where it is said which.
+      walk_resolved = "S",
       refresh = "R",
       quit = "q",
       -- ...and the list of all of them, since there are now more than a

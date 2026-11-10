@@ -913,14 +913,20 @@ through what the review is owed anyway -- and they are the only thing
 that changes what is in there. `<CR>` on a thread in the every-thread
 window, the comments window or the quickfix list puts that one in it.
 
-...and a conversation on the merge request itself, which is on no line
-the walk could reach: `<CR>` on one in the comments window opens the
-pane on it, headed `on the merge request` where the file and line would
-be, with nothing to quote and nothing marked in any gutter but the
-whole of the thread to read and the same keys to answer it. The pane
-turns back to the code at the next `]m`. The mode goes with it: opened
-this way, the pane is what expanded means until `<leader>mx` folds it
-away.
+...and a conversation on the merge request itself, which is on no
+line: the walk stops at those first, before the first file, and so
+does `<CR>` on one in the comments window. The pane is headed `on the
+merge request` where the file and line would be, with nothing to quote
+and nothing marked in any gutter but the whole of the thread to read
+and the same keys to answer it. The cursor stays where it was -- there
+is no line to put it on -- and the next `]m` goes on from the thread
+the pane holds. The mode goes with it: opened this way, the pane is
+what expanded means until `<leader>mx` folds it away.
+
+The walk is by where the markers are now, not by the line a thread was
+written on: an edit above a thread moves its marker, and `]m` lands on
+the marker. Two threads pinned to the last row of a file that has got
+shorter since are two stops on that row, one `]m` each.
 
 The walk opens it, too. `]m` with the pane shut opens it on the thread
 it lands on, and so does arriving at a thread from a list or down a
@@ -998,6 +1004,8 @@ enough.
     +               react to the comment under the cursor
     K               who reacted, when, what commit, where a link goes
     <leader>mL      a link to the comment under the cursor, copied
+    S               ]m stops at resolved threads too, or steps over
+                    them -- the header says which ("]m open"/"]m all")
     R               refetch
     q               fold the conversations away
     ]m  [m          the next thread owed an answer, and the previous
@@ -1036,6 +1044,14 @@ like the letters that read.
 `]m` and `[m` in here move the cursor of the window the pane was opened
 from -- the walk happens in the code, and your reading position stays
 in the prose.
+
+`S` is which threads the walk stops at. Out of the box it steps over a
+resolved one: `]m` is "what is left", and a settled conversation is
+history. A second pass is the other question -- what was settled, and
+whether it was settled right -- and `S` makes every thread a stop for
+the rest of the editor session, until it is pressed again. It is a
+mode, so the pane's header says it on the right: `]m open` or `]m all`.
+`comments.walk_resolved = true` starts the session that way.
 
 `q` is `<leader>mx` from inside: while the pane is open it is what
 "expanded" means, so closing it folds the conversations away rather than
@@ -2148,6 +2164,7 @@ COMMENTS                                             *nemeton-config-comments*
         url = true,          -- a page anywhere
       },
       show_resolved = true,  -- draw resolved threads at all
+      walk_resolved = false, -- `]m` stops at resolved threads too
       short_commits = true,  -- a link to a commit as its short sha
       resolve_next = true,   -- resolving a thread walks on, as `]m` would
       syntax = true,         -- a suggestion in its language's colours
@@ -2260,6 +2277,10 @@ something there to answer.
 
 `show_resolved` is a redraw, not a refetch: resolved threads are fetched
 either way.
+
+`walk_resolved` is where an editor session starts: whether `]m` and
+`[m` stop at a resolved thread or step over it. `S` in the pane flips
+it for the rest of the session |nemeton-pane-window|.
 
 `short_commits` draws a link to a commit as the eight digits GitLab
 itself prints: a permalink is a hundred characters whose only content is

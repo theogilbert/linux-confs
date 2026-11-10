@@ -852,6 +852,21 @@ local function visible(list, show_resolved)
   end, list)
 end
 
+--- `line -> row`: the row each line of the index has its marker on
+--- now, which an edit above it moves and the index does not see.
+--- Lines with no marker drawn are not in it.
+function M.rows(bufnr)
+  local out = {}
+  local known = M.line_of_mark[bufnr] or {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, M.ns, 0, -1, {})) do
+    local line = known[mark[1]]
+    if line then
+      out[line] = mark[2] + 1
+    end
+  end
+  return out
+end
+
 --- Draws `by_line` (line number -> list of threads) onto `bufnr`.
 ---
 --- The gutter, and at the end of the line the first words of what is on

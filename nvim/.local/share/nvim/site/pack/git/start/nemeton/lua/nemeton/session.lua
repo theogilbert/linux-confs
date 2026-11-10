@@ -1392,13 +1392,15 @@ end
 --- what is around it, and a comment written over a selection is about
 --- the lines above the anchor as much as the anchor. Called after the
 --- pane has opened, since that is what decides how tall the window is.
-local function centre(win, path, line)
+--- `row` is where that line's marker is now, if an edit has moved it.
+local function centre(win, path, line, row)
+  row = row or line
   local span = 0
   for _, t in ipairs(((M.current.by_file or {})[path] or {})[line] or {}) do
     span = math.max(span, threads.span(t))
   end
   local height = vim.api.nvim_win_get_height(win)
-  local top = math.max(math.floor((line - span + line) / 2) - math.floor(height / 2), 1)
+  local top = math.max(math.floor((row - span + row) / 2) - math.floor(height / 2), 1)
   vim.api.nvim_win_call(win, function()
     vim.fn.winrestview({ topline = top })
   end)
@@ -1409,14 +1411,18 @@ end
 --- list, down a link -- is asking to read it, and a gutter marker
 --- answers only that there is one. The mode goes with the pane, as it
 --- does everywhere the pane is opened.
-local function read_here()
+---
+--- `line` is the place in the index, where the caller knows it: the
+--- walk does, and the cursor cannot always say (see `pane.show`).
+local function read_here(line)
   local pane = require("nemeton.pane")
+  local win = vim.api.nvim_get_current_win()
   if pane.is_open() then
-    pane.show(vim.api.nvim_get_current_win())
+    pane.show(win, line)
     return
   end
   M.current.mode = "expanded"
-  pane.open()
+  pane.open(line and { buf = vim.api.nvim_win_get_buf(win), line = line } or nil)
   M.redraw_all()
 end
 
@@ -1443,7 +1449,8 @@ function M.goto_thread(thread, before)
   -- the whole span in the middle of the window, so that `<CR>` in the
   -- pane on a comment written over twelve lines shows the twelve and
   -- not the last of them at the bottom of the screen.
-  centre(vim.api.nvim_get_current_win(), thread.path, vim.api.nvim_win_get_cursor(0)[1])
+  local win = vim.api.nvim_get_current_win()
+  centre(win, thread.path, thread.line, vim.api.nvim_win_get_cursor(win)[1])
   return true
 end
 
@@ -1721,51 +1728,140 @@ function M.threads_at_cursor()
   return marks.threads_at(bufnr, row, by_line)
 end
 
---- Every stop `]m` makes, in the order it makes them: by file, then by
---- line -- the order the quickfix list is in, because they are two
---- answers to the same question and disagreeing about the order of a
---- review is worse than either order.
+--- Whether the walk stops at a settled conversation too. Off unless
+--- `comments.walk_resolved` says otherwise, and flipped for the rest of
+--- the editor session from the pane, whose header says which it is.
+function M.walks_resolved()
+  if M.walk_resolved == nil then
+    return require("nemeton.config").comments.walk_resolved and true or false
+  end
+  return M.walk_resolved
+end
+
+function M.toggle_walk_resolved()
+  M.walk_resolved = not M.walks_resolved()
+  require("nemeton.pane").redraw()
+  return M.walk_resolved
+end
+
+--- Every stop `]m` makes, in the order it makes them: the conversations
+--- on the merge request as a whole first, then by file, then by row --
+--- the order the quickfix list is in, because they are two answers to
+--- the same question and disagreeing about the order of a review is
+--- worse than either order.
 ---
---- Unresolved only. `]m` is how a reviewer walks a review, and a
---- settled conversation is not a stop on that walk -- it is history,
---- still drawn in the gutter for whoever wants to read it, and stepped
---- over by the key that means "what is left". An unsent comment of your
---- own is a stop: it is owed a send.
+--- The overall ones first because they are what a review is opened
+--- with -- "why is this split in two", "can this wait for the next
+--- release" -- and are answered before the code is, if at all. They
+--- move no cursor: there is no line to put it on, and the pane is
+--- where they are read.
 ---
---- A thread on a file that is not on disk -- one written against a line
---- that was deleted, or against a file the branch no longer has -- is
---- not a stop either. There is nowhere to put the cursor, and `:edit`
---- on it would answer the key with an empty buffer.
+--- Unresolved only, unless `M.walks_resolved()`. `]m` is how a reviewer
+--- walks a review, and a settled conversation is, most of the time,
+--- not a stop on that walk -- it is history, still drawn in the gutter
+--- for whoever wants to read it. Most of the time: reading what was
+--- settled is how you find out what a second pass has to check, and
+--- that is what the toggle is for. An unsent comment of your own is
+--- always a stop: it is owed a send.
+---
+--- By the row the marker is on now, not the line the thread was written
+--- against. An edit above a thread moves its marker and not the index,
+--- and a walk ordered by the index lands beside the markers and then
+--- steps over the next one from there. Threads pinned past the end of a
+--- file that has since got shorter share one row, and are kept apart by
+--- the line they were written on.
+---
+--- A thread on a file that is not on disk -- one written against a
+--- file the branch no longer has -- is not a stop. There is nowhere to
+--- put the cursor, and `:edit` on it would answer the key with an
+--- empty buffer.
 local function stops()
-  local root = M.root()
-  local out, exists = {}, {}
-  for path, by_line in pairs(M.current.by_file) do
-    if exists[path] == nil then
-      exists[path] = root ~= nil and vim.uv.fs_stat(root .. "/" .. path) ~= nil
+  local walk_settled = M.walks_resolved()
+  local function owed(list)
+    for _, t in ipairs(list) do
+      if walk_settled or not t.resolved or threads.unsent(t) then
+        return true
+      end
     end
-    if exists[path] then
+    return false
+  end
+
+  local out = {}
+  for _, list in ipairs({ M.current.overview or {}, M.current.draft_overview or {} }) do
+    for _, t in ipairs(list) do
+      if owed({ t }) then
+        table.insert(out, { thread = t })
+      end
+    end
+  end
+
+  local open = {}
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) then
+      local path = M.relpath(bufnr)
+      if path then
+        open[path] = bufnr
+      end
+    end
+  end
+
+  local root = M.root()
+  local code = {}
+  for path, by_line in pairs(M.current.by_file or {}) do
+    if root and vim.uv.fs_stat(root .. "/" .. path) then
+      local bufnr = open[path]
+      local rows = bufnr and marks.rows(bufnr) or {}
+      local last = bufnr and vim.api.nvim_buf_line_count(bufnr) or math.huge
       for line, at in pairs(by_line) do
-        for _, t in ipairs(at) do
-          if not t.resolved then
-            table.insert(out, { path = path, line = line })
-            break
-          end
+        if owed(at) then
+          table.insert(code, { path = path, line = line, row = rows[line] or math.min(line, last) })
         end
       end
     end
   end
-  table.sort(out, function(a, b)
+  table.sort(code, function(a, b)
     if a.path ~= b.path then
       return a.path < b.path
     end
+    if a.row ~= b.row then
+      return a.row < b.row
+    end
     return a.line < b.line
   end)
-  return out
+  return vim.list_extend(out, code)
+end
+
+--- Which stop the walk is standing on, if it is standing on one: the
+--- one the pane holds, while the cursor is still where the walk left
+--- it. The pane holds still while the cursor wanders, so a cursor that
+--- has wandered off is asked instead -- see `M.jump`.
+local function standing(list, path, row)
+  local pane = require("nemeton.pane")
+  local at = pane.is_open() and pane.at
+  if not at then
+    return nil
+  end
+  for i, s in ipairs(list) do
+    if at.thread then
+      if s.thread and s.thread.id == at.thread then
+        return i
+      end
+    elseif
+      s.path
+      and s.path == path
+      and s.line == at.line
+      and s.row == row
+      and at.buf == vim.api.nvim_get_current_buf()
+    then
+      return i
+    end
+  end
+  return nil
 end
 
 --- The next thread still owed something, in `dir` (1 or -1), wrapping.
---- Returns the line it landed on, or nil when the merge request has no
---- stop to make.
+--- Returns the line it landed on -- true for a conversation on no line
+--- -- or nil when the merge request has no stop to make.
 ---
 --- Across files, not just down this one. A review is a walk through a
 --- change, and the change is not one file: `]m` stopping at the last
@@ -1773,6 +1869,11 @@ end
 --- is a key that says "you are done here" when there are eleven threads
 --- in the next file. What it means is "the next thing owed an answer",
 --- and the file that is in is a detail.
+---
+--- From the stop the pane is holding where there is one, and from the
+--- cursor otherwise. The pane is the walk's memory: a conversation on
+--- the merge request as a whole has no row for the cursor to be on,
+--- and two threads pinned to one row are one row to a cursor.
 ---
 --- The jump goes through `m'` and `:edit`, so it lands in the jumplist:
 --- `<C-o>` is how you get back from a key that moved the whole window
@@ -1793,36 +1894,51 @@ function M.jump(dir)
   local path = M.relpath(vim.api.nvim_get_current_buf())
   local row = path and vim.api.nvim_win_get_cursor(0)[1] or 0
 
-  local function after(s)
-    if not path then
-      return true
+  local target
+  local i = standing(list, path, row)
+  if i then
+    target = list[(i - 1 + dir) % #list + 1]
+  elseif not path then
+    target = dir > 0 and list[1] or list[#list]
+  else
+    -- The overall conversations are before every file.
+    local function after(s)
+      return s.path and (s.path > path or (s.path == path and s.row > row))
     end
-    return s.path > path or (s.path == path and s.line > row)
-  end
-  local function before(s)
-    if not path then
-      return true
+    local function before(s)
+      return not s.path or s.path < path or (s.path == path and s.row < row)
     end
-    return s.path < path or (s.path == path and s.line < row)
+    if dir > 0 then
+      for _, s in ipairs(list) do
+        if after(s) then
+          target = s
+          break
+        end
+      end
+      target = target or list[1]
+    else
+      for j = #list, 1, -1 do
+        if before(list[j]) then
+          target = list[j]
+          break
+        end
+      end
+      target = target or list[#list]
+    end
   end
 
-  local target
-  if dir > 0 then
-    for _, s in ipairs(list) do
-      if after(s) then
-        target = s
-        break
-      end
+  if target.thread then
+    local pane = require("nemeton.pane")
+    local at = { thread = target.thread.id }
+    if pane.is_open() then
+      pane.at = at
+      pane.render()
+    else
+      M.current.mode = "expanded"
+      pane.open(at)
+      M.redraw_all()
     end
-    target = target or list[1]
-  else
-    for i = #list, 1, -1 do
-      if before(list[i]) then
-        target = list[i]
-        break
-      end
-    end
-    target = target or list[#list]
+    return true
   end
 
   vim.cmd("normal! m'")
@@ -1830,14 +1946,17 @@ function M.jump(dir)
     vim.cmd.edit(vim.fn.fnameescape(M.root() .. "/" .. target.path))
   end
   local win = vim.api.nvim_get_current_win()
-  local last = vim.api.nvim_buf_line_count(0)
-  local landed = math.min(target.line, last)
+  local bufnr = vim.api.nvim_get_current_buf()
+  -- Asked again: the file may only now be open, and its markers only
+  -- now drawn.
+  local landed = marks.rows(bufnr)[target.line]
+    or math.min(target.line, vim.api.nvim_buf_line_count(bufnr))
   vim.api.nvim_win_set_cursor(win, { landed, 0 })
   -- The walk is what the pane reads: it holds still while the cursor
   -- wanders through the code, and moves when the reviewer says "the
   -- next thing owed an answer" -- and opens on that, if it was shut.
-  read_here()
-  centre(win, target.path, landed)
+  read_here(target.line)
+  centre(win, target.path, target.line, landed)
   return target.line
 end
 

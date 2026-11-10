@@ -242,7 +242,7 @@ when there is no line to be about.
 | `<leader>ms` | in visual mode: suggest a change to these lines |
 | `<leader>md` | the merge request itself, in a float — the one review key that is not about the line under the cursor |
 | `<leader>mq` | end the review: the markers and these keys go away |
-| `]m` `[m` | next / previous comment, across the whole merge request |
+| `]m` `[m` | next / previous comment, across the whole merge request — its own conversations first, then the code by file and line |
 
 What is bound out on the code is what the pane cannot do: read the
 review, walk it, and start a comment where the cursor is. Acting on a
@@ -585,7 +585,10 @@ code the thread being read is about, landing the way `]m` lands, with
 the whole span of a comment written over a selection in the middle of
 the window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says
 who gave the reaction under the cursor, when the comment was written, what its commit was,
-or where the link goes, `<leader>mL` copies a link to the comment under the cursor, `R`
+or where the link goes, `<leader>mL` copies a link to the comment under the cursor, `S`
+says whether `]m` stops at resolved threads too or steps over them (the
+header says which, `]m open` or `]m all`; `comments.walk_resolved = true`
+starts that way), `R`
 refetches — and `q` folds the conversations away rather than only
 closing the window, because while it is open the pane *is* what expanded
 means. Closing it any other way says the same thing: the mode follows
@@ -593,9 +596,11 @@ the window. `]m` and `[m` work in there too: out in the code they move
 the cursor and the pane follows, and in the pane they move the cursor of
 the window it was opened from, so the walk happens without your reading
 position leaving the prose. A thread on the merge request itself can be
-read in it too — `<CR>` on one in the comments window puts it there,
-headed `on the merge request`, with nothing to quote and the same keys
-to answer with — and the next `]m` turns the pane back to the code.
+read in it too — the walk stops at those first, before the first file,
+and `<CR>` on one in the comments window puts it there — headed `on the
+merge request`, with nothing to quote, the cursor left where it was and
+the same keys to answer with. The walk goes by where the markers are
+now, so after an edit above a thread `]m` still lands on its marker.
 
 In the pipeline's jobs: `<CR>` opens what the job under the cursor
 printed, `R` runs it again (after asking), `o` opens the job on GitLab,

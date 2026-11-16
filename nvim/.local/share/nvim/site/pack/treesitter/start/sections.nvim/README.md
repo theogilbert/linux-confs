@@ -79,6 +79,7 @@ require("sections").setup({
         collapse_all = "zM",              -- Collapse all sections
         expand_all = "zR",                -- Expand all sections
         show_description = "K",           -- Show section description
+        search = "g/",                    -- Fuzzy-search sections (fzf-lua)
         close = "q",                      -- Close the pane
     },
 })
@@ -106,6 +107,7 @@ require("sections").setup({
 | `keymaps.collapse_all` | string | `"zM"` | Key to collapse all sections |
 | `keymaps.expand_all` | string | `"zR"` | Key to expand all sections |
 | `keymaps.show_description` | string | `"K"` | Key to show a section's description |
+| `keymaps.search` | string | `"g/"` | Key to fuzzy-search all sections with fzf-lua |
 | `keymaps.close` | string | `"q"` | Key to close the pane |
 
 ## Keymaps (within sections panel)

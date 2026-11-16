@@ -83,6 +83,7 @@ sections.nvim can be configured by passing options to the setup function:
             collapse_all = "zM",              -- Collapse all sections
             expand_all = "zR",                -- Expand all sections
             show_description = "K",           -- Show section description
+            search = "g/",                    -- Fuzzy-search sections (fzf-lua)
             close = "q",                      -- Close the panel
         },
     })
@@ -129,6 +130,7 @@ Configuration Options:~
     - `collapse_all`: Collapse all sections (default: "zM")
     - `expand_all`: Expand all sections (default: "zR")
     - `show_description`: Show the section's description (default: "K")
+    - `search`: Fuzzy-search all sections with fzf-lua (default: "g/")
     - `close`: Close the panel (default: "q")
     Set a keymap to `false` to disable it.
 
@@ -194,6 +196,12 @@ Default keymaps within the sections panel:
 *sections-keymap-description*
 `K` - Show the current section's description in a floating window, see
 |sections-descriptions|
+
+*sections-keymap-search*
+`g/` - Fuzzy-search every section, at any depth, with fzf-lua (requires
+       fzf-lua), and jump to the chosen one. Nested sections are listed with
+       their qualified name ("Class.method"). Hidden private sections are left
+       out.
 
 *sections-keymap-close*
 `q` - Close the panel and return to the code window

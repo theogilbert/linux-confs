@@ -24,6 +24,7 @@ local _config = {
         collapse_all = "zM",
         expand_all = "zR",
         show_description = "K",
+        search = "g/",
         close = "q",
     },
 }

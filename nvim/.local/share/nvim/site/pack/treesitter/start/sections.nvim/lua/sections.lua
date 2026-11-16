@@ -265,6 +265,60 @@ local function show_description()
     vim.lsp.util.open_floating_preview(lines, "markdown", { border = "rounded", focus_id = "sections_description" })
 end
 
+--- Flattens a sections tree into `{ name, position }` entries in buffer
+--- order. Nested sections are qualified with their ancestors' names
+--- ("Class.method") so that same-named sections stay distinguishable.
+--- @param skip_private boolean|nil Leave out private sections, and those nested in them
+local function flatten_sections(sections, prefix, out, skip_private)
+    for _, section in ipairs(sections) do
+        if not (skip_private and section.private) then
+            local qualified = prefix .. section.name
+            table.insert(out, { name = qualified, position = section.position })
+            flatten_sections(section.children, qualified .. ".", out, skip_private)
+        end
+    end
+    return out
+end
+
+--- Fuzzy-searches every section shown by the pane, at any depth, with
+--- fzf-lua, and jumps to the chosen one in the watched window.
+local function search_sections()
+    local info = get_state()
+    if info == nil then
+        return
+    end
+
+    local ok, fzf = pcall(require, "fzf-lua")
+    if not ok then
+        vim.notify("Searching sections requires fzf-lua", vim.log.levels.ERROR)
+        return
+    end
+
+    local targets = flatten_sections(info.sections, "", {}, not info.show_private)
+    -- Entries are prefixed with their hidden index, as qualified names may repeat
+    local entries = {}
+    for i, target in ipairs(targets) do
+        table.insert(entries, i .. "\t" .. target.name)
+    end
+
+    fzf.fzf_exec(entries, {
+        prompt = "Sections> ",
+        previewer = false,
+        fzf_opts = { ["--delimiter"] = "\t", ["--with-nth"] = "2..", ["--no-sort"] = true },
+        actions = {
+            ["default"] = function(selected)
+                local target = selected and selected[1] and targets[tonumber(selected[1]:match("^(%d+)\t"))]
+                if target == nil or not vim.api.nvim_win_is_valid(info.watched_win) then
+                    return
+                end
+                vim.api.nvim_set_current_win(info.watched_win)
+                vim.cmd("normal! m'")
+                vim.api.nvim_win_set_cursor(info.watched_win, target.position)
+            end,
+        },
+    })
+end
+
 -- Closes the pane and returns to the code window it watches
 local function close_pane()
     local info = get_state()
@@ -409,6 +463,7 @@ M.toggle = function()
             { cfg.keymaps.expand_all, function() set_all_collapse(false) end },
             { cfg.keymaps.toggle_private, toggle_private },
             { cfg.keymaps.show_description, show_description },
+            { cfg.keymaps.search, search_sections },
             { cfg.keymaps.close, close_pane },
         },
         on_close = function()
@@ -441,18 +496,6 @@ M.focus = function()
     end
     vim.api.nvim_set_current_win(info.pane.pane_win)
     cursor_to_current_section(info)
-end
-
---- Flattens a sections tree into `{ name, position }` entries in buffer
---- order. Nested sections are qualified with their ancestors' names
---- ("Class.method") so that same-named sections stay distinguishable.
-local function flatten_sections(sections, prefix, out)
-    for _, section in ipairs(sections) do
-        local qualified = prefix .. section.name
-        table.insert(out, { name = qualified, position = section.position })
-        flatten_sections(section.children, qualified .. ".", out)
-    end
-    return out
 end
 
 local function get_jump_targets(buf)

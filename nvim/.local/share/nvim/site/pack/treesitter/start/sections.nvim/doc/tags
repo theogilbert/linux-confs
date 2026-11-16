@@ -22,6 +22,7 @@ sections-keymap-expand	sections.txt	/*sections-keymap-expand*
 sections-keymap-expand-all	sections.txt	/*sections-keymap-expand-all*
 sections-keymap-expand-recursive	sections.txt	/*sections-keymap-expand-recursive*
 sections-keymap-private	sections.txt	/*sections-keymap-private*
+sections-keymap-search	sections.txt	/*sections-keymap-search*
 sections-keymap-select	sections.txt	/*sections-keymap-select*
 sections-keymap-toggle	sections.txt	/*sections-keymap-toggle*
 sections-keymaps	sections.txt	/*sections-keymaps*

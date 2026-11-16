@@ -16,6 +16,7 @@ local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local spin = require("nemeton.spin")
 local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 
@@ -43,11 +44,18 @@ local state = nil
 local page = 1
 local exhausted = false
 
--- The states, in the order the key walks them. Open first because that
--- is what a review is; "all" last because a queue with everything in it
--- is a history, and the one thing it is bad at is showing what is left
--- to do.
-local STATES = { "opened", "merged", "closed", "all" }
+-- The states, in the order the float offers them. Open first because
+-- that is what a review is; "all" last because a queue with everything
+-- in it is a history, and the one thing it is bad at is showing what
+-- is left to do. One of a group rather than boxes: the forge lists one
+-- state or all of them, and two of three would be a page of all of
+-- them with holes in it.
+local STATES = {
+  { key = "opened", label = "open" },
+  { key = "merged", label = "merged" },
+  { key = "closed", label = "closed" },
+  { key = "all", label = "all of them" },
+}
 
 --- What is being listed, whether or not the key has been pressed.
 local function listing()
@@ -84,6 +92,7 @@ local function close()
   end
   M.win, M.buf, rows, message, state = nil, nil, {}, nil, nil
   page, exhausted = 1, false
+  spin.stop("list")
 end
 
 --- Whether a row is a merge request anything is still waiting on.
@@ -522,17 +531,6 @@ end
 
 --- What the keys do, which is not the same list while a message is over
 --- the queue: most of them have nothing to act on until it is gone.
---- The state the key would move to, which is what the hint is named
---- after.
-local function next_state()
-  local now = listing()
-  for i, s in ipairs(STATES) do
-    if s == now then
-      return STATES[i % #STATES + 1]
-    end
-  end
-  return STATES[1]
-end
 
 --- The window's own title says which queue this is. The rows say it
 --- one at a time; a window of nothing but merged merge requests has to
@@ -541,10 +539,31 @@ end
 local function set_title()
   if M.win and vim.api.nvim_win_is_valid(M.win) then
     vim.api.nvim_win_set_config(M.win, {
-      title = (" merge requests · %s "):format(listing()),
+      title = (" %smerge requests · %s "):format(spin.glyph("list"), listing()),
       title_pos = "center",
     })
   end
+end
+
+--- Which queue, chosen in a float: refetched as it is ticked, since
+--- the forge is what answers it.
+local function choose_state()
+  require("nemeton.checklist").open({
+    title = "merge requests",
+    items = vim.tbl_map(function(s)
+      return { key = s.key, label = s.label, group = "state" }
+    end, STATES),
+    on = { [listing()] = true },
+    on_change = function(on)
+      for _, s in ipairs(STATES) do
+        if on[s.key] and s.key ~= listing() then
+          state = s.key
+          set_title()
+          M.open()
+        end
+      end
+    end,
+  })
 end
 
 local function set_hint()
@@ -562,13 +581,13 @@ local function set_hint()
     -- but "refetch" over "no opened merge requests" is a window that
     -- reads as a dead end, whatever the key underneath it does.
     --
-    -- And the key that walks to the next queue, for the same reason and
+    -- And the key that picks another queue, for the same reason and
     -- more so: "no opened merge requests" is the one message in this
     -- window whose likeliest answer is "then show me the merged ones",
     -- and the key that does it is the one thing a reader cannot guess
     -- from an empty window.
     keys = {
-      { k.state, next_state() },
+      { k.state, "state" },
       { k.create, "new" },
       { k.refresh, "refetch" },
       { k.quit, "quit" },
@@ -578,9 +597,7 @@ local function set_hint()
     keys = {
       { k.select, "open" },
       { k.description, "description" },
-      -- Named after what pressing it would show rather than after what
-      -- is on the screen: every other hint on this bar is a verb.
-      { k.state, next_state() },
+      { k.state, "state" },
     }
     -- Only while there might be another page: a key offered for
     -- something that has already run out is a key you press twice.
@@ -823,6 +840,8 @@ local function open_window()
       -- and another can be picked.
       local queue = rows
       close_preview()
+      spin.start("list", set_title)
+      set_title()
       set_message(("opening !%d — %s…"):format(mr.iid, mr.title or ""))
       -- Through the plugin's own entry point rather than straight to
       -- session.open: opening a merge request also binds the review keys
@@ -838,6 +857,8 @@ local function open_window()
         -- anything.
         on_error = function(why)
           rows = queue
+          spin.stop("list")
+          set_title()
           set_message(why, "NemetonBad")
         end,
       })
@@ -873,15 +894,7 @@ local function open_window()
       end,
       "scroll it back up",
     },
-    {
-      keys.state,
-      function()
-        state = next_state()
-        set_title()
-        M.open()
-      end,
-      "open, merged, closed, or all of them",
-    },
+    { keys.state, choose_state, "open, merged, closed, or all of them, in a float" },
     { keys.more, M.more, "another page of them" },
     {
       keys.create,
@@ -951,10 +964,13 @@ function M.more()
     return
   end
   local mine, asked = M.buf, page + 1
+  spin.start("list", set_title)
   glab.mr_list(root, listing(), function(mrs, err)
     if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
       return
     end
+    spin.stop("list")
+    set_title()
     if not mrs then
       session.notify("could not list merge requests: " .. tostring(err), vim.log.levels.ERROR)
       return
@@ -1003,6 +1019,7 @@ function M.open()
   if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
     open_window()
   end
+  spin.start("list", set_title)
   set_title()
   set_message(("fetching %s merge requests…"):format(listing()))
   page, exhausted = 1, false
@@ -1013,6 +1030,8 @@ function M.open()
     if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
       return
     end
+    spin.stop("list")
+    set_title()
     if not mrs then
       set_message("could not list merge requests: " .. tostring(err), "NemetonBad")
       return

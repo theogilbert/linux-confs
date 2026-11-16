@@ -23,6 +23,7 @@
 -- other buffer to be wrong in. That is what makes the menu work on a
 -- Neovim that cannot hold the option for one buffer.
 
+local config = require("nemeton.config")
 local win = require("nemeton.win")
 
 local M = {}
@@ -38,6 +39,9 @@ local back = nil
 -- dismissed. Held here rather than in a closure so that `M.close` can
 -- be the one place both endings go through.
 local answered = nil
+-- Whether the cursor is away in a window opened over the prompt
+-- (`M.over`), which is not the prompt being left.
+local away = false
 -- The one that puts the menu up, kept so that a caller whose list has
 -- changed since the window opened can ask for it again. See
 -- `M.refresh`.
@@ -130,6 +134,15 @@ function M.refresh()
   end
 end
 
+--- Runs `fn`, which opens a window over the prompt -- a help float --
+--- without the cursor going to it counting as the prompt left. The
+--- window must hand the cursor back when it closes, as `detail.float`
+--- does.
+function M.over(fn)
+  away = true
+  fn()
+end
+
 --- Asks for one word.
 ---
 ---   `title`     what the window is called, and the whole of the
@@ -138,16 +151,27 @@ end
 ---   `omnifunc`  the `v:lua...` string the buffer completes through,
 ---               for the reader who reaches for `<C-x><C-o>`.
 ---   `items`     `f(line)` -> the completion items to put up as it is
----               typed. The menu is this rather than the `omnifunc`,
----               because a menu that comes up on its own has to be
----               handed to the editor and not typed at it.
+---               typed, and the column they replace from (the first,
+---               where it gives none). The menu is this rather than the
+---               `omnifunc`, because a menu that comes up on its own has
+---               to be handed to the editor and not typed at it.
+---   `live`      the menu asked for again on every key, menu up or
+---               not, for `items` that filter by themselves -- each
+---               item `equal` so the editor does not narrow it again.
 ---   `menu`      `false` for no list until something has been typed.
 ---   `text`      what is in it to start with, if anything.
 ---   `on_change` `f(line)`, on every change to what is typed: for the
 ---               prompt whose answer is acted on as it is typed -- a
 ---               search, narrowing a list under it.
+---   `paint`     `f(line)` -> `{ { from, to, group } }`, byte columns
+---               from 0 with `to` exclusive: what is typed coloured as
+---               it is typed, for a prompt whose words mean something
+---               -- a search's filters.
 ---   `on_cancel` `f()`, where it is dismissed: what puts back what
 ---               `on_change` changed.
+---   `keys`      `{ { lhs, fn, desc } }`, bound in normal mode: what the
+---               box does besides being answered. `fn` may open a
+---               window over it (`M.over`).
 ---   `at`        `{ row, col, width }` on the editor, for a prompt that
 ---               belongs to a window of its own and sits over it rather
 ---               than in the middle of the screen.
@@ -198,6 +222,8 @@ function M.open(opts, cb)
     -- there for a reader who reaches for it and so that anybody with a
     -- completion engine has something to point it at.
     vim.bo[M.buf].omnifunc = opts.omnifunc
+  end
+  if opts.omnifunc or opts.items then
     -- Buffer-local where the editor can hold it there (0.11 and newer),
     -- and globally where it cannot -- put back by `shut`. `noselect`
     -- because a menu that picks the first name for you is worse than no
@@ -239,19 +265,29 @@ function M.open(opts, cb)
           return
         end
       end
-      local items = opts.items(vim.api.nvim_get_current_line()) or {}
-      if #items > 0 then
-        -- From the first column: the whole line is the word.
-        pcall(vim.fn.complete, 1, items)
+      local items, col = opts.items(vim.api.nvim_get_current_line())
+      items = items or {}
+      -- An empty list where it is live puts the last one away: a menu
+      -- of what no longer matches is a menu that lies.
+      if #items > 0 or (opts.live and vim.fn.pumvisible() == 1) then
+        -- From the first column unless told otherwise: the whole line
+        -- is the word.
+        pcall(vim.fn.complete, col or 1, items)
       end
     end
-    vim.api.nvim_create_autocmd("TextChangedI", {
-      buffer = M.buf,
-      desc = "nemeton: what the word being typed can turn into",
-      callback = function()
-        menu(false)
-      end,
-    })
+    -- `TextChangedP` too where it is live: typed with the menu up is
+    -- the editor's event and not `TextChangedI`, and the editor's own
+    -- narrowing is by the start of a word, not the search asked for.
+    vim.api.nvim_create_autocmd(
+      opts.live and { "TextChangedI", "TextChangedP" } or "TextChangedI",
+      {
+        buffer = M.buf,
+        desc = "nemeton: what the word being typed can turn into",
+        callback = function()
+          menu(opts.live or false)
+        end,
+      }
+    )
     -- ...and the whole list before a key is pressed at all, which is the
     -- answer to "like what?" and half the reason this window exists.
     -- On `InsertEnter` rather than here, because `startinsert` below is
@@ -264,11 +300,34 @@ function M.open(opts, cb)
         desc = "nemeton: the whole list, before a key is pressed",
         callback = function()
           vim.schedule(function()
-            menu(false)
+            -- Unless it was answered in the meantime.
+            if menu then
+              menu(false)
+            end
           end)
         end,
       })
     end
+  end
+
+  if opts.paint then
+    local ns = vim.api.nvim_create_namespace("nemeton-prompt")
+    local function paint()
+      local line = vim.api.nvim_buf_get_lines(M.buf, 0, 1, false)[1] or ""
+      vim.api.nvim_buf_clear_namespace(M.buf, ns, 0, -1)
+      for _, span in ipairs(opts.paint(line) or {}) do
+        pcall(vim.api.nvim_buf_set_extmark, M.buf, ns, 0, span[1], {
+          end_col = math.min(span[2], #line),
+          hl_group = span[3],
+        })
+      end
+    end
+    paint()
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
+      buffer = M.buf,
+      desc = "nemeton: what is typed, coloured as it is typed",
+      callback = paint,
+    })
   end
 
   if opts.on_change then
@@ -288,22 +347,176 @@ function M.open(opts, cb)
   -- something chosen in it, that word is already on the line -- which
   -- is what choosing did -- so there is one rule and not two.
   map({ "i", "n" }, "<CR>", M.accept)
+  local normal = config.keys.prompt and config.keys.prompt.normal
+  if normal and normal ~= "" then
+    map("i", normal, function()
+      vim.cmd("stopinsert")
+    end)
+  end
+  for _, b in ipairs(opts.keys or {}) do
+    if b[1] and b[1] ~= "" then
+      map("n", b[1], b[2])
+    end
+  end
   map({ "i", "n" }, "<Esc>", M.cancel)
   map({ "i", "n" }, "<C-c>", M.cancel)
   map("n", "q", M.cancel)
   -- A prompt the cursor has left is a prompt nobody is answering, and
   -- one left open behind a window is a keymap waiting for a buffer that
   -- is no longer on the screen.
+  --
+  -- Unless it was left for a window opened over it on purpose -- a
+  -- help float -- which hands the cursor back when it closes.
+  away = false
   vim.api.nvim_create_autocmd({ "BufLeave", "WinLeave" }, {
     buffer = M.buf,
-    once = true,
     desc = "nemeton: a prompt the cursor has left",
     callback = function()
+      if away then
+        return
+      end
       vim.schedule(M.cancel)
+      return true
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinEnter", {
+    buffer = M.buf,
+    desc = "nemeton: back from a window opened over the prompt",
+    callback = function()
+      away = false
     end,
   })
 
   vim.cmd(opts.text and opts.text ~= "" and "startinsert!" or "startinsert")
+end
+
+--- The names on a line of them, comma-separated: trimmed, each once,
+--- in the order written.
+function M.names(line)
+  local out, seen = {}, {}
+  for part in (line or ""):gmatch("[^,]+") do
+    local n = vim.trim(part)
+    if n ~= "" and not seen[n] then
+      seen[n] = true
+      table.insert(out, n)
+    end
+  end
+  return out
+end
+
+--- The name being typed on a line of them with the cursor after byte
+--- `col`: what follows the last comma before the cursor, the column
+--- it starts in (which the menu replaces from), and `col`.
+function M.typing(line, col)
+  local before = line:sub(1, col)
+  local start = (before:match("^.*(),") or 1)
+  start = start + #before:sub(start):match("^,?%s*")
+  return before:sub(start), start, col
+end
+
+--- The menu for that line: of `drawn` -- `{ { name =, text = } }` --
+--- the ones not on it already, narrowed fuzzily by what is being typed
+--- against what is drawn; and the column it replaces from.
+function M.offered(drawn, line, col)
+  local typed, start = M.typing(line, col)
+  local on = {}
+  for _, n in ipairs(M.names(line:sub(1, start - 1) .. line:sub(col + 1))) do
+    on[n] = true
+  end
+  local left = vim.tbl_filter(function(d)
+    return not on[d.name]
+  end, drawn)
+  if typed ~= "" then
+    left = vim.fn.matchfuzzy(left, typed, { key = "text" })
+  end
+  return vim.tbl_map(function(d)
+    return { word = d.name, abbr = d.text, equal = 1 }
+  end, left),
+    start
+end
+
+--- Asks for several of `opts.names`, on one line, comma-separated.
+---
+--- In place of a list ticked one name a round trip: a project's labels
+--- or members are a hundred names, and finding one is a search, which
+--- a picker the size of the list is bad at and a line with a menu
+--- under it is what the composer's `@` already is. The menu is the
+--- names not on the line yet, narrowed fuzzily by the one being typed
+--- -- against what is drawn, so a member is found by their full name
+--- as well. `<Tab>` and `<S-Tab>` walk it; `<CR>` on the menu puts
+--- that name on the line (the first match, where none is chosen) and
+--- starts the next; `<CR>` with nothing typed and nothing chosen is
+--- the answer.
+--- `<Esc>` changes nothing.
+---
+---   `title`   what is being chosen
+---   `names`   what can be
+---   `chosen`  what is on the line to begin with
+---   `shown`   `f(name)` -> what the menu draws for it, where that is
+---             more than the name
+---
+--- `cb(set)` with the names on the line when it is answered: what was
+--- typed as well as what was picked, since a label can be new and a
+--- caller with a fixed set knows which of its own it has.
+function M.many(opts, cb)
+  local names, shown = opts.names or {}, opts.shown or function(n)
+    return n
+  end
+  local drawn = {}
+  for _, n in ipairs(names) do
+    table.insert(drawn, { name = n, text = shown(n) })
+  end
+  local function cursor(line)
+    return M.win and vim.api.nvim_win_get_cursor(M.win)[2] or #line
+  end
+  local function typing(line)
+    return M.typing(line, cursor(line))
+  end
+  local function items(line)
+    return M.offered(drawn, line, cursor(line))
+  end
+
+  local chosen = opts.chosen or {}
+  M.open({
+    title = opts.title,
+    text = #chosen > 0 and (table.concat(chosen, ", ") .. ", ") or "",
+    items = items,
+    live = true,
+    at = { width = math.min(72, math.max(vim.o.columns - 4, 10)) },
+  }, function(line)
+    cb(M.names(line))
+  end)
+
+  local function expr(lhs, fn)
+    vim.keymap.set("i", lhs, fn, { buffer = M.buf, expr = true, nowait = true, silent = true })
+  end
+  expr("<CR>", function()
+    if vim.fn.pumvisible() == 1 then
+      local chosen_now = (vim.fn.complete_info({ "selected" }) or {}).selected or -1
+      if chosen_now >= 0 then
+        return "<C-y>, "
+      end
+      -- The menu is up after every name, so it being up is not a
+      -- question asked: half a name typed is.
+      if vim.trim(typing(vim.api.nvim_get_current_line())) ~= "" then
+        return "<C-n><C-y>, "
+      end
+    end
+    -- Out of the mapping first: an answer opens and closes windows,
+    -- which the editor refuses from inside one that returns keys.
+    vim.schedule(M.accept)
+    return ""
+  end)
+  expr("<Tab>", function()
+    if vim.fn.pumvisible() == 1 then
+      return "<C-n>"
+    end
+    vim.schedule(M.refresh)
+    return ""
+  end)
+  expr("<S-Tab>", function()
+    return vim.fn.pumvisible() == 1 and "<C-p>" or ""
+  end)
 end
 
 return M

@@ -634,6 +634,11 @@ function M.setup_highlights()
   -- the letter to press -- is the part that has to be found without
   -- reading the rest.
   link("NemetonKey", "Special")
+  -- A filter in the issue search, the word and its value apart: the
+  -- colours of a keyword and of what it is given, which is what the two
+  -- are.
+  link("NemetonFilter", "Keyword")
+  link("NemetonFilterValue", "String")
   ground()
 end
 

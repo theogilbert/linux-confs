@@ -35,6 +35,23 @@ end, {
   desc = "nemeton: review merge requests",
 })
 
+-- An issue tab is scratch, and a session saved on the way out would
+-- bring it back as an empty tab. Closed before that, here rather than
+-- when the first issue opens so that it runs ahead of a session
+-- plugin's own `VimLeavePre`, which is most likely set up after this
+-- file is read -- and only where an issue has been opened at all, so
+-- quitting loads nothing.
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("NemetonLeave", {}),
+  callback = function()
+    local issue = package.loaded["nemeton.issue"]
+    if issue then
+      issue.close_all()
+    end
+  end,
+  desc = "nemeton: close the issue tabs before a session is saved",
+})
+
 local keys = require("nemeton.config").keys.global
 if keys.list and keys.list ~= "" then
   vim.keymap.set("n", keys.list, function()

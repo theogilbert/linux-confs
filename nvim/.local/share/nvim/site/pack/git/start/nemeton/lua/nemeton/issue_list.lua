@@ -23,6 +23,7 @@ local issues = require("nemeton.issues")
 local cache = require("nemeton.issue_cache")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local spin = require("nemeton.spin")
 local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 
@@ -49,20 +50,15 @@ local progress = nil
 local message = nil
 local back = function() end
 
-local STATES = { "opened", "closed", "all" }
+-- What a box in the state float stands for. Both is "all", and
+-- neither is a list of nothing, which the title says.
+local STATES = {
+  { key = "opened", label = "open" },
+  { key = "closed", label = "closed" },
+}
 
 local function listing()
   return state or "opened"
-end
-
-local function next_state()
-  local now = listing()
-  for i, s in ipairs(STATES) do
-    if s == now then
-      return STATES[i % #STATES + 1]
-    end
-  end
-  return STATES[1]
 end
 
 local function valid()
@@ -86,6 +82,7 @@ function M.close()
     vim.api.nvim_win_close(M.win, true)
   end
   M.win, M.buf, rows, hits, message, state, progress = nil, nil, {}, {}, nil, nil, nil
+  spin.stop("issues")
 end
 
 --- Where the list goes, and the pane under it: the queue's geometry, so
@@ -272,7 +269,7 @@ local function set_title()
     table.insert(parts, "syncing")
   end
   vim.api.nvim_win_set_config(M.win, {
-    title = " " .. table.concat(parts, " · ") .. " ",
+    title = " " .. spin.glyph("issues") .. table.concat(parts, " · ") .. " ",
     title_pos = "center",
   })
 end
@@ -286,7 +283,7 @@ local function set_hint()
     { k.select, "open" },
     { k.search, "search" },
     { k.description, "description" },
-    { k.state, next_state() },
+    { k.state, "state" },
   }, k.help)
 end
 
@@ -411,6 +408,7 @@ end
 --- Brings the cache up to date behind the window, and draws what that
 --- changed. `sweep` is `r`: every comment compared, now.
 local function sync(sweep)
+  spin.start("issues", set_title)
   cache.sync(root, {
     sweep = sweep,
     progress = function(kept, total)
@@ -419,6 +417,7 @@ local function sync(sweep)
     end,
   }, function(fine, why)
     progress = nil
+    spin.stop("issues")
     if not fine then
       session.notify("could not sync the issues: " .. tostring(why), vim.log.levels.WARN)
     end
@@ -427,12 +426,90 @@ local function sync(sweep)
   set_title()
 end
 
+--- What the search box colours: each filter it read as one, the word
+--- and its value apart, so a filter that did not take -- `asignee:x`,
+--- searched as a word -- looks like the word it is.
+function M.paint(line)
+  return vim.tbl_map(function(span)
+    return { span[1], span[2], span[3] == "key" and "NemetonFilter" or "NemetonFilterValue" }
+  end, issues.parse(line).spans)
+end
+
+-- What a search can say, as the float `g?` in the box shows it and
+-- |nemeton-issues-search| says it: the text, and what it does. The
+-- left column is coloured by the search's own reading of it, so the
+-- float cannot draw a filter the box would not.
+local SYNTAX = {
+  { "proxy socket", "every word, anywhere in the same issue" },
+  { '"keep alive"', "a phrase, whole" },
+  { "-retry", "without the word" },
+  { "label:bug", "a label" },
+  { 'label:"needs docs"', "one with a space in it" },
+  { "-label:wip", "without it; any filter takes a -" },
+  { "assignee:@me", "assigned to you; none, any, or a name" },
+  { "author:alice", "written by alice, or @me" },
+  { "state:closed", "over the list's state; opened, all" },
+  { "#12", "that issue, whatever its state" },
+}
+
+--- What a search can say, in a float over the box.
+function M.syntax()
+  local chunks = {}
+  for _, row in ipairs(SYNTAX) do
+    local line, at = {}, 0
+    for _, span in ipairs(issues.parse(row[1]).spans) do
+      if span[1] > at then
+        table.insert(line, { row[1]:sub(at + 1, span[1]), "NemetonThread" })
+      end
+      table.insert(line, {
+        row[1]:sub(span[1] + 1, span[2]),
+        span[3] == "key" and "NemetonFilter" or "NemetonFilterValue",
+      })
+      at = span[2]
+    end
+    if at < #row[1] then
+      table.insert(line, { row[1]:sub(at + 1), "NemetonThread" })
+    end
+    table.insert(line, 1, { " " })
+    table.insert(line, { (" "):rep(21 - vim.fn.strdisplaywidth(row[1])) .. row[2], "NemetonMeta" })
+    table.insert(chunks, line)
+  end
+  table.insert(chunks, { { "" } })
+  table.insert(chunks, {
+    { " Every word must be in the issue: the title, a label, the", "NemetonMeta" },
+  })
+  table.insert(chunks, {
+    { " description or a comment. Smartcase. |nemeton-issues-search|", "NemetonMeta" },
+  })
+  local lines, hls = threads.flatten(chunks, 0)
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  return detail.float(lines, " search ", { hls = hls, width = width + 2, filetype = false })
+end
+
+-- The filter words the search box offers, in the order it offers them.
+local FILTER_ORDER = { "label:", "assignee:", "author:", "state:" }
+local FILTER_WORDS = { label = true, assignee = true, author = true, state = true }
+
 --- What the search box completes: the forge's filter words, and after
 --- one the values it takes, out of what the cache has. Whole lines, as
 --- the prompt wants them -- the line typed so far with the last word
 --- finished.
 function M.complete(line)
   local lead, word = line:match("^(.-)(%S*)$")
+  -- A filter with a space after its colon, which the search reads as
+  -- one (`assignee: root`): its value completes as it would without
+  -- the space, and the space goes when one is picked. A quote opened
+  -- there may have spaces of its own in it already.
+  for _, shape in ipairs({ '^(.-)(%-?)(%a+):%s*("[^"]*)$', "^(.-)(%-?)(%a+):%s+(%S*)$" }) do
+    local before, neg, k, value = line:match(shape)
+    if k and FILTER_WORDS[k:lower()] and (before == "" or before:match("%s$")) then
+      lead, word = before, neg .. k .. ":" .. value
+      break
+    end
+  end
   local negate, key = word:match("^(%-?)(%a+):")
   local kept = root and cache.peek(root)
   local items = {}
@@ -449,7 +526,7 @@ function M.complete(line)
   end
   if not key then
     if word ~= "" then
-      for _, k in ipairs({ "label:", "assignee:", "author:", "state:" }) do
+      for _, k in ipairs(FILTER_ORDER) do
         if k:find(word:gsub("^%-", ""):lower(), 1, true) == 1 then
           local neg = word:sub(1, 1) == "-" and "-" or ""
           table.insert(items, { word = lead .. neg .. k, abbr = neg .. k })
@@ -515,6 +592,16 @@ function M.search()
     text = query,
     menu = false,
     items = M.complete,
+    paint = M.paint,
+    keys = {
+      {
+        config.keys.issue_list.search_help,
+        function()
+          require("nemeton.prompt").over(M.syntax)
+        end,
+        "what a search can say",
+      },
+    },
     at = { row = math.max(row - 3, 0), col = g.col, width = g.width },
     on_change = function(text)
       query = vim.trim(text)
@@ -555,6 +642,27 @@ function M.toggle_preview()
   update_preview()
 end
 
+--- Which states, ticked in a float and redrawn as they are ticked:
+--- the issues are all on disk, so a tick is a filter and not a fetch.
+local function choose_state()
+  local now = listing()
+  require("nemeton.checklist").open({
+    title = "issues",
+    items = STATES,
+    on = {
+      opened = (now == "opened" or now == "all") or nil,
+      closed = (now == "closed" or now == "all") or nil,
+    },
+    on_change = function(on)
+      state = on.opened and on.closed and "all"
+        or on.opened and "opened"
+        or on.closed and "closed"
+        or "none"
+      render(here_iid())
+    end,
+  })
+end
+
 local function bind()
   local k = config.keys.issue_list
   local bindings = {
@@ -573,14 +681,7 @@ local function bind()
     },
     { k.search, M.search, "search: words, phrases, label: assignee: author: state:" },
     { k.description, M.toggle_preview, "what it says, under the list" },
-    {
-      k.state,
-      function()
-        state = next_state()
-        render(here_iid())
-      end,
-      "open, closed, or all of them",
-    },
+    { k.state, choose_state, "open ones, closed ones, or both, ticked in a float" },
     {
       k.create,
       function()
@@ -663,6 +764,7 @@ function M.open()
   vim.wo[M.win].cursorline = true
   vim.wo[M.win].wrap = false
   bind()
+  spin.start("issues", set_title)
   render()
   glab.me(root, function(who)
     me = who and who.username or nil
@@ -670,6 +772,7 @@ function M.open()
   cache.get(root, function(_, _, why)
     if why then
       message = "could not read the project: " .. tostring(why)
+      spin.stop("issues")
     end
     render()
     if not why then

@@ -177,6 +177,12 @@ local function set_title()
   local all = #todos >= 100 and "100+" or tostring(#todos)
   local title = filter and (" to-do · %s %d/%s "):format(filter, #rows, all)
     or (" to-do · %s "):format(all)
+  -- Which forge, where no repository said so: glab's own default is
+  -- whatever host it was last pointed at, and a list of the wrong one
+  -- should say it is.
+  if where and where.host then
+    title = (" %s ·"):format(where.host) .. title
+  end
   vim.api.nvim_win_set_config(M.win, { title = title, title_pos = "center" })
 end
 
@@ -378,8 +384,8 @@ function M.open()
   session.locate(function(found, project)
     if not found then
       session.notify(
-        "not in a GitLab project, and no glab.backup_host to ask instead — "
-          .. "set it to the host whose to-do list to open outside one",
+        "not in a GitLab project, and glab names no host to ask instead — "
+          .. "set glab.backup_host to the one whose to-do list to open outside one",
         vim.log.levels.ERROR
       )
       return

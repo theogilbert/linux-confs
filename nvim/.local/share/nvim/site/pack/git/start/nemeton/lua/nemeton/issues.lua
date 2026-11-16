@@ -186,16 +186,22 @@ local FILTERS = { label = true, assignee = true, author = true, state = true }
 --- A search as typed, as the parts it is made of.
 ---
 --- `label:bug`, `assignee:@me`, `author:alice`, `state:closed` filter;
---- `label:"needs docs"` takes a value with a space in it; `-label:wip`
---- and `-word` take away; `"a phrase"` is looked for whole; and every
+--- `label:"needs docs"` takes a value with a space in it, and the
+--- colon may have one after it (`assignee: root`); `-label:wip` and
+--- `-word` take away; `"a phrase"` is looked for whole; and every
 --- other word is looked for on its own, all of them in the same issue.
 --- `#12` is the issue of that number, however it reads.
 ---
 --- Anything that does not parse as one of those is a word: a search
 --- box that answers a stray quote with an error is a search box that
 --- has stopped searching while you finish typing.
+---
+--- `spans` is where each filter is in `text`, for the box to colour
+--- what it read as one: `{ from, to, "key" | "value" }`, byte columns
+--- from 0, `to` exclusive -- the key with its `-` and colon, the value
+--- with its quotes.
 function M.parse(text)
-  local q = { words = {}, without = {}, filters = {}, exclude = {}, iid = nil }
+  local q = { words = {}, without = {}, filters = {}, exclude = {}, iid = nil, spans = {} }
   local s = text or ""
   local at = 1
   while at <= #s do
@@ -208,6 +214,11 @@ function M.parse(text)
       local key, rest = s:match("^(%a+):()", from)
       local value
       if key and FILTERS[key:lower()] then
+        -- `assignee: root` as well as `assignee:root`: a space is what
+        -- a hand types after a colon, and without this the filter is
+        -- empty and dropped and its value searched for as a word.
+        local start, colon = at, rest
+        rest = rest + #s:match("^%s*", rest)
         if s:sub(rest, rest) == '"' then
           local close = s:find('"', rest + 1, true)
           value = s:sub(rest + 1, (close or #s + 1) - 1)
@@ -215,6 +226,10 @@ function M.parse(text)
         else
           value = s:match("^%S*", rest)
           at = rest + #value
+        end
+        table.insert(q.spans, { start - 1, colon - 1, "key" })
+        if at > rest then
+          table.insert(q.spans, { rest - 1, at - 1, "value" })
         end
         if value ~= "" then
           local into = negate and q.exclude or q.filters

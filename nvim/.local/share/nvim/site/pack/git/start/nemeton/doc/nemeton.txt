@@ -167,8 +167,8 @@ A review, end to end:
 :Nemeton describe       Rewrite its description, in the composer.
                         |nemeton-detail-window|
 
-:Nemeton reviewers      Tick who is asked to review it, out of the project's
-                        members. |nemeton-detail-window|
+:Nemeton reviewers      Who is asked to review it, out of the project's
+                        members, searched as typed. |nemeton-names-prompt|
 
 :Nemeton comment        A new thread on the line under the cursor.
 
@@ -441,7 +441,8 @@ without asking the forge anything.
     c               the commits of the row under the cursor
     d               what it says it is for
     p               what CI made of it, job by job
-    s               opened / merged / closed / all, round and round
+    s               opened, merged, closed or all, in a float
+                    |nemeton-checklist-window|
     ]               another page of them, under the ones on the screen
     +               open one of your own, for the branch you are on
     r               refetch
@@ -491,12 +492,15 @@ than left showing the other branch's copy, and its window goes back to
 what it showed before. One with unsaved edits in it stays: what was
 typed has nowhere else to be. Either way the files are named.
 
-`s` walks the queue through the four states GitLab has: the open ones a
-review queue is made of, then the merged, the closed, and all of them
-together. The window's title says which of the four is on the screen and
-every row says it for itself -- `merged` in the colour of a thing that
-is through, `closed` in the dim one -- because "all" is one press away
-and a mixed queue is read a row at a time. It is a question asked, not a
+`s` picks among the four states GitLab has, one of a group in a float
+of ticks, refetched as it is ticked: the open ones a review queue is
+made of, the merged, the closed, or all of them together. One and not
+a box each, because the forge lists one state or every one, and two
+of three would be a page of all of them with holes in it. The window's
+title says which of the four is on the screen and every row says it
+for itself -- `merged` in the colour of a thing that is through,
+`closed` in the dim one -- because a mixed queue is read a row at a
+time. It is a question asked, not a
 setting changed: close the window and the next one opens on
 `list.state` again. |nemeton-config-list|
 
@@ -581,8 +585,8 @@ much of it is yours and unsent.
     d               mark it a draft, or ready
     R               give it a new title
     e               rewrite its description
-    v               ask people to review it, ticked on and off (a list that
-                    comes back with the tick moved until it is dismissed)
+    v               ask people to review it: their names on a line,
+                    searched as they are typed |nemeton-names-prompt|
     o               open it on GitLab
     r               refetch it: its pipeline, approvals and diff
     q               close
@@ -632,7 +636,8 @@ the same thing:
     <CR>            open it, in a tab |nemeton-issue-window|
     /               search, narrowing the list as you type
     d               what it says, under the list
-    s               open → closed → all of them
+    s               open ones, closed ones, or both, ticked in a float
+                    |nemeton-checklist-window|
     +               file one |nemeton-issue-create-window|
     o               open it on GitLab
     r               ask the forge what changed, every comment compared
@@ -654,7 +659,10 @@ SEARCHING                                              *nemeton-issues-search*
 
 `/` opens a box over the list, and every key typed in it narrows the
 list under it. `<CR>` keeps the search; `<Esc>` puts the list back as
-it was, the way vim's own `/` does. The words are the forge's filter
+it was, the way vim's own `/` does. `<C-S-n>` (`keys.prompt.normal`), or
+vim's own `<C-\><C-n>`, leaves insert mode with the box still up, and
+there `g?` (`keys.issue_list.search_help`) shows the table below in a
+float; `q` closes that, and the cursor is back in the box. The words are the forge's filter
 bar's, so a filter learned there works here:
 
     proxy socket        every word, anywhere in the same issue
@@ -672,7 +680,10 @@ comment, smartcase -- regardless of case unless it has a capital in it
 -- and the issues that have it are ranked by where: the title first,
 then a label, the description, a comment. Without words, the most
 recently touched first. The box completes the filter words and, after
-one, what the cache has for it: the labels, the people.
+one, what the cache has for it: the labels, the people. It colours each
+filter it read as one, the word |hl-NemetonFilter| and its value
+|hl-NemetonFilterValue|, so a filter that did not take -- `asignee:x`
+-- is plain, and is being searched for as a word.
 
 A row found by what it says rather than by its title has a second line
 under it: where the word was -- the description, or whose comment --
@@ -687,8 +698,9 @@ reviews asked of you, the comments that name you, what is assigned to
 you, the pipelines of yours that broke -- across every project you are
 in. It needs no review open. Inside a GitLab repository it is asked of
 that repository's forge; outside one, of `glab.backup_host`
-|nemeton-config-backup-host| -- and with that unset it does not open,
-and says so, rather than show glab's guess at a forge. A row is the kind of to-do, what it is about
+|nemeton-config-backup-host|, else `glab.host`, else glab's own `host`
+setting (`glab config set host ...`) -- and the title names the forge
+it asked. A row is the kind of to-do, what it is about
 (`group/proj!12`), its title, who, and how long ago.
 
     <CR>            open it: a merge request or an issue of the
@@ -713,22 +725,25 @@ to-dos, a hundred at most; the title says `100+` when there are more.
 
 THE MERGE REQUESTS YOU ARE IN                        *nemeton-involved-window*
 
-`<leader>mM`, or `:Nemeton involved`. The open merge requests of every
-project on the forge that you are in: assigned to you, a review asked
+`<leader>mM`, or `:Nemeton involved`. The merge requests of every
+project on the forge that you are in -- the open ones, and the closed
+ones when they are asked for: assigned to you, a review asked
 of you, a comment that named you -- a to-do, pending or done, since
 marking it done did not unsay it -- or one you have commented on, out
 of your last five hundred comments. It is asked of the same forge the
-to-do list is |nemeton-todos-window|, and does not open outside a
-GitLab repository without |nemeton-config-backup-host| either. One row
+to-do list is |nemeton-todos-window|, inside a repository or out
+|nemeton-config-backup-host|. One row
 a merge request however many of those found it: why, a word each --
 `review`, `assigned`, `@you`, `commented` -- then `group/proj!12`, its
 title, its author, and when it last moved, the most recent first.
 
     <CR>            open it: one of the repository you are in opens
                     here, anything else on GitLab
-    f               one way in at a time: review, assigned, mentioned,
-                    commented, and all again -- skipping the ones with
-                    nothing in them
+    f               what it shows, ticked in a float: which ways in,
+                    and open, closed or both |nemeton-checklist-window|
+    s               sort it: by when it last moved, when it was last
+                    pointed at you, or when it was opened; newest or
+                    oldest first |nemeton-checklist-window|
     o               open it on GitLab
     r               ask again
     q               close
@@ -738,14 +753,48 @@ It is several calls, drawn as each lands; the title ends in `…` until
 the last has. One that fails says so under the rows rather than
 instead of them.
 
+`f` narrows the rows to the ways in ticked -- a row found any one of
+them stays -- and to the states ticked. Out of the box every way in is
+ticked and only the open ones: a closed merge request is a second
+look, and the two calls it takes are made the first time it is ticked,
+not on every opening. A closed row says `closed` before its title. The
+title says what is left out and how many rows of how many found, and
+the next opening starts from every way in and open again.
+
+"Last pointed at you" is the newest to-do about it -- a review asked
+of you, an assignment, a comment that named you, pending or done -- or
+comment of yours on it; one with neither is last either way round.
+Sorted by anything but when it last moved, the last column is the time
+sorted by and the title names the order. The order is kept for the
+editor session.
+
+A FLOAT OF TICKS                                    *nemeton-checklist-window*
+
+What a list is sorted by, or what a window shows, chosen in a float of
+one line a choice. Whether it is ticked is drawn beside it, in the
+sign column -- `config.checklist` |nemeton-config-checklist| -- so `/`
+finds words and the line under the cursor is the one acted on. A box
+is ticked on its own; one of a group -- newest first, oldest first --
+lets the rest of its group go. Every tick is applied as it is made, to
+the window behind it.
+
+    <Space>, <CR>   tick the line under the cursor, or untick it; in
+                    visual mode, every box selected -- all ticked if
+                    any was not, all let go otherwise
+    >               tick every box
+    <               untick every box
+    r               back to what was ticked when it opened
+    q, <Esc>        close
+    g?              these keys
+
 AN ISSUE OF YOUR OWN                             *nemeton-issue-create-window*
 
 `+` in the issue list, or `:Nemeton new-issue`. The merge request's
 create window |nemeton-create-window| with an issue's fields: its
 title, its labels, who has it, and its description -- each a line the
 cursor sits on and `<CR>` changes, the title in a prompt, the labels
-and the assignees in the list that comes back with the tick moved, the
-description in the composer.
+and the assignees on a line with the rest searched as they are typed
+|nemeton-names-prompt|, the description in the composer.
 
     <CR>            change the field under the cursor
     <C-s>           file it
@@ -768,7 +817,9 @@ AN ISSUE                                                *nemeton-issue-window*
 being read -- kept open while a branch is written to fix it, gone back
 to, read again -- and a tab is the editor's own way of keeping a page
 open to one side. `gt` and `:tabs` reach it, several issues are several
-tabs, and opening one already open goes to its tab.
+tabs, and opening one already open goes to its tab. Quitting the editor
+closes them first, so a session saved on the way out does not bring
+them back as empty tabs.
 
 At the top, what it is, whose and when; then a column of facts -- its
 state when it is closed, who it is assigned to, its labels in their own
@@ -780,7 +831,7 @@ wherever the two do the same thing:
     c               its comments, in a pane beside it; again to close
     e               rewrite its description, in the composer
     R               give it a new title
-    l               its labels, ticked on and off
+    l               its labels |nemeton-names-prompt|
     a               who it is assigned to, the same way
     x               close it, or reopen it, after asking
     o               open it on GitLab
@@ -1004,8 +1055,9 @@ enough.
     +               react to the comment under the cursor
     K               who reacted, when, what commit, where a link goes
     <leader>mL      a link to the comment under the cursor, copied
-    S               ]m stops at resolved threads too, or steps over
-                    them -- the header says which ("]m open"/"]m all")
+    f               what ]m stops at, ticked in a float: the merge
+                    request's own conversations, resolved ones -- the
+                    header says which ("]m open", "]m all · code")
     R               refetch
     q               fold the conversations away
     ]m  [m          the next thread owed an answer, and the previous
@@ -1045,13 +1097,18 @@ like the letters that read.
 from -- the walk happens in the code, and your reading position stays
 in the prose.
 
-`S` is which threads the walk stops at. Out of the box it steps over a
-resolved one: `]m` is "what is left", and a settled conversation is
-history. A second pass is the other question -- what was settled, and
-whether it was settled right -- and `S` makes every thread a stop for
-the rest of the editor session, until it is pressed again. It is a
-mode, so the pane's header says it on the right: `]m open` or `]m all`.
-`comments.walk_resolved = true` starts the session that way.
+`f` is which threads the walk stops at, and so which the pane shows: a
+float of two boxes |nemeton-checklist-window|, each applied as it is
+ticked. "Conversations on the merge request" are the ones on no line,
+which the walk visits before the code; untick it for a pass over the
+code alone. "Resolved conversations" is off out of the box: `]m` is
+"what is left", and a settled conversation is history. A second pass
+is the other question -- what was settled, and whether it was settled
+right -- and ticking it makes every thread a stop. Either holds for the
+rest of the editor session. It is a mode, so the pane's header says it
+on the right: `]m open` or `]m all`, with `· code` after it when the
+merge request's own are left out. `comments.walk_resolved = true` and
+`comments.walk_overall = false` start the session that way.
 
 `q` is `<leader>mx` from inside: while the pane is open it is what
 "expanded" means, so closing it folds the conversations away rather than
@@ -1209,13 +1266,11 @@ would ask at a prompt, on one screen and in any order:
 
 The cursor sits on a field and `<CR>` changes it: the title in a
 prompt, the description in the composer (|nemeton-writing|), the target
-branch and the labels picked from what the project has. The labels are
-a dropdown that comes back with the tick moved until it is dismissed --
-labels come in threes, the team, the area and the release, and pressing
-the key three times to say so is three times as long a way of saying
-it. A project the forge will not list the labels of falls back to
-typing them, and says which of "there are none" and "it would not say"
-happened. However the
+branch picked from what the project has, and the labels and reviewers
+typed on a line with the project's own searched as they are typed
+|nemeton-names-prompt|. A project the forge will not list the labels
+of is a line with no menu under it, and says which of "there are none"
+and "it would not say" happened. However the
 composer is left -- its own keys, or `:q` like any other split -- the
 cursor comes back here. A title that
 begins `Draft:` sets the switch instead of staying in the title --
@@ -1509,6 +1564,25 @@ with nothing. `completeopt` is set globally where the editor cannot hold
 it for one buffer, and put back on the way out: this window is open for
 one word and closes the moment the cursor leaves it, so unlike the
 composer there is no other buffer for it to be wrong in.
+
+                                                        *nemeton-names-prompt*
+Labels, reviewers and assignees -- of a merge request being opened, of
+one open, of an issue -- are the same window with several names on its
+line, comma-separated, and what is already on it written there to begin
+with. A project has a hundred labels or members and finding one is a
+search, which a list ticked one round trip at a time is bad at. The
+menu is the names not on the line yet, narrowed fuzzily by the one
+being typed -- against what is drawn, so a member is found by their
+full name as well as their username:
+
+    <Tab>  <S-Tab>  walk the menu
+    <CR>            put the name chosen on the line -- the first match,
+                    where something is typed and nothing chosen -- and
+                    start the next; with nothing typed, the answer
+    <Esc>           dismiss it: nothing changes
+
+What is typed and matches nothing is kept as typed: a label can be a
+new one, and a member who is not one is left out.
 
 A name this plugin knows is the reaction; a prefix only one name answers
 is that name, since the menu said so as it was typed; and anything else
@@ -2041,7 +2115,7 @@ LIST                                                     *nemeton-config-list*
 >
     list = {
       per_page = 30,          -- how many merge requests to ask for
-      state = "opened",       -- what a queue opens on; `s` walks the four
+      state = "opened",       -- what a queue opens on; `s` picks another
       order = "updated_at",   -- `glab mr list --order`
       width = 0.7,            -- of the editor
       height = 0.6,
@@ -2165,6 +2239,7 @@ COMMENTS                                             *nemeton-config-comments*
       },
       show_resolved = true,  -- draw resolved threads at all
       walk_resolved = false, -- `]m` stops at resolved threads too
+      walk_overall = true,   -- ...and at the merge request's own
       short_commits = true,  -- a link to a commit as its short sha
       resolve_next = true,   -- resolving a thread walks on, as `]m` would
       syntax = true,         -- a suggestion in its language's colours
@@ -2279,8 +2354,9 @@ something there to answer.
 either way.
 
 `walk_resolved` is where an editor session starts: whether `]m` and
-`[m` stop at a resolved thread or step over it. `S` in the pane flips
-it for the rest of the session |nemeton-pane-window|.
+`[m` stop at a resolved thread or step over it. `walk_overall` is the
+same for a conversation on the merge request as a whole. `f` in the
+pane changes either for the rest of the session |nemeton-pane-window|.
 
 `short_commits` draws a link to a commit as the eight digits GitLab
 itself prints: a permalink is a hundred characters whose only content is
@@ -2383,6 +2459,27 @@ colour, instead of a tick in the green nemeton asked for. U+2713 is the
 same shape with no emoji in it, and the cross (U+2717) and the triangle
 (U+25B8) are the same story. Nerd Font icons go here just as well.
 
+CHECKLIST                                           *nemeton-config-checklist*
+>
+    checklist = { on = "✓", off = "·", chosen = "●", other = "○" }
+<
+What a choice is drawn with in |nemeton-checklist-window|: a box ticked
+and not, and one of a group chosen and not. Text-presentation
+codepoints, for the reason the CI glyphs are.
+
+SPINNER                                               *nemeton-config-spinner*
+>
+    spinner = {
+      frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+      interval = 100,         -- milliseconds each frame is up for
+    }
+<
+What turns at the front of the title of |nemeton-list-window|,
+|nemeton-involved-window| and |nemeton-issues-window| while they wait on
+the forge: a fetch, a page more, a sync, the checkout of the merge
+request picked. The words in the window say what it is waiting for;
+this says the call has not died. `false` for nothing turning.
+
 COMPOSER                                              *nemeton-config-compose*
 >
     compose = {
@@ -2459,9 +2556,10 @@ KEYS                                                     *nemeton-config-keys*
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
 `keys.issue_list`, `keys.issue`, `keys.issue_comments`, `keys.issue_create`,
 `keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`,
-`keys.history`, `keys.todos`, `keys.involved`, `keys.create` and
-`keys.compose`, each a table of what is listed in |nemeton-mappings|
-and |nemeton-windows|. Any of them can be `false`:
+`keys.history`, `keys.todos`, `keys.involved`, `keys.checklist`,
+`keys.create`, `keys.compose` and `keys.prompt`, each a table of what is
+listed in |nemeton-mappings| and |nemeton-windows|. Any of them can be
+`false`:
 >
     require("nemeton").setup({
       keys = {
@@ -2557,7 +2655,9 @@ you review across two instances, leave it nil.
 ask where there is no project to ask it of, which is the to-do list
 |nemeton-todos-window| or the merge requests you are in
 |nemeton-involved-window| opened outside a GitLab repository. Unset,
-they refuse to open there. Its token is glab's own for that host
+it is `host`, and with that unset too glab's own `host` setting (`glab
+config set host ...`); the window's title names the forge it asked.
+Its token is glab's own for that host
 (`glab auth login --hostname`), not `token` -- unless `host` names the
 same one -- and a 401 from it does not prompt: a token configured or
 typed for one forge is not sent to another.
@@ -2632,6 +2732,16 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonChanged        one it edits                    Changed
     NemetonHint           the key hints across a window   Comment
     NemetonKey            the key itself, inside a hint   Special
+    NemetonFilter         a filter's word in the issue    Keyword
+                          search, `assignee:`
+    NemetonFilterValue    and what it is given, `root`    String
+
+                                                           *hl-NemetonFilter*
+                                                      *hl-NemetonFilterValue*
+`NemetonFilter` and `NemetonFilterValue` colour a filter in the issue
+search |nemeton-issues-search| -- `assignee:` and `root` -- as a keyword
+and what it is given. Only what was read as a filter: a misspelt one is
+left plain, which is how it is seen to be a word.
 
                                                           *hl-NemetonMention*
                                                            *hl-NemetonCommit*

@@ -34,6 +34,9 @@ local trims_ranges = false
 -- will answer: a field the free one does not have fails the whole
 -- query, not just the field.
 local forge_ee = false
+-- ...and what `glab config get host` said, for `M.home_host`: "" for
+-- nothing.
+local default_host = nil
 
 -- A token typed into the prompt below. It lives here, in this variable,
 -- for as long as the editor does: not written to `config`, not written
@@ -128,6 +131,8 @@ function M.reset_credentials()
   -- ...and so is what the forge is and what its API will take: a
   -- different host is a different GitLab, of a different age.
   forge_version, trims_ranges, forge_ee = nil, false, false
+  -- ...and glab's own idea of its host may have been changed with it.
+  default_host = nil
 end
 
 --- What is configured, without the token itself -- for `:checkhealth`,
@@ -2036,6 +2041,36 @@ function M.backup_host()
   return value(config.glab.backup_host)
 end
 
+--- The forge to ask where there is no repository to say which:
+--- `glab.backup_host`, else `glab.host`, else the host glab itself
+--- would ask there -- its own `host` setting (`glab config set host`),
+--- which is the one an `api` call outside a repository goes to anyway.
+--- Asked by name rather than left to glab so that the window can say
+--- which forge it is listing, and so that the token configured for
+--- another is not sent to it. `cb(host)`, or `cb(nil)`.
+function M.home_host(cb)
+  local host = M.backup_host() or value(config.glab.host)
+  if host then
+    cb(host)
+    return
+  end
+  if default_host then
+    cb(default_host ~= "" and default_host or nil)
+    return
+  end
+  local t = config.glab.timeout
+  spawn({ "config", "get", "host" }, {
+    cwd = vim.fn.fnamemodify("/", ":p"),
+    timeout = type(t) == "table" and t[#t] or t,
+  }, function(ok, out)
+    -- glab prints its update nag and telemetry complaints on stderr;
+    -- the value is the first line of stdout and nothing else.
+    local first = ok and vim.trim(vim.split(out, "\n")[1] or "") or ""
+    default_host = first:match("^%S+$") or ""
+    cb(default_host ~= "" and default_host or nil)
+  end)
+end
+
 --- Where a call that belongs to no project is sent: `{ root = ... }`,
 --- the forge of that repository, or `{ host = ... }`, a forge named
 --- outright -- as the run options that say so.
@@ -2075,15 +2110,52 @@ function M.todo_done(where, id, cb)
   json({ "api", "--method", "POST", ("todos/%d/mark_as_done"):format(id) }, at(where), cb)
 end
 
---- The open merge requests of the whole forge that `scope` says are
---- yours to look at: `assigned_to_me` or `reviews_for_me`. Like the
---- to-do list, the user's rather than a project's.
-function M.my_mrs(where, scope, cb)
+--- The merge requests of the whole forge assigned to you, in `state`.
+--- Like the to-do list, the user's rather than a project's.
+function M.assigned_mrs(where, state, cb)
   json(
-    { "api", ("merge_requests?scope=%s&state=opened&per_page=100"):format(scope) },
+    { "api", ("merge_requests?scope=assigned_to_me&state=%s&per_page=100"):format(state) },
     at(where),
     cb
   )
+end
+
+--- ...and the ones you are asked to review.
+---
+--- By your name rather than by `scope=reviews_for_me`, which is the
+--- same question in one call but only from GitLab 17: a 16 answers it
+--- with `400 scope does not have a valid value`. `reviewer_username`
+--- has been there since 13.8, and needs `scope=all` beside it, since
+--- the default scope is what you created.
+function M.review_mrs(where, state, cb)
+  local function asked(who, err)
+    if not who then
+      cb(nil, err or "could not tell whose token this is")
+      return
+    end
+    json({
+      "api",
+      ("merge_requests?scope=all&reviewer_username=%s&state=%s&per_page=100"):format(
+        vim.uri_encode(who.username, "rfc3986"),
+        state
+      ),
+    }, at(where), cb)
+  end
+  if where.root then
+    M.me(where.root, asked)
+    return
+  end
+  -- A named host is not a repository `M.me` can key on; asked here,
+  -- and kept under the host's name.
+  local key = "host:" .. where.host
+  if whoami[key] ~= nil then
+    asked(whoami[key] or nil)
+    return
+  end
+  json({ "api", "user" }, at(where), function(data, err)
+    whoami[key] = (type(data) == "table" and data.username) and data or false
+    asked(whoami[key] or nil, err)
+  end)
 end
 
 --- The to-dos about merge requests, pending or done. Done ones too,
@@ -2102,8 +2174,8 @@ function M.comment_events(where, page, cb)
   json({ "api", ("events?action=commented&per_page=100&page=%d"):format(page) }, at(where), cb)
 end
 
---- The ones of `iids` in project `id` that are still open.
-function M.open_mrs(where, id, iids, cb)
+--- The ones of `iids` in project `id` in `state`: "opened", or "all".
+function M.project_mrs(where, id, iids, state, cb)
   local q = table.concat(
     vim.tbl_map(function(i)
       return "iids[]=" .. i
@@ -2111,7 +2183,7 @@ function M.open_mrs(where, id, iids, cb)
     "&"
   )
   json(
-    { "api", ("projects/%d/merge_requests?state=opened&per_page=100&%s"):format(id, q) },
+    { "api", ("projects/%d/merge_requests?state=%s&per_page=100&%s"):format(id, state, q) },
     at(where),
     cb
   )

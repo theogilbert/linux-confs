@@ -138,7 +138,9 @@ function M.check()
   if backup then
     vim.health.ok(("backup host: %s (config.glab.backup_host)"):format(backup))
   else
-    vim.health.info("backup host: none, so the to-do list opens only inside a GitLab repository")
+    vim.health.info(
+      "backup host: none, so outside a repository it is `host`, else glab's own `host` setting"
+    )
   end
   if creds.source == "prompt" then
     vim.health.ok("token: typed in this session (`:Nemeton token` to replace it)")

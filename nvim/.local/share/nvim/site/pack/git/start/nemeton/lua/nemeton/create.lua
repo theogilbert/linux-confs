@@ -436,73 +436,21 @@ function edit.labels()
     session.notify("still asking the forge which labels this project has")
     return
   end
-  local on = {}
-  for _, name in ipairs(f.labels) do
-    on[name] = true
-  end
-  local names = state.labels
-  if #names == 0 then
-    -- "This project has no labels" and "the forge would not say which
-    -- labels this project has" are different answers, and only one of
-    -- them means typing them out is the best that can be done. Said
-    -- once, here, where the difference is about to cost something.
-    if state.labels_error then
-      session.notify(
-        "could not ask which labels this project has: "
-          .. state.labels_error
-          .. " — type them instead",
-        vim.log.levels.WARN
-      )
-    end
-    vim.ui.input(
-      { prompt = "labels (comma-separated): ", default = table.concat(f.labels, ",") },
-      function(text)
-        if text == nil then
-          return
-        end
-        local out = {}
-        for part in text:gmatch("[^,]+") do
-          table.insert(out, vim.trim(part))
-        end
-        f.labels = out
-        draw()
-      end
+  -- "This project has no labels" and "the forge would not say which
+  -- labels this project has" are different answers, and only one of
+  -- them means typing them out is the best that can be done. Said
+  -- once, here, where the difference is about to cost something.
+  if #state.labels == 0 and state.labels_error then
+    session.notify(
+      "could not ask which labels this project has: "
+        .. state.labels_error
+        .. " — type them instead",
+      vim.log.levels.WARN
     )
-    return
   end
-  -- One choice, one label, on or off -- and then the list again, with
-  -- the tick moved, until it is dismissed. A picker that returns a set
-  -- is a picker every `vim.ui.select` in the wild would have to
-  -- implement; a picker that comes back is one any of them can be.
-  -- Labels come in threes -- the team, the area, the release -- and
-  -- pressing the key three times to say so is three times as long a
-  -- way of saying it.
-  local items = {}
-  for _, name in ipairs(names) do
-    table.insert(items, (on[name] and "✓ " or "  ") .. name)
-  end
-  vim.ui.select(items, {
-    prompt = #f.labels > 0 and ("labels · " .. table.concat(f.labels, ", ")) or "labels",
-  }, function(choice, index)
-    if not choice then
-      return
-    end
-    local name = names[index]
-    if on[name] then
-      for i, had in ipairs(f.labels) do
-        if had == name then
-          table.remove(f.labels, i)
-          break
-        end
-      end
-    else
-      table.insert(f.labels, name)
-    end
+  require("nemeton.issue").pick_set("labels", state.labels, f.labels, nil, function(set)
+    f.labels = set
     draw()
-    -- ...on the next tick, so the picker that is closing is closed
-    -- before the next one opens: two floats fighting over the cursor is
-    -- one of them left on the screen.
-    vim.schedule(edit.labels)
   end)
 end
 

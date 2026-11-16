@@ -282,7 +282,29 @@ end
 --- Which way the walk goes, as a piece of a winbar.
 local function walking()
   local key = config.keys.session.next or "walk"
-  return { ("%s %s "):format(key, session.walks_resolved() and "all" or "open"), "NemetonHint" }
+  local stops = ("%s %s"):format(key, session.walks_resolved() and "all" or "open")
+  if not session.walks_overall() then
+    stops = stops .. " · code"
+  end
+  return { stops .. " ", "NemetonHint" }
+end
+
+--- What the walk stops at, ticked in a float: the conversations on the
+--- merge request as a whole, and the settled ones. One float rather
+--- than a key each, since each is one more key to learn for a choice
+--- made once a pass.
+local function choose_walk()
+  require("nemeton.checklist").open({
+    title = "]m stops at",
+    items = {
+      { key = "overall", label = "conversations on the merge request" },
+      { key = "resolved", label = "resolved conversations" },
+    },
+    on = { overall = session.walks_overall() or nil, resolved = session.walks_resolved() or nil },
+    on_change = function(on)
+      session.set_walk({ overall = on.overall, resolved = on.resolved })
+    end,
+  })
 end
 
 local function header(list, place, width)
@@ -846,11 +868,9 @@ function M.open(at)
   end
   vim.list_extend(bindings, {
     {
-      k.walk_resolved,
-      function()
-        session.toggle_walk_resolved()
-      end,
-      "]m stops at resolved threads too, or steps over them",
+      k.filter,
+      choose_walk,
+      "what ]m stops at: the merge request's own conversations, resolved ones",
     },
     {
       k.refresh,

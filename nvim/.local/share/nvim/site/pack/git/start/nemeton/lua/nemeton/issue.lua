@@ -400,6 +400,16 @@ function M.describe(entry)
   })
 end
 
+--- Closes every issue tab: what quitting the editor does first, so
+--- that a session written on the way out -- `:mksession`, or a plugin
+--- that saves one on `VimLeavePre` -- does not bring back a tab whose
+--- buffer was scratch and comes back empty.
+function M.close_all()
+  for _, entry in pairs(vim.tbl_values(open)) do
+    pcall(close, entry)
+  end
+end
+
 --- Closes it, or reopens it where it is closed -- after asking, as the
 --- merge request's does: a close is a message to everybody watching.
 function M.close_or_reopen(entry)
@@ -435,58 +445,19 @@ function M.close_or_reopen(entry)
   )
 end
 
---- A set picked out of `names` one at a time: each choice ticks a name
---- or takes the tick off, and the list comes back with it moved until
---- it is dismissed -- the create window's labels, and for the same
---- reason: any `vim.ui.select` can be a picker that comes back, and few
---- are one that returns a set. `done(set)` once, when it is dismissed,
---- with what is ticked then, so that four labels changed are one call
---- to the forge rather than four.
+--- A set picked out of `names`: a line of them, comma-separated, with
+--- the rest searched as they are typed |nemeton-names-prompt|.
+--- `done(set)` once, when it is answered, so that four labels changed
+--- are one call to the forge rather than four -- and not at all where
+--- it is dismissed.
 ---
---- `shown(name)` is how a name is drawn in the list, where that is not
+--- `shown(name)` is how a name is drawn in the menu, where that is not
 --- itself.
 function M.pick_set(title, names, chosen, shown, done)
-  local on = {}
-  for _, n in ipairs(chosen) do
-    on[n] = true
-  end
-  local function ask()
-    local items, picked = {}, {}
-    for _, n in ipairs(names) do
-      table.insert(items, (on[n] and "✓ " or "  ") .. (shown and shown(n) or n))
-      if on[n] then
-        table.insert(picked, n)
-      end
-    end
-    vim.ui.select(items, {
-      prompt = #picked > 0 and (title .. " · " .. table.concat(picked, ", ")) or title,
-    }, function(choice, index)
-      if not choice then
-        local set = {}
-        for _, n in ipairs(names) do
-          if on[n] then
-            table.insert(set, n)
-          end
-        end
-        -- ...and the ones it had that are not in the list at all -- a
-        -- label deleted from the project since -- kept, since nobody
-        -- unticked them.
-        for _, n in ipairs(chosen) do
-          if on[n] and not vim.tbl_contains(set, n) then
-            table.insert(set, n)
-          end
-        end
-        done(set)
-        return
-      end
-      local n = names[index]
-      on[n] = not on[n] or nil
-      -- On the next tick, so the picker closing is closed before the
-      -- next one opens.
-      vim.schedule(ask)
-    end)
-  end
-  ask()
+  require("nemeton.prompt").many(
+    { title = title, names = names, chosen = chosen, shown = shown },
+    done
+  )
 end
 
 --- Whether two lists hold the same names, whatever their order.

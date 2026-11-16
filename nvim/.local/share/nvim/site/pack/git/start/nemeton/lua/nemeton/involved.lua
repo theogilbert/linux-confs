@@ -9,16 +9,21 @@
 -- drawn as each lands, and one row per merge request however many of
 -- them found it.
 --
+-- Open ones, and closed ones once `f` asks for them: what was closed
+-- on you may still want an answer, but it is a second look.
+--
 -- Like the to-do list it is yours and not a project's: it needs no
 -- review open and no repository, and opens one of the repository you
 -- are in here and anything else on the forge.
 
+local checklist = require("nemeton.checklist")
 local config = require("nemeton.config")
 local detail = require("nemeton.detail")
 local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
+local spin = require("nemeton.spin")
 local threads = require("nemeton.threads")
 local win = require("nemeton.win")
 
@@ -31,13 +36,23 @@ M.buf = nil
 local found = {}
 -- Row number (1-based) -> the entry on it.
 local rows = {}
--- Which reason is shown, by name in `M.REASONS`; nil is all of them.
+-- What is shown: `{ [reason] = true, [state] = true }`, by name in
+-- `M.REASONS` and `M.STATES`; nil is `M.SHOWN`. Back to that on every
+-- opening, like any filter: the next look is a fresh one.
 local filter = nil
+-- Whether the closed ones have been asked for since the last load.
+local asked_closed = false
 -- How many calls have yet to land, and what the ones that failed said.
 local pending, failed = 0, {}
+-- `project_id!iid` -> when the forge last pointed you at it: the
+-- newest to-do about it, or comment of yours on it.
+local dates = {}
+-- What the rows are in order of, by name in `M.SORTS`, and which way
+-- round. Kept across opening and closing it, for the editor session.
+local sort = { by = "moved", newest = true }
 local where, here, back = nil, nil, nil
 
--- The ways in, in the order they are said and `f` walks them: what
+-- The ways in, in the order they are said and `f` offers them: what
 -- somebody is waiting on you for first, what was said to you, and what
 -- you said last.
 M.REASONS = {
@@ -45,6 +60,37 @@ M.REASONS = {
   { name = "assigned", word = "assigned", hl = "NemetonAuthor" },
   { name = "mentioned", word = "@you", hl = "NemetonMention" },
   { name = "commented", word = "commented", hl = "NemetonMeta" },
+}
+
+-- The states a row can be in. Closed is kept, unlike merged: a merge
+-- request closed on you is a question that may still want an answer
+-- -- why, and whether it is coming back -- where a merged one has been
+-- answered.
+M.STATES = {
+  { name = "opened", word = "open" },
+  { name = "closed", word = "closed" },
+}
+
+-- What the window shows when it opens: every way in, and what is open.
+-- The closed ones cost two calls more and are a second look, not the
+-- first.
+M.SHOWN = {
+  review = true,
+  assigned = true,
+  mentioned = true,
+  commented = true,
+  opened = true,
+}
+
+-- What the rows can be in order of, in the order the sort float offers
+-- them: when it last moved, which is what is worth reading first; when
+-- you were last pointed at it -- asked to review it, assigned it,
+-- named in a comment on it, or commenting on it yourself; and when it
+-- was opened.
+M.SORTS = {
+  { name = "moved", word = "last moved" },
+  { name = "you", word = "last pointed at you" },
+  { name = "opened", word = "opened" },
 }
 
 -- The to-dos that are a comment naming you.
@@ -56,11 +102,11 @@ local MENTIONS = { mentioned = true, directly_addressed = true }
 local COMMENT_PAGES = 5
 
 --- Adds `mrs` (GitLab merge request objects) under `reason` to `into`,
---- keyed by id, and gives `into` back. Anything not open is left out:
+--- keyed by id, and gives `into` back. Only what is open or closed:
 --- a to-do keeps naming a merge request that has since merged.
 function M.add(into, mrs, reason)
   for _, mr in ipairs(mrs or {}) do
-    if type(mr) == "table" and mr.id and mr.state == "opened" then
+    if type(mr) == "table" and mr.id and (mr.state == "opened" or mr.state == "closed") then
       local e = into[mr.id] or { mr = mr, why = {} }
       e.why[reason] = true
       into[mr.id] = e
@@ -74,7 +120,13 @@ function M.mentioned(todos)
   local out = {}
   for _, t in ipairs(todos or {}) do
     if MENTIONS[t.action_name] and t.target_type == "MergeRequest" then
-      table.insert(out, t.target)
+      -- With the to-do's project where the target came without its
+      -- own, which is what it is found by again.
+      local mr = t.target
+      if type(mr) == "table" and not mr.project_id and t.project then
+        mr = vim.tbl_extend("force", mr, { project_id = t.project.id })
+      end
+      table.insert(out, mr)
     end
   end
   return out
@@ -110,34 +162,112 @@ function M.commented(events, known)
   return out
 end
 
---- The entries `name` lets through, the most recently touched first;
---- nil lets every one through.
-function M.only(all, name)
+local function key(project, iid)
+  return tostring(project) .. "!" .. tostring(iid)
+end
+
+-- The part of a timestamp that sorts as a string: GitLab writes them
+-- in UTC, and the fraction of a second is not always there.
+local function stamp(iso)
+  return type(iso) == "string" and iso:match("^%d+%-%d+%-%d+T%d+:%d+:%d+") or nil
+end
+
+local function later(into, k, iso)
+  local s = stamp(iso)
+  if s and (not into[k] or stamp(into[k]) < s) then
+    into[k] = iso
+  end
+end
+
+--- Adds to `into` when each merge request the to-dos `todos` are about
+--- was last pointed at you -- whatever the to-do was for -- and the
+--- same for the comment events `events`, and gives `into` back.
+function M.dated(into, todos, events)
+  for _, t in ipairs(todos or {}) do
+    local mr = t.target
+    -- The project is the to-do's as well as its target's, and some
+    -- forges fill in only the one.
+    local project = type(mr) == "table" and mr.project_id or (t.project and t.project.id)
+    if t.target_type == "MergeRequest" and project then
+      later(into, key(project, mr.iid), t.created_at)
+    end
+  end
+  for _, ev in ipairs(events or {}) do
+    local note = ev.note
+    if note and note.noteable_type == "MergeRequest" and ev.project_id then
+      later(into, key(ev.project_id, note.noteable_iid), ev.created_at)
+    end
+  end
+  return into
+end
+
+--- The timestamp of `e` that `by` (a name in `M.SORTS`) sorts on, or
+--- nil where it has none.
+function M.when(e, by, known)
+  if by == "you" then
+    return (known or {})[key(e.mr.project_id, e.mr.iid)]
+  end
+  return by == "opened" and e.mr.created_at or e.mr.updated_at
+end
+
+--- The entries `shown` lets through -- found one of the ways it
+--- ticks, and in one of the states it ticks; `M.SHOWN` where it is nil
+--- -- in the order `order` says: `{ by = <name in M.SORTS>, newest =
+--- bool }`, the most recently moved first where it is nil. One with no
+--- time to sort on is last either way round: it is not the oldest,
+--- only unknown.
+function M.only(all, shown, order, known)
+  shown = shown or M.SHOWN
+  order = order or { by = "moved", newest = true }
   local out = {}
   for _, e in pairs(all) do
-    if not name or e.why[name] then
+    local why = false
+    for r in pairs(e.why) do
+      why = why or shown[r] or false
+    end
+    if why and shown[e.mr.state] then
       table.insert(out, e)
     end
   end
   table.sort(out, function(a, b)
-    if (a.mr.updated_at or "") ~= (b.mr.updated_at or "") then
-      return (a.mr.updated_at or "") > (b.mr.updated_at or "")
+    local x, y = stamp(M.when(a, order.by, known)), stamp(M.when(b, order.by, known))
+    if x ~= y then
+      if not (x and y) then
+        return x ~= nil
+      end
+      if order.newest then
+        return x > y
+      end
+      return x < y
     end
     return a.mr.id > b.mr.id
   end)
   return out
 end
 
---- The filters worth walking to: all of them first, then each reason
---- with something under it.
-function M.filters(all)
-  local out = { false }
+--- What `shown` narrows the list to, in words for the title: the ways
+--- in ticked where not all of them are, and the states where they are
+--- not the open ones alone. Nil where it is `M.SHOWN`.
+function M.describe(shown)
+  local parts, ways = {}, {}
   for _, r in ipairs(M.REASONS) do
-    if #M.only(all, r.name) > 0 then
-      table.insert(out, r.name)
+    if shown[r.name] then
+      table.insert(ways, r.word)
     end
   end
-  return out
+  if #ways < #M.REASONS then
+    table.insert(parts, #ways > 0 and table.concat(ways, " ") or "no way in")
+  end
+  local states = {}
+  for _, st in ipairs(M.STATES) do
+    if shown[st.name] then
+      table.insert(states, st.word)
+    end
+  end
+  if not (#states == 1 and shown.opened) then
+    table.insert(parts, #states > 0 and table.concat(states, " + ") or "no state")
+  end
+  return #parts > 0 and table.concat(parts, " · ") or nil
 end
 
 --- `group/proj!12`.
@@ -158,9 +288,11 @@ local function why_width(e)
   return n
 end
 
---- One row, as coloured chunks: why, which, what, by whom, when it last
---- moved. `widths` is `{ why, ref }`, the widest of the rows shown.
-function M.row(e, widths)
+--- One row, as coloured chunks: why, which, what, by whom, and when --
+--- `when`, the time it is sorted by, since that is the column that
+--- says why it is where it is. `widths` is `{ why, ref }`, the widest
+--- of the rows shown.
+function M.row(e, widths, when)
   local chunks = { { " " } }
   for _, r in ipairs(M.REASONS) do
     if e.why[r.name] then
@@ -175,17 +307,20 @@ function M.row(e, widths)
     "NemetonPath",
   })
   local title = vim.fn.strcharpart(mr.title or "", 0, 56)
-  if mr.draft then
-    table.insert(chunks, { "draft ", "NemetonMeta" })
-    title = vim.fn.strcharpart(title, 0, 50)
+  -- What it is, where that is not open and ready: said once, before
+  -- the title, as the queue says it.
+  local said = (mr.state == "closed" and "closed " or "") .. (mr.draft and "draft " or "")
+  if said ~= "" then
+    table.insert(chunks, { said, "NemetonMeta" })
+    title = vim.fn.strcharpart(title, 0, 56 - #said)
   end
   local author = (mr.author and mr.author.username or "?"):sub(1, 14)
   vim.list_extend(chunks, {
     { title, "NemetonThread" },
-    { (" "):rep(math.max(57 - vim.fn.strdisplaywidth(title) - (mr.draft and 6 or 0), 1)) },
+    { (" "):rep(math.max(57 - vim.fn.strdisplaywidth(title) - #said, 1)) },
     { author, "NemetonAuthor" },
     { (" "):rep(math.max(15 - vim.fn.strdisplaywidth(author), 1)) },
-    { detail.ago(mr.updated_at), "NemetonMeta" },
+    { when and detail.ago(when) or "-", "NemetonMeta" },
   })
   return chunks
 end
@@ -198,7 +333,9 @@ function M.close()
   if valid() then
     vim.api.nvim_win_close(M.win, true)
   end
-  M.win, M.buf, found, rows, filter = nil, nil, {}, {}, nil
+  M.win, M.buf, found, rows, filter, asked_closed = nil, nil, {}, {}, nil, false
+  checklist.close()
+  spin.stop("involved")
 end
 
 local function current()
@@ -212,11 +349,23 @@ local function set_title()
   if not valid() then
     return
   end
-  local all = #M.only(found, nil)
-  local title = filter and (" merge requests · %s %d/%d "):format(filter, #rows, all)
-    or (" merge requests · %d "):format(all)
+  local said = filter and M.describe(filter)
+  local title = said and (" merge requests · %s %d/%d "):format(said, #rows, vim.tbl_count(found))
+    or (" merge requests · %d "):format(#rows)
+  -- The order, where it is not the one the window opens in.
+  if sort.by ~= "moved" or not sort.newest then
+    for _, s in ipairs(M.SORTS) do
+      if s.name == sort.by then
+        title = title .. ("· %s %s "):format(s.word, sort.newest and "↓" or "↑")
+      end
+    end
+  end
+  if where and where.host then
+    title = (" %s ·"):format(where.host) .. title
+  end
+  -- Still asking: turning, where there is something to turn.
   if pending > 0 then
-    title = title .. "… "
+    title = spin.on("involved") and " " .. spin.glyph("involved") .. title:sub(2) or title .. "… "
   end
   vim.api.nvim_win_set_config(M.win, { title = title, title_pos = "center" })
 end
@@ -225,7 +374,7 @@ local function draw()
   if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
     return
   end
-  rows = M.only(found, filter)
+  rows = M.only(found, filter, sort, dates)
   local lines, hls = {}, {}
   if #rows > 0 then
     local widths = { 0, 0 }
@@ -236,7 +385,7 @@ local function draw()
     widths[2] = math.min(widths[2], 32)
     lines, hls = threads.flatten(
       vim.tbl_map(function(e)
-        return M.row(e, widths)
+        return M.row(e, widths, M.when(e, sort.by, dates))
       end, rows),
       0
     )
@@ -260,17 +409,26 @@ end
 
 local function load()
   local mine = M.buf
-  found, failed, pending = {}, {}, 0
+  found, failed, pending, dates = {}, {}, 0, {}
+  asked_closed = (filter or M.SHOWN).closed or false
+  -- The scopes are asked a state at a time: a page of "all" of what
+  -- was ever assigned to you is mostly merged, and would crowd the
+  -- open ones off it. A list of numbers is short whatever it is asked.
+  local states = asked_closed and { "opened", "closed" } or { "opened" }
   -- Each call says it is out, and lands through here: what it found
   -- goes into the list, or what it said into the lines under it; then
   -- `after`, either way.
   local function ask(what, call, take, after)
     pending = pending + 1
+    spin.start("involved", set_title)
     call(function(data, err)
       if M.buf ~= mine or not valid() then
         return
       end
       pending = pending - 1
+      if pending <= 0 then
+        spin.stop("involved")
+      end
       if data then
         take(data)
       else
@@ -279,18 +437,15 @@ local function load()
       if after then
         after()
       end
-      if filter and pending == 0 and #M.only(found, filter) == 0 then
-        filter = nil
-      end
       draw()
     end)
   end
 
   -- What you commented on is looked up last, because it is a set of
   -- numbers rather than merge requests: whatever the other ways in
-  -- found need not be asked for again. Five calls to wait on: two
-  -- scopes, two kinds of to-do, and the pages of comments.
-  local events, waiting = {}, 5
+  -- found need not be asked for again. Calls to wait on: two scopes a
+  -- state, two kinds of to-do, and the pages of comments.
+  local events, waiting = {}, 2 * #states + 3
   local function landed()
     waiting = waiting - 1
     if waiting > 0 then
@@ -298,28 +453,31 @@ local function load()
     end
     for project, iids in pairs(M.commented(events, found)) do
       ask("the merge requests you commented on", function(cb)
-        glab.open_mrs(where, project, iids, cb)
+        glab.project_mrs(where, project, iids, asked_closed and "all" or "opened", cb)
       end, function(mrs)
         M.add(found, mrs, "commented")
       end)
     end
   end
 
-  for _, s in ipairs({
-    { "assigned_to_me", "assigned", "what is assigned to you" },
-    { "reviews_for_me", "review", "the reviews asked of you" },
-  }) do
-    ask(s[3], function(cb)
-      glab.my_mrs(where, s[1], cb)
-    end, function(mrs)
-      M.add(found, mrs, s[2])
-    end, landed)
+  for _, state in ipairs(states) do
+    for _, s in ipairs({
+      { glab.assigned_mrs, "assigned", "what is assigned to you" },
+      { glab.review_mrs, "review", "the reviews asked of you" },
+    }) do
+      ask(s[3], function(cb)
+        s[1](where, state, cb)
+      end, function(mrs)
+        M.add(found, mrs, s[2])
+      end, landed)
+    end
   end
   for _, state in ipairs({ "pending", "done" }) do
     ask("the comments that name you", function(cb)
       glab.mr_todos(where, state, cb)
     end, function(todos)
       M.add(found, M.mentioned(todos), "mentioned")
+      M.dated(dates, todos)
     end, landed)
   end
   local function page(n)
@@ -328,6 +486,7 @@ local function load()
       glab.comment_events(where, n, cb)
     end, function(data)
       vim.list_extend(events, data)
+      M.dated(dates, nil, data)
       more = #data >= 100 and n < COMMENT_PAGES
     end, function()
       if more then
@@ -350,6 +509,65 @@ local function open(e)
   else
     follow.browse(mr.web_url)
   end
+end
+
+--- What the rows are in order of, ticked in a float, redrawn on every
+--- tick.
+local function choose_sort()
+  local items = {}
+  for _, s in ipairs(M.SORTS) do
+    table.insert(items, { key = s.name, label = s.word, group = "by" })
+  end
+  vim.list_extend(items, {
+    { key = "newest", label = "newest first", group = "order" },
+    { key = "oldest", label = "oldest first", group = "order" },
+  })
+  checklist.open({
+    title = "sort by",
+    items = items,
+    on = { [sort.by] = true, [sort.newest and "newest" or "oldest"] = true },
+    on_change = function(on)
+      for _, s in ipairs(M.SORTS) do
+        if on[s.name] then
+          sort.by = s.name
+        end
+      end
+      sort.newest = on.newest or false
+      draw()
+      if valid() then
+        vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
+      end
+    end,
+  })
+end
+
+--- What is shown, ticked in a float: the ways in, and the states.
+--- Redrawn as it is ticked, and asked of the forge again the first
+--- time the closed ones are, which the opening load leaves out.
+local function choose_filter()
+  local items = {}
+  for _, r in ipairs(M.REASONS) do
+    table.insert(items, { key = r.name, label = r.word })
+  end
+  for i, st in ipairs(M.STATES) do
+    table.insert(items, { key = st.name, label = st.word, gap = i == 1 })
+  end
+  checklist.open({
+    title = "show",
+    items = items,
+    on = filter or M.SHOWN,
+    on_change = function(on)
+      filter = on
+      if on.closed and not asked_closed then
+        load()
+      else
+        draw()
+      end
+      if valid() then
+        vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
+      end
+    end,
+  })
 end
 
 local function show()
@@ -378,6 +596,7 @@ local function show()
   vim.wo[M.win].winbar = detail.hint({
     { k.open, "open" },
     { k.filter, "filter" },
+    { k.sort, "sort" },
     { k.browser, follow.browse_hint() },
   }, k.help)
 
@@ -394,19 +613,13 @@ local function show()
     },
     {
       k.filter,
-      function()
-        local walk = M.filters(found)
-        local i = 1
-        for n, f in ipairs(walk) do
-          if f == (filter or false) then
-            i = n
-          end
-        end
-        filter = walk[i % #walk + 1] or nil
-        draw()
-        vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
-      end,
-      "show one way in: review, assigned, @you, commented, all",
+      choose_filter,
+      "what it shows, ticked in a float: review, assigned, @you, commented; open, closed",
+    },
+    {
+      k.sort,
+      choose_sort,
+      "sort by when it last moved, was last pointed at you, or was opened",
     },
     {
       k.browser,
@@ -446,8 +659,8 @@ function M.open()
   session.locate(function(at, project)
     if not at then
       session.notify(
-        "not in a GitLab project, and no glab.backup_host to ask instead — "
-          .. "set it to the host whose merge requests to list outside one",
+        "not in a GitLab project, and glab names no host to ask instead — "
+          .. "set glab.backup_host to the one whose merge requests to list outside one",
         vim.log.levels.ERROR
       )
       return

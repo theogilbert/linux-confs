@@ -42,12 +42,13 @@ end
 
 --- Which forge to ask for what is yours rather than a project's --
 --- the to-do list, the merge requests you are in: the repository's, when the editor is in one the
---- forge knows as a project, and `glab.backup_host` otherwise.
+--- forge knows as a project, and `glab.home_host` otherwise.
 --- `cb(where, project)`, or `cb(nil)` with neither.
 function M.locate(cb)
   local function backup()
-    local host = glab.backup_host()
-    cb(host and { host = host } or nil)
+    glab.home_host(function(host)
+      cb(host and { host = host } or nil)
+    end)
   end
   local root = M.root()
   if not root then
@@ -1729,7 +1730,7 @@ function M.threads_at_cursor()
 end
 
 --- Whether the walk stops at a settled conversation too. Off unless
---- `comments.walk_resolved` says otherwise, and flipped for the rest of
+--- `comments.walk_resolved` says otherwise, and changed for the rest of
 --- the editor session from the pane, whose header says which it is.
 function M.walks_resolved()
   if M.walk_resolved == nil then
@@ -1738,10 +1739,21 @@ function M.walks_resolved()
   return M.walk_resolved
 end
 
-function M.toggle_walk_resolved()
-  M.walk_resolved = not M.walks_resolved()
+--- ...and at a conversation on the merge request as a whole. On unless
+--- `comments.walk_overall` says otherwise, and changed the same way.
+function M.walks_overall()
+  if M.walk_overall == nil then
+    return require("nemeton.config").comments.walk_overall ~= false
+  end
+  return M.walk_overall
+end
+
+--- Says what the walk stops at, for the rest of the editor session:
+--- `{ resolved = bool, overall = bool }`.
+function M.set_walk(on)
+  M.walk_resolved = on.resolved and true or false
+  M.walk_overall = on.overall and true or false
   require("nemeton.pane").redraw()
-  return M.walk_resolved
 end
 
 --- Every stop `]m` makes, in the order it makes them: the conversations
@@ -1755,6 +1767,9 @@ end
 --- release" -- and are answered before the code is, if at all. They
 --- move no cursor: there is no line to put it on, and the pane is
 --- where they are read.
+---
+--- Not the overall ones at all where `M.walks_overall()` says so: a
+--- pass over the code is a pass over the code.
 ---
 --- Unresolved only, unless `M.walks_resolved()`. `]m` is how a reviewer
 --- walks a review, and a settled conversation is, most of the time,
@@ -1787,7 +1802,9 @@ local function stops()
   end
 
   local out = {}
-  for _, list in ipairs({ M.current.overview or {}, M.current.draft_overview or {} }) do
+  local overall = M.walks_overall() and { M.current.overview or {}, M.current.draft_overview or {} }
+    or {}
+  for _, list in ipairs(overall) do
     for _, t in ipairs(list) do
       if owed({ t }) then
         table.insert(out, { thread = t })

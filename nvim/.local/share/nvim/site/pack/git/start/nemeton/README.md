@@ -119,7 +119,7 @@ rest.
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
 | `:Nemeton retitle` | give it a new title |
 | `:Nemeton describe` | rewrite its description, in the composer |
-| `:Nemeton reviewers` | ask project members to review it, ticked on and off |
+| `:Nemeton reviewers` | ask project members to review it, typed with their names searched |
 | `:Nemeton peek` | the thread under the cursor, in a float |
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
@@ -142,8 +142,8 @@ rest.
 | `:Nemeton issues` | the project's issues, searched as you type; needs no review open |
 | `:Nemeton issue 12` | issue #12, in a tab of its own; needs no review open |
 | `:Nemeton issue` | ask which, completing with the issue search as you type |
-| `:Nemeton todos` | your to-do list on GitLab, every project's, a kind at a time; needs no review open; outside a GitLab repository, `glab.backup_host` |
-| `:Nemeton involved` | the open merge requests you are in, every project's: assigned, a review asked of you, a comment that named you, one you commented on; needs no review open; outside a GitLab repository, `glab.backup_host` |
+| `:Nemeton todos` | your to-do list on GitLab, every project's, a kind at a time; needs no review open; outside a GitLab repository, `glab.backup_host` or glab's own host |
+| `:Nemeton involved` | the open merge requests you are in, every project's: assigned, a review asked of you, a comment that named you, one you commented on; needs no review open; outside a GitLab repository, `glab.backup_host` or glab's own host |
 | `:Nemeton new-issue` | a window for an issue of your own; over a range, its description starts with a link to the lines and the lines |
 | `:Nemeton status` | what is open, and how many threads |
 | `:Nemeton close` | end the review; the branch stays checked out |
@@ -277,8 +277,8 @@ it at all. `n` shows what has been said on it, every thread under the
 file and line it is on — without the code each is about, which is read
 from the files on disk and those are not this branch's until it is
 opened. `<C-d>` and `<C-u>` scroll that pane from the list, which keeps
-the cursor. `s` walks the queue through opened → merged
-→ closed → all (the title says which, and every row that is not open
+the cursor. `s` picks the queue — opened, merged, closed or all — in a
+float of ticks (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
 on the screen, `+` writes one of your own for the branch you are on,
 `r` refetches, `o` opens it in a browser, `q` closes. The window opens on the keypress rather than when the forge
@@ -445,7 +445,7 @@ on `]m`, in the quickfix list.
 
 `<leader>mi`, or `:Nemeton issues`, is the project's issues in a float
 where the queue is, with its keys: `<CR>` opens one, `d` shows what it
-says under the list, `s` walks open → closed → all, `o` opens it on
+says under the list, `s` ticks open and closed ones in a float, `o` opens it on
 GitLab, `r` asks the forge what changed (and compares every comment),
 `+` files one, `q` closes. The rows come from the cache (see [Issues](#issues) under
 Configuration), so the window is full on the keypress and the forge is
@@ -453,14 +453,17 @@ asked behind it. A row is the number, the title, who has it, how stale
 it is, how many comments, and the labels in their own colours.
 
 `/` searches, **narrowing the list on every key typed**; `<CR>` keeps
-the search and `<Esc>` puts the list back. Words are looked for in the
+the search and `<Esc>` puts the list back. Out of insert mode with the
+box up — `<C-S-n>`, or `<C-\><C-n>` — `g?` lists what a search can say. Words are looked for in the
 title, labels, description and every comment — smartcase — and ranked
 by where they were found; `"a phrase"` is whole and `-word` excludes.
 The filters are the forge's own filter-bar words: `label:bug`
 (`label:"needs docs"`), `assignee:@me` / `none` / `any`,
 `author:alice`, `state:closed` / `all`, each negated with `-`, and `#12`
 for one issue. The box completes them, and the labels and people the
-cache has after them. A row found by its description or a comment has a
+cache has after them, and colours each filter it read as one — the word
+in `NemetonFilter`, its value in `NemetonFilterValue` — so one that did
+not take is plain and searched as a word. A row found by its description or a comment has a
 line under it saying where — `comment · alice ·` — and quoting the line,
 the word picked out: neither is on the screen, and a row nobody can
 account for is one nobody trusts.
@@ -469,9 +472,9 @@ account for is one nobody trusts.
 the reviews asked of you, the comments that name you, what is assigned
 to you, the pipelines of yours that broke — across every project you are
 in, so it needs no review open. Inside a GitLab repository it asks that
-repository's forge; outside one it asks `glab.backup_host`, and with
-that unset it does not open and says so — which forge would otherwise
-be glab's guess. A row is what kind of to-do it is, what it is
+repository's forge; outside one it asks `glab.backup_host`, else
+`glab.host`, else glab's own `host` setting (`glab config set host
+gitlab.example.com`), and the title names the forge it asked. A row is what kind of to-do it is, what it is
 about (`group/proj!12`), its title, who and how long ago. `f` narrows it
 a kind at a time — review → mentions → assigned → build → other → all,
 skipping the kinds with nothing in them; `p` shows what the to-do says,
@@ -490,31 +493,39 @@ the ones you are asked to review, the ones where a comment named you
 ones you have commented on (your last five hundred comments). One row
 each however many of those found it: why, in a word each — `review`,
 `assigned`, `@you`, `commented` — then `group/proj!12`, its title, its
-author and when it last moved, the most recent first. It asks the same
-forge the to-do list does, and like it does not open outside a GitLab
-repository without `glab.backup_host`. `f` walks the ways in — review →
-assigned → mentioned → commented → all; `<CR>` opens one of the
+author and when it last moved, the most recent first. `s` sorts it
+otherwise, in a float of ticks applied as they are ticked: by when it
+last moved, when it was last pointed at you (the newest to-do about it
+— a review asked, an assignment, a mention — or comment of yours on
+it), or when it was opened, newest or oldest first; the last column is
+then that time, and the title says the order. It asks the same
+forge the to-do list does, inside a repository or out. `f` ticks what
+it shows in a float: which ways in, and whether the open ones, the
+closed ones or both — closed is unticked when it opens, and asked of
+the forge the first time it is ticked; a closed row says so beside its
+title, and the title says what is left out. `<CR>` opens one of the
 repository you are in here and anything else on GitLab; `o` opens it on
 GitLab; `r` asks again; `q` closes. A call that fails says so under the
 rows rather than instead of them.
 
-`:Nemeton issue 12` opens an issue of the project — no review needed —
-in a **tab** of its own rather than a float: an issue is the thing being
-read, kept open while a branch is written to fix it and gone back to,
-and a tab is the editor's way of keeping a page open to one side. `gt`
-reaches it, several issues are several tabs, and opening one already
-open goes to its tab. At the top, what it is and whose; then its state
-when it is closed, who it is assigned to, its labels in their own
-colours, its reactions, the merge requests about it and how many
-comments it has; then the description. The keys are the merge request
-window's where the two do the same thing: `c` shows or hides its
-comments, `e` rewrites the description in the composer, `R` retitles
-it, `l` and `a` tick its labels and assignees on and off (a list that
-comes back with the tick moved until you dismiss it, and one change
-sent then), `x` closes or reopens it after asking, `o` opens it on GitLab, `r`
-refetches, and `q` closes the tab and goes back to the one it came
-from. It is drawn from the cache on the keypress and from the forge as
-soon as that answers.
+`:Nemeton issue 12` opens an issue of the project — no review
+needed — in a **tab** of its own rather than a float: an issue is
+the thing being read, kept open while a branch is written to fix it
+and gone back to, and a tab is the editor's way of keeping a page
+open to one side. `gt` reaches it, several issues are several tabs,
+and opening one already open goes to its tab; quitting the editor
+closes them first, so a session saved on the way out does not bring
+them back empty. At the top, what it is and whose; then its state when
+it is closed, who it is assigned to, its labels in their own colours,
+its reactions, the merge requests about it and how many comments it
+has; then the description. The keys are the merge request window's
+where the two do the same thing: `c` shows or hides its comments, `e`
+rewrites the description in the composer, `R` retitles it, `l` and `a`
+change its labels and assignees (see below for how they are picked,
+and one change is sent when you answer), `x` closes or reopens it
+after asking, `o` opens it on GitLab, `r` refetches, and `q` closes
+the tab and goes back to the one it came from. It is drawn from the
+cache on the keypress and from the forge as soon as that answers.
 
 Its comments open beside it in a split placed like the review's pane
 (`issues.comments = false` leaves that to `c`), every thread whole,
@@ -538,11 +549,15 @@ themselves, fenced in their language.
 that does not exist yet: the title, whether it is a draft, the
 description, the branch it goes to, the labels and the reviewers, each a field the
 cursor sits on and `<CR>` changes — a title in a prompt, the description
-in the composer, the branch and the labels picked from what the project
-has. The labels are a dropdown that comes back with the tick moved until
-you dismiss it: labels come in threes — the team, the area, the release
-— and pressing the key three times to say so is three times as long a
-way of saying it. Under them are the three facts nobody types: what CI
+in the composer, the branch picked from what the project has, and the
+labels and reviewers typed on one line, comma-separated, with a menu of
+the project's own under it narrowed fuzzily as you type — a member by
+username or full name. `<Tab>` walks the menu, `<CR>` puts the name on
+the line and starts the next (the first match, if you typed and chose
+nothing), `<CR>` on an empty slot is done, `<Esc>` changes nothing. A
+name that matches nothing is kept as typed: a label can be new. The
+same line picks reviewers on an open merge request and an issue's
+labels and assignees. Under them are the three facts nobody types: what CI
 last made of the branch, and how many files and lines it changes —
 counted by git against the branch it would go into, because the merge
 request whose diff GitLab would answer with does not exist yet, and
@@ -585,10 +600,12 @@ code the thread being read is about, landing the way `]m` lands, with
 the whole span of a comment written over a selection in the middle of
 the window; `r` replies, `e` edits, `d` deletes, `+` reacts, `K` says
 who gave the reaction under the cursor, when the comment was written, what its commit was,
-or where the link goes, `<leader>mL` copies a link to the comment under the cursor, `S`
-says whether `]m` stops at resolved threads too or steps over them (the
-header says which, `]m open` or `]m all`; `comments.walk_resolved = true`
-starts that way), `R`
+or where the link goes, `<leader>mL` copies a link to the comment under the cursor, `f`
+says what `]m` stops at — the merge request's own conversations,
+resolved ones — ticked in a float, each box applied as it is ticked (the
+header says which, `]m open` or `]m all`, with `· code` when the merge
+request's own are left out; `comments.walk_resolved = true` and
+`comments.walk_overall = false` start that way), `R`
 refetches — and `q` folds the conversations away rather than only
 closing the window, because while it is open the pane *is* what expanded
 means. Closing it any other way says the same thing: the mode follows
@@ -1329,6 +1346,15 @@ purpose: `U+2714 HEAVY CHECK MARK`, which the tick used to be, is in
 Unicode's emoji set, and a terminal with an emoji font draws it from
 there — a picture in that font's own colour rather than a tick in the
 green nemeton asked for. Nerd Font icons go in that table just as well.
+The floats of ticks — what the merge requests you are in are sorted
+by and which are shown, which queue or issues are listed, what `]m`
+stops at — draw theirs with `config.checklist`: `✓` and `·`
+for a box, `●` and `○` for one of a group.
+While the queue, the merge requests you are in or the issues are being
+fetched, or a merge request picked from the queue is being opened, a
+braille spinner turns at the front of that window's title —
+`config.spinner`, `{ frames = {…}, interval = 100 }`, or `false` for
+none.
 
 ## Configuration
 
@@ -1359,8 +1385,9 @@ login` keeps a token in the system keyring.
   review across two instances, leave it nil.
 - **`backup_host`** — a string or a function: the forge to ask where
   there is no project to ask it of, which is the to-do list or the merge
-  requests you are in, opened outside a GitLab repository. Unset, they
-  refuse to open there.
+  requests you are in, opened outside a GitLab repository. Unset, it is
+  `host`, and with that unset too glab's own `host` setting (`glab
+  config set host …`); the window's title names the forge it asked.
   Its token is glab's own for that host (`glab auth login --hostname`),
   not `token` below — unless `host` names the same one — and a 401 from
   it does not prompt: a token configured or typed for one forge is not
@@ -1525,7 +1552,12 @@ lua/nemeton/
   seen.lua       what the forge last said was open here, so the prompt
                  that asks which merge request is up on the keypress
   prompt.lua     one word asked for in a window of this plugin's own,
-                 with the menu of what it can be under it
+                 with the menu of what it can be under it -- or several,
+                 comma-separated, the rest searched as they are typed
+  checklist.lua  choices ticked on and off in a float, applied as they
+                 are ticked: what a list is sorted by, what a window shows
+  spin.lua       the glyph that turns in a list's title while it waits
+                 on the forge
   edit.lua       rewriting and deleting a comment already posted
   log.lua        every subprocess, into ~/.local/state, with the token
                  scrubbed out on the way
@@ -1578,12 +1610,7 @@ stylua --check lua plugin tests
 
 `./tests/check.sh` runs all of it the way CI does — the suite on your
 `nvim` and again on the oldest one in CI's matrix, downloaded once into
-`~/.cache/nemeton/` (Linux x86-64 only) — and `.githooks/pre-push` runs
-that before every push, once it is turned on:
-
-```
-git config core.hooksPath .githooks
-```
+`~/.cache/nemeton/` (Linux x86-64 only).
 
 ## What is not done
 

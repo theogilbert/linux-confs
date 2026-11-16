@@ -9,8 +9,9 @@ return {
   list = {
     per_page = 30,
     -- "opened" | "merged" | "closed" | "all". What a queue *opens* on:
-    -- `s` in the window walks the four, for the merged one you are
-    -- reading to find out how something came to be done that way.
+    -- `s` in the window picks another of the four, for the merged one
+    -- you are reading to find out how something came to be done that
+    -- way.
     state = "opened",
     -- Passed to `glab mr list --order`. Recently touched first is the
     -- order a review queue is actually worked in.
@@ -614,9 +615,13 @@ return {
 
     -- Whether `]m` and `[m` stop at a resolved thread as well. Off: the
     -- walk is "what is left", and a settled conversation is history.
-    -- This is only where an editor session starts -- `S` in the pane
-    -- flips it, and the pane's header says which way it is.
+    -- This is only where an editor session starts -- `f` in the pane
+    -- changes it, and the pane's header says which way it is.
     walk_resolved = false,
+    -- ...and at a conversation on the merge request as a whole, before
+    -- the code. On: those are what a review is opened with. Where a
+    -- session starts too, and changed by the same `f`.
+    walk_overall = true,
 
     -- Whether a link to a commit is drawn as the commit's short sha.
     --
@@ -878,6 +883,28 @@ return {
     unknown = "•",
   },
 
+  -- What a choice ticked on and off is drawn with, in the floats that
+  -- sort a list or say what a window shows: a box ticked and not, and
+  -- one of a group -- "newest first" or "oldest first" -- chosen and
+  -- not. Text-presentation codepoints, for the reason `ci`'s are.
+  checklist = {
+    on = "✓",
+    off = "·",
+    chosen = "●",
+    other = "○",
+  },
+
+  -- What turns in the title of the merge request lists and the issue
+  -- list while they wait on the forge: the frames, in order, and the
+  -- milliseconds each is up for. Unlike `comments.sending` these waits
+  -- are seconds, not one -- a first sync of the issues is minutes -- and
+  -- the words already in the window say what for; what they cannot say
+  -- is that the call has not died. `false` for nothing turning.
+  spinner = {
+    frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+    interval = 100,
+  },
+
   compose = {
     -- Rows of the split you write a comment in. Small on purpose: a
     -- review comment is a paragraph, and a window the size of the file
@@ -1080,7 +1107,7 @@ return {
     -- The MR list window.
     list = {
       select = "<CR>",
-      -- Open, merged, closed, all -- in that order, round and round.
+      -- Open, merged, closed or all, one of them ticked in a float.
       -- A review queue is what is open, which is what the window opens
       -- on; "how did we end up doing it this way" is a question about
       -- one that is merged, and it is asked often enough to want a key
@@ -1174,7 +1201,7 @@ return {
       -- on the command line, the description in the composer.
       retitle = "R",
       describe = "e",
-      reviewers = "v", -- who is asked to review it, ticked on and off
+      reviewers = "v", -- who is asked to review it, their names searched as typed
       browser = "o",
       refresh = "r",
       quit = "q",
@@ -1187,8 +1214,11 @@ return {
     issue_list = {
       select = "<CR>", -- open it, in a tab
       search = "/", -- narrow the list as you type |nemeton-issues-search|
+      -- In the search box, out of insert mode: what can be typed in it,
+      -- the filters and how they are written, in a float.
+      search_help = "g?",
       description = "d", -- what it says, under the list
-      state = "s", -- open, closed, or all of them
+      state = "s", -- open, closed, or both, ticked in a float
       create = "+", -- file one |nemeton-issue-create-window|
       browser = "o",
       -- Asks the forge what changed -- and compares every comment, which
@@ -1232,8 +1262,8 @@ return {
       comments = "c", -- what has been said under it, in a pane beside it
       describe = "e",
       retitle = "R",
-      -- Each a list that comes back with the tick moved until it is
-      -- dismissed, and one change sent then: labels come in threes.
+      -- Each a line of names with the rest searched as they are typed,
+      -- and one change sent when it is answered: labels come in threes.
       labels = "l",
       assignees = "a",
       close = "x", -- close it, or reopen a closed one, after asking
@@ -1305,10 +1335,11 @@ return {
       -- it is the same gesture, and a comment is what is under the
       -- cursor in here.
       link = "<leader>mL",
-      -- Whether `]m` steps over resolved threads or stops at them too,
-      -- for the rest of the session (`comments.walk_resolved`). On the
-      -- pane because the pane's header is where it is said which.
-      walk_resolved = "S",
+      -- What `]m` stops at, ticked in a float: the conversations on the
+      -- merge request as a whole, and the resolved ones -- for the rest
+      -- of the session (`comments.walk_overall`, `.walk_resolved`). On
+      -- the pane because the pane's header is where it is said which.
+      filter = "f",
       refresh = "R",
       quit = "q",
       -- ...and the list of all of them, since there are now more than a
@@ -1367,9 +1398,31 @@ return {
     -- The merge requests you are in, across the forge.
     involved = {
       open = "<CR>", -- open it: here if it is of this repository, on GitLab if not
-      filter = "f", -- show one way in, and the next, and all again
+      filter = "f", -- which ways in and which states, ticked in a float
+      sort = "s", -- what the rows are in order of, and which way round
       browser = "o", -- open it on GitLab
       refresh = "r",
+      quit = "q",
+      help = "g?", -- every key above, in a float
+    },
+
+    -- The one-line box a word is asked for in -- a search, a number,
+    -- a name. `<Esc>` there dismisses it, as it does vim's own `/`, so
+    -- this is the key that leaves insert mode and keeps it, for its
+    -- normal-mode keys (the search's `g?`). `<C-\><C-n>` does it too.
+    prompt = {
+      normal = "<C-S-n>",
+    },
+
+    -- A float of choices ticked on and off -- what a list is sorted
+    -- by, what a window shows -- each applied as it is ticked. In
+    -- visual mode `toggle` ticks every line selected.
+    checklist = {
+      toggle = "<Space>",
+      toggle_alt = "<CR>", -- the same, for the hand that expects it
+      all = ">", -- tick every box
+      none = "<", -- untick every box
+      reset = "r", -- back to what was ticked when it opened
       quit = "q",
       help = "g?", -- every key above, in a float
     },
@@ -1514,11 +1567,13 @@ return {
     host = nil,
 
     -- The host to ask where there is no project to ask it of: the
-    -- to-do list opened outside a GitLab repository. Yours and not a
-    -- project's, so it can be asked anywhere -- but of which forge is
-    -- what a repository's remote would have said, and glab's own
-    -- default (gitlab.com, or the first host it was logged into) is a
-    -- guess. Nil, and the list refuses to open there and says so.
+    -- to-do list or the merge requests you are in, opened outside a
+    -- GitLab repository. Yours and not a project's, so it can be asked
+    -- anywhere -- but of which forge is what a repository's remote
+    -- would have said. Nil, and it is `host` above, and with that nil
+    -- too glab's own `host` setting (`glab config set host ...`, which
+    -- is gitlab.com until you change it); the window's title names
+    -- whichever was asked.
     --
     -- Its token is glab's for that host (`glab auth login --hostname`),
     -- not `token` below, unless `host` names this same one: a token

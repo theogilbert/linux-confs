@@ -696,6 +696,7 @@ local function let_go(view)
     return nil
   end
   owners[old.buf] = nil
+  pcall(vim.api.nvim_del_augroup_by_id, old.group)
   if vim.api.nvim_buf_is_valid(view.bufnr) then
     vim.api.nvim_buf_clear_namespace(view.bufnr, M.ns, 0, -1)
   end
@@ -896,6 +897,64 @@ function M.sync(view, row)
     v.lnum, v.col, v.curswant, v.topline = lnum, 0, 0, topline
     vim.fn.winrestview(v)
   end)
+  -- Remembered so the `WinScrolled` this causes in the old window is
+  -- known for ours and not driven back across: see `sync_back`.
+  view.old.wrote = { lnum = lnum, topline = topline }
+end
+
+--- `sync` the other way: your window put opposite the old one, for
+--- when it is the old one being read -- moved in, or scrolled by the
+--- wheel or `<C-e>` without the cursor leaving your buffer.
+---
+--- The old buffer is the alignment row for row, so its top row names
+--- the alignment row your window has to start at. Where that row is one
+--- your side does not have, it is one of the fillers hanging above the
+--- next line you DO have, and `topfill` is how many of them are still
+--- in view. The fillers below your last line cannot be scrolled into
+--- (see `pad`), so an old window scrolled into that tail leaves yours at
+--- its last line rather than somewhere it cannot stay.
+function M.sync_back(view)
+  if not M.is_open(view) then
+    return
+  end
+  if not (view.win and vim.api.nvim_win_is_valid(view.win)) then
+    return
+  end
+  local there = vim.api.nvim_win_call(view.old.win, vim.fn.winsaveview)
+  local count = vim.api.nvim_buf_line_count(view.bufnr)
+  local lnum = M.new_row(view, there.lnum)
+  local topline, topfill = nil, 0
+  if view.align then
+    for i = there.topline, #view.align do
+      if view.align[i].new then
+        topline, topfill = view.align[i].new, i - there.topline
+        break
+      end
+    end
+    topline = topline or count
+  else
+    topline = M.new_row(view, there.topline)
+  end
+  -- The old copy of a moved definition: the new copy is elsewhere, so it
+  -- is brought level with the old cursor, as `sync` does the other way.
+  local line = view.old_of_row and view.old_of_row[there.lnum]
+    or (not view.align and there.lnum) or nil
+  if line and move_of(view, nil, line) then
+    local screen = vim.api.nvim_win_call(view.old.win, vim.fn.winline)
+    topline, topfill = lnum - screen + 1, 0
+  end
+  lnum, topline = clamp(view.bufnr, lnum), clamp(view.bufnr, topline)
+
+  -- The column is left where it was: this is your buffer, and the old
+  -- side has no say in where on a line you were.
+  vim.api.nvim_win_call(view.win, function()
+    local v = vim.fn.winsaveview()
+    if v.lnum == lnum and v.topline == topline and (v.topfill or 0) == topfill then
+      return
+    end
+    v.lnum, v.topline, v.topfill = lnum, topline, topfill
+    vim.fn.winrestview(v)
+  end)
 end
 
 --- The revision's own line number for a row of the laid-out buffer, for
@@ -985,10 +1044,48 @@ function M.open(view, opts)
     -- the window goes.
     local wrapped = vim.wo[view.win].wrap
     vim.wo[view.win].wrap = false
-    view.old = { buf = buf, win = win, rows = rows, wrap = wrapped, ref = view.ref }
+    local group = vim.api.nvim_create_augroup("UatisOld" .. buf, { clear = true })
+    view.old = {
+      buf = buf, win = win, rows = rows, wrap = wrapped, ref = view.ref, group = group,
+    }
     owners[buf] = view
     setup_keymaps(view, buf)
     M.refresh(view)
+
+    -- Read from this window and yours follows, as the old one follows
+    -- yours. The cursor only moves here while you are in it; the wheel
+    -- scrolls it from anywhere, which `WinScrolled` alone sees -- and
+    -- which is also what `sync` scrolling it looks like, so a scroll
+    -- landing exactly where `sync` put it is `sync`'s, not the reader's.
+    -- Driven back, it would pull your window onto a filler row's
+    -- neighbour while you were moving through it.
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      group = group,
+      buffer = buf,
+      callback = function()
+        if view.old and view.old.win == vim.api.nvim_get_current_win() then
+          view.old.wrote = nil
+          M.sync_back(view)
+        end
+      end,
+    })
+    vim.api.nvim_create_autocmd("WinScrolled", {
+      group = group,
+      pattern = tostring(win),
+      callback = function()
+        local old = view.old
+        if not (old and old.win == win and vim.api.nvim_win_is_valid(win)) then
+          return
+        end
+        local v = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+        local w = old.wrote
+        old.wrote = nil
+        if w and w.lnum == v.lnum and w.topline == v.topline then
+          return
+        end
+        M.sync_back(view)
+      end,
+    })
     -- Aligned on the way in, not on the first cursor movement. Placing the
     -- cursor alone leaves the two windows scrolled independently, so a
     -- view opened anywhere but the top of the file comes up misaligned and

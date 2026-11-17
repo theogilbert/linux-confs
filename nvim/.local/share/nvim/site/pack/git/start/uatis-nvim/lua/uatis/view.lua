@@ -1245,7 +1245,8 @@ local function setup_watchers(view)
   -- old one follows the cursor rather than being scrolled by hand. Bound
   -- to the cursor and not to `scrollbind`, which pairs the windows by
   -- SCREEN line: the two files are different lengths, so it drifts by
-  -- exactly as much as the change is worth looking at.
+  -- exactly as much as the change is worth looking at. The other way
+  -- round is `oldside.sync_back`, bound in the old window.
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = view.augroup,
     buffer = view.bufnr,

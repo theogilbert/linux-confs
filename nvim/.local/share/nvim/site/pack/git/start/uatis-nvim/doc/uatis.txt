@@ -394,7 +394,8 @@ SIDE BY SIDE ~
 
 The old revision opens in a window of its own, to the left. It is a real,
 read-only buffer, so it searches and yanks like any other. Rows are held level
-with filler lines, and the cursor and scroll are synchronised.
+with filler lines, and the cursor and scroll are synchronised both ways:
+moving or scrolling in either window brings the other level with it.
 
 Three colours exist only here: the band on a removed row, the quieter band on
 the part of a reworded row that did NOT go away, and the filler rows.

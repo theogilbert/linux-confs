@@ -1724,37 +1724,12 @@ function M.set_state(root, iid, event, cb)
   )
 end
 
---- Gives the merge request a new title. How it is made a draft or
---- ready: GitLab reads that off a `Draft:` in front of the title, on
---- every version, where a field of its own came late.
-function M.retitle(root, iid, title, cb)
-  send("PUT", root, ("projects/:fullpath/merge_requests/%d"):format(iid), { title = title }, cb)
-end
-
---- Replaces who is asked to review it. `ids` are user ids; none at all
---- is sent as the 0 the forge reads as "nobody", since an empty list
---- would be encoded as an empty object.
-function M.set_reviewers(root, iid, ids, cb)
-  send(
-    "PUT",
-    root,
-    ("projects/:fullpath/merge_requests/%d"):format(iid),
-    { reviewer_ids = #ids > 0 and ids or { 0 } },
-    cb
-  )
-end
-
---- Gives it a new description. An empty string is sent as one rather
---- than left out: a description taken away is a thing that was asked
---- for.
-function M.describe(root, iid, description, cb)
-  send(
-    "PUT",
-    root,
-    ("projects/:fullpath/merge_requests/%d"):format(iid),
-    { description = description },
-    cb
-  )
+--- Changes what the merge request says about itself: `fields` is the
+--- PUT body, any of title, description, target_branch, labels and
+--- reviewer_ids, and only what was changed. Answers with the merge
+--- request as it now stands.
+function M.mr_update(root, iid, fields, cb)
+  send("PUT", root, ("projects/:fullpath/merge_requests/%d"):format(iid), fields, cb)
 end
 
 --- Merges it once its pipeline succeeds -- at once, where it already

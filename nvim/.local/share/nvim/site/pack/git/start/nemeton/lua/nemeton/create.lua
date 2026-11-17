@@ -27,7 +27,8 @@ local M = {}
 M.win = nil
 M.buf = nil
 
--- What has been typed and not sent, one per branch.
+-- What has been typed and not sent, one per branch -- and one per open
+-- merge request being changed, under "!<iid>".
 --
 -- Per branch because that is what a merge request is of: switch to
 -- another one and the title written for this is not a title for that.
@@ -41,7 +42,9 @@ M.buf = nil
 local kept = {}
 
 -- The branch the window on the screen is for, its form, and the two
--- lists the pickers choose from. All of it is dropped when the merge
+-- lists the pickers choose from -- and, when it is changing one that is
+-- open, the merge request, and what to do once the change has landed
+-- and once the window is gone. All of it is dropped when the merge
 -- request goes out.
 local state = nil
 -- Line number (1-based) -> the field written on it.
@@ -69,6 +72,40 @@ local function form(branch)
       counted = nil,
     }
   return kept[branch]
+end
+
+--- The fields of a merge request that is open, as the forge has them.
+local function fields_of(mr)
+  local reviewers = {}
+  for _, u in ipairs(mr.reviewers or {}) do
+    table.insert(reviewers, u.username)
+  end
+  return {
+    title = M.undraft(mr.title or ""),
+    draft = mr.draft == true,
+    description = mr.description or "",
+    target = mr.target_branch,
+    labels = vim.deepcopy(mr.labels or {}),
+    reviewers = reviewers,
+  }
+end
+
+--- The form for an open merge request, filled in from it.
+---
+--- What it was filled in from is kept beside it, and what is sent is
+--- what differs from that rather than from the merge request as it now
+--- stands: a form left open while somebody retitled it on the web
+--- would otherwise put the old title back without anybody having typed
+--- it. Kept past the window only where the forge refused the change,
+--- so that the next `e` is the same form rather than a retype.
+local function edit_form(mr)
+  local key = "!" .. mr.iid
+  if not kept[key] then
+    local f = fields_of(mr)
+    f.base = fields_of(mr)
+    kept[key] = f
+  end
+  return kept[key]
 end
 
 function M.close()
@@ -386,7 +423,8 @@ end
 
 function edit.description()
   require("nemeton.compose").open({
-    title = ("description  ·  !%s"):format(state.form.title ~= "" and state.form.title or "new"),
+    title = state.mr and ("!%d  description"):format(state.mr.iid)
+      or ("description  ·  !%s"):format(state.form.title ~= "" and state.form.title or "new"),
     body = state.form.description,
     -- Kept, not sent: the whole window is a thing being kept until it
     -- is opened, and `<C-s>` here means what it means everywhere else
@@ -466,8 +504,110 @@ function edit.reviewers()
   end, state.users)
 end
 
+local function same(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a == b
+  end
+  local x, y = vim.deepcopy(a), vim.deepcopy(b)
+  table.sort(x)
+  table.sort(y)
+  return vim.deep_equal(x, y)
+end
+
+--- What the form changes of the merge request it was filled in from,
+--- as the body of the one PUT that changes it. `nil` and a reason
+--- where a reviewer is a name with no id to send.
+---
+--- The draft goes as the title, which is how the forge has always read
+--- it, where a field of its own came late. An empty description and no
+--- labels are sent as empty strings: taking either away is a thing
+--- that was asked for.
+function M.changes(f, users)
+  local base, body = f.base, {}
+  if f.title ~= base.title or f.draft ~= base.draft then
+    body.title = (f.draft and "Draft: " or "") .. f.title
+  end
+  if f.description ~= base.description then
+    body.description = f.description
+  end
+  if f.target and f.target ~= base.target then
+    body.target_branch = f.target
+  end
+  if not same(f.labels, base.labels) then
+    body.labels = table.concat(f.labels, ",")
+  end
+  if not same(f.reviewers, base.reviewers) then
+    local ids = {}
+    for _, name in ipairs(f.reviewers) do
+      local id = users[name]
+      if not id then
+        return nil, "no id for " .. name
+      end
+      table.insert(ids, id)
+    end
+    -- None at all is the 0 the forge reads as "nobody": an empty list
+    -- would be encoded as an empty object.
+    body.reviewer_ids = #ids > 0 and ids or { 0 }
+  end
+  return body
+end
+
+--- Sends what was changed of an open merge request.
+local function save()
+  local f, mr, done = state.form, state.mr, state.done
+  if f.title == "" then
+    session.notify("a merge request has to have a title", vim.log.levels.WARN)
+    return
+  end
+  local ids = {}
+  for _, u in ipairs(mr.reviewers or {}) do
+    ids[u.username] = u.id
+  end
+  for _, u in ipairs(state.users or {}) do
+    ids[u.username] = u.id
+  end
+  local body, why = M.changes(f, ids)
+  if not body then
+    session.notify("still asking the forge who is on this project (" .. why .. ")")
+    return
+  end
+  local close = state.closed
+  M.close()
+  if close then
+    close()
+  end
+  if next(body) == nil then
+    kept["!" .. mr.iid] = nil
+    session.notify("unchanged")
+    return
+  end
+  glab.mr_update(mr.root, mr.iid, body, function(data, err)
+    if not data then
+      -- Kept: the window is gone and what was typed is not, so the
+      -- next `e` is the same form with the same changes in it.
+      session.refused("could not change it", err)
+      return
+    end
+    kept["!" .. mr.iid] = nil
+    session.took(mr, data)
+    -- `data.description or` in `took` keeps the old one over a `null`,
+    -- which is what GitLab answers an emptied one with.
+    if body.description == "" then
+      mr.description = ""
+    end
+    require("nemeton.detail").forget()
+    session.notify(("!%d changed"):format(mr.iid))
+    if done then
+      done()
+    end
+  end)
+end
+
 --- Opens it, with everything the window collected.
 local function submit()
+  if state.mr then
+    return save()
+  end
   local f, root, branch = state.form, state.root, state.branch
   if f.title == "" then
     session.notify("a merge request needs a title", vim.log.levels.WARN)
@@ -521,28 +661,36 @@ function M.choices()
   }
 end
 
---- The window. Everything typed into it before is still in it.
-function M.open()
-  local root = session.root()
+--- The window, for `mr` when it is given and for the branch you are on
+--- when it is not. Everything typed into it before is still in it.
+local function window(mr, done, closed)
+  local root = mr and mr.root or session.root()
   if not root then
     session.notify("not inside a git repository", vim.log.levels.ERROR)
     return
   end
-  local branch = session.branch()
+  local branch = mr and mr.source_branch or session.branch()
   if not branch then
     session.notify("not on a branch — a merge request comes from one", vim.log.levels.WARN)
     return
   end
 
   M.close()
+  -- What the forge said last time is kept for the same project: the
+  -- branches, labels and members of a project are the same whichever
+  -- of its merge requests the window is for.
+  local again = state and state.root == root
   state = {
     root = root,
     branch = branch,
-    form = form(branch),
-    branches = state and state.branch == branch and state.branches or nil,
-    labels = state and state.branch == branch and state.labels or nil,
-    labels_error = state and state.branch == branch and state.labels_error or nil,
-    users = state and state.branch == branch and state.users or nil,
+    mr = mr,
+    done = done,
+    closed = closed,
+    form = mr and edit_form(mr) or form(branch),
+    branches = again and state.branches or nil,
+    labels = again and state.labels or nil,
+    labels_error = again and state.labels_error or nil,
+    users = again and state.users or nil,
   }
 
   local width = math.min(math.floor(vim.o.columns * 0.7), 84)
@@ -558,7 +706,7 @@ function M.open()
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = "rounded",
-    title = " new merge request ",
+    title = mr and (" !%d "):format(mr.iid) or " new merge request ",
     title_pos = "center",
   })
   vim.wo[M.win].cursorline = true
@@ -567,7 +715,7 @@ function M.open()
   local k = config.keys.create
   vim.wo[M.win].winbar = detail.hint({
     { k.field, "change" },
-    { k.submit, "open it" },
+    { k.submit, mr and "save it" or "open it" },
   }, k.help)
 
   local bindings = {
@@ -581,10 +729,14 @@ function M.open()
       end,
       "change the field under the cursor",
     },
-    { k.submit, submit, "open the merge request" },
+    { k.submit, submit, mr and "send what was changed" or "open the merge request" },
     { k.refresh, facts, "ask CI and git again" },
+    -- Only for a merge request that does not exist yet. Changing one
+    -- that does, `q` is the throwing away: what is kept is on the forge,
+    -- and a form of unsent changes waiting under `e` is a form that
+    -- puts back what you meant to leave.
     {
-      k.discard,
+      not mr and k.discard,
       function()
         kept[branch] = nil
         state.form = form(branch)
@@ -594,8 +746,8 @@ function M.open()
       end,
       "throw away what has been typed",
     },
-    -- `q` keeps it. Everything in this window is still here on the next
-    -- keypress of `+`, which is the point of it being a window.
+    -- `q` keeps a new one. Everything in this window is still here on
+    -- the next keypress of `+`, which is the point of it being a window.
     --
     -- And only `q`: `<Esc>` is what a field's prompt is dismissed with
     -- and what a reader presses to be sure of being in normal mode,
@@ -603,13 +755,19 @@ function M.open()
     {
       k.quit,
       function()
+        if mr then
+          kept["!" .. mr.iid] = nil
+        end
         M.close()
         back()
+        if closed then
+          closed()
+        end
       end,
-      "close it, keeping what is typed",
+      mr and "close it, throwing the changes away" or "close it, keeping what is typed",
     },
   }
-  detail.bind(M.buf, bindings, k.help, " new merge request ")
+  detail.bind(M.buf, bindings, k.help, mr and (" !%d "):format(mr.iid) or " new merge request ")
 
   draw()
   facts()
@@ -634,6 +792,19 @@ function M.open()
     end)
   end
   return M.win
+end
+
+--- The window for a merge request that does not exist yet.
+function M.open()
+  return window(nil)
+end
+
+--- The same window for `mr`, which is open: its fields filled in from
+--- the forge, and `<C-s>` sending what was changed. `done` is called
+--- once the forge has taken it; `closed` once the window is gone,
+--- either way it went.
+function M.edit(mr, done, closed)
+  return window(mr, done, closed)
 end
 
 return M

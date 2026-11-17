@@ -312,6 +312,24 @@ function M.open(iid, opts)
   })
 end
 
+--- The review of `iid`, opened with nothing said about it: the merge
+--- request the branch the editor started on was last known to have
+--- (`seen.here`). On the branch already, so nothing is checked out;
+--- and what is shown is the forge's answer, which is asked for now --
+--- only *whether* to ask came off the disk.
+function M.resume(iid, branch)
+  ready()
+  if session.current then
+    return
+  end
+  session.open(iid, {
+    checkout = false,
+    quiet = true,
+    branch = branch,
+    on_open = M.attach_all,
+  })
+end
+
 function M.close()
   M.detach_all()
   session.close()
@@ -982,148 +1000,13 @@ M.close_or_reopen = with_session(function(cb)
   )
 end)
 
---- Makes it a draft, or marks a draft ready. Not asked about, unlike
---- the two above it: either way is one keypress from undone, and
---- nobody is told anything they cannot be told again.
----
---- By the title, which is how the forge has always read it -- and the
---- prefix it read is taken off whatever it was spelled as, so that
---- marking ready leaves the title its author meant.
-M.toggle_draft = with_session(function(cb)
-  local mr = session.current
-  if mr.state ~= "opened" then
-    session.notify(("!%d is %s"):format(mr.iid, mr.state or "not open"), vim.log.levels.WARN)
-    return
-  end
-  local bare = require("nemeton.create").undraft(mr.title or "")
-  local title = mr.draft and bare or ("Draft: " .. bare)
-  glab.retitle(mr.root, mr.iid, title, function(data, err)
-    if not data then
-      session.notify("could not change the title: " .. tostring(err), vim.log.levels.ERROR)
-      return
-    end
-    session.took(mr, data)
-    session.notify(("!%d is %s"):format(mr.iid, mr.draft and "a draft" or "ready"))
-    if cb then
-      cb()
-    end
-  end)
-end)
-
---- A new title for the merge request, asked for over the one it has.
----
---- The words alone, without the `Draft:` in front: whether it is a
---- draft is the draft key's to say, and a title retyped to fix a word
---- should not make it ready by the way. Typing the prefix still makes
---- one, as it does on the web.
-M.retitle = with_session(function(cb)
-  local mr = session.current
-  local create = require("nemeton.create")
-  local bare = create.undraft(mr.title or "")
-  vim.ui.input({ prompt = "title: ", default = bare }, function(text)
-    if text == nil then
-      return
-    end
-    local title, drafted = create.undraft(vim.trim(text))
-    if title == "" then
-      session.notify("a merge request has to have a title", vim.log.levels.WARN)
-      return
-    end
-    if title == bare and drafted == false then
-      session.notify("unchanged")
-      return
-    end
-    title = ((mr.draft or drafted) and "Draft: " or "") .. title
-    glab.retitle(mr.root, mr.iid, title, function(data, err)
-      if not data then
-        session.refused("could not change the title", err)
-        return
-      end
-      session.took(mr, data)
-      require("nemeton.detail").forget()
-      session.notify("retitled")
-      if cb then
-        cb()
-      end
-    end)
-  end)
-end)
-
---- Who is asked to review it, ticked on and off out of the project's
---- members: a list that comes back with the tick moved until it is
---- dismissed, and one change sent then.
-M.reviewers = with_session(function(cb)
-  local mr = session.current
-  local had = {}
-  for _, u in ipairs(mr.reviewers or {}) do
-    table.insert(had, u.username)
-  end
-  require("nemeton.issue").pick_users(mr.root, "reviewers", had, function(set, ids)
-    local was = {}
-    for _, n in ipairs(had) do
-      was[n] = true
-    end
-    local changed = #set ~= #had
-    for _, n in ipairs(set) do
-      changed = changed or not was[n]
-    end
-    if not changed then
-      return
-    end
-    glab.set_reviewers(mr.root, mr.iid, ids, function(data, err)
-      if not data then
-        session.refused("could not change the reviewers", err)
-        return
-      end
-      session.took(mr, data)
-      require("nemeton.detail").forget()
-      session.notify(#ids > 0 and "reviewers changed" or "no reviewers")
-      if cb then
-        cb()
-      end
-    end)
-  end)
-end)
-
---- The description rewritten, in the composer, starting from what it
---- says now. Sent rather than kept: there is no such thing as an unsent
---- edit of a description on the forge, and a review is not waiting on
---- it. Not remembered when closed unsent, like a rewritten comment:
---- it starts from what the forge has, which is where it lives.
---- `back` is the composer's: see `nemeton.compose`.
-M.describe = with_session(function(cb, back)
-  local mr = session.current
-  local was = vim.trim(mr.description or "")
-  require("nemeton.compose").open({
-    title = ("!%d  description"):format(mr.iid),
-    body = mr.description or "",
-    -- An empty one is an answer: a description can be taken away.
-    empty = true,
-    back = back,
-    on_submit = function(body)
-      if body == was then
-        session.notify("unchanged")
-        return
-      end
-      glab.describe(mr.root, mr.iid, body, function(data, err)
-        if not data then
-          session.refused("could not change the description", err)
-          return
-        end
-        session.took(mr, data)
-        -- `data.description or` above keeps the old one over a `null`,
-        -- which is what GitLab answers an emptied one with.
-        if body == "" then
-          mr.description = ""
-        end
-        require("nemeton.detail").forget()
-        session.notify("description changed")
-        if cb then
-          cb()
-        end
-      end)
-    end,
-  })
+--- What it is called, whether it is a draft, where it goes, how it is
+--- labelled, who reviews it and what it says: the window it was opened
+--- with, filled in from the forge, and one request for what was
+--- changed. `done` once the forge has taken it, `closed` once the
+--- window is gone. See `nemeton.create`.
+M.update = with_session(function(done, closed)
+  require("nemeton.create").edit(session.current, done, closed)
 end)
 
 --- What CI did, job by job, in a float.
@@ -1444,14 +1327,8 @@ local SUBCOMMANDS = {
     M.publish()
   end,
   description = M.description,
-  describe = function()
-    M.describe()
-  end,
-  retitle = function()
-    M.retitle()
-  end,
-  reviewers = function()
-    M.reviewers()
+  update = function()
+    M.update()
   end,
   notes = M.notes,
   threads = M.threads,

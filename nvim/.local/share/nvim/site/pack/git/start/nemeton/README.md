@@ -117,9 +117,7 @@ rest.
 | `:Nemeton comments` | markers on/off |
 | `:Nemeton expand` | the conversations themselves: one at a time in a pane beside the code, or all of them under their lines |
 | `:Nemeton description` | the merge request's own window: what it is for, and the keys to act on it |
-| `:Nemeton retitle` | give it a new title |
-| `:Nemeton describe` | rewrite its description, in the composer |
-| `:Nemeton reviewers` | ask project members to review it, typed with their names searched |
+| `:Nemeton update` | change its title, draft, target, labels, reviewers or description, in the window it was created with |
 | `:Nemeton peek` | the thread under the cursor, in a float |
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
@@ -214,14 +212,27 @@ round trip, a second on a good day, which is not the quick way past the
 queue it was meant to be. So what the forge last said is written down,
 one entry per repository, and the prompt comes up on that immediately
 while the fetch goes out behind it; when the fetch lands the list under
-the menu is replaced and the file is written again. A number and a
-title per merge request and nothing else — it is a cache, and the
-smallest one that answers the question stays true longest. It lives in
+the menu is replaced and the file is written again. A number, a title,
+the branch and whether it is open, per merge request, and nothing else
+— it is a cache, and the smallest one that answers the question stays
+true longest. It lives in
 `$XDG_STATE_HOME/nemeton/merge-requests.json` (`list.remember_path`),
 and `list.remember = false` writes nothing and waits for the forge as
 before. Nothing in it is believed: a number typed over the top of it is
 opened whether or not the file has heard of it, and a forge that will
 not answer leaves the menu saying what it said yesterday and says so.
+
+The same file opens a review by itself. Start Neovim on the branch of a
+merge request it has written down as open — one the prompt listed, or
+one you have reviewed here before — and that review opens in the
+background, saying nothing: no checkout, since you are on the branch,
+and no message either way. Which merge request is read off the disk
+alone, so an editor started anywhere else runs nothing; the review
+itself is the forge's answer, and one that has been merged since, or
+is no longer from this branch, is quietly not opened.
+`list.resume = false` turns it off. It needs the plugin loaded before
+Neovim has finished starting — a plugin manager that loads it later has
+no start to resume from.
 The checkout still says what it is waiting for while it waits, since
 nothing else is on the screen between the number being given and the
 branch being there.
@@ -428,16 +439,17 @@ asked at the keypress, says it is not, so an approval withdrawn on the
 web page is given back rather than withdrawn again — `s` sends every
 comment you have kept unsent, `c` opens every comment on it, `p` the
 pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
-`d` makes it a draft (or marks a draft ready), `R` gives it a new title,
-`e` rewrites its description in the composer, `o` opens it in a browser, `r` refetches, `q` closes.
-The comments, the jobs and the composer `c`, `p` and `e` open take
+`e` changes it, `o` opens it in a browser, `r` refetches, `q` closes.
+The comments, the jobs and the form `c`, `p` and `e` open take
 its place, and `q` in them comes back to it. `m` and `x` ask
 first, Cancel being the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:
-a branch pushed to since is refused by the forge. `d` does not ask:
-it is the `Draft:` in front of the title, which is how GitLab reads it,
-and pressed again it is taken off.
+a branch pushed to since is refused by the forge. `e` opens the window
+the merge request was created with (below), filled in with what the
+forge has — title, draft, target, labels, reviewers, description — and
+`<C-s>` there sends what was changed, in one request. A draft is sent as
+the `Draft:` in front of the title, which is how GitLab reads it.
 None of them is a key you read with — it is a window of
 prose, and `hjkl`, `/` and the rest work in it as they do anywhere. The
 threads that are on the code are read where the code is: in the gutter,
@@ -568,6 +580,14 @@ again, `X` throws away what has been typed, and `q` closes the window
 with everything still in it: come back to it on the next `+`, in the
 same editor session, and nothing is lost. A title beginning `Draft:`
 sets the switch and leaves the title alone.
+
+The same window changes a merge request once it is open — `e` on its
+window, or `:Nemeton update` — filled in from the forge. `<C-s>` sends
+only the fields that differ from what it was filled in with, so a form
+left open while somebody retitled it on the web does not put the old
+title back. `q` throws the changes away: what is kept of an open merge
+request is on the forge. Only a change the forge refused is still in
+the form on the next `e`.
 
 What the forge answers with is the merge request that was made, so that
 is what opens: the queue it was written from closes — it was a list of

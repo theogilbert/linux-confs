@@ -13,9 +13,10 @@
 -- the window already on the screen -- and what it says replaces the list
 -- under the menu and goes back to disk for next time.
 --
--- What is written is a number and a title per merge request, which is
--- what the completion draws and nothing else: not the branch, not the
--- author, not the description. A cache is a thing that can be deleted at
+-- What is written is a number, a title, a branch and a state per merge
+-- request: what the completion draws, and what an editor started on a
+-- branch needs to know which review to open (`M.here`) without asking
+-- anybody. Not the author, not the description. A cache is a thing that can be deleted at
 -- any moment without anybody noticing, and the smallest one that answers
 -- the question is the one that stays true longest.
 --
@@ -107,10 +108,12 @@ local function load()
       local rows = {}
       for _, one in ipairs(list) do
         if type(one) == "table" and type(one.iid) == "number" then
-          table.insert(
-            rows,
-            { iid = one.iid, title = type(one.title) == "string" and one.title or "" }
-          )
+          table.insert(rows, {
+            iid = one.iid,
+            title = type(one.title) == "string" and one.title or "",
+            branch = type(one.branch) == "string" and one.branch or nil,
+            state = type(one.state) == "string" and one.state or nil,
+          })
         end
       end
       if #rows > 0 then
@@ -119,6 +122,16 @@ local function load()
     end
   end
   return all
+end
+
+--- What is kept of a merge request.
+local function row(mr)
+  return {
+    iid = mr.iid,
+    title = mr.title or "",
+    branch = mr.source_branch,
+    state = mr.state,
+  }
 end
 
 local function save()
@@ -167,11 +180,88 @@ function M.set(root, list)
   local rows = {}
   for _, mr in ipairs(list) do
     if type(mr) == "table" and mr.iid then
-      table.insert(rows, { iid = mr.iid, title = mr.title or "" })
+      table.insert(rows, row(mr))
     end
   end
   all[root] = rows
   save()
+end
+
+--- One merge request, written down or brought up to date: a review
+--- that opened is a merge request this repository has had open, which
+--- is what `M.here` looks for the next time the editor starts.
+function M.note(root, mr)
+  if not (config.list.remember and root and type(mr) == "table" and mr.iid) then
+    return
+  end
+  load()
+  local rows = all[root] or {}
+  for i, one in ipairs(rows) do
+    if one.iid == mr.iid then
+      rows[i] = row(mr)
+      all[root] = rows
+      save()
+      return
+    end
+  end
+  table.insert(rows, row(mr))
+  all[root] = rows
+  save()
+end
+
+--- The branch HEAD is on in `root`, or nil on a detached one.
+---
+--- Read out of `.git` rather than asked of git: a subprocess for a
+--- string sitting in a file is a subprocess too many, and this is read
+--- while the editor starts. A worktree keeps its `.git` as a file
+--- pointing at the real one, which is the one case worth following.
+function M.head(root)
+  local dot = root .. "/.git"
+  local stat = vim.uv.fs_stat(dot)
+  if stat and stat.type == "file" then
+    local ok, lines = pcall(vim.fn.readfile, dot)
+    local where = ok and (lines[1] or ""):match("^gitdir: (.+)$")
+    if not where then
+      return nil
+    end
+    dot = where:sub(1, 1) == "/" and where or (root .. "/" .. where)
+  end
+  local ok, head = pcall(vim.fn.readfile, dot .. "/HEAD")
+  if not ok then
+    return nil
+  end
+  return (head[1] or ""):match("^ref: refs/heads/(.+)$")
+end
+
+--- The open merge request the branch in front of you was last known to
+--- have, out of this file alone: its number, and the repository and
+--- branch it was found for -- or nil.
+---
+--- Off the disk and nothing else, because it is asked as the editor
+--- starts, of every editor started in a repository: a `glab` call
+--- there is a round trip paid by every `nvim` whether or not anybody
+--- is reviewing anything. The root is found the same way, by looking
+--- for `.git` rather than running git, and resolved as `rev-parse`
+--- resolves it so that it is the key the file was written under.
+---
+--- What was open last time may be merged by now. That is the forge's
+--- to say, and it says it when the review is asked for.
+function M.here(cwd)
+  if not config.list.remember then
+    return nil
+  end
+  local found = vim.fs.root(cwd or vim.fn.getcwd(), ".git")
+  local root = found and vim.uv.fs_realpath(found)
+  local branch = root and M.head(root)
+  if not branch then
+    return nil
+  end
+  for _, one in ipairs(load()[root] or {}) do
+    if one.branch == branch and (one.state == nil or one.state == "opened") then
+      return one.iid, root, branch
+    end
+  end
+  return nil
 end
 
 --- Forgets a repository, for the suite and for anybody who would rather

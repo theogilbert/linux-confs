@@ -52,6 +52,33 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
   desc = "nemeton: close the issue tabs before a session is saved",
 })
 
+-- The review of the branch the editor started on, where one is written
+-- down as open (`list.resume`). Only the file is read here, and the
+-- plugin is loaded only on a match: an editor started on any other
+-- branch reads one small JSON file and nothing else. Scheduled past
+-- VimEnter so the first screen is drawn before anything is asked.
+--
+-- Only from a start: sourced after one -- a plugin manager loading this
+-- late -- there is no start to have been in.
+if vim.v.vim_did_enter == 0 then
+  vim.api.nvim_create_autocmd("VimEnter", {
+    group = vim.api.nvim_create_augroup("NemetonResume", {}),
+    once = true,
+    callback = function()
+      vim.schedule(function()
+        if not require("nemeton.config").list.resume then
+          return
+        end
+        local iid, _, branch = require("nemeton.seen").here()
+        if iid then
+          require("nemeton").resume(iid, branch)
+        end
+      end)
+    end,
+    desc = "nemeton: open the review of the branch the editor started on",
+  })
+end
+
 local keys = require("nemeton.config").keys.global
 if keys.list and keys.list ~= "" then
   vim.keymap.set("n", keys.list, function()

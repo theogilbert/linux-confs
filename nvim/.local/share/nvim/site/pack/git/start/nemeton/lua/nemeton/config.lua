@@ -94,6 +94,14 @@ return {
     -- directory per plugin is easier to find and easier to delete than
     -- two.
     remember_path = nil,
+
+    -- Whether an editor started on the branch of a merge request it has
+    -- written down as open opens that review by itself, saying nothing:
+    -- the markers are in the gutter by the time you look. Which merge
+    -- request comes off the disk alone, so an editor started anywhere
+    -- else pays nothing and asks nobody; the review itself is the
+    -- forge's answer. Needs `remember`.
+    resume = true,
   },
 
   -- The project's issues, which are kept here whole -- every issue and
@@ -1194,14 +1202,9 @@ return {
       -- everybody watching the merge request.
       merge = "m", -- merge when the pipeline succeeds, or take that back
       close = "x", -- close it, or reopen a closed one
-      -- Not asked about: a draft is marked ready and back again with
-      -- nothing lost either way, and the forge does it by the title.
-      draft = "d", -- mark it a draft, or ready
-      -- What it says it is, once it has been said: the title asked for
-      -- on the command line, the description in the composer.
-      retitle = "R",
-      describe = "e",
-      reviewers = "v", -- who is asked to review it, their names searched as typed
+      -- What it says it is, once it has been said: the window it was
+      -- opened with, filled in, and one change sent from it.
+      edit = "e", -- its title, draft, target, labels, reviewers, description
       browser = "o",
       refresh = "r",
       quit = "q",

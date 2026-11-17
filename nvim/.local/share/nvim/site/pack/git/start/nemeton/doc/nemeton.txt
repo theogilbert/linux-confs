@@ -161,14 +161,10 @@ A review, end to end:
                         much conversation is on it -- and the keys to
                         act on all three. |nemeton-detail-window|
 
-:Nemeton retitle        Give the open merge request a new title.
-                        |nemeton-detail-window|
-
-:Nemeton describe       Rewrite its description, in the composer.
-                        |nemeton-detail-window|
-
-:Nemeton reviewers      Who is asked to review it, out of the project's
-                        members, searched as typed. |nemeton-names-prompt|
+:Nemeton update         Change the open merge request's title, draft,
+                        target, labels, reviewers or description, in
+                        the window it was created with, filled in.
+                        |nemeton-create-window|
 
 :Nemeton comment        A new thread on the line under the cursor.
 
@@ -553,10 +549,25 @@ for a second is not the quick way past the queue it was meant to be.
 So what the forge last said is written down, one entry per repository,
 under `$XDG_STATE_HOME/nemeton/merge-requests.json` --
 `list.remember_path` to put it elsewhere, `list.remember = false` to
-write nothing and wait for the forge as before. A number and a title per
-merge request and nothing else: it is a cache, it can be deleted at any
-moment without anybody noticing, and the smallest one that answers the
-question is the one that stays true longest.
+write nothing and wait for the forge as before. A number, a title, the
+branch and whether it is open, per merge request, and nothing else: it
+is a cache, it can be deleted at any moment without anybody noticing,
+and the smallest one that answers the question is the one that stays
+true longest.
+
+                                                              *nemeton-resume*
+The same file opens a review by itself. Neovim started on the branch of
+a merge request written down there as open -- one the prompt listed,
+or one reviewed here before -- opens that review in the background and
+says nothing: nothing is checked out, since that is the branch already,
+and nothing is said either way; a failure is in the log and nowhere
+else. Which merge request is read off the disk alone -- `.git` looked
+for rather than git run, `HEAD` read as a file -- so an editor started
+anywhere else spawns nothing and asks nobody. The review itself is the
+forge's answer, and one merged since, or no longer from this branch, is
+not opened. A review opened by hand while it is on its way wins.
+`list.resume = false` turns it off. Only on a start: a plugin manager
+that loads this after Neovim has finished starting has none to resume.
 
 The prompt comes up on that, immediately, and the fetch goes out behind
 it. When it lands the list under the menu is replaced and the file is
@@ -582,18 +593,15 @@ much of it is yours and unsent.
     p               what CI did, job by job
     m               merge it, after asking; again to take that back
     x               close it, or reopen it, after asking
-    d               mark it a draft, or ready
-    R               give it a new title
-    e               rewrite its description
-    v               ask people to review it: their names on a line,
-                    searched as they are typed |nemeton-names-prompt|
+    e               change its title, draft, target, labels,
+                    reviewers or description |nemeton-create-window|
     o               open it on GitLab
     r               refetch it: its pipeline, approvals and diff
     q               close
     g?              all of the above, in a float
 
 `c`, `p` and `e` open their window in place of this one, and `q` in it
--- or the composer closed either way -- comes back here; `q` here is
+-- or the window closed either way -- comes back here; `q` here is
 the one that goes back to the file.
 
 Which way `a` goes is asked of the forge when it is pressed, not read
@@ -610,19 +618,10 @@ the forge rather than merged with commits nobody read. `x` closes it,
 or reopens one that is closed. Both ask first, through the same
 question a delete asks, with Cancel the first answer.
 
-`d` makes it a draft, or marks a draft ready, without asking: GitLab
-reads a draft off a `Draft:` in front of the title, so that is what is
-written -- and taken off again, whatever it was spelled as, so the
-title is left as its author meant it. Either way is one keypress from
-undone.
-
-`R` asks for a new title over the one it has, without the `Draft:` in
-front -- whether it is a draft is `d`'s to say, and a word fixed in the
-title does not make it ready by the way. `e` opens the description in
-the composer, starting from what it says now, and `<C-s>` or `:w` sends
-it straight away: there is no unsent edit of a description to keep.
-Emptied, it takes the description away. Neither asks first; both are
-undone the same way they were done.
+`e` is the window the merge request was created with, filled in with
+what the forge has; `<C-s>` there sends what was changed in one
+request. A draft is sent as a `Draft:` in front of the title, which is
+how GitLab has always read it.
 
 The threads that are on the code are not here: they are read where the
 code is -- in the gutter, on `]m`, in the quickfix list.
@@ -1299,6 +1298,19 @@ editor session: press `+` again and the title, the description and the
 rest are where you left them. A merge request is written between two
 interruptions like anything else. What has gone out is forgotten -- the
 next `+` on that branch is a new merge request.
+
+An open merge request is changed in the same window: `e` in
+|nemeton-detail-window|, or `:Nemeton update`. Its fields are filled in
+from the forge, the title without its `Draft:`, and the facts are of its
+source branch. `<C-s>` sends only what differs from what the window was
+filled in with -- not from the merge request as it now stands, so a
+form left open while somebody retitled it on the web does not put the
+old title back -- in one PUT, and the merge request's window comes back
+with the answer. Nothing changed is nothing sent. `q` throws the
+changes away, and there is no `X`: what is kept of an open merge
+request is on the forge, and a form of unsent changes waiting under the
+next `e` puts back what you meant to leave. Only a change the forge
+refused is still there, so that it is not typed twice.
 
 The branch is pushed on the way out (`--push`) and nothing is confirmed
 at a prompt (`--yes`): a subprocess with no terminal is not a place to
@@ -2128,6 +2140,7 @@ LIST                                                     *nemeton-config-list*
       preview_height = 29,    -- rows of the pane under the list
       remember = true,        -- write down what is open, for the prompt
       remember_path = nil,    -- nil: $XDG_STATE_HOME/nemeton/merge-requests.json
+      resume = true,          -- open the review of the branch nvim started on
     }
 <
 GitLab's merge request list carries no pipeline, no approvals and no

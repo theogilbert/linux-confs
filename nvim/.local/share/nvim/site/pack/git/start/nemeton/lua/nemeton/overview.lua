@@ -161,34 +161,13 @@ function M.open()
         "close it, or reopen it, after asking",
       },
       {
-        k.draft,
-        function()
-          require("nemeton").toggle_draft(M.redraw)
-        end,
-        "mark it a draft, or ready",
-      },
-      {
-        k.retitle,
-        function()
-          require("nemeton").retitle(M.redraw)
-        end,
-        "give it a new title",
-      },
-      {
-        k.reviewers,
-        function()
-          require("nemeton").reviewers(M.redraw)
-        end,
-        "ask people to review it",
-      },
-      {
-        k.describe,
+        k.edit,
         instead(back, function(again)
           -- Redrawn when the answer lands: the window is back up before
-          -- the forge has taken the new description.
-          require("nemeton").describe(M.redraw, again)
+          -- the forge has taken the change.
+          require("nemeton").update(M.redraw, again)
         end),
-        "rewrite its description",
+        "change its title, draft, target, labels, reviewers or description",
       },
       {
         k.browser,

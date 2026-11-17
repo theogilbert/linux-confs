@@ -105,31 +105,10 @@ end
 
 --- The branch HEAD is on, or nil on a detached one.
 ---
---- Read out of `.git` rather than asked of git: it goes in the title of
---- a window for a merge request that does not exist yet, and a
---- subprocess for a string sitting in a file is a subprocess too many.
---- A worktree keeps its `.git` as a file pointing at the real one,
---- which is the one case worth following.
+--- Read out of `.git` rather than asked of git: see `seen.head`.
 function M.branch()
   local root = M.root()
-  if not root then
-    return nil
-  end
-  local dot = root .. "/.git"
-  local stat = vim.uv.fs_stat(dot)
-  if stat and stat.type == "file" then
-    local ok, lines = pcall(vim.fn.readfile, dot)
-    local where = ok and (lines[1] or ""):match("^gitdir: (.+)$")
-    if not where then
-      return nil
-    end
-    dot = where:sub(1, 1) == "/" and where or (root .. "/" .. where)
-  end
-  local ok, head = pcall(vim.fn.readfile, dot .. "/HEAD")
-  if not ok then
-    return nil
-  end
-  return (head[1] or ""):match("^ref: refs/heads/(.+)$")
+  return root and require("nemeton.seen").head(root)
 end
 
 --- A buffer's path as GitLab names it: relative to the repository root,
@@ -1178,7 +1157,15 @@ function M.open(iid, opts)
   -- looks like it ignored the key. Not when the caller has a window of
   -- its own up -- the queue says it in itself, and this would be the
   -- second copy of a sentence already in front of you.
-  local said = opts.on_error and function() end or M.working(("opening !%d…"):format(iid))
+  --
+  -- Nor when nobody asked: `opts.quiet` is the review opened as the
+  -- editor starts (`nemeton.resume`), which says nothing at all --
+  -- not that it is opening, not that it opened, not that it could not.
+  -- A failure there is written to the log and is otherwise the editor
+  -- you would have had without it.
+  local quiet = opts.quiet
+  local said = (opts.on_error or quiet) and function() end
+    or M.working(("opening !%d…"):format(iid))
 
   --- Gives up, once: either half can be the one that fails, and the
   --- caller waiting to hear must not hear it twice.
@@ -1193,7 +1180,9 @@ function M.open(iid, opts)
     end
     failed = true
     said()
-    if opts.on_error then
+    if quiet then
+      log.note("not opened quietly: " .. msg)
+    elseif opts.on_error then
       opts.on_error(msg)
     else
       notify(msg, vim.log.levels.ERROR)
@@ -1260,15 +1249,23 @@ function M.open(iid, opts)
   local staged, gathered = nil, nil
 
   local function loaded()
+    -- A review opened by hand while this one was quietly on its way is
+    -- the one that was asked for.
+    if quiet and M.current then
+      return fail("another review opened first")
+    end
     M.current = staged
     M.refresh_changes()
     settle(staged)
     M.redraw_all()
     local n = #(staged.inline or {})
     said()
-    notify(
-      ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
-    )
+    if not quiet then
+      notify(
+        ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
+      )
+    end
+    require("nemeton.seen").note(root, mr)
     if detached then
       notify(
         ("its branch %s is gone from the remote — checked out detached at the merge request's head"):format(
@@ -1328,6 +1325,13 @@ function M.open(iid, opts)
   glab.mr_get(root, iid, function(data, err)
     if not data then
       fail(("could not read !%d: %s"):format(iid, tostring(err)))
+      return
+    end
+    -- What the disk said was open on this branch, it may no longer be:
+    -- merged since, or the branch moved to another merge request. Not
+    -- opened then, rather than opened on what it no longer is.
+    if quiet and (data.state ~= "opened" or data.source_branch ~= opts.branch) then
+      fail(("!%d is %s, from %s"):format(iid, tostring(data.state), tostring(data.source_branch)))
       return
     end
     mr = data

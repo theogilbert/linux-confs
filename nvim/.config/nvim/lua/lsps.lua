@@ -25,7 +25,11 @@ local cursorHoverGroup = vim.api.nvim_create_augroup("CursorHover", {})
 vim.api.nvim_create_autocmd({ "CursorHoldI" }, {
 	pattern = { "*.py" },
 	group = cursorHoverGroup,
-	callback = function(_)
+	callback = function(ev)
+            -- signature_help() errors when no attached client supports it (e.g. ty stopped)
+            if #vim.lsp.get_clients({ bufnr = ev.buf, method = "textDocument/signatureHelp" }) == 0 then
+                return
+            end
             vim.lsp.buf.signature_help({focusable= false, anchor_bias= "above"})
 	end,
 })

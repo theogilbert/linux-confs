@@ -63,8 +63,12 @@ local function teardown(state)
         pcall(vim.fn.jobstop, state.job)
         vim.notify("quick_term: running job aborted", vim.log.levels.WARN)
     end
-    if state.win and vim.api.nvim_win_is_valid(state.win) then
-        vim.api.nvim_win_close(state.win, true)
+    -- The window may have been reused for another buffer (e.g. session reset turning
+    -- it into the last window): leave it alone then. It may also be the last window,
+    -- which cannot be closed; deleting the buffer below swaps it out instead.
+    if state.win and vim.api.nvim_win_is_valid(state.win)
+        and vim.api.nvim_win_get_buf(state.win) == state.buf then
+        pcall(vim.api.nvim_win_close, state.win, true)
     end
     if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
         vim.api.nvim_buf_delete(state.buf, { force = true })

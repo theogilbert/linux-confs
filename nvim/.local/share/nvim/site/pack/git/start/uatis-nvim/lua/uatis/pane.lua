@@ -1433,6 +1433,13 @@ end
 --- plugin's own copies of the past are.
 local function holds_code(win)
   local buf = vim.api.nvim_win_get_buf(win)
+  -- ...but not the old revision beside one: it is an accessory to the
+  -- window next to it, and a file opened into it would leave the view
+  -- it belongs to with an old side showing something else. `]f` pressed
+  -- in there opens the next file next door.
+  if require("uatis.oldside").view_for(buf) then
+    return false
+  end
   local bt = vim.bo[buf].buftype
   if bt == "acwrite" or bt == "terminal" or bt == "prompt" or bt == "quickfix" then
     return false
@@ -2301,14 +2308,15 @@ end
 
 function M.step_file(pane, dir)
   if #pane.files == 0 then
-    return
+    return false
   end
   local next_idx = pane.file_idx + dir
   if next_idx < 1 or next_idx > #pane.files then
     vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " file", vim.log.levels.INFO)
-    return
+    return false
   end
   M.goto_file(pane, next_idx)
+  return true
 end
 
 -- ------------------------------------------------------------------

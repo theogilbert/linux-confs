@@ -127,7 +127,8 @@ return {
       quit = false,
     },
     -- Inside the side-by-side old-revision window. `keys.view.layout`
-    -- is bound there too, and does what `quit` does.
+    -- is bound there too, and does what `quit` does, as are the walk's
+    -- `hunk_*`, `file_*` and `commit_*` keys.
     old = {
       quit = "q",
       -- Jump to the matching row in the file.

@@ -644,6 +644,17 @@ solid red while the side-by-side window, reading that same table, stepped it
 back and picked out the one word that went. **One edit cannot read two ways in
 two layouts.**
 
+The side-by-side window is handed sources 1 and 2 where they answer
+(`rowwise` and `refit` out of `render`, written into `view.del_spans`), so its
+red is the before-image's for the same row. Source 1 only through `rewritten`,
+and only on a code row: a row of a string or comment is prose to that window,
+which narrows the backend's whole-atom spans itself and needs them whole to
+step the row back. Without it `self.sync_csafe_relations(x, y)` renamed to
+`self.sync_relations()` was the whole old name red side by side — difftastic's
+atoms — beside a new row with nothing lit on it, since every character of
+`sync_relations` is in the old name: a name replaced by nothing. What went was
+`csafe_` and `x, y`, which is what the before-image already said.
+
 Sources 3 and 4 both go through `names` and `rewritten`: a range that covers
 the row says nothing, and a range that picks out a bracket and two commas is
 not worth dimming a block for.

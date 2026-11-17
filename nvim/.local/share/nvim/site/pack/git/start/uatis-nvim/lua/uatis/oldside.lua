@@ -34,6 +34,15 @@ M.ns = vim.api.nvim_create_namespace("uatis_oldside")
 -- runs with only a window to go on, and the mappings need the view back.
 local owners = {}
 
+-- Set by a step out of the old window into another file: the file opens
+-- in the window next door, and this window goes with the file it
+-- showed. The old window that comes up for the next file, beside the
+-- same window, takes the cursor back -- the reader was reading the old
+-- side, and a step is not a reason to stop. Keyed by that window, so a
+-- step that never opened anything cannot hand focus to some unrelated
+-- old window later.
+local focus_back = nil
+
 function M.view_for(bufnr)
   return owners[bufnr]
 end
@@ -795,6 +804,43 @@ local function setup_keymaps(view, buf)
     "Uatis - Next [C]ommit")
   map(kv.commit_prev, function() require("uatis.view").step_commit(-1) end,
     "Uatis - Previous [C]ommit")
+  -- ...and so is the walk through the changes and the files. A change
+  -- in this file is landed on here, cursor and all (`land`, through the
+  -- view's own jump); one in another file is opened next door, and the
+  -- next file's old window takes the cursor back (`focus_back`).
+  local function walk(step)
+    return function()
+      if not (view.win and vim.api.nvim_win_is_valid(view.win)) then
+        return
+      end
+      focus_back = { win = view.win }
+      local went = step()
+      if went == "here" or went == false then
+        focus_back = nil
+      end
+    end
+  end
+  local function hunk(dir)
+    return walk(function() return require("uatis.view").step_hunk(view, dir) end)
+  end
+  local function file(dir)
+    return walk(function() return require("uatis.view").step_file(dir) end)
+  end
+  map(kv.hunk_next, hunk(1), "Uatis - Next [c]hunk")
+  map(kv.hunk_prev, hunk(-1), "Uatis - Previous [c]hunk")
+  map(kv.file_next, file(1), "Uatis - Next changed [f]ile")
+  map(kv.file_prev, file(-1), "Uatis - Previous changed [f]ile")
+end
+
+--- The cursor into `win`, if a step out of the old window beside
+--- `view` is waiting for one. See `focus_back`.
+local function take_focus(view, win)
+  if focus_back and focus_back.win == view.win then
+    focus_back = nil
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+    end
+  end
 end
 
 local function fill(view, text)
@@ -900,6 +946,38 @@ function M.sync(view, row)
   -- Remembered so the `WinScrolled` this causes in the old window is
   -- known for ours and not driven back across: see `sync_back`.
   view.old.wrote = { lnum = lnum, topline = topline }
+end
+
+--- `sync` for a cursor put on a change from outside -- `]c` from either
+--- window, or a landing in a file just opened -- with the old cursor on
+--- the change too. `old_row` answers for a NEW row, and a removal's new
+--- row is the line below it: synced plainly, the old cursor sat past
+--- the removed lines it was sent to read. So it is taken up onto them.
+function M.land(view, row)
+  if not M.is_open(view) then
+    return
+  end
+  M.sync(view, row)
+  local align = view.align
+  if not align then
+    return
+  end
+  local v = vim.api.nvim_win_call(view.old.win, vim.fn.winsaveview)
+  local r = v.lnum
+  while r > 1 and align[r - 1] and align[r - 1].old and not align[r - 1].new do
+    r = r - 1
+  end
+  if r == v.lnum then
+    return
+  end
+  vim.api.nvim_win_call(view.old.win, function()
+    v.lnum, v.col, v.curswant = r, 0, 0
+    if v.topline > r then
+      v.topline = r
+    end
+    vim.fn.winrestview(v)
+  end)
+  view.old.wrote = { lnum = r, topline = v.topline }
 end
 
 --- `sync` the other way: your window put opposite the old one, for
@@ -1009,6 +1087,7 @@ function M.open(view, opts)
 
   if M.is_open(view) then
     M.sync(view, row)
+    take_focus(view, view.old.win)
     return
   end
 
@@ -1106,6 +1185,7 @@ function M.open(view, opts)
         end
       end,
     })
+    take_focus(view, win)
   end
 
   -- Usually already here: every render keeps the text it diffed against,

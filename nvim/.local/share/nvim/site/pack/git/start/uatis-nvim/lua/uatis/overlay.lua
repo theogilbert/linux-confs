@@ -1747,6 +1747,18 @@ function M.render(bufnr, win, result, old_lines, opts)
   -- two layouts, and they had better agree.
   local refit = {}
 
+  -- ...and the rows the before-image answers line against line, out of
+  -- a hunk whose two sides correspond row for row: the first source it
+  -- asks, ahead of the backend's spans. The old window read those spans
+  -- instead and the two layouts split over one edit: a call renamed from
+  -- `sync_csafe_relations(x, y)` to `sync_relations()` is atoms to
+  -- difftastic -- the old name gone whole, a new one added -- and the
+  -- new side, narrowed by this same comparison, lights nothing on
+  -- `sync_relations`, every character of it being in the old name. Red
+  -- over the whole old name beside a new row with nothing new on it
+  -- says a name was replaced by nothing. What went was `csafe_`.
+  local rowwise = {}
+
   local function line_text(row)
     return vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
   end
@@ -2015,6 +2027,29 @@ function M.render(bufnr, win, result, old_lines, opts)
     if pair and pair.dels then
       for i = 1, hunk.count_a do
         del_fine[hunk.start_a + i - 1] = pair.dels[i] or {}
+      end
+    end
+    -- Through the gate the before-image puts this answer through: a row
+    -- whose marks leave nothing nameable standing went whole, and the
+    -- backend's spans say so better. Code only: a row of a string or a
+    -- comment is prose to the old window, which narrows the backend's
+    -- whole-atom spans itself (`prose_marks`) and needs them whole to
+    -- know the row is to be stepped back around the words that went.
+    if inline then
+      for i = 1, hunk.count_a do
+        local dels = inline.dels[i]
+        local old_row = hunk.start_a + i - 1
+        local prose = false
+        for _, sp in ipairs(del_marked[old_row] or {}) do
+          if sp.atom == "string" or sp.atom == "comment" then
+            prose = true
+            break
+          end
+        end
+        if dels and #dels > 0 and not prose
+          and not rewritten(dels, old_lines[old_row] or "") then
+          rowwise[old_row] = dels
+        end
       end
     end
 
@@ -3369,7 +3404,7 @@ function M.render(bufnr, win, result, old_lines, opts)
       table.insert(uniq, a)
     end
   end
-  return uniq, del_fine, refit
+  return uniq, del_fine, refit, rowwise
 end
 
 return M

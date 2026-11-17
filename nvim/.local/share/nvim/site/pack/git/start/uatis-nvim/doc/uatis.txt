@@ -246,6 +246,9 @@ IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
     <leader>go      back to the inline layout
     q               the same: close it, and the next file opens inline
     [C  ]C          move within the commit on show, as in your file
+    ]c  [c          next / previous change, both windows landing on it
+    ]f  [f          next / previous file; it opens in your window and
+                    the cursor goes on in the new old-revision window
 <
 IN A BLAMED BUFFER                                      *uatis-mappings-blame*
 >

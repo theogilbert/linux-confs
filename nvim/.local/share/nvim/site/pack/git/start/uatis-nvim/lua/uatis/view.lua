@@ -308,7 +308,7 @@ local function render(view)
         -- ...and the same question asked of the old side, which the old
         -- window draws: `render` is where the two blocks are compared, so
         -- it is where the answer is.
-        local refit
+        local refit, rowwise
         -- The old lines a move from another file brought with it ride past
         -- the end of this file's own, where the drawn answer points at them.
         -- Measured on the window the buffer is actually in. `view.win` is
@@ -323,7 +323,7 @@ local function render(view)
         end
         view.drawn_for = vim.tbl_extend("force", overlay.measure(win), { win = win })
         view.regutter = nil
-        view.anchors, view.del_fine, refit = overlay.render(view.bufnr, win, result,
+        view.anchors, view.del_fine, refit, rowwise = overlay.render(view.bufnr, win, result,
           result.drawn and result.drawn.old_lines or vim.split(old_text, "\n", { plain = true }),
           -- Side by side, the old revision is a window of its own: drawing
           -- it here too would say everything twice.
@@ -340,6 +340,11 @@ local function render(view)
             if #spans > 0 then
               view.del_spans[line] = spans
             end
+          end
+          -- ...and the rows it compared line against line, which the
+          -- before-image takes ahead of both (`rowwise` in `render`).
+          for line, spans in pairs(rowwise or {}) do
+            view.del_spans[line] = spans
           end
         end
         oldside.refresh(view)
@@ -757,6 +762,12 @@ local function jump(view, line)
     vim.cmd("normal! zz")
   end)
   M.reveal_top(win)
+  -- The old window too, which follows your cursor only when YOU move
+  -- it: a step made from the old window, or a landing in a file just
+  -- opened, moves this one from outside.
+  if view.layout == "side" then
+    oldside.land(view, row)
+  end
 end
 
 --- The end of a file, when `]c` was asking for the next change.
@@ -776,7 +787,7 @@ end
 local step_into
 local function spill(view, dir)
   if not config.pane.chunk_spill then
-    return
+    return false
   end
   local pane = require("uatis.pane")
   local list = pane.get()
@@ -798,7 +809,7 @@ step_into = function(view, list, dir)
     -- reason and not the answer.
     vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " change",
       vim.log.levels.INFO)
-    return
+    return false
   end
   landing = { dir = dir, from = view.bufnr }
   require("uatis.pane").goto_file(list, idx)
@@ -817,15 +828,21 @@ step_into = function(view, list, dir)
       land(dest)
     end
   end)
+  return true
 end
 
 --- Next or previous changed chunk. Stops at the ends of the REVIEW rather
 --- than wrapping, the same as the file list: running off the end is a
 --- useful signal that there is nothing more.
+---
+--- Says where it went, for the old window, which binds this too and
+--- has to know whether its file is still the one on screen: `"here"`
+--- for a change in this file, true for another file being opened, false
+--- for nowhere to go, nil for a list still being read.
 local function step_hunk(view, dir)
   local win = view.win
   if not win or not vim.api.nvim_win_is_valid(win) then
-    return
+    return false
   end
   local cur = vim.api.nvim_win_get_cursor(win)[1]
   local target
@@ -849,6 +866,11 @@ local function step_hunk(view, dir)
     return spill(view, dir)
   end
   jump(view, target)
+  return "here"
+end
+
+function M.step_hunk(view, dir)
+  return step_hunk(view, dir)
 end
 
 --- The other half of `spill`: the cursor, once the file it stepped into
@@ -899,18 +921,24 @@ end
 --- for it: the key asked which file comes next, not for somewhere to
 --- stand and look at a list. `<leader>gf` is the window, on and off
 --- again.
+---
+--- True when another file is being opened, false when there is none,
+--- nil when the list is still being read.
 local function step_file(dir)
   local pane = require("uatis.pane")
   local list = pane.get()
   if list and (list.renders or 0) > 0 then
-    pane.step_file(list, dir)
-    return
+    return pane.step_file(list, dir)
   end
   pane.list({
     on_ready = function(p)
       pane.step_file(p, dir)
     end,
   })
+end
+
+function M.step_file(dir)
+  return step_file(dir)
 end
 
 --- ...and the same for stepping the review a commit at a time, which is

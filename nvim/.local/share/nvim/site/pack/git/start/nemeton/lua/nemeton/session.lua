@@ -1159,10 +1159,12 @@ function M.open(iid, opts)
   -- second copy of a sentence already in front of you.
   --
   -- Nor when nobody asked: `opts.quiet` is the review opened as the
-  -- editor starts (`nemeton.resume`), which says nothing at all --
-  -- not that it is opening, not that it opened, not that it could not.
-  -- A failure there is written to the log and is otherwise the editor
-  -- you would have had without it.
+  -- editor starts (`nemeton.resume`), which says nothing while it is
+  -- on its way and nothing when it could not -- a failure there is
+  -- written to the log and is otherwise the editor you would have had
+  -- without it. That it opened is said, as any review's opening is:
+  -- the gutter filling up by itself is a thing to be told the reason
+  -- for.
   local quiet = opts.quiet
   local said = (opts.on_error or quiet) and function() end
     or M.working(("opening !%d…"):format(iid))
@@ -1260,11 +1262,9 @@ function M.open(iid, opts)
     M.redraw_all()
     local n = #(staged.inline or {})
     said()
-    if not quiet then
-      notify(
-        ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
-      )
-    end
+    notify(
+      ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
+    )
     require("nemeton.seen").note(root, mr)
     if detached then
       notify(

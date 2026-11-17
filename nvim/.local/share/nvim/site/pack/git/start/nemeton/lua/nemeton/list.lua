@@ -28,8 +28,9 @@ M.buf = nil
 M.preview = { win = nil, buf = nil, mode = nil }
 -- Row number (1-based) -> the merge request on it.
 local rows = {}
--- Which merge requests the queue is asking for, once it has been asked
--- for something other than the configured state. A review queue is what
+-- Which merge requests the queue is asking for -- a set of states, any
+-- of them -- once it has been asked for something other than the
+-- configured ones. A review queue is what
 -- is open, and that is what this opens on; "how did we end up doing it
 -- that way" is a question about one that is merged, and it is asked
 -- often enough to deserve a key and rarely enough not to deserve a
@@ -44,22 +45,82 @@ local state = nil
 local page = 1
 local exhausted = false
 
--- The states, in the order the float offers them. Open first because
--- that is what a review is; "all" last because a queue with everything
--- in it is a history, and the one thing it is bad at is showing what
--- is left to do. One of a group rather than boxes: the forge lists one
--- state or all of them, and two of three would be a page of all of
--- them with holes in it.
+-- The states, in the order the float offers them, each a box of its
+-- own: open first because that is what a review is. Any of them
+-- together -- open and merged is "what is not abandoned", merged and
+-- closed is the history.
 local STATES = {
   { key = "opened", label = "open" },
   { key = "merged", label = "merged" },
   { key = "closed", label = "closed" },
-  { key = "all", label = "all of them" },
 }
 
+--- The configured states as a set: `list.state` is one of them,
+--- "all", or a list of them.
+local function configured()
+  local want = config.list.state or "opened"
+  local set = {}
+  if want == "all" then
+    for _, s in ipairs(STATES) do
+      set[s.key] = true
+    end
+  elseif type(want) == "table" then
+    for _, k in ipairs(want) do
+      set[k] = true
+    end
+  else
+    set[want] = true
+  end
+  return set
+end
+
 --- What is being listed, whether or not the key has been pressed.
+local function states()
+  return state or configured()
+end
+
+--- ...as the forge is asked it, and which rows of its answer to keep.
+---
+--- The forge lists one state or all of them. Two of the three are
+--- asked as all of them and the third taken out here: a page then
+--- comes back with fewer rows than it was asked for, and `]` is what
+--- fetches the rest. `locked` is a merge request between open and
+--- merged for the second the merge takes, and is kept with the open.
+local function query()
+  local on, ticked = states(), {}
+  for _, s in ipairs(STATES) do
+    if on[s.key] then
+      table.insert(ticked, s.key)
+    end
+  end
+  if #ticked == 1 then
+    return ticked[1], nil
+  end
+  if #ticked == #STATES then
+    return "all", nil
+  end
+  return "all",
+    function(mrs)
+      return vim.tbl_filter(function(mr)
+        local st = mr.state == "locked" and "opened" or mr.state
+        return on[st] == true
+      end, mrs)
+    end
+end
+
+--- The states in words, for the title and what the window says: "all"
+--- for the three, nothing for none.
 local function listing()
-  return state or config.list.state or "opened"
+  local on, words = states(), {}
+  for _, s in ipairs(STATES) do
+    if on[s.key] then
+      table.insert(words, s.key)
+    end
+  end
+  if #words == #STATES then
+    return "all"
+  end
+  return table.concat(words, ", ")
 end
 -- What the window is saying instead of rows: that it is fetching them,
 -- that it is opening one, what went wrong when it tried. Its lines,
@@ -551,17 +612,13 @@ local function choose_state()
   require("nemeton.checklist").open({
     title = "merge requests",
     items = vim.tbl_map(function(s)
-      return { key = s.key, label = s.label, group = "state" }
+      return { key = s.key, label = s.label }
     end, STATES),
-    on = { [listing()] = true },
+    on = vim.deepcopy(states()),
     on_change = function(on)
-      for _, s in ipairs(STATES) do
-        if on[s.key] and s.key ~= listing() then
-          state = s.key
-          set_title()
-          M.open()
-        end
-      end
+      state = on
+      set_title()
+      M.open()
     end,
   })
 end
@@ -964,8 +1021,9 @@ function M.more()
     return
   end
   local mine, asked = M.buf, page + 1
+  local asking, keep = query()
   spin.start("list", set_title)
-  glab.mr_list(root, listing(), function(mrs, err)
+  glab.mr_list(root, asking, function(mrs, err)
     if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
       return
     end
@@ -980,8 +1038,12 @@ function M.more()
     -- how many there are in a header `glab` does not pass on, so the
     -- only way to find out is to ask for the next one.
     exhausted = #mrs < (config.list.per_page or 30)
+    mrs = keep and keep(mrs) or mrs
     if #mrs == 0 then
-      session.notify(("that is every %s merge request"):format(listing()))
+      session.notify(
+        exhausted and ("that is every %s merge request"):format(listing())
+          or ("none %s on that page — %s for the next"):format(listing(), config.keys.list.more)
+      )
       set_hint()
       return
     end
@@ -1019,13 +1081,22 @@ function M.open()
   if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
     open_window()
   end
+  page, exhausted = 1, false
+  if listing() == "" then
+    -- Nothing ticked is a queue of nothing, and asking the forge for it
+    -- is a round trip to be told so.
+    set_title()
+    exhausted = true
+    set_message(("no state ticked — %s to tick one"):format(config.keys.list.state))
+    return
+  end
   spin.start("list", set_title)
   set_title()
   set_message(("fetching %s merge requests…"):format(listing()))
-  page, exhausted = 1, false
   local mine = M.buf
+  local asking, keep = query()
 
-  glab.mr_list(root, listing(), function(mrs, err)
+  glab.mr_list(root, asking, function(mrs, err)
     -- Closed, or refetched, while the forge was thinking.
     if M.buf ~= mine or not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
       return
@@ -1041,6 +1112,7 @@ function M.open()
     if listing() == "opened" then
       require("nemeton.seen").set(root, mrs)
     end
+    mrs = keep and keep(mrs) or mrs
     if #mrs == 0 then
       set_message(("no %s merge requests"):format(listing()))
       return

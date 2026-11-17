@@ -8,10 +8,10 @@ return {
   -- that are open and not yet merged; everything else is history.
   list = {
     per_page = 30,
-    -- "opened" | "merged" | "closed" | "all". What a queue *opens* on:
-    -- `s` in the window picks another of the four, for the merged one
-    -- you are reading to find out how something came to be done that
-    -- way.
+    -- "opened" | "merged" | "closed" | "all", or a list of the first
+    -- three -- { "opened", "merged" }. What a queue *opens* on: `s` in
+    -- the window ticks them on and off, for the merged one you are
+    -- reading to find out how something came to be done that way.
     state = "opened",
     -- Passed to `glab mr list --order`. Recently touched first is the
     -- order a review queue is actually worked in.
@@ -96,8 +96,8 @@ return {
     remember_path = nil,
 
     -- Whether an editor started on the branch of a merge request it has
-    -- written down as open opens that review by itself, saying nothing:
-    -- the markers are in the gutter by the time you look. Which merge
+    -- written down as open opens that review by itself, and says so
+    -- once it has: the markers are in the gutter by the time you look. Which merge
     -- request comes off the disk alone, so an editor started anywhere
     -- else pays nothing and asks nobody; the review itself is the
     -- forge's answer. Needs `remember`.

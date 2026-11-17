@@ -225,8 +225,8 @@ not answer leaves the menu saying what it said yesterday and says so.
 The same file opens a review by itself. Start Neovim on the branch of a
 merge request it has written down as open — one the prompt listed, or
 one you have reviewed here before — and that review opens in the
-background, saying nothing: no checkout, since you are on the branch,
-and no message either way. Which merge request is read off the disk
+background: no checkout, since you are on the branch, and nothing
+said until it has opened, when it says so as any review does. Which merge request is read off the disk
 alone, so an editor started anywhere else runs nothing; the review
 itself is the forge's answer, and one that has been merged since, or
 is no longer from this branch, is quietly not opened.
@@ -288,8 +288,8 @@ it at all. `n` shows what has been said on it, every thread under the
 file and line it is on — without the code each is about, which is read
 from the files on disk and those are not this branch's until it is
 opened. `<C-d>` and `<C-u>` scroll that pane from the list, which keeps
-the cursor. `s` picks the queue — opened, merged, closed or all — in a
-float of ticks (the title says which, and every row that is not open
+the cursor. `s` picks the queue — opened, merged and closed, each a box,
+any of them together — in a float of ticks (the title says which, and every row that is not open
 says so beside its title), `]` puts another page of them under the ones
 on the screen, `+` writes one of your own for the branch you are on,
 `r` refetches, `o` opens it in a browser, `q` closes. The window opens on the keypress rather than when the forge

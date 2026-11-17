@@ -739,7 +739,7 @@ function M.mr_list(root, state, cb, page)
   end
   -- `mr list` has no --state: the states are three separate flags, and
   -- "opened" is what you get by passing none of them.
-  state = state or config.list.state
+  state = state or (type(config.list.state) == "string" and config.list.state) or "opened"
   if state == "merged" then
     table.insert(args, "--merged")
   elseif state == "closed" then

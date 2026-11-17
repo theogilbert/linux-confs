@@ -437,7 +437,7 @@ without asking the forge anything.
     c               the commits of the row under the cursor
     d               what it says it is for
     p               what CI made of it, job by job
-    s               opened, merged, closed or all, in a float
+    s               opened, merged, closed: any of them, ticked in a float
                     |nemeton-checklist-window|
     ]               another page of them, under the ones on the screen
     +               open one of your own, for the branch you are on
@@ -488,12 +488,14 @@ than left showing the other branch's copy, and its window goes back to
 what it showed before. One with unsaved edits in it stays: what was
 typed has nowhere else to be. Either way the files are named.
 
-`s` picks among the four states GitLab has, one of a group in a float
-of ticks, refetched as it is ticked: the open ones a review queue is
-made of, the merged, the closed, or all of them together. One and not
-a box each, because the forge lists one state or every one, and two
-of three would be a page of all of them with holes in it. The window's
-title says which of the four is on the screen and every row says it
+`s` ticks the three states GitLab has on and off, a box each in a
+float |nemeton-checklist-window|, refetched as they are ticked: the
+open ones a review queue is made of, the merged, the closed, and any
+of them together -- open and merged, merged and closed. The forge lists
+one state or every one, so two of the three are asked as every one and
+the third taken out here: a page can come back shorter than it was
+asked for, and `]` fetches the next. Nothing ticked lists nothing and
+asks nobody. The window's title says which states are on the screen and every row says it
 for itself -- `merged` in the colour of a thing that is through,
 `closed` in the dim one -- because a mixed queue is read a row at a
 time. It is a question asked, not a
@@ -559,9 +561,9 @@ true longest.
 The same file opens a review by itself. Neovim started on the branch of
 a merge request written down there as open -- one the prompt listed,
 or one reviewed here before -- opens that review in the background and
-says nothing: nothing is checked out, since that is the branch already,
-and nothing is said either way; a failure is in the log and nowhere
-else. Which merge request is read off the disk alone -- `.git` looked
+says so once it has, as any review does: nothing is checked out, since
+that is the branch already, and nothing is said while it is on its way;
+a failure is in the log and nowhere else. Which merge request is read off the disk alone -- `.git` looked
 for rather than git run, `HEAD` read as a file -- so an editor started
 anywhere else spawns nothing and asks nobody. The review itself is the
 forge's answer, and one merged since, or no longer from this branch, is
@@ -2127,7 +2129,7 @@ LIST                                                     *nemeton-config-list*
 >
     list = {
       per_page = 30,          -- how many merge requests to ask for
-      state = "opened",       -- what a queue opens on; `s` picks another
+      state = "opened",       -- what a queue opens on, or a list: { "opened", "merged" }
       order = "updated_at",   -- `glab mr list --order`
       width = 0.7,            -- of the editor
       height = 0.6,

@@ -102,6 +102,14 @@ return {
     -- else pays nothing and asks nobody; the review itself is the
     -- forge's answer. Needs `remember`.
     resume = true,
+
+    -- ...and whether that review is drawn at once from what the forge
+    -- answered last time, kept on disk per merge request, while it is
+    -- asked again: the gutter is full as the editor comes up rather
+    -- than a round trip later. What people wrote is then on disk,
+    -- 0600, beside `merge-requests.json`; a merge request found merged
+    -- or closed has its copy deleted. `false` to wait for the forge.
+    cache_review = true,
   },
 
   -- The project's issues, which are kept here whole -- every issue and

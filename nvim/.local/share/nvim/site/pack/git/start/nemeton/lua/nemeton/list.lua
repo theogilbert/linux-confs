@@ -1111,6 +1111,11 @@ function M.open()
     -- over, so that the next `:Nemeton open` comes up on it |nemeton-open|.
     if listing() == "opened" then
       require("nemeton.seen").set(root, mrs)
+    else
+      -- ...and a list with merged or closed ones in it says which of
+      -- those are not open any more, which is the end of opening their
+      -- review as the editor starts |nemeton-resume|.
+      require("nemeton.seen").gone(root, mrs)
     end
     mrs = keep and keep(mrs) or mrs
     if #mrs == 0 then

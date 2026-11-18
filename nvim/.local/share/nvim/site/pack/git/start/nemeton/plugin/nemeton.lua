@@ -48,8 +48,14 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     if issue then
       issue.close_all()
     end
+    -- ...and the review, as it now stands, for the next editor started
+    -- on its branch |nemeton-resume|.
+    local session = package.loaded["nemeton.session"]
+    if session then
+      session.keep()
+    end
   end,
-  desc = "nemeton: close the issue tabs before a session is saved",
+  desc = "nemeton: close the issue tabs and keep the review on the way out",
 })
 
 -- The review of the branch the editor started on, where one is written
@@ -69,9 +75,9 @@ if vim.v.vim_did_enter == 0 then
         if not require("nemeton.config").list.resume then
           return
         end
-        local iid, _, branch = require("nemeton.seen").here()
+        local iid, root, branch = require("nemeton.seen").here()
         if iid then
-          require("nemeton").resume(iid, branch)
+          require("nemeton").resume(iid, branch, root)
         end
       end)
     end,

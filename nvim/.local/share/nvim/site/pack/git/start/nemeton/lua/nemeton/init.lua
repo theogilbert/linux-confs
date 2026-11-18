@@ -314,19 +314,27 @@ end
 
 --- The review of `iid`, opened with nothing said about it: the merge
 --- request the branch the editor started on was last known to have
---- (`seen.here`). On the branch already, so nothing is checked out;
---- and what is shown is the forge's answer, which is asked for now --
---- only *whether* to ask came off the disk.
-function M.resume(iid, branch)
+--- (`seen.here`). On the branch already, so nothing is checked out.
+--- What is shown first is what the forge answered last time, where
+--- that was kept (`snapshot.lua`), and the forge's answer replaces it
+--- as it lands -- or takes it down again, if the merge request has
+--- been merged, closed or moved off the branch since.
+function M.resume(iid, branch, root)
   ready()
   if session.current then
     return
   end
+  root = root or session.root()
   session.open(iid, {
     checkout = false,
     quiet = true,
     branch = branch,
+    snapshot = root and require("nemeton.snapshot").read(root, iid, branch),
     on_open = M.attach_all,
+    on_gone = function(why)
+      M.close()
+      session.notify(why .. " — its review is closed", vim.log.levels.WARN)
+    end,
   })
 end
 

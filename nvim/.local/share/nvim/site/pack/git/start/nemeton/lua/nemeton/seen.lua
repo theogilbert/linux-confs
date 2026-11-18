@@ -104,7 +104,9 @@ local function load()
     return all
   end
   for root, list in pairs(decoded) do
-    if type(list) == "table" and vim.uv.fs_stat(root) then
+    if not vim.uv.fs_stat(root) then
+      require("nemeton.snapshot").drop_all(root)
+    elseif type(list) == "table" then
       local rows = {}
       for _, one in ipairs(list) do
         if type(one) == "table" and type(one.iid) == "number" then
@@ -132,6 +134,23 @@ local function row(mr)
     branch = mr.source_branch,
     state = mr.state,
   }
+end
+
+--- The reviews kept of what `root` no longer has open (`snapshot.lua`):
+--- one written down before and not as open now. Its own function
+--- because every write below can be the one that learns it.
+local function forget_reviews(root, before, now)
+  local open = {}
+  for _, one in ipairs(now or {}) do
+    if one.state == nil or one.state == "opened" then
+      open[one.iid] = true
+    end
+  end
+  for _, one in ipairs(before or {}) do
+    if not open[one.iid] then
+      require("nemeton.snapshot").drop(root, one.iid)
+    end
+  end
 end
 
 local function save()
@@ -183,6 +202,33 @@ function M.set(root, list)
       table.insert(rows, row(mr))
     end
   end
+  forget_reviews(root, all[root], rows)
+  all[root] = rows
+  save()
+end
+
+--- What a list of merged or closed merge requests says about the open
+--- ones written down: that these are not, any more. Not `M.set`, which
+--- is the whole list of what is open -- this is a list of something
+--- else, and only takes away.
+function M.gone(root, list)
+  if not (config.list.remember and root and type(list) == "table") then
+    return
+  end
+  local shut = {}
+  for _, mr in ipairs(list) do
+    if type(mr) == "table" and mr.iid and mr.state and mr.state ~= "opened" then
+      shut[mr.iid] = true
+    end
+  end
+  local before = load()[root] or {}
+  local rows = vim.tbl_filter(function(one)
+    return not shut[one.iid]
+  end, before)
+  if #rows == #before then
+    return
+  end
+  forget_reviews(root, before, rows)
   all[root] = rows
   save()
 end
@@ -196,6 +242,9 @@ function M.note(root, mr)
   end
   load()
   local rows = all[root] or {}
+  if mr.state and mr.state ~= "opened" then
+    require("nemeton.snapshot").drop(root, mr.iid)
+  end
   for i, one in ipairs(rows) do
     if one.iid == mr.iid then
       rows[i] = row(mr)
@@ -271,6 +320,7 @@ function M.forget(root)
     return
   end
   load()
+  require("nemeton.snapshot").drop_all(root)
   if all[root] then
     all[root] = nil
     save()

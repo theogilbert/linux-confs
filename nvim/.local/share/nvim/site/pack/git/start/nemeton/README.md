@@ -233,6 +233,17 @@ is no longer from this branch, is quietly not opened.
 `list.resume = false` turns it off. It needs the plugin loaded before
 Neovim has finished starting — a plugin manager that loads it later has
 no start to resume from.
+
+It is drawn at once from what the forge answered last time, which is
+kept per merge request under `reviews/` beside that file — the threads,
+the drafts and the diff, as they came — and the forge is asked all the
+same: its answer replaces the copy in place as it lands. One the forge
+says has been merged, closed or moved to another branch is taken down
+again, with a warning, and its copy deleted; a list of merged or
+closed merge requests, or merging one here, deletes it too, and it is
+not resumed again. The copy holds what people wrote, so it is `0600`;
+`list.cache_review = false` writes none and waits for the forge.
+
 The checkout still says what it is waiting for while it waits, since
 nothing else is on the screen between the number being given and the
 branch being there.

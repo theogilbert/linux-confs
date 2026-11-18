@@ -291,6 +291,30 @@ local function settle(mr)
   index(mr)
 end
 
+--- The discussions, onto `mr`: what `gather` does with the forge's
+--- answer and `M.open` with the one kept on disk (`snapshot.lua`), so
+--- that both are the same review.
+local function take_discussions(mr, data)
+  local parsed = threads.parse(data)
+  mr.overview = parsed.overview
+  mr.inline = parsed.inline
+  if mr.raw then
+    mr.raw.discussions = data
+  end
+end
+
+--- ...and the drafts.
+local function take_drafts(mr, data)
+  data = type(data) == "table" and data or {}
+  local parsed = threads.parse_drafts(data)
+  mr.drafts = parsed.inline
+  mr.draft_overview = parsed.overview
+  mr.draft_replies = parsed.replies
+  if mr.raw then
+    mr.raw.draft_notes = data
+  end
+end
+
 --- Asks the forge for everything a review is drawn from, onto `mr`,
 --- and `cb(ok)` once all of it is in. Draws nothing and does not need
 --- `mr` to be the open review yet: `M.open` sends it out while the
@@ -312,9 +336,7 @@ local function gather(mr, cb)
       notify("could not fetch discussions: " .. tostring(err), vim.log.levels.ERROR)
       ok = false
     else
-      local parsed = threads.parse(data)
-      mr.overview = parsed.overview
-      mr.inline = parsed.inline
+      take_discussions(mr, data)
     end
     done()
   end)
@@ -373,10 +395,7 @@ local function gather(mr, cb)
   -- on anything older, where the right answer is "you have no drafts"
   -- rather than an error on every refresh.
   glab.draft_notes(mr.root, mr.iid, function(data)
-    local parsed = threads.parse_drafts(type(data) == "table" and data or {})
-    mr.drafts = parsed.inline
-    mr.draft_overview = parsed.overview
-    mr.draft_replies = parsed.replies
+    take_drafts(mr, data)
     done()
   end)
 end
@@ -800,6 +819,25 @@ function M.took(mr, data)
   if type(data.head_pipeline) == "table" then
     mr.head_pipeline = data.head_pipeline
   end
+  -- ...and one that is not open any more is not one to open as the
+  -- editor starts, nor to keep the review of |nemeton-resume|.
+  if mr.root and mr.iid and mr.state ~= "opened" then
+    require("nemeton.seen").note(mr.root, {
+      iid = mr.iid,
+      title = mr.title,
+      source_branch = mr.source_branch,
+      state = mr.state,
+    })
+    require("nemeton.snapshot").drop(mr.root, mr.iid)
+  end
+end
+
+--- The open review, written down for the next editor started on its
+--- branch (`snapshot.lua`).
+function M.keep()
+  if M.current then
+    require("nemeton.snapshot").write(M.current)
+  end
 end
 
 --- The merge request itself, asked for again: its state and, above
@@ -893,6 +931,10 @@ function M.refresh_changes(cb)
     if data and M.current == mr then
       mr.diff_stats = detail.diff_stats(data)
       mr.lines = threads.line_map(data)
+      if mr.raw then
+        mr.raw.changes = data
+        M.keep()
+      end
       -- The threads on removed lines can now be put where those lines
       -- went. Only once a refresh has been through: before that the
       -- index is half of one, and drawing it would draw the threads
@@ -1134,6 +1176,26 @@ end
 --- drawn until both have landed. The threads themselves are asked for
 --- the moment the merge request is in, and are usually back before
 --- the checkout is.
+-- What of a review the merge request itself says, and so what the
+-- forge's answer replaces of one drawn off the disk: everything but
+-- the threads, which `gather` brings, and the editor's own state.
+local FRESH = {
+  title = true,
+  description = true,
+  author = true,
+  source_branch = true,
+  target_branch = true,
+  web_url = true,
+  state = true,
+  merge_when_pipeline_succeeds = true,
+  draft = true,
+  labels = true,
+  reviewers = true,
+  label_details = true,
+  head_pipeline = true,
+  diff_refs = true,
+}
+
 function M.open(iid, opts)
   opts = opts or {}
   local root = M.root()
@@ -1198,6 +1260,9 @@ function M.open(iid, opts)
   local function review()
     return {
       root = root,
+      -- The payloads it was built from, as they came: what
+      -- `snapshot.lua` writes down for an editor started on its branch.
+      raw = { mr = mr },
       iid = mr.iid,
       title = mr.title,
       description = mr.description or "",
@@ -1250,6 +1315,10 @@ function M.open(iid, opts)
   -- whether all of it came.
   local staged, gathered = nil, nil
 
+  -- The review drawn off the disk, while the forge is asked
+  -- (`opts.snapshot`); nil otherwise, and once the forge has answered.
+  local shown = nil
+
   local function loaded()
     -- A review opened by hand while this one was quietly on its way is
     -- the one that was asked for.
@@ -1266,6 +1335,9 @@ function M.open(iid, opts)
       ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
     )
     require("nemeton.seen").note(root, mr)
+    if not shown then
+      M.keep()
+    end
     if detached then
       notify(
         ("its branch %s is gone from the remote — checked out detached at the merge request's head"):format(
@@ -1322,6 +1394,29 @@ function M.open(iid, opts)
     loaded()
   end
 
+  -- What the forge said last time, drawn now: the review as it was
+  -- when this editor's predecessor quit, up before anything is asked.
+  -- The calls below go out all the same and replace it as they land.
+  local snap = opts.snapshot
+  if quiet and snap and not M.current then
+    mr = snap.mr
+    staged = review()
+    take_discussions(staged, snap.discussions or {})
+    take_drafts(staged, snap.draft_notes)
+    staged.versions = snap.versions
+    staged.me = snap.me
+    staged.reactions = snap.reactions or {}
+    staged.approvals = snap.approvals
+    if snap.changes then
+      staged.raw.changes = snap.changes
+      staged.diff_stats = detail.diff_stats(snap.changes)
+      staged.lines = threads.line_map(snap.changes)
+    end
+    shown = staged
+    loaded()
+    mr = nil
+  end
+
   glab.mr_get(root, iid, function(data, err)
     if not data then
       fail(("could not read !%d: %s"):format(iid, tostring(err)))
@@ -1331,7 +1426,50 @@ function M.open(iid, opts)
     -- merged since, or the branch moved to another merge request. Not
     -- opened then, rather than opened on what it no longer is.
     if quiet and (data.state ~= "opened" or data.source_branch ~= opts.branch) then
-      fail(("!%d is %s, from %s"):format(iid, tostring(data.state), tostring(data.source_branch)))
+      require("nemeton.seen").note(root, data)
+      require("nemeton.snapshot").drop(root, iid)
+      local why = ("!%d is %s, from %s"):format(
+        iid,
+        tostring(data.state),
+        tostring(data.source_branch)
+      )
+      -- Drawn off the disk already, it is taken down again, and that
+      -- is said: the gutter emptying by itself wants a reason as much
+      -- as its filling did.
+      if shown and M.current == shown and opts.on_gone then
+        log.note("closed what the disk said: " .. why)
+        opts.on_gone(why)
+        return
+      end
+      fail(why)
+      return
+    end
+    if shown then
+      -- What was drawn off the disk becomes the forge's answer in
+      -- place, rather than a review closed and another opened: the
+      -- buffers, the pane and the mode are this one's.
+      local was = shown
+      shown = nil
+      if M.current ~= was then
+        return
+      end
+      mr = data
+      local fresh = review()
+      for k, v in pairs(fresh) do
+        if k == "raw" then
+          was.raw.mr = data
+        elseif FRESH[k] then
+          was[k] = v
+        end
+      end
+      gather(was, function()
+        if M.current ~= was then
+          return
+        end
+        settle(was)
+        M.redraw_all()
+        M.keep()
+      end)
       return
     end
     mr = data

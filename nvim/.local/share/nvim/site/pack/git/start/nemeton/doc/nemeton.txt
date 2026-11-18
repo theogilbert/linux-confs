@@ -568,6 +568,17 @@ for rather than git run, `HEAD` read as a file -- so an editor started
 anywhere else spawns nothing and asks nobody. The review itself is the
 forge's answer, and one merged since, or no longer from this branch, is
 not opened. A review opened by hand while it is on its way wins.
+
+It is drawn at once off what the forge answered last time, kept per
+merge request under `reviews/` beside that file -- the threads, the
+drafts and the diff, as the forge sent them -- while the forge is asked
+again, and its answer replaces the copy in place. One merged, closed or
+moved off the branch since is taken down again with a warning, and its
+copy deleted; so is the copy of one a list of merged or closed merge
+requests names, or one merged or closed here, and none of those is
+resumed again. The copy is written as the review opens, as its diff
+lands and as Neovim quits. It holds what people wrote, so it is 0600
+in a 0700 directory; `list.cache_review = false` writes none.
 `list.resume = false` turns it off. Only on a start: a plugin manager
 that loads this after Neovim has finished starting has none to resume.
 
@@ -2143,6 +2154,7 @@ LIST                                                     *nemeton-config-list*
       remember = true,        -- write down what is open, for the prompt
       remember_path = nil,    -- nil: $XDG_STATE_HOME/nemeton/merge-requests.json
       resume = true,          -- open the review of the branch nvim started on
+      cache_review = true,    -- ...drawn off last time's answer, then refreshed
     }
 <
 GitLab's merge request list carries no pipeline, no approvals and no

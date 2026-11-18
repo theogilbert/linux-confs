@@ -588,6 +588,7 @@ function M.setup_highlights()
   -- A comment you have written and not sent: not open, not settled,
   -- and owed an action by you rather than by anybody else.
   link("NemetonDraft", "DiagnosticWarn")
+  link("NemetonUpdated", "DiagnosticInfo")
   -- A line added and a line taken away: counted in the list's +12 −3,
   -- shown in the suggestion inside a comment. One pair for both,
   -- because it is one fact drawn twice.

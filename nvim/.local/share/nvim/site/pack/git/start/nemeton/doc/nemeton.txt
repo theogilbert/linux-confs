@@ -449,7 +449,13 @@ without asking the forge anything.
 The window is up before the answer is: it opens on the keypress saying
 that it is fetching, fills in when the queue lands, and each row's CI,
 approvals and size arrive afterwards and are drawn where the row
-stands. `<CR>`
+stands. A `●` beside the number is an open merge request that has moved
+-- a comment, a push, a label -- since you last had its review open
+here: the time that review opened, closed, or Neovim quit with it open
+is written down in `merge-requests.json` |nemeton-open| and the row's
+`updated_at` compared with it. None on one never opened, on a merged or
+closed one, or on the review open now. `list.updated` is the glyph,
+`false` for no column. `<CR>`
 does not close it either -- it says which merge request it is opening
 and stays up until the review is loaded, so a slow checkout looks like a
 slow checkout rather than like nothing at all.
@@ -2141,6 +2147,7 @@ LIST                                                     *nemeton-config-list*
     list = {
       per_page = 30,          -- how many merge requests to ask for
       state = "opened",       -- what a queue opens on, or a list: { "opened", "merged" }
+      updated = "●",          -- beside one that moved since you opened it; false: none
       order = "updated_at",   -- `glab mr list --order`
       width = 0.7,            -- of the editor
       height = 0.6,
@@ -2725,6 +2732,8 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonSignOpen       a thread still owed an answer   DiagnosticInfo
     NemetonSignResolved   one that is settled             Comment
     NemetonDraft          one of yours, not sent yet      DiagnosticWarn
+    NemetonUpdated        a merge request in the queue    DiagnosticInfo
+                          that moved since you opened it
     NemetonAuthor         who said it                     Title
     NemetonBranch         a git ref                       Directory
     NemetonMatch          what a search of the issues     Search

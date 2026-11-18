@@ -837,6 +837,7 @@ end
 function M.keep()
   if M.current then
     require("nemeton.snapshot").write(M.current)
+    require("nemeton.seen").visit(M.current.root, M.current.iid)
   end
 end
 
@@ -1335,6 +1336,7 @@ function M.open(iid, opts)
       ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
     )
     require("nemeton.seen").note(root, mr)
+    require("nemeton.seen").visit(root, mr.iid)
     if not shown then
       M.keep()
     end
@@ -1794,6 +1796,7 @@ function M.close()
   if not M.current then
     return
   end
+  require("nemeton.seen").visit(M.current.root, M.current.iid)
   M.current = nil
   blobs, fetching = {}, {}
   require("nemeton.pane").close()

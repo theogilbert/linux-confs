@@ -13,6 +13,11 @@ return {
     -- the window ticks them on and off, for the merged one you are
     -- reading to find out how something came to be done that way.
     state = "opened",
+    -- What stands beside the number of an open merge request that has
+    -- moved -- a comment, a push, a label -- since you last had its
+    -- review open here. Nothing on one you have never opened, nor on
+    -- a merged or closed one. `false` for no column at all.
+    updated = "●",
     -- Passed to `glab mr list --order`. Recently touched first is the
     -- order a review queue is actually worked in.
     order = "updated_at",

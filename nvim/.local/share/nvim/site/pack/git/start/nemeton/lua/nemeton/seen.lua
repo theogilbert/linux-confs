@@ -115,6 +115,7 @@ local function load()
             title = type(one.title) == "string" and one.title or "",
             branch = type(one.branch) == "string" and one.branch or nil,
             state = type(one.state) == "string" and one.state or nil,
+            visited = type(one.visited) == "string" and one.visited or nil,
           })
         end
       end
@@ -196,10 +197,18 @@ function M.set(root, list)
     return
   end
   load()
+  -- ...but not when you last looked, which the forge does not know and
+  -- which only a review opening writes (`M.visit`).
+  local visited = {}
+  for _, one in ipairs(all[root] or {}) do
+    visited[one.iid] = one.visited
+  end
   local rows = {}
   for _, mr in ipairs(list) do
     if type(mr) == "table" and mr.iid then
-      table.insert(rows, row(mr))
+      local one = row(mr)
+      one.visited = visited[mr.iid]
+      table.insert(rows, one)
     end
   end
   forget_reviews(root, all[root], rows)
@@ -248,6 +257,7 @@ function M.note(root, mr)
   for i, one in ipairs(rows) do
     if one.iid == mr.iid then
       rows[i] = row(mr)
+      rows[i].visited = one.visited
       all[root] = rows
       save()
       return
@@ -256,6 +266,40 @@ function M.note(root, mr)
   table.insert(rows, row(mr))
   all[root] = rows
   save()
+end
+
+--- That the review of `iid` was in front of you until now: what the
+--- queue's mark for a merge request that moved since is measured
+--- against (`M.visited`).
+---
+--- The editor's clock rather than the merge request's own `updated_at`,
+--- because what you did in the review moves that too -- every comment
+--- posted -- and it is written when the review opens, when it closes
+--- and when the editor quits, so that what you did there is before it.
+--- UTC and in GitLab's own spelling, to the second, so the two compare
+--- as strings.
+function M.visit(root, iid)
+  if not (config.list.remember and root and iid) then
+    return
+  end
+  for _, one in ipairs(load()[root] or {}) do
+    if one.iid == iid then
+      one.visited = os.date("!%Y-%m-%dT%H:%M:%S")
+      save()
+      return
+    end
+  end
+end
+
+--- When each merge request of `root` was last visited, by number.
+function M.visited(root)
+  local out = {}
+  if config.list.remember and root then
+    for _, one in ipairs(load()[root] or {}) do
+      out[one.iid] = one.visited
+    end
+  end
+  return out
 end
 
 --- The branch HEAD is on in `root`, or nil on a detached one.

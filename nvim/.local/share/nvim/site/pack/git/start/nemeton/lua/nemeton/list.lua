@@ -170,6 +170,26 @@ local function live(mr)
   return (mr.state or "opened") == "opened"
 end
 
+-- iid -> when you last had its review open (`seen.visit`), read as the
+-- rows are drawn.
+local visits = {}
+
+--- Whether it has moved since you last had its review open: a comment,
+--- a push, a label. Only an open one -- a merged merge request moving
+--- is not a thing anybody is waiting on -- and only one you have
+--- opened here, since "new" of a merge request never looked at is
+--- every one of them. Not the one open now, which you are looking at.
+local function moved(mr)
+  local at = visits[mr.iid]
+  if not (live(mr) and at and type(mr.updated_at) == "string") then
+    return false
+  end
+  if session.current and session.current.iid == mr.iid then
+    return false
+  end
+  return mr.updated_at:sub(1, 19) > at:sub(1, 19)
+end
+
 --- The rows, and the highlights to paint on them.
 ---
 --- CI gets a column of its own, one glyph wide, immediately after the
@@ -189,8 +209,15 @@ local function row_chunks(mr)
   local ci = live(mr) and detail.ci(mr) or nil
   local approval = live(mr) and detail.approval(mr.approvals) or nil
   local stats = live(mr) and mr.diff_stats or nil
+  -- One cell beside the number, so that what moved is seen down the
+  -- left edge without reading across.
+  local glyph = config.list.updated or ""
+  local width = vim.fn.strdisplaywidth(glyph)
+  local new = glyph ~= "" and moved(mr)
   local out = {
     { ("!%-5d "):format(mr.iid), "NemetonMeta" },
+    { new and glyph or (" "):rep(width), new and "NemetonUpdated" or nil },
+    { width > 0 and " " or "" },
     { ci and (ci.glyph .. "  ") or "   ", ci and ci.hl or nil },
   }
   -- Nothing at all where nobody is required and nobody has been in:
@@ -271,6 +298,7 @@ end
 --- namespace and putting them back, and the cheapest correct thing to
 --- do with thirty more rows is to draw the whole list again.
 local function draw_rows()
+  visits = require("nemeton.seen").visited(session.root())
   local chunks = {}
   for i, mr in ipairs(rows) do
     chunks[i] = row_chunks(mr)

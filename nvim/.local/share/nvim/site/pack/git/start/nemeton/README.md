@@ -335,6 +335,14 @@ without asking the forge anything. The approvals are the tick and the
 count, `✓2/2` or `◌0/1`; who has approved it is a name, and names are
 `<leader>md`.
 
+A `●` beside the number is an open merge request that has moved — a
+comment, a push, a label — since you last had its review open here,
+measured against when that review opened, closed or Neovim quit with
+it open. Nothing is marked on one you have never opened, on a merged
+or closed one, or on the one open now. It is written down in the same
+`merge-requests.json`; `list.updated` is the glyph (`NemetonUpdated`),
+and `false` drops the column.
+
 In the comments window: `<CR>` reads the thread under the cursor —
 beside its code for one on a line, and in the pane for one on the merge
 request itself, which has no code to be read beside; the pane stays up

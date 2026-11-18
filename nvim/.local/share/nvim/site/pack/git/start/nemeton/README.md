@@ -382,10 +382,23 @@ to it. A thread on a line opens its file, puts the cursor on the line
 and the conversation in the pane; a comment on the merge request itself
 opens the comments window with it under the cursor. The window you read
 the link in is left first, so a float closes behind you and the pane
-stays where it is. A comment this review cannot show — one on another
-merge request, one resolved while resolved threads are hidden, one
-deleted since it was linked — falls back to the clipboard and says which
-of those it was.
+stays where it is. A comment this review cannot show — one resolved
+while resolved threads are hidden, one deleted since it was linked, one
+on another project — falls back to the clipboard and says which of
+those it was.
+
+**A comment on another merge request of this project is read where the
+link is.** It is what an issue links to — "see the discussion on !12" —
+and `<C-]>` on it fetches that thread and shows it in a float: every
+note, and the code it was written about, quoted out of the commit it
+was written against (fetched first if the clone has not got it). Nothing
+is checked out and no review is opened to read it. In the float `<CR>`
+opens that review — checking it out, as `:Nemeton open` does — and lands
+on the thread beside its code, in a window with a file in it rather
+than in the issue's tab; `o` opens the comment on GitLab and `q` closes
+the float (`keys.linked`). The same key works in an issue's description,
+which is shown as the markdown it was typed as: the link is read off the
+line under the cursor (`keys.issue.follow`).
 
 **An issue of this project is a third** — `#12`, `group/proj#12` where
 that is this project, or a link to its page (`/-/issues/12`, or
@@ -608,10 +621,12 @@ title back. `q` throws the changes away: what is kept of an open merge
 request is on the forge. Only a change the forge refused is still in
 the form on the next `e`.
 
-What the forge answers with is the merge request that was made, so that
-is what opens: the queue it was written from closes — it was a list of
-what there is to review, and what there is to review now is this — and
-the review starts on the new one, discussions and all.
+The queue it was written from closes with the window, as `<C-s>` is
+pressed rather than once the forge has answered — it was a list of what
+there is to review, and a popup left up for the length of a push is in
+the way. A failure loses nothing: what was typed is kept for the next
+`+`. What the forge answers with is the merge request that was made,
+and the review starts on it, discussions and all.
 
 In every-thread (`:Nemeton conversation`): `<CR>` goes to the code the
 thread under the cursor is about, `r` replies, `e` edits one of its
@@ -1567,6 +1582,8 @@ lua/nemeton/
                  a substitution, not a typesetter
   follow.lua     what <C-]> goes to: where each kind of reference has a
                  page, and the one kind that is a thread in here instead
+  linked.lua     a comment on another merge request of this project,
+                 fetched and read in a float where the link to it is
   session.lua    one merge request at a time, and everything hanging off it
   marks.lua      extmarks: gutter signs, and conversations as virt_lines
   list.lua       the merge request picker

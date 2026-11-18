@@ -657,6 +657,17 @@ local function bind(entry)
       "refetch",
     },
     {
+      k.follow,
+      function()
+        -- The description is markdown as it was typed, not drawn, so
+        -- the link is read off the line under the cursor.
+        local pos = vim.api.nvim_win_get_cursor(0)
+        local line = vim.api.nvim_get_current_line()
+        follow.go(follow.in_text(line, pos[2]), nil, entry.subject)
+      end,
+      "follow the link under the cursor",
+    },
+    {
       k.quit,
       function()
         close(entry)

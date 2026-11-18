@@ -854,6 +854,8 @@ wherever the two do the same thing:
     x               close it, or reopen it, after asking
     o               open it on GitLab
     r               refetch it
+    <C-]>           follow the link under the cursor in the description
+                    |nemeton-follow|
     q               close the tab, back to the one it was opened from
     g?              all of the above, in a float
 
@@ -1335,10 +1337,12 @@ The branch is pushed on the way out (`--push`) and nothing is confirmed
 at a prompt (`--yes`): a subprocess with no terminal is not a place to
 be asked anything.
 
-What the forge answers with is the merge request that was made, so that
-is what opens: the queue it was written from closes -- it was a list of
-what there is to review, and what there is to review now is this -- and
-the review starts on the new one, discussions and all.
+The queue it was written from closes with the window, as `<C-s>` is
+pressed rather than once the forge has answered -- it was a list of what
+there is to review, and a popup left up for the length of a push is in
+the way. A failure loses nothing: what was typed is kept for the next
+`+`. What the forge answers with is the merge request that was made,
+and the review starts on it, discussions and all.
 
 THE PEEK FLOAT                                           *nemeton-peek-window*
 
@@ -1904,10 +1908,34 @@ comment on the merge request itself opens the comments window
 read in is left first -- `:edit` from inside a float opens the file in
 the float -- so a float closes and the pane stays where it is.
 
-A comment this review cannot show is not silently nothing: a comment on
-another merge request, one in a thread resolved while resolved threads
-are not drawn |nemeton-config-comments|, or one deleted since somebody
-linked it falls back to the clipboard and says which of those it was.
+A comment this review cannot show is not silently nothing: one in a
+thread resolved while resolved threads are not drawn
+|nemeton-config-comments|, one deleted since somebody linked it, or one
+on another project falls back to the clipboard and says which of those
+it was.
+
+                                                      *nemeton-linked-window*
+A COMMENT ON ANOTHER MERGE REQUEST OF THIS PROJECT is read where the
+link is -- which is how an issue points at the argument that started on
+a review. The thread is fetched and shown in a float: every note, and
+the code it was written about, quoted out of the commit it was written
+against, which is fetched first if the clone has not got it. Nothing is
+checked out and no review opened to read it. In the float
+(`keys.linked`):
+
+    <CR>            open the review it is in -- checked out, as
+                    |:Nemeton| open does -- and go to the thread there,
+                    in a window with a file in it rather than the
+                    issue's tab
+    o               open the comment on GitLab
+    <C-]>           follow what is under the cursor
+    q, <Esc>        close
+    g?              all of the above, in a float
+
+An issue's description is shown as the markdown it was typed as, not
+drawn, so `<C-]>` there (`keys.issue.follow`) reads the link off the
+line under the cursor -- the one it is on, or the next one along -- and
+follows it the same way.
 
 AN ISSUE OF THIS PROJECT is a third, for the same reason again: it is a
 tab this editor opens |nemeton-issue-window|. `#12`, `group/proj#12`
@@ -2589,7 +2617,7 @@ KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
 `keys.issue_list`, `keys.issue`, `keys.issue_comments`, `keys.issue_create`,
-`keys.conversation`, `keys.pane`, `keys.jobs`, `keys.log`,
+`keys.conversation`, `keys.linked`, `keys.pane`, `keys.jobs`, `keys.log`,
 `keys.history`, `keys.todos`, `keys.involved`, `keys.checklist`,
 `keys.create`, `keys.compose` and `keys.prompt`, each a table of what is
 listed in |nemeton-mappings| and |nemeton-windows|. Any of them can be

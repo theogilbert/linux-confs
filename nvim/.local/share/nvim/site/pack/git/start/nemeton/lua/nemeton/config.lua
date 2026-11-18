@@ -1285,8 +1285,19 @@ return {
       close = "x", -- close it, or reopen a closed one, after asking
       browser = "o",
       refresh = "r",
+      follow = "<C-]>", -- the link under the cursor in the description
       quit = "q", -- closes the tab
       help = "g?", -- every key above, in a float
+    },
+
+    -- A comment of another merge request of this project, linked to --
+    -- from an issue, say -- and read in a float where the link is.
+    linked = {
+      open = "<CR>", -- open the review it is in, on it
+      browser = "o",
+      follow = "<C-]>",
+      quit = "q",
+      help = "g?",
     },
 
     -- Every thread on the merge request, read as conversation rather

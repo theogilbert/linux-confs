@@ -1075,7 +1075,10 @@ end
 --- the target branch you have not pulled and for a push since rebased
 --- away alike. Quietly: what depends on it is a quotation of the code a
 --- thread was written against, and the thread is drawn without one.
-function M.fetch_commit(root, sha, cb)
+---
+--- `mr` is the merge request whose remote to fetch from, where that is
+--- not the open review's: a comment linked to from an issue.
+function M.fetch_commit(root, sha, cb, mr)
   if fetching[sha] then
     cb(false)
     return
@@ -1086,7 +1089,7 @@ function M.fetch_commit(root, sha, cb)
       cb(false)
       return
     end
-    remote_for(root, M.current, function(remote)
+    remote_for(root, mr or M.current, function(remote)
       if not remote then
         cb(false)
         return

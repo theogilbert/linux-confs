@@ -616,6 +616,14 @@ local function submit()
   local back = win.came_from()
   M.close()
   back()
+  -- The queue it was written from goes with it, now and not once the
+  -- forge has answered: it is a list of what there is to review, out of
+  -- date the moment this lands and not what is being looked at any
+  -- more -- writing a merge request is the last thing you do to a
+  -- branch, and a popup left up for the length of a push is a popup
+  -- in the way of everything else for no reason. A failure loses
+  -- nothing by it: what was typed is kept, and `+` brings it back.
+  require("nemeton.list").close()
   session.notify("opening a merge request for " .. branch .. "…")
   glab.mr_create(root, {
     title = f.title,
@@ -634,13 +642,8 @@ local function submit()
     end
     kept[branch] = nil
     session.notify(url)
-    -- The queue was a list of what there is to review, and it is out of
-    -- date the moment this lands -- but it is also not what is being
-    -- looked at any more. What was just opened is: writing a merge
-    -- request is the last thing you do to a branch, and reading what
-    -- came of it is the next. So the popup goes, and the review opens
+    -- ...and reading what came of it is the next, so the review opens
     -- on the merge request that was made.
-    require("nemeton.list").close()
     local iid = tonumber(url:match("/merge_requests/(%d+)"))
     if iid then
       require("nemeton").open(iid)

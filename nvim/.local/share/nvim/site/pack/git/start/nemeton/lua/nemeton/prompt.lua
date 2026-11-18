@@ -223,6 +223,23 @@ function M.open(opts, cb)
     -- completion engine has something to point it at.
     vim.bo[M.buf].omnifunc = opts.omnifunc
   end
+  if opts.items then
+    -- The menu here is this window's own, and a completion engine that
+    -- also attaches to it maps `<CR>` and `<Tab>` over the ones below:
+    -- nvim-cmp's `<CR>`, finding no menu of its own, hands the key to
+    -- the editor's -- which takes the name chosen and nothing else, so
+    -- that the next press is read as half a name typed and puts down a
+    -- comma rather than answering. So the engines are told this buffer
+    -- is not theirs, in each one's own spelling: `b:completion` is
+    -- blink.cmp's (and the convention configs copy), the other mini's,
+    -- and nvim-cmp's is a setting of the buffer it is current in.
+    vim.b[M.buf].completion = false
+    vim.b[M.buf].minicompletion_disable = true
+    local cmp = package.loaded["cmp"]
+    if cmp and cmp.setup and cmp.setup.buffer then
+      pcall(cmp.setup.buffer, { enabled = false })
+    end
+  end
   if opts.omnifunc or opts.items then
     -- Buffer-local where the editor can hold it there (0.11 and newer),
     -- and globally where it cannot -- put back by `shut`. `noselect`

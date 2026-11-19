@@ -713,6 +713,14 @@ short to resemble the old line, and re-matched to the argument row it drew
 `f(` as lost. An anchored row difft put nothing on, whose trimmed text is still
 inside the old line, is left where difft put it (`split_from`).
 
+Nor is a line reflowed over many rows re-fitted at all. A condition broken one
+clause per row has no single row it became, and the row that resembles it most
+is only its longest clause; measured against that, every other clause came back
+as removed. The re-fit stands only where its row resembles the old line more
+than the whole hunk does, both compared with whitespace collapsed — line breaks
+and indentation are what a reflow changes, and the indentation a nested line
+shares with its clause is what lifted that clause over the threshold.
+
 And wherever the before-image lands, it is drawn above where the old line now
 *begins*: if the row above its partner is in the hunk, has no partner but this
 line, and is how the old line starts, it goes above that, as far up as that

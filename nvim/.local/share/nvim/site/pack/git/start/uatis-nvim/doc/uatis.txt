@@ -249,6 +249,8 @@ IN THE OLD-REVISION WINDOW                                *uatis-mappings-old*
     ]c  [c          next / previous change, both windows landing on it
     ]f  [f          next / previous file; it opens in your window and
                     the cursor goes on in the new old-revision window
+    <leader>gf      toggle the file list; a file picked there opens in
+                    your window, never over the old revision
 <
 IN A BLAMED BUFFER                                      *uatis-mappings-blame*
 >

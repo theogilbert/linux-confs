@@ -804,6 +804,19 @@ local function setup_keymaps(view, buf)
     "Uatis - Next [C]ommit")
   map(kv.commit_prev, function() require("uatis.view").step_commit(-1) end,
     "Uatis - Previous [C]ommit")
+  -- ...and the list. Opened from your window, not this one: the list
+  -- takes the window it opened from as the one to put a picked file in
+  -- (`code_win`), and a file picked into this window replaced the old
+  -- revision it was showing.
+  map(kv.files, function()
+    local pane = require("uatis.pane")
+    local p = pane.get()
+    local open = p and p.list_win and vim.api.nvim_win_is_valid(p.list_win)
+    if not open and view.win and vim.api.nvim_win_is_valid(view.win) then
+      vim.api.nvim_set_current_win(view.win)
+    end
+    pane.toggle()
+  end, "Uatis - Toggle changed [f]ile list")
   -- ...and so is the walk through the changes and the files. A change
   -- in this file is landed on here, cursor and all (`land`, through the
   -- view's own jump); one in another file is opened next door, and the

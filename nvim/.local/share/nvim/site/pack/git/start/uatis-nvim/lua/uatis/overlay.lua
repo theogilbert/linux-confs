@@ -2548,6 +2548,48 @@ function M.render(bufnr, win, result, old_lines, opts)
       end
     end
 
+    -- ...unless the hunk is the old code broken over more rows. A
+    -- condition split one clause per line has no single row it became:
+    -- every row is a piece of it, and the one that resembles it most is
+    -- just the longest piece. Re-measured against that piece, the rest
+    -- of the line -- the clauses now on the rows above and below -- came
+    -- back as removed, when difftastic had rightly reported one word.
+    -- So the re-fit has to beat the reading that the whole block is the
+    -- old text reflowed: both compared with whitespace collapsed, since
+    -- the line breaks and the indentation are what a reflow changes,
+    -- and leading indentation shared with a row is what lifted a nested
+    -- copy of this line over `word_similarity` when the same edit at the
+    -- top level stayed under it. An inserted line taking a changed one's
+    -- partner, which the re-fit is for, joins as two unrelated lines and
+    -- loses to the row that really is the old line's new version.
+    if fitted then
+      local function flat(from, count, get)
+        local parts = {}
+        for r = from, from + count - 1 do
+          table.insert(parts, get(r))
+        end
+        return vim.trim(table.concat(parts, " "):gsub("%s+", " "))
+      end
+      local old_flat = flat(hunk.start_a, hunk.count_a, function(r)
+        return old_lines[r] or ""
+      end)
+      local new_flat = flat(hunk.start_b, hunk.count_b, function(r)
+        return line_text(r - 1)
+      end)
+      if #old_flat <= 400 and #new_flat <= 400 then
+        local whole = diff.similarity(old_flat, new_flat)
+        local best = 0
+        for old_row, at in pairs(fitted) do
+          local a = vim.trim((old_lines[old_row] or ""):gsub("%s+", " "))
+          local b = vim.trim(line_text(at - 1):gsub("%s+", " "))
+          best = math.max(best, diff.similarity(a, b))
+        end
+        if whole >= best then
+          fitted = nil
+        end
+      end
+    end
+
     -- What each re-matched row actually lost, measured against the row
     -- it was matched to.
     --

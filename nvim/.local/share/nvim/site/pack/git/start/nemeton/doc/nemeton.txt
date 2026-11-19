@@ -120,7 +120,10 @@ A review, end to end:
 :Nemeton list           The same thing, spelled out.
 
 :Nemeton open {iid}     Check merge request {iid} out with `glab mr
-                        checkout` and load its threads.
+                        checkout` and load its threads. The review
+                        already open is left as it is -- no checkout,
+                        the pane where it was -- and its threads are
+                        refetched behind it.
 
                         Without {iid} it asks for one, completing over
                         what is open -- by number and by title, since

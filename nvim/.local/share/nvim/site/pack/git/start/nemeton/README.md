@@ -112,7 +112,7 @@ rest.
 
 | | |
 |---|---|
-| `:Nemeton open 42` | check !42 out and load its threads |
+| `:Nemeton open 42` | check !42 out and load its threads; if !42 is already open, refetch it |
 | `:Nemeton open` | ask which, completing over what is open by number and by title |
 | `:Nemeton comments` | markers on/off |
 | `:Nemeton expand` | the conversations themselves: one at a time in a pane beside the code, or all of them under their lines |

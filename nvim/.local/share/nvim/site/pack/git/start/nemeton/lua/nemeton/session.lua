@@ -1228,6 +1228,20 @@ function M.open(iid, opts)
     return
   end
 
+  -- The review already open is not opened again: that was a checkout
+  -- of the branch it is on and a session built from nothing over the
+  -- one in front of you, folding the pane and losing the place. What
+  -- asking for it again can still mean is "is this current", so it is
+  -- refetched behind what is drawn.
+  local open = M.current
+  if open and open.iid == tonumber(iid) and open.root == root then
+    M.refresh()
+    if opts.on_open then
+      opts.on_open()
+    end
+    return
+  end
+
   local mr, checked_out, failed = nil, opts.checkout == false, false
   -- What glab said when it could not check the branch out, kept until
   -- the merge request has arrived and can say whether that is the
@@ -1348,6 +1362,12 @@ function M.open(iid, opts)
     -- the one that was asked for.
     if quiet and M.current then
       return fail("another review opened first")
+    end
+    -- A review opened over another starts folded, and the pane is the
+    -- last one's conversation: left up, it is a pane on the screen in a
+    -- session that says "signs", and the key that closes it opens it.
+    if M.current and M.current ~= staged then
+      require("nemeton.pane").close()
     end
     M.current = staged
     M.refresh_changes()
@@ -1869,18 +1889,16 @@ function M.toggle_expanded()
   if M.current.mode == "expanded" and pane.switch() then
     return M.current.mode
   end
-  -- Expanded with no pane on the screen is a pane that went away
-  -- without saying so, and the key is being pressed to get it back.
-  if M.current.mode == "expanded" and not pane.is_open() then
-    pane.open()
-    M.redraw_all()
-    return M.current.mode
-  end
-  M.current.mode = M.current.mode == "expanded" and "signs" or "expanded"
-  if M.current.mode == "expanded" then
-    pane.open()
-  else
+  -- Which way it goes is read off the screen, not off the mode: the
+  -- mode is a record of the pane, and where the two disagree -- a pane
+  -- that went away without saying so, or one left up by something that
+  -- forgot it -- the key is pressed at what is in front of you.
+  if pane.is_open() then
     pane.close()
+    M.current.mode = "signs"
+  else
+    pane.open()
+    M.current.mode = "expanded"
   end
   M.redraw_all()
   return M.current.mode

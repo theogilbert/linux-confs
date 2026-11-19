@@ -832,12 +832,32 @@ function M.took(mr, data)
   end
 end
 
+--- That the review in front of you was seen as it is drawn: the head
+--- it shows and the comments it holds, for the queue to tell a push or
+--- a comment since by (`seen.visit`). What is drawn rather than what
+--- the forge has: a push that landed while the review was open and was
+--- never fetched into it has not been seen.
+local function visited(review)
+  local notes = 0
+  for _, d in ipairs(review.raw and review.raw.discussions or {}) do
+    for _, n in ipairs(d.notes or {}) do
+      if not n.system then
+        notes = notes + 1
+      end
+    end
+  end
+  local sha = review.diff_refs and review.diff_refs.head_sha
+    or (review.raw and review.raw.mr or {}).sha
+  local have = review.raw and review.raw.discussions ~= nil
+  require("nemeton.seen").visit(review.root, review.iid, sha, have and notes or nil)
+end
+
 --- The open review, written down for the next editor started on its
 --- branch (`snapshot.lua`).
 function M.keep()
   if M.current then
     require("nemeton.snapshot").write(M.current)
-    require("nemeton.seen").visit(M.current.root, M.current.iid)
+    visited(M.current)
   end
 end
 
@@ -1339,7 +1359,7 @@ function M.open(iid, opts)
       ("!%d %s — %d inline thread%s"):format(mr.iid, mr.title or "", n, n == 1 and "" or "s")
     )
     require("nemeton.seen").note(root, mr)
-    require("nemeton.seen").visit(root, mr.iid)
+    visited(staged)
     if not shown then
       M.keep()
     end
@@ -1799,7 +1819,7 @@ function M.close()
   if not M.current then
     return
   end
-  require("nemeton.seen").visit(M.current.root, M.current.iid)
+  visited(M.current)
   M.current = nil
   blobs, fetching = {}, {}
   require("nemeton.pane").close()

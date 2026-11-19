@@ -451,9 +451,12 @@ that it is fetching, fills in when the queue lands, and each row's CI,
 approvals and size arrive afterwards and are drawn where the row
 stands. A `●` beside the number is an open merge request that has moved
 -- a comment, a push, a label -- since you last had its review open
-here: the time that review opened, closed, or Neovim quit with it open
-is written down in `merge-requests.json` |nemeton-open| and the row's
-`updated_at` compared with it. None on one never opened, on a merged or
+here: what that review showed -- its head commit, its count of
+comments -- and the time it opened, closed, or Neovim quit with it open
+are written down in `merge-requests.json` |nemeton-open|, and the row's
+`sha`, `user_notes_count` and `updated_at` compared with them. Not
+`updated_at` alone: GitLab does not move it on a push, and on a
+comment only now and then. None on one never opened, on a merged or
 closed one, or on the review open now. `list.updated` is the glyph,
 `false` for no column. `<CR>`
 does not close it either -- it says which merge request it is opening

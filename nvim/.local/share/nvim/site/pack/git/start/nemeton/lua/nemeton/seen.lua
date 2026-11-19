@@ -116,6 +116,8 @@ local function load()
             branch = type(one.branch) == "string" and one.branch or nil,
             state = type(one.state) == "string" and one.state or nil,
             visited = type(one.visited) == "string" and one.visited or nil,
+            seen_sha = type(one.seen_sha) == "string" and one.seen_sha or nil,
+            seen_notes = type(one.seen_notes) == "number" and one.seen_notes or nil,
           })
         end
       end
@@ -135,6 +137,14 @@ local function row(mr)
     branch = mr.source_branch,
     state = mr.state,
   }
+end
+
+--- What `before` says of your last visit, carried onto `now`: the
+--- forge's answer is the rest of a row, and knows nothing of this.
+local function keep_visit(now, before)
+  if before then
+    now.visited, now.seen_sha, now.seen_notes = before.visited, before.seen_sha, before.seen_notes
+  end
 end
 
 --- The reviews kept of what `root` no longer has open (`snapshot.lua`):
@@ -201,13 +211,13 @@ function M.set(root, list)
   -- which only a review opening writes (`M.visit`).
   local visited = {}
   for _, one in ipairs(all[root] or {}) do
-    visited[one.iid] = one.visited
+    visited[one.iid] = one
   end
   local rows = {}
   for _, mr in ipairs(list) do
     if type(mr) == "table" and mr.iid then
       local one = row(mr)
-      one.visited = visited[mr.iid]
+      keep_visit(one, visited[mr.iid])
       table.insert(rows, one)
     end
   end
@@ -257,7 +267,7 @@ function M.note(root, mr)
   for i, one in ipairs(rows) do
     if one.iid == mr.iid then
       rows[i] = row(mr)
-      rows[i].visited = one.visited
+      keep_visit(rows[i], one)
       all[root] = rows
       save()
       return
@@ -272,31 +282,44 @@ end
 --- queue's mark for a merge request that moved since is measured
 --- against (`M.visited`).
 ---
+--- Three things and not one, because GitLab's `updated_at` is the time
+--- the merge request's own fields last changed and nothing else: a
+--- comment does not move it, and neither does a push (both checked on
+--- a live forge). So `seen` also holds the head commit and the number
+--- of comments that were in front of you -- `sha` and `user_notes_count`
+--- are in every row of the listing, which is what the queue holds them
+--- against -- and the time is for the rest: a title, a label, an
+--- approval, a reviewer.
+---
 --- The editor's clock rather than the merge request's own `updated_at`,
---- because what you did in the review moves that too -- every comment
---- posted -- and it is written when the review opens, when it closes
---- and when the editor quits, so that what you did there is before it.
---- UTC and in GitLab's own spelling, to the second, so the two compare
---- as strings.
-function M.visit(root, iid)
+--- because what you did in the review moves that too, and it is written
+--- when the review opens, when it closes and when the editor quits, so
+--- that what you did there is before it. UTC and in GitLab's own
+--- spelling, to the second, so the two compare as strings.
+function M.visit(root, iid, sha, notes)
   if not (config.list.remember and root and iid) then
     return
   end
   for _, one in ipairs(load()[root] or {}) do
     if one.iid == iid then
       one.visited = os.date("!%Y-%m-%dT%H:%M:%S")
+      one.seen_sha = type(sha) == "string" and sha or one.seen_sha
+      one.seen_notes = type(notes) == "number" and notes or one.seen_notes
       save()
       return
     end
   end
 end
 
---- When each merge request of `root` was last visited, by number.
+--- What each merge request of `root` was when last visited, by
+--- number: `{ at, sha, notes }`.
 function M.visited(root)
   local out = {}
   if config.list.remember and root then
     for _, one in ipairs(load()[root] or {}) do
-      out[one.iid] = one.visited
+      if one.visited then
+        out[one.iid] = { at = one.visited, sha = one.seen_sha, notes = one.seen_notes }
+      end
     end
   end
   return out

@@ -336,9 +336,11 @@ count, `✓2/2` or `◌0/1`; who has approved it is a name, and names are
 `<leader>md`.
 
 A `●` beside the number is an open merge request that has moved — a
-comment, a push, a label — since you last had its review open here,
-measured against when that review opened, closed or Neovim quit with
-it open. Nothing is marked on one you have never opened, on a merged
+comment, a push, a label — since you last had its review open here:
+more comments or another head commit than that review showed, or a
+later `updated_at` than when it opened, closed or Neovim quit with it
+open. Not `updated_at` alone, which GitLab does not move on a push
+and moves on a comment only now and then. Nothing is marked on one you have never opened, on a merged
 or closed one, or on the one open now. It is written down in the same
 `merge-requests.json`; `list.updated` is the glyph (`NemetonUpdated`),
 and `false` drops the column.

@@ -170,24 +170,35 @@ local function live(mr)
   return (mr.state or "opened") == "opened"
 end
 
--- iid -> when you last had its review open (`seen.visit`), read as the
--- rows are drawn.
+-- iid -> what it was when you last had its review open (`seen.visit`),
+-- read as the rows are drawn.
 local visits = {}
 
---- Whether it has moved since you last had its review open: a comment,
---- a push, a label. Only an open one -- a merged merge request moving
+--- Whether it has moved since you last had its review open: a push, a
+--- comment, a label. Only an open one -- a merged merge request moving
 --- is not a thing anybody is waiting on -- and only one you have
 --- opened here, since "new" of a merge request never looked at is
 --- every one of them. Not the one open now, which you are looking at.
+---
+--- A push and a comment are told by the head and the count of comments
+--- and not by `updated_at`, which neither of them moves; see
+--- `seen.visit`. More comments rather than other ones: one deleted is
+--- not news, and an edit is not counted at all.
 local function moved(mr)
-  local at = visits[mr.iid]
-  if not (live(mr) and at and type(mr.updated_at) == "string") then
+  local was = visits[mr.iid]
+  if not (live(mr) and was) then
     return false
   end
   if session.current and session.current.iid == mr.iid then
     return false
   end
-  return mr.updated_at:sub(1, 19) > at:sub(1, 19)
+  if was.sha and type(mr.sha) == "string" and mr.sha ~= was.sha then
+    return true
+  end
+  if was.notes and type(mr.user_notes_count) == "number" and mr.user_notes_count > was.notes then
+    return true
+  end
+  return type(mr.updated_at) == "string" and mr.updated_at:sub(1, 19) > was.at:sub(1, 19)
 end
 
 --- The rows, and the highlights to paint on them.

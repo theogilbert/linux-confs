@@ -160,6 +160,34 @@ vim.api.nvim_create_autocmd("User", {
 -- Dotfiles hidden by default (toggle with H).
 -- Git-ignored files are shown (toggle with I), their names colored (see highlights.lua).
 require("nvim-tree").setup({
+    -- Default mappings, plus fold-style zo/zc/zO/zC/zR/zM on directories.
+    on_attach = function(bufnr)
+        local api = require("nvim-tree.api")
+        api.config.mappings.default_on_attach(bufnr)
+
+        local function map(lhs, fn, desc)
+            vim.keymap.set("n", lhs, fn, { buffer = bufnr, nowait = true, silent = true, desc = "nvim-tree: " .. desc })
+        end
+        local function is_dir(node) return node and node.nodes ~= nil end
+
+        map("zo", function()
+            local node = api.tree.get_node_under_cursor()
+            if is_dir(node) and not node.open then api.node.open.edit(node) end
+        end, "Open directory")
+        map("zc", function()
+            local node = api.tree.get_node_under_cursor()
+            if not node or node.name == ".." then return end -- root line: don't cd up
+            if is_dir(node) and node.open then
+                api.node.open.edit(node)
+            else
+                api.node.navigate.parent_close(node)
+            end
+        end, "Close directory")
+        map("zO", function() api.node.expand() end, "Open directory recursively")
+        map("zC", function() api.node.collapse() end, "Close directory recursively")
+        map("zR", function() api.tree.expand_all() end, "Open all")
+        map("zM", function() api.tree.collapse_all() end, "Close all")
+    end,
     filters = { dotfiles = true, git_ignored = false },
     renderer = {
         highlight_git = "name",

@@ -108,7 +108,7 @@ A review, end to end:
      review. Over a visual selection it comments on all of it;
      `<leader>ms` there suggests a change instead.
   5. `<leader>md` -- the merge request itself: CI, approvals, size,
-     how much conversation. `a` approves it from there.
+     how much conversation. `x` approves it from there.
   6. `<leader>md` then `s` -- send everything you kept, as one review.
 
 ==============================================================================
@@ -173,8 +173,12 @@ A review, end to end:
 
 :Nemeton reply          A reply into the thread under the cursor.
 
-:Nemeton edit           Rewrite one of your comments in the thread under
-                        the cursor.
+:Nemeton edit           Rewrite a comment in the thread under the
+                        cursor. Somebody else's -- which a maintainer
+                        may rewrite -- is asked about first, Cancel
+                        the first answer: the forge keeps no copy of
+                        the words replaced. So is the description of a
+                        merge request or an issue somebody else opened.
 
 :Nemeton delete         Delete one, after asking.
 
@@ -388,8 +392,8 @@ once in a review:
     resolve = false     `x` there
     edit = false        `e` there
     delete = false      `d` there
-    notes = false       `c` on <leader>md -- every comment on it
-    approve = false     `a` there
+    notes = false       `t` on <leader>md -- every thread on it
+    approve = false     `x` there
     jobs = false        `p` there
     publish = false     `s` there
     threads = false     |:Nemeton| `threads`
@@ -612,12 +616,14 @@ it is in: CI, approvals, how big the change is, how much conversation
 there is, how many open threads somebody else spoke in last, and how
 much of it is yours and unsent.
 
-    a               approve it, or take the approval back
+    x               approve it, or take the approval back
     s               send every comment kept unsent
-    c               every thread on it, whole
+    t               every thread on it, whole
+    a               everything that has happened to it
+                    |nemeton-activity-window|
     p               what CI did, job by job
     m               merge it, after asking; again to take that back
-    x               close it, or reopen it, after asking
+    c               close it, or reopen it, after asking
     e               change its title, draft, target, labels,
                     reviewers or description |nemeton-create-window|
     o               open it on GitLab
@@ -625,13 +631,16 @@ much of it is yours and unsent.
     q               close
     g?              all of the above, in a float
 
-`c`, `p` and `e` open their window in place of this one, and `q` in it
+`t`, `a`, `p` and `e` open their window in place of this one, and `q` in it
 -- or the window closed either way -- comes back here; `q` here is
 the one that goes back to the file.
 
-Which way `a` goes is asked of the forge when it is pressed, not read
+`x` approves as it resolves a thread. Which way it goes is asked of the forge when it is pressed, not read
 off what this window last showed: an approval withdrawn on the web page,
 or reset by a push, is given back rather than withdrawn again.
+Approving asks first, the way `m` and `c` do, with Cancel the first
+answer; taking the approval back does not, and neither does the typed
+`:Nemeton approve`.
 
 `m` merges when the pipeline succeeds: a pipeline still running is
 waited for, and one that is over -- or none at all -- is no reason to
@@ -639,7 +648,7 @@ wait, so the merge happens on the answer. The question says which.
 While it waits the window says "merges when the pipeline succeeds" and
 `m` takes it back. What is merged is the head that was reviewed: the
 sha goes with the request, and a branch pushed to since is refused by
-the forge rather than merged with commits nobody read. `x` closes it,
+the forge rather than merged with commits nobody read. `c` closes it,
 or reopens one that is closed. Both ask first, through the same
 question a delete asks, with Cancel the first answer.
 
@@ -1201,6 +1210,32 @@ a single line has no lines above it to put a rail on, and on the anchor
 line the bubble is drawn instead. The band says it in all three cases,
 and it says it with a sign column that is off. `comments.reading_ground
 = false` leaves the gutter to do what it can.
+
+THE ACTIVITY                                         *nemeton-activity-window*
+
+`a` on the window above. Everything that has happened to the merge
+request, newest first: comments and replies -- where, and the first
+line of what was said -- comments rewritten and by whom, pushes with
+the commits each brought, the description and the title changed,
+labels added and removed, approvals, reviewers and assignees, closes,
+reopens and the merge.
+
+    <CR>            go to the comment under the cursor: beside the
+                    code, or in the pane for one on no line
+    o               open it on GitLab
+    r               refetch
+    q               back to the merge request's window
+    g?              all of the above, in a float
+
+The forge keeps this in four places, and the window asks all of them
+as it opens: the discussions (refetched, which redraws the review
+too), where a push, a description changed and an approval are system
+notes; the label and state events, which GitLab keeps out of the notes;
+and GraphQL, for which comments were rewritten -- REST has no field
+for it, and a note's `updated_at` also moves when its thread is
+resolved or a push carries its line forward. The note GitLab adds to
+every thread whose line a push touched is left out: the push is
+listed once, with its commits.
 
 THE PIPELINE                                             *nemeton-jobs-window*
 
@@ -2623,7 +2658,8 @@ KEYS                                                     *nemeton-config-keys*
 
 `keys.global`, `keys.session`, `keys.list`, `keys.notes`, `keys.detail`,
 `keys.issue_list`, `keys.issue`, `keys.issue_comments`, `keys.issue_create`,
-`keys.conversation`, `keys.linked`, `keys.pane`, `keys.jobs`, `keys.log`,
+`keys.conversation`, `keys.linked`, `keys.pane`, `keys.activity`,
+`keys.jobs`, `keys.log`,
 `keys.history`, `keys.todos`, `keys.involved`, `keys.checklist`,
 `keys.create`, `keys.compose` and `keys.prompt`, each a table of what is
 listed in |nemeton-mappings| and |nemeton-windows|. Any of them can be

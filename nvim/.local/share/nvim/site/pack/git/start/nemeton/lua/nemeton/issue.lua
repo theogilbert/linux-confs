@@ -365,10 +365,23 @@ end
 
 --- The description rewritten in the composer, under the issue. Sent,
 --- as the merge request's is: there is no unsent edit of one.
-function M.describe(entry)
+---
+--- Somebody else's is asked about first (`edit.if_theirs`); `asked` is
+--- that question answered.
+function M.describe(entry, asked)
   entry = entry or M.here()
   if not (entry and entry.view) then
     return
+  end
+  if not asked then
+    return require("nemeton.edit").if_theirs(
+      entry.subject,
+      entry.view.author,
+      "This description",
+      function()
+        M.describe(entry, true)
+      end
+    )
   end
   local was = vim.trim(entry.view.description or "")
   require("nemeton.compose").open({

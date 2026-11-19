@@ -1098,8 +1098,8 @@ return {
       -- or a `:Nemeton` verb typed once in a review, which is about as
       -- often as any of them is wanted. Give one a string to have it on
       -- a key as well; nothing else has to change.
-      notes = false, -- `c` on <leader>md -- every thread, whole
-      approve = false, -- `a` there -- approve it, or take it back
+      notes = false, -- `t` on <leader>md -- every thread, whole
+      approve = false, -- `x` there -- approve it, or take it back
       jobs = false, -- `p` there -- what CI did, job by job
       publish = false, -- `s` there -- send every comment kept unsent
       threads = false, -- :Nemeton threads -- every thread, as a quickfix list
@@ -1202,19 +1202,24 @@ return {
     -- and searched like any other, and a key here that moves the cursor
     -- somewhere else instead is a window you cannot read.
     detail = {
-      approve = "a", -- approve it, or take the approval back
+      -- `x`, as on a thread: the key that crosses something off, and
+      -- an approval is the merge request crossed off your list.
+      approve = "x", -- approve it, or take the approval back
       -- The other verdict, and the one the whole review has been
-      -- written towards: sending it. Beside `a` because they are the
-      -- two things you come to this window to *do*, and a review is
-      -- approved and sent in the same breath as often as not.
+      -- written towards: sending it.
       publish = "s", -- send every comment kept unsent
-      comments = "c", -- every thread on it, whole
+      -- `t` for threads, which is a motion given up: asked for, and
+      -- the one motion a window of prose can most easily do without.
+      comments = "t", -- every thread on it, whole
+      -- Everything that has happened to it, newest first: what changed
+      -- since you last looked, in one list rather than four places.
+      activity = "a", -- comments, edits, pushes, labels, approvals, state
       pipeline = "p", -- what CI did, job by job
       -- The two that end it, each asked about before it is done: a
       -- merge cannot be taken back, and a close is a message to
       -- everybody watching the merge request.
       merge = "m", -- merge when the pipeline succeeds, or take that back
-      close = "x", -- close it, or reopen a closed one
+      close = "c", -- close it, or reopen a closed one
       -- What it says it is, once it has been said: the window it was
       -- opened with, filled in, and one change sent from it.
       edit = "e", -- its title, draft, target, labels, reviewers, description
@@ -1222,6 +1227,17 @@ return {
       refresh = "r",
       quit = "q",
       help = "g?", -- every key above, in a float
+    },
+
+    -- The activity window, from `a` on the merge request's own.
+    activity = {
+      -- To the comment under the cursor: beside the code for one on a
+      -- line, in the pane for one on none.
+      code = "<CR>",
+      browser = "o", -- the event under the cursor on GitLab
+      refresh = "r",
+      quit = "q",
+      help = "g?",
     },
 
     -- The project's issues, in a float: the merge request queue's keys

@@ -121,11 +121,8 @@ end
 --- once the forge has been asked again: the comments window stays open
 --- over the list it just changed, and a list that still has the note
 --- in it is a window that has to be refetched by hand to be believed.
-local function rewrite(thread, note, after)
+local function write(thread, note, after)
   local mr = on(thread)
-  if in_flight(thread, note) then
-    return
-  end
   local suggest, lang = code_of(thread)
   compose.open({
     suggest = suggest,
@@ -170,6 +167,20 @@ local function rewrite(thread, note, after)
   })
 end
 
+--- An unsent comment is yours by definition: GitLab shows nobody else
+--- a draft.
+local function rewrite(thread, note, after)
+  if in_flight(thread, note) then
+    return
+  end
+  if note.draft or thread.draft then
+    return write(thread, note, after)
+  end
+  M.if_theirs(on(thread), note.author, "This comment", function()
+    write(thread, note, after)
+  end)
+end
+
 --- The confirmation, as one replaceable function: deleting a comment
 --- is the only thing in this plugin that cannot be undone -- GitLab
 --- keeps no copy and neither do we -- and the suite has to be able to
@@ -188,6 +199,44 @@ function M.confirm(question, done, verb)
   verb = verb or "Delete"
   vim.ui.select({ "Cancel", verb }, { prompt = question }, function(choice)
     done(choice == verb)
+  end)
+end
+
+--- Runs `go` once it is settled that what is about to be rewritten is
+--- yours to rewrite, asking first where it is somebody else's.
+---
+--- Asked rather than refused: a maintainer may edit anybody's comment
+--- and anybody's description, and fixing a broken link in one is a
+--- thing people do. But the forge keeps no history of a comment, so
+--- the words replaced are gone, and the composer opened on somebody
+--- else's text reads exactly like one opened on your own. Asked before
+--- the composer opens rather than at the send, so nothing is typed
+--- into a window you were about to back out of.
+---
+--- `subject` is the merge request or issue it is on: its `root`, and
+--- its `me` where the review already knows whose token this is --
+--- otherwise `glab.me`, asked once per repository. Where the forge will
+--- not say, or the author is not known, nothing is asked: a question
+--- that comes up for every edit teaches you to click through it.
+function M.if_theirs(subject, author, what, go)
+  if not author or author == "you" or author == "?" then
+    return go()
+  end
+  local function decide(me)
+    if not me or me == author then
+      return go()
+    end
+    M.confirm(("%s was written by %s: overwrite their words?"):format(what, author), function(yes)
+      if yes then
+        go()
+      end
+    end, "Overwrite")
+  end
+  if subject.me then
+    return decide(subject.me)
+  end
+  glab.me(subject.root, function(who)
+    decide(who and who.username)
   end)
 end
 
@@ -567,10 +616,9 @@ function M.delete(thread, after, note)
 end
 
 --- Edits one note of `thread`, asking which when the caller does not
---- say and the thread has more than one. Not filtered to your own: this
---- plugin does not know who you are without another call, and GitLab
---- already refuses the ones that are not yours -- with a message that
---- says so.
+--- say and the thread has more than one. Not filtered to your own: a
+--- maintainer may edit anybody's, and a comment by somebody else is
+--- asked about first (`M.if_theirs`) rather than left out of the list.
 function M.thread(thread, after, note)
   if note then
     return rewrite(thread, note, after)

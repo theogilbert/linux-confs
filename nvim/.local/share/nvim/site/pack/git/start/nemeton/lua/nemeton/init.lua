@@ -867,14 +867,34 @@ end)
 --- the screen here, and a toggle that trusted it would withdraw an
 --- approval that is not there instead of giving the one you meant to.
 --- Where the forge will not say, what was last heard decides.
+---
+--- The key asks before it approves, as `m` asks before it merges: an
+--- approval is a notification to the author and, on a project that
+--- needs one, the thing that lets it merge, and `a` is one stray
+--- keypress away in a window of prose. Taking it back is not asked
+--- about -- it undoes something rather than doing it -- and the typed
+--- `:Nemeton approve` has been asked already, by being typed.
 M.approve = with_session(function(want, cb)
   local mr = session.current
   if want == nil then
     session.refresh_approvals(function()
-      if session.current == mr then
-        local approval = require("nemeton.detail").approval(mr.approvals)
-        M.approve(not (approval and approval.mine), cb)
+      if session.current ~= mr then
+        return
       end
+      local approval = require("nemeton.detail").approval(mr.approvals)
+      if approval and approval.mine then
+        M.approve(false, cb)
+        return
+      end
+      require("nemeton.edit").confirm(
+        ("Approve !%d: %s"):format(mr.iid, mr.title or ""),
+        function(yes)
+          if yes and session.current == mr then
+            M.approve(true, cb)
+          end
+        end,
+        "Approve"
+      )
     end)
     return
   end

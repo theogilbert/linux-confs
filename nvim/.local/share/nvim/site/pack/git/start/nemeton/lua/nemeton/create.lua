@@ -422,6 +422,17 @@ function edit.draft()
 end
 
 function edit.description()
+  -- Somebody else's merge request is asked about first, as a comment
+  -- of theirs is: the description is the author's account of the
+  -- change, and the forge's own editor keeps no copy of the words
+  -- replaced either.
+  local mr = state.mr
+  if mr and not state.theirs_ok then
+    return require("nemeton.edit").if_theirs(mr, mr.author, "This description", function()
+      state.theirs_ok = true
+      edit.description()
+    end)
+  end
   require("nemeton.compose").open({
     title = state.mr and ("!%d  description"):format(state.mr.iid)
       or ("description  ·  !%s"):format(state.form.title ~= "" and state.form.title or "new"),

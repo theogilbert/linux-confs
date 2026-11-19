@@ -122,7 +122,7 @@ rest.
 | `:Nemeton create` | a window for a merge request of your own, for the branch you are on |
 | `:Nemeton comment` | a new thread on this line |
 | `:Nemeton reply` | a reply into the thread under the cursor |
-| `:Nemeton edit` | rewrite a comment in the thread under the cursor |
+| `:Nemeton edit` | rewrite a comment in the thread under the cursor (asks first if it is somebody else's, as does a description) |
 | `:Nemeton delete` | delete one, after asking |
 | `:Nemeton suggest` | suggest a change to the line under the cursor |
 | `:Nemeton jobs` | what CI did, job by job |
@@ -468,15 +468,16 @@ the buffer again.
 it is for, how big it is, what CI made of it, who has approved it, how
 much conversation is on it, how many open threads somebody else spoke
 in last, and how much of it is yours and unsent.
-In it: `a` approves it or takes the approval back — whichever the forge,
-asked at the keypress, says it is not, so an approval withdrawn on the
-web page is given back rather than withdrawn again — `s` sends every
-comment you have kept unsent, `c` opens every comment on it, `p` the
-pipeline's jobs, `m` merges it, `x` closes it (or reopens a closed one),
-`e` changes it, `o` opens it in a browser, `r` refetches, `q` closes.
-The comments, the jobs and the form `c`, `p` and `e` open take
-its place, and `q` in them comes back to it. `m` and `x` ask
-first, Cancel being the first answer. A merge waits for a pipeline
+In it: `x` approves it or takes the approval back, as it resolves a
+thread — whichever the forge, asked at the keypress, says it is not, so
+an approval withdrawn on the web page is given back rather than
+withdrawn again — `s` sends every comment you have kept unsent, `t`
+opens every thread on it, `a` its activity, `p` the pipeline's jobs, `m` merges it, `c`
+closes it (or reopens a closed one), `e` changes it, `o` opens it in a
+browser, `r` refetches, `q` closes. The threads, the jobs and the form
+`t`, `p` and `e` open take its place, and `q` in them comes back to it.
+`m`, `c` and `x` (approving, not taking back) ask first, Cancel being
+the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:
 a branch pushed to since is refused by the forge. `e` opens the window
@@ -674,6 +675,18 @@ and `<CR>` on one in the comments window puts it there — headed `on the
 merge request`, with nothing to quote, the cursor left where it was and
 the same keys to answer with. The walk goes by where the markers are
 now, so after an edit above a thread `]m` still lands on its marker.
+
+In its activity: everything that has happened to the merge request,
+newest first, in one list — comments and replies (where, and the first
+line), comments rewritten and by whom, pushes with their commits, the
+description and title changed, labels added and removed, approvals,
+reviewers, assignees, closes, reopens and the merge. `<CR>` goes to the
+comment under the cursor (beside the code, or in the pane for one on no
+line), `o` opens it on GitLab, `r` refetches, `q` goes back. GitLab
+keeps this in four places — system notes in the discussions, label and
+state events, and GraphQL's `lastEditedBy` for edits, since REST cannot
+tell an edited comment from a resolved one — so opening it is three
+calls besides the refresh.
 
 In the pipeline's jobs: `<CR>` opens what the job under the cursor
 printed, `R` runs it again (after asking), `o` opens the job on GitLab,
@@ -1602,6 +1615,7 @@ lua/nemeton/
   conversation.lua  every thread at once, to read rather than to walk
   pane.lua       the threads of the file you are reading, beside it
   qf.lua         every thread, into the quickfix list
+  activity.lua   everything that has happened to the merge request
   jobs.lua       what CI did, job by job
   trace.lua      what one job printed, in a tab
   history.lua    every commit that touched a file, and each one's

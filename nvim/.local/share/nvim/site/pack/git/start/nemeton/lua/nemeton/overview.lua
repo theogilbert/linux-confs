@@ -52,7 +52,8 @@ local function hint()
   return detail.hint({
     { k.approve, "approve" },
     { k.publish, "send" },
-    { k.comments, "comments" },
+    { k.comments, "threads" },
+    { k.activity, "activity" },
     { open and k.merge, mr.merge_when_pipeline_succeeds and "unmerge" or "merge" },
   }, k.help)
 end
@@ -138,6 +139,13 @@ function M.open()
           require("nemeton.notes").open(nil, again)
         end),
         "every thread on the merge request, whole",
+      },
+      {
+        k.activity,
+        instead(back, function(again)
+          require("nemeton.activity").open(again)
+        end),
+        "everything that has happened to it, newest first",
       },
       {
         k.pipeline,

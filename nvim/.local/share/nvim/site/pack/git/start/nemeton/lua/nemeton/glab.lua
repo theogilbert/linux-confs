@@ -958,6 +958,64 @@ function M.versions(root, iid, cb)
   }, { cwd = root }, cb)
 end
 
+--- What the activity window needs besides the discussions: the label
+--- and state events -- which GitLab keeps out of the notes -- and which
+--- comments were rewritten, by whom and when.
+---
+--- Edits through GraphQL because REST cannot say: a note there has no
+--- `last_edited_at`, and its `updated_at` also moves when the thread is
+--- resolved and when a push carries its line forward. `lastEditedAt`
+--- is no better -- it is `updatedAt` under another name, set on every
+--- note -- but `lastEditedBy` is only there on one somebody rewrote.
+---
+--- Three calls at once, answered as one table once all three are in;
+--- a call that fails is that list empty, not the window refused.
+function M.mr_activity(root, iid, cb)
+  local out, left = { labels = {}, states = {}, edits = {} }, 3
+  local function done()
+    left = left - 1
+    if left == 0 then
+      cb(out)
+    end
+  end
+  for _, kind in ipairs({ "labels", "states" }) do
+    json({
+      "api",
+      "--paginate",
+      ("projects/:fullpath/merge_requests/%d/resource_%s_events?per_page=100"):format(
+        iid,
+        kind == "labels" and "label" or "state"
+      ),
+    }, { cwd = root }, function(data)
+      out[kind] = type(data) == "table" and data or {}
+      done()
+    end)
+  end
+  M.project_path(root, function(path)
+    if not path then
+      done()
+      return
+    end
+    local query = (
+      '{ project(fullPath: "%s") { mergeRequest(iid: "%d") { discussions { nodes { notes { nodes '
+      .. "{ id lastEditedAt lastEditedBy { username } } } } } } } }"
+    ):format(path, iid)
+    json({ "api", "graphql", "--raw-field", "query=" .. query }, { cwd = root }, function(data)
+      local mr = vim.tbl_get(data or {}, "data", "project", "mergeRequest")
+      for _, d in ipairs(vim.tbl_get(mr or {}, "discussions", "nodes") or {}) do
+        for _, note in ipairs(vim.tbl_get(d, "notes", "nodes") or {}) do
+          local by = vim.tbl_get(note, "lastEditedBy", "username")
+          local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
+          if id and by then
+            out.edits[id] = { at = note.lastEditedAt, by = by }
+          end
+        end
+      end
+      done()
+    end)
+  end)
+end
+
 --- Who has approved the merge request, and how many more it needs.
 ---
 --- Its own endpoint because approvals are their own resource: the

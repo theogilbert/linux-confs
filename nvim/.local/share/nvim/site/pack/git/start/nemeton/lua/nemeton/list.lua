@@ -236,15 +236,15 @@ local function row_chunks(mr)
   -- is short of an approval, and a dim zero says the opposite.
   local approved
   if approval and approval.required > 0 then
-    approved = ("%s%d/%d"):format(approval.glyph, #approval.names, approval.required)
+    approved = ("%s %d/%d"):format(approval.glyph, #approval.names, approval.required)
   elseif approval and approval.enough then
     approved = approval.glyph
   end
   if approved then
     table.insert(out, { approved, approval.hl })
-    table.insert(out, { (" "):rep(math.max(6 - vim.fn.strdisplaywidth(approved), 1)) })
+    table.insert(out, { (" "):rep(math.max(7 - vim.fn.strdisplaywidth(approved), 1)) })
   else
-    table.insert(out, { (" "):rep(6) })
+    table.insert(out, { (" "):rep(7) })
   end
   if mr.draft then
     table.insert(out, { "draft ", "NemetonDraft" })

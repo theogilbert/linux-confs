@@ -1030,6 +1030,14 @@ function M.approvals(root, iid, cb)
   )
 end
 
+--- One commit of the project as GitLab's object, by any sha it will
+--- take -- a short one too, which `git fetch` will not: a push note and
+--- most comments name a commit by eight characters of it, and the
+--- forge is what knows the other thirty-two.
+function M.commit(root, sha, cb)
+  json({ "api", ("projects/:fullpath/repository/commits/%s"):format(sha) }, { cwd = root }, cb)
+end
+
 --- The project this repository points at, as GitLab's own object.
 local function project(root, cb)
   local known = projects[root]

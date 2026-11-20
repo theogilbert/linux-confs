@@ -886,15 +886,13 @@ M.approve = with_session(function(want, cb)
         M.approve(false, cb)
         return
       end
-      require("nemeton.edit").confirm(
-        ("Approve !%d: %s"):format(mr.iid, mr.title or ""),
-        function(yes)
-          if yes and session.current == mr then
-            M.approve(true, cb)
-          end
-        end,
-        "Approve"
-      )
+      -- Nothing but the question: the key is pressed on the merge
+      -- request's own window, which is already saying which one it is.
+      require("nemeton.edit").confirm("Are you sure you want to approve this MR?", function(yes)
+        if yes and session.current == mr then
+          M.approve(true, cb)
+        end
+      end, "Approve")
     end)
     return
   end

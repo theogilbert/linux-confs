@@ -655,6 +655,35 @@ function M.go(ref, leave, on)
     file = M.file_of(href, on)
   end
   if type(how) == "function" then
+    -- A commit is made sure of first: what a function of yours does
+    -- with one is almost always ask git about it, and a commit of a
+    -- branch this clone has not pulled -- or of a push since rebased
+    -- away -- is one the forge has and git does not. Fetched, and then
+    -- handed over whole; called all the same where it could not be,
+    -- since the function may only want the page.
+    local subject = on or require("nemeton.session").current
+    if ref.kind == "commit" and subject and subject.root then
+      local session = require("nemeton.session")
+      local short = ref.text:sub(1, 8)
+      session.ensure_commit(
+        subject.root,
+        ref.text,
+        function(full, why)
+          if not full then
+            session.notify(
+              ("could not fetch %s: %s"):format(short, why or "?"),
+              vim.log.levels.WARN
+            )
+          end
+          how(full or ref.text, href, thread, file)
+        end,
+        subject,
+        function()
+          session.notify(("fetching %s…"):format(short))
+        end
+      )
+      return true
+    end
     how(ref.text, href, thread, file)
     return true
   end

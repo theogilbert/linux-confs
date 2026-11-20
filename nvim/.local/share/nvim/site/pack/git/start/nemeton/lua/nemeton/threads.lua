@@ -46,16 +46,35 @@ local function anchor(position)
   local range_end = range["end"]
   local new_line = (range_end and range_end.new_line) or position.new_line
   local old_line = (range_end and range_end.old_line) or position.old_line
+  -- Where an end of the range carries no line numbers -- a forge older
+  -- than 18.6 is sent the line codes alone (see `glab.lua`), and a
+  -- span starting on a removed line has no new one -- its line code
+  -- still says both: `<sha1 of the path>_<old>_<new>`. Without this
+  -- the span was its last line, and the code quoted above it was one
+  -- line of a comment written about ten.
+  local function coded(one, side)
+    if not one then
+      return nil
+    end
+    if one[side] then
+      return one[side]
+    end
+    local old, new = (one.line_code or ""):match("^%x+_(%d+)_(%d+)$")
+    local n = tonumber(side == "old_line" and old or new)
+    return n and n > 0 and n or nil
+  end
   if new_line then
+    local first = coded(range.start, "new_line") or new_line
     return {
       path = position.new_path or position.old_path,
       line = new_line,
-      first = (range.start and range.start.new_line) or new_line,
+      first = first <= new_line and first or new_line,
       side = "new",
     }
   end
   if old_line then
-    local old_first = (range.start and range.start.old_line) or old_line
+    local old_first = coded(range.start, "old_line") or old_line
+    old_first = old_first <= old_line and old_first or old_line
     return {
       path = position.new_path or position.old_path,
       line = old_line,

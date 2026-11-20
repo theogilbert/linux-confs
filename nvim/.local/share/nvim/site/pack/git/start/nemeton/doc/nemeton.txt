@@ -1220,9 +1220,14 @@ the commits each brought, the description and the title changed,
 labels added and removed, approvals, reviewers and assignees, closes,
 reopens and the merge.
 
-    <CR>            go to the comment under the cursor: beside the
-                    code, or in the pane for one on no line
-    o               open it on GitLab
+    <C-]>           follow the sha of a pushed commit, or a link or a
+                    reference in what was said, as in a comment
+                    |nemeton-follow|
+    K               the event under the cursor whole: when to the
+                    second, where, and all of what was said, or every
+                    commit of a push -- and on a sha the commit, on a
+                    link its address |nemeton-reactions|
+    o               open the one under the cursor on GitLab
     r               refetch
     q               back to the merge request's window
     g?              all of the above, in a float
@@ -2010,7 +2015,11 @@ arguments -- what is written, and where it points -- a `thread` with a
 third: the thread itself, or nil for one this review has not got open
 -- and a `path` or `url` with a fourth: the file of this repository it
 names, as `{ path, line, last }`, or nil for a link to anything
-else. >lua
+else. A `commit` the clone has not got -- one of a branch you have not
+pulled, or of a push since rebased away -- is fetched from the forge
+first, saying so, and then handed over as the whole sha; where it
+cannot be fetched the function is called all the same, with what was
+written. >lua
 
     comments = {
       follow = {

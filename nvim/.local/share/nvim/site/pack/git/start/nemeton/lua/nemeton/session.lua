@@ -1121,6 +1121,59 @@ function M.fetch_commit(root, sha, cb, mr)
   end)
 end
 
+--- Makes sure `sha` is a commit this clone has, fetching it where it
+--- is not: `cb(full)` with the whole sha once it is here, `cb(nil,
+--- why)` where it could not be got. `going()` is called if, and
+--- only if, it has to go to the forge for it, so that a caller can say
+--- so -- the fetch is a round trip, and a key that is quiet for one is
+--- a key that looks like it did nothing.
+---
+--- For the key that hands a commit to a function of yours: `:Git show`
+--- or a diff view on a commit of a branch you have not pulled was an
+--- error from git, about a commit the forge has. A short sha is made
+--- whole by the forge first, because git fetches a commit only by all
+--- of it.
+---
+--- `mr` is the merge request whose remote to fetch from, where that is
+--- not the open review's.
+function M.ensure_commit(root, sha, cb, mr, going)
+  git_in(root, { "rev-parse", "--verify", "--quiet", sha .. "^{commit}" }, function(have)
+    if have.code == 0 then
+      cb(vim.trim(have.stdout or ""))
+      return
+    end
+    if going then
+      going()
+    end
+    local function fetch(full)
+      remote_for(root, mr or M.current, function(remote)
+        if not remote then
+          cb(nil, "no remote to fetch from")
+          return
+        end
+        git_in(root, { "fetch", "--no-tags", "--quiet", remote, full }, function(res)
+          if res.code ~= 0 then
+            cb(nil, vim.trim(res.stderr or ""))
+            return
+          end
+          cb(full)
+        end)
+      end)
+    end
+    if #sha == 40 then
+      fetch(sha)
+      return
+    end
+    glab.commit(root, sha, function(data, err)
+      if type(data) == "table" and type(data.id) == "string" then
+        fetch(data.id)
+      else
+        cb(nil, err or "the forge does not know it")
+      end
+    end)
+  end)
+end
+
 --- Puts the editor on the branch a checkout just left the disk on.
 ---
 --- `checktime` alone does that for a file the branch changed, and for

@@ -427,7 +427,10 @@ push can.
 `false` for nothing at all and a function of your own for anything else,
 called with what is written and where it points (a `thread` gets the
 thread as a third argument, and a `path` or `url` the file of this
-repository it names as a fourth, `{ path, line, last }` or nil):
+repository it names as a fourth, `{ path, line, last }` or nil). A
+commit the clone has not got — on a branch you have not pulled — is
+fetched first and handed over as the whole sha, so the function below
+works on any commit the forge has:
 
 ```lua
 comments = {
@@ -680,10 +683,13 @@ In its activity: everything that has happened to the merge request,
 newest first, in one list — comments and replies (where, and the first
 line), comments rewritten and by whom, pushes with their commits, the
 description and title changed, labels added and removed, approvals,
-reviewers, assignees, closes, reopens and the merge. `<CR>` goes to the
-comment under the cursor (beside the code, or in the pane for one on no
-line), `o` opens it on GitLab, `r` refetches, `q` goes back. GitLab
-keeps this in four places — system notes in the discussions, label and
+reviewers, assignees, closes, reopens and the merge. A pushed commit's
+sha, and every link and reference in what was said, is followed by
+`<C-]>` as one in a comment is (`comments.follow`). `K` shows the event
+whole — to the second, where, and all of what was said, or every commit
+of a push — and on a sha the commit, on a link its address; `o` opens
+the event under the cursor on GitLab, `r` refetches, `q` goes back.
+GitLab keeps this in four places — system notes in the discussions, label and
 state events, and GraphQL's `lastEditedBy` for edits, since REST cannot
 tell an edited comment from a resolved one — so opening it is three
 calls besides the refresh.

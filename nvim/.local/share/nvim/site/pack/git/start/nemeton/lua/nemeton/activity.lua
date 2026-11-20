@@ -19,9 +19,11 @@ local config = require("nemeton.config")
 local detail = require("nemeton.detail")
 local follow = require("nemeton.follow")
 local glab = require("nemeton.glab")
+local markdown = require("nemeton.markdown")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
+local hover = require("nemeton.who")
 local win = require("nemeton.win")
 
 local M = {}
@@ -35,12 +37,27 @@ local function who(user)
   return type(user) == "table" and (user.username or user.name) or "?"
 end
 
---- The first line of a body, with a link written as its words: what
---- a row says of a comment is the start of it, and a system note's
---- links are to pages of the forge this window has its own keys for.
+--- The first line of a body, as it was written: what a row says of a
+--- comment is the start of it. The links in it are drawn as their words
+--- by `M.lines`, which keeps where each one goes for `<C-]>`.
 local function gist(body)
-  local line = vim.split(vim.trim(body or ""), "\n", { plain = true })[1] or ""
-  return (line:gsub("%[([^%]]*)%]%b()", "%1"))
+  return vim.split(vim.trim(body or ""), "\n", { plain = true })[1] or ""
+end
+
+--- `text` as the chunks it is drawn in: a link as its words, a sha or
+--- a `!12` in their colours, each carrying what it points at -- the
+--- same reading a comment gets in every other window, so that a row of
+--- this one is followed the way a note is. `hl` is for the rest.
+local function chunks_of(text, hl)
+  local drawn, runs = markdown.inline(text)
+  if not runs then
+    return { { drawn, hl } }
+  end
+  local out = {}
+  for _, run in ipairs(runs) do
+    table.insert(out, { run[1], run[2] or hl, ref = run.ref, style = run.style })
+  end
+  return out
 end
 
 --- The commits a push note lists, as `{ sha, title }`. GitLab writes
@@ -90,6 +107,7 @@ function M.events(discussions, extra)
             at = note.created_at,
             who = who(note.author),
             verb = gist(note.body),
+            body = note.body,
             commits = #commits > 0 and commits or nil,
             note = note.id,
           })
@@ -101,6 +119,7 @@ function M.events(discussions, extra)
           who = who(note.author),
           verb = said > 1 and "replied" or "commented",
           text = gist(note.body),
+          body = note.body,
           path = path,
           line = line,
           thread = d.id,
@@ -147,12 +166,14 @@ function M.events(discussions, extra)
   return out
 end
 
---- The events as lines and highlights, and the event on each line.
---- `now` is for the suite, as `threads.age`'s is.
+--- The events as lines and highlights, the event on each line, and
+--- what the links, shas and references on them point at, as
+--- `threads.flatten` hands them over. `now` is for the suite, as
+--- `threads.age`'s is.
 function M.lines(events, now)
   local rendered, map = {}, {}
   if #events == 0 then
-    return { "nothing has happened yet" }, {}, {}
+    return { "nothing has happened yet" }, {}, {}, {}
   end
   local width = 0
   for _, e in ipairs(events) do
@@ -163,8 +184,8 @@ function M.lines(events, now)
     local head = {
       { ("%6s  "):format(age), "NemetonMeta" },
       { e.who .. (" "):rep(width - vim.fn.strdisplaywidth(e.who) + 2), "NemetonAuthor" },
-      { e.verb },
     }
+    vim.list_extend(head, chunks_of(e.verb))
     if e.path then
       table.insert(head, { (" on %s:%s"):format(e.path, e.line or "?"), "NemetonMeta" })
     end
@@ -172,19 +193,67 @@ function M.lines(events, now)
     map[#rendered] = e
     local indent = (" "):rep(8 + width + 2)
     if e.text and e.text ~= "" then
-      table.insert(rendered, { { indent .. e.text, "NemetonHint" } })
+      table.insert(rendered, vim.list_extend({ { indent } }, chunks_of(e.text, "NemetonHint")))
       map[#rendered] = e
     end
+    -- The sha a link to the commit, followed as one written in a
+    -- comment is: `comments.follow.commit` decides what that does.
     for _, c in ipairs(e.commits or {}) do
-      table.insert(rendered, {
-        { indent .. c.sha:sub(1, 8) .. " ", "NemetonMeta" },
-        { c.title },
-      })
+      local row = {
+        { indent },
+        {
+          c.sha:sub(1, 8),
+          "NemetonCommit",
+          ref = { kind = "commit", text = c.sha, sha = c.sha },
+        },
+        { " " },
+      }
+      vim.list_extend(row, chunks_of(c.title))
+      table.insert(rendered, row)
       map[#rendered] = e
     end
   end
+  local lines, hls, refs = threads.flatten(rendered, 0)
+  return lines, hls, map, refs
+end
+
+--- One event whole, for `K`: who and what, to the second, where, and
+--- everything that was said rather than its first line -- or, for a
+--- push, every commit it brought. Pure, as `M.lines` is.
+function M.detail(e)
+  local rendered = {}
+  table.insert(
+    rendered,
+    vim.list_extend({ { e.who, "NemetonAuthor" }, { " " } }, chunks_of(e.verb))
+  )
+  local when = threads.when(threads.epoch(e.at))
+  if when then
+    table.insert(rendered, { { when, "NemetonMeta" } })
+  end
+  if e.path then
+    table.insert(rendered, { { ("on %s:%s"):format(e.path, e.line or "?"), "NemetonMeta" } })
+  end
+  local body = {}
+  if e.commits then
+    for _, c in ipairs(e.commits) do
+      table.insert(
+        body,
+        vim.list_extend({ { c.sha:sub(1, 8), "NemetonCommit" }, { " " } }, chunks_of(c.title))
+      )
+    end
+  else
+    local said = vim.split(vim.trim(e.body or ""), "\n", { plain = true })
+    -- A system note's first line is the verb already drawn above.
+    for i = e.thread and 1 or 2, #said do
+      table.insert(body, chunks_of(said[i]))
+    end
+  end
+  if #body > 0 then
+    table.insert(rendered, { { "" } })
+    vim.list_extend(rendered, body)
+  end
   local lines, hls = threads.flatten(rendered, 0)
-  return lines, hls, map
+  return lines, hls
 end
 
 local function event_at()
@@ -202,24 +271,13 @@ function M.close()
 end
 
 local function draw(events)
-  local lines, hls, map = M.lines(events)
+  local lines, hls, map, refs = M.lines(events)
   rows = map
+  follow.set(M.buf, refs, M.close)
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
-end
-
---- The thread an event is about, as the review has it now.
-local function thread_of(mr, id)
-  for _, list in ipairs({ mr.inline or {}, mr.overview or {} }) do
-    for _, t in ipairs(list) do
-      if t.id == id then
-        return t
-      end
-    end
-  end
-  return nil
 end
 
 --- The activity of the open merge request, in a float. `back` is
@@ -251,7 +309,7 @@ function M.open(back)
   vim.wo[M.win].wrap = false
 
   local k = config.keys.activity
-  vim.wo[M.win].winbar = detail.hint({ { k.code, "go to it" } }, k.help)
+  vim.wo[M.win].winbar = detail.hint({ { k.browser, "on GitLab" } }, k.help)
 
   -- The review refetched first, so the comments in here are the ones
   -- the forge has now -- and the review drawn with them -- and the rest
@@ -286,28 +344,6 @@ function M.open(back)
       end,
       "close",
     },
-    -- A comment is gone to as the comments window goes to one: beside
-    -- the code for a thread on a line, in the pane for one on none.
-    {
-      k.code,
-      function()
-        local e = event_at()
-        local thread = e and e.thread and thread_of(mr, e.thread)
-        if not thread then
-          return
-        end
-        if thread.path and thread.line then
-          M.close()
-          back()
-          session.goto_thread(thread)
-          return
-        end
-        M.close()
-        back()
-        require("nemeton.pane").read(thread)
-      end,
-      "go to the comment under the cursor",
-    },
     {
       k.browser,
       function()
@@ -321,6 +357,24 @@ function M.open(back)
         end
       end,
       "open it on GitLab",
+    },
+    { k.follow, follow.here, "follow the link, sha or reference under the cursor" },
+    -- The commit or the address under the cursor where there is one,
+    -- as in a comment; the event whole anywhere else on its rows.
+    {
+      k.who,
+      function()
+        local pos = vim.api.nvim_win_get_cursor(M.win)
+        if follow.under(M.buf, pos[1] - 1, pos[2]) and hover.show(false) then
+          return
+        end
+        local e = event_at()
+        if e then
+          local lines, hls = M.detail(e)
+          hover.popup(e, lines, hls)
+        end
+      end,
+      "the event under the cursor whole, or the commit or link",
     },
     { k.refresh, load, "refetch" },
   }

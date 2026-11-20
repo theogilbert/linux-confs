@@ -193,62 +193,9 @@ local function commit(ref, on)
   return lines, hls
 end
 
---- Says who gave the reaction under the cursor, when the note under it
---- was written, or where the link under it goes. Nothing at all on
---- anything else: this runs on every rest of the cursor in a window of
---- prose, and a window that says "no" every time the cursor stops was
---- a window to read past. `resting` is the hover asking rather than
---- the key, and a rest answers for a reaction only.
-function M.show(resting)
-  local buf = vim.api.nvim_get_current_buf()
-  local pos = vim.api.nvim_win_get_cursor(0)
-  local ref = follow.under(buf, pos[1] - 1, pos[2])
-  if resting and ref and ref.kind == "stamp" and shown == ref then
-    return M.win
-  end
-  local link = ref and ref.href ~= nil
-  if resting and link and shown == ref then
-    return M.win
-  end
-  if not (ref and (ref.kind == "reaction" or (not resting and (ref.kind == "stamp" or link)))) then
-    M.close()
-    return nil
-  end
-  if M.win and vim.api.nvim_win_is_valid(M.win) and shown == ref then
-    if not resting then
-      win.enter(M.win, dismiss, M.close)
-      dismiss = nil
-    end
-    return M.win
-  end
-  M.close()
-
-  local on = follow.subject(buf)
-  local lines, hls = {}, {}
-  if ref.kind == "reaction" then
-    local picture = threads.emoji(":" .. ref.name .. ":")
-    lines[1] = picture .. "  " .. names(ref, on)
-    hls[1] = {
-      row = 0,
-      col = 0,
-      end_col = #picture,
-      hl = ref.mine and "NemetonReactionMine" or "NemetonReaction",
-    }
-  elseif link then
-    lines[1] = address(ref, on)
-  elseif ref.sha then
-    lines, hls = commit(ref, on)
-  else
-    local written = threads.when(threads.epoch(ref.written))
-    if not written then
-      return nil
-    end
-    lines[1] = written
-  end
-  -- Wider for a time than for names: a date that wraps is two halves
-  -- of one fact, where a list of names wraps between two of them. And
-  -- as wide as there is for an address, which is one word.
-  local most = link and vim.o.columns - 10 or ref.kind == "stamp" and 80 or 60
+--- The float itself, under the cursor, `lines` painted with `hls`,
+--- at most `most` columns wide, and gone on the next move in `buf`.
+local function float(buf, ref, lines, hls, most)
   most = math.max(math.min(vim.o.columns - 10, most), 20)
   local widest, height = 1, 0
   for _, l in ipairs(lines) do
@@ -290,6 +237,84 @@ function M.show(resting)
     callback = M.close,
   })
   return M.win
+end
+
+--- Says who gave the reaction under the cursor, when the note under it
+--- was written, or where the link under it goes. Nothing at all on
+--- anything else: this runs on every rest of the cursor in a window of
+--- prose, and a window that says "no" every time the cursor stops was
+--- a window to read past. `resting` is the hover asking rather than
+--- the key, and a rest answers for a reaction only.
+function M.show(resting)
+  local buf = vim.api.nvim_get_current_buf()
+  local pos = vim.api.nvim_win_get_cursor(0)
+  local ref = follow.under(buf, pos[1] - 1, pos[2])
+  if resting and ref and ref.kind == "stamp" and shown == ref then
+    return M.win
+  end
+  local link = ref and ref.href ~= nil
+  if resting and link and shown == ref then
+    return M.win
+  end
+  -- A sha the caller already knows to be a commit -- a push listed in
+  -- the activity -- is the float the head of a note has.
+  local sha = ref and ref.kind == "commit" and ref.sha
+  if
+    not (ref and (ref.kind == "reaction" or (not resting and (ref.kind == "stamp" or link or sha))))
+  then
+    M.close()
+    return nil
+  end
+  if M.win and vim.api.nvim_win_is_valid(M.win) and shown == ref then
+    if not resting then
+      win.enter(M.win, dismiss, M.close)
+      dismiss = nil
+    end
+    return M.win
+  end
+  M.close()
+
+  local on = follow.subject(buf)
+  local lines, hls = {}, {}
+  if ref.kind == "reaction" then
+    local picture = threads.emoji(":" .. ref.name .. ":")
+    lines[1] = picture .. "  " .. names(ref, on)
+    hls[1] = {
+      row = 0,
+      col = 0,
+      end_col = #picture,
+      hl = ref.mine and "NemetonReactionMine" or "NemetonReaction",
+    }
+  elseif ref.sha then
+    lines, hls = commit(ref, on)
+  elseif link then
+    lines[1] = address(ref, on)
+  else
+    local written = threads.when(threads.epoch(ref.written))
+    if not written then
+      return nil
+    end
+    lines[1] = written
+  end
+  -- Wider for a time than for names: a date that wraps is two halves
+  -- of one fact, where a list of names wraps between two of them. And
+  -- as wide as there is for an address, which is one word.
+  local most = link and vim.o.columns - 10 or (ref.kind == "stamp" or sha) and 80 or 60
+  return float(buf, ref, lines, hls, most)
+end
+
+--- `lines` in the float this module shows, over the cursor in the
+--- current window, for a hover of a caller's own: `key` is what it is
+--- about, so that the same `K` again on the same thing goes into it
+--- rather than putting it back up. `most` is how wide it may get.
+function M.popup(key, lines, hls, most)
+  if M.win and vim.api.nvim_win_is_valid(M.win) and shown == key then
+    win.enter(M.win, dismiss, M.close)
+    dismiss = nil
+    return M.win
+  end
+  M.close()
+  return float(vim.api.nvim_get_current_buf(), key, lines, hls, most or 80)
 end
 
 --- Puts the hover on `buf`: `CursorHold`, which is the cursor resting

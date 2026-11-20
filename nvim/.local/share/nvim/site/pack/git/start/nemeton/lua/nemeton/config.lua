@@ -552,6 +552,9 @@ return {
     -- names is one this review has open, and nil where it is not; a
     -- `url` or `path` gets a fourth: the file of this repository the
     -- link names, `{ path, line, last }`, and nil for anything else.
+    -- A `commit` is fetched before your function is called, where the
+    -- clone has not got it -- a commit of a branch you have not pulled
+    -- -- and is handed over as the whole sha.
     --
     -- `true` is the built-in, which is the quietest thing that is still
     -- an answer: `User alice`, `commit a1b2c3d4`, `issue #12`, and a
@@ -1231,9 +1234,12 @@ return {
 
     -- The activity window, from `a` on the merge request's own.
     activity = {
-      -- To the comment under the cursor: beside the code for one on a
-      -- line, in the pane for one on none.
-      code = "<CR>",
+      -- A commit a push brought, or a link or reference in what was
+      -- said: whatever `comments.follow` says to do with one.
+      follow = "<C-]>",
+      -- The event under the cursor whole -- to the second, and all of
+      -- what was said -- or the commit or the link under it.
+      who = "K",
       browser = "o", -- the event under the cursor on GitLab
       refresh = "r",
       quit = "q",

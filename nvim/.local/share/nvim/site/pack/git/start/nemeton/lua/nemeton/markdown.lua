@@ -532,6 +532,23 @@ function M.inline(text)
         break
       end
       at = to + 1
+      -- A code span inside the label -- [`foo()`](url), which is how a
+      -- link to a function is written -- was claimed above, and would
+      -- refuse the link its bytes. Inside the brackets it is the link's
+      -- words: the link takes them back, and is drawn as what the span
+      -- says, without its backticks. One that only starts in there
+      -- and runs on past the bracket is left alone, and so is the link.
+      local spanned = false
+      for i = #found, 1, -1 do
+        local span = found[i]
+        if span.code and span.from > from and span.to <= from + #label then
+          table.remove(found, i)
+          spanned = true
+        end
+      end
+      if spanned then
+        label = (M.inline(label))
+      end
       -- `![alt](src)` is a picture, which a terminal has nowhere to
       -- put: it is drawn as what its author said it was, and the `!`
       -- that made it a picture goes with the brackets.

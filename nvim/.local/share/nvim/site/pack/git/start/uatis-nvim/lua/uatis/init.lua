@@ -250,8 +250,20 @@ function M.toggle_diff()
   -- every file already annotated stays annotated, with nothing left on
   -- screen to turn them off by. `q` in the list is the key for putting
   -- the window away.
+  --
+  -- ...but a list with no window is a review the reader cannot see, and
+  -- ending it is a press that changes nothing on screen. A session reset
+  -- (`only!`, then every buffer deleted) leaves exactly that: the list
+  -- hidden, its views gone with their buffers, and `<leader>gu` from the
+  -- empty buffer ended the review silently, so it took a second press to
+  -- get one. Shown first, then ended on the next press, as with a list
+  -- that was on screen all along.
   if not view.can_open(bufnr) then
     local list = pane.get()
+    if list and not (list.list_win and vim.api.nvim_win_is_valid(list.list_win)) then
+      pane.open()
+      return true
+    end
     if list then
       view.close_all(list.root, list.rev, list.standalone)
       pane.close(list)

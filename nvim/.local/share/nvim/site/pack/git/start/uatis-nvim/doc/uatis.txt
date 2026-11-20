@@ -287,7 +287,9 @@ The list IS the review. While it exists, arriving at any file it names
 annotates that file, at the list's own revision. So it is read whenever a
 comparison is turned on -- window or no window; `pane.auto_open` only decides
 whether you see it. `q` hides the window and leaves the review running;
-`<leader>gu` ends the review.
+`<leader>gu` ends the review. Pressed from a buffer with nothing to annotate
+while the list has no window, it brings the list back instead, and the next
+press ends the review.
 
                                                                 *uatis-pick*
 `<leader>gp` is the same list by name rather than by tree, from anywhere in

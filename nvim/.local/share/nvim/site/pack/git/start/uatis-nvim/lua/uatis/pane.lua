@@ -3206,7 +3206,11 @@ function M.open(opts)
 
     local here = vim.api.nvim_get_current_win()
     pane.code_win = here
-    pane.list_buf = pane.list_buf or create_buf(pane.tab)
+    -- Its buffer may be gone while the list was hidden: a session reset
+    -- deletes every buffer, the list's own among them.
+    if not (pane.list_buf and vim.api.nvim_buf_is_valid(pane.list_buf)) then
+      pane.list_buf = create_buf(pane.tab)
+    end
     vim.cmd("topleft vsplit")
     pane.list_win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(pane.list_win, pane.list_buf)

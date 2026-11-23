@@ -190,11 +190,9 @@ function M.chunks(v, extra)
     table.insert(out, { { "(no description)", "NemetonMeta" } })
     return out
   end
-  -- Unpainted, at the left edge, as the merge request's is: it is
-  -- markdown and the buffer says so.
-  for _, l in ipairs(vim.split(body:gsub("\r\n", "\n"), "\n", { plain = true })) do
-    table.insert(out, { { l } })
-  end
+  -- At the left edge and drawn as the page draws it, as the merge
+  -- request's is (`threads.prose`).
+  vim.list_extend(out, require("nemeton.threads").prose((body:gsub("\r\n", "\n"))))
   return out
 end
 
@@ -207,11 +205,12 @@ local function draw(entry)
   if not (valid(entry) and entry.view) then
     return
   end
-  local lines, hls = require("nemeton.threads").flatten(M.chunks(entry.view, entry), 0)
+  local lines, hls, refs = require("nemeton.threads").flatten(M.chunks(entry.view, entry), 0)
   vim.bo[entry.buf].modifiable = true
   vim.api.nvim_buf_set_lines(entry.buf, 0, -1, false, lines)
   vim.bo[entry.buf].modifiable = false
   marks.paint(entry.buf, hls)
+  follow.set(entry.buf, refs, nil, entry.subject)
 end
 
 local function hint(entry)
@@ -671,13 +670,7 @@ local function bind(entry)
     },
     {
       k.follow,
-      function()
-        -- The description is markdown as it was typed, not drawn, so
-        -- the link is read off the line under the cursor.
-        local pos = vim.api.nvim_win_get_cursor(0)
-        local line = vim.api.nvim_get_current_line()
-        follow.go(follow.in_text(line, pos[2]), nil, entry.subject)
-      end,
+      follow.here,
       "follow the link under the cursor",
     },
     {
@@ -738,7 +731,6 @@ function M.open(iid, cb)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].modifiable = false
-  vim.bo[buf].filetype = "markdown"
   pcall(vim.api.nvim_buf_set_name, buf, ("nemeton://issue/%d"):format(iid))
   vim.api.nvim_win_set_buf(0, buf)
   if placeholder ~= buf and vim.api.nvim_buf_is_valid(placeholder) then

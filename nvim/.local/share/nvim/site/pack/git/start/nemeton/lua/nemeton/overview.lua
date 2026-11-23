@@ -63,11 +63,12 @@ function M.redraw()
   if not (open_state() and session.current) then
     return
   end
-  local lines, hls = drawn()
+  local lines, hls, refs = drawn()
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
   vim.bo[M.buf].modifiable = false
   require("nemeton.marks").paint(M.buf, hls)
+  follow.set(M.buf, refs, M.close)
   vim.wo[M.win].winbar = hint()
 end
 
@@ -107,10 +108,13 @@ function M.open()
 
   local k = config.keys.detail
   local back = require("nemeton.win").came_from()
-  local lines, hls = drawn()
+  local lines, hls, refs = drawn()
   M.win, M.buf = detail.float(lines, (" !%d "):format(mr.iid), {
     winbar = hint(),
     hls = hls,
+    -- Drawn already, as a comment is: markdown's syntax over the top
+    -- would colour the words a second time.
+    filetype = false,
     quit = k.quit,
     help = k.help,
     keys = {
@@ -195,8 +199,11 @@ function M.open()
         end,
         "refetch",
       },
+      { k.follow, follow.here, "follow the link, sha or reference under the cursor" },
+      { k.who, require("nemeton.who").show, "where the link under the cursor goes" },
     },
   })
+  follow.set(M.buf, refs, M.close)
   return M.win
 end
 

@@ -52,6 +52,16 @@ end
 
 --- How light a colour is, on the scale everything that has to be read
 --- against it cares about.
+-- How far off what it sits on a code span's ground is: enough to be
+-- seen as a chip, as the page draws one, and not so far that the words
+-- on it have to be worked at.
+local CODE_LIFT = 0.12
+
+--- The ground of a code span on `bg`, the colour it sits on.
+local function code_ground(bg, fg)
+  return mix(bg, fg, CODE_LIFT)
+end
+
 local function lum(c)
   return 0.2126 * (math.floor(c / 65536) % 256)
     + 0.7152 * (math.floor(c / 256) % 256)
@@ -447,9 +457,18 @@ local function on_ground(group, base)
   local name = base .. group:gsub("^Nemeton", "")
   local from = vim.api.nvim_get_hl(0, { name = group, link = false })
   local bg = vim.api.nvim_get_hl(0, { name = base, link = false })
+  -- A code span keeps a chip -- the one background here that belongs
+  -- to the words rather than to the line -- lifted off this ground as
+  -- it is off the page, so it reads the same inside a conversation as
+  -- out of one.
+  local chip = group == "NemetonCode" and from.bg and bg.bg
   from.fg = from.fg or from.bg
   from.ctermfg = from.ctermfg or from.ctermbg
   from.bg, from.ctermbg = bg.bg, bg.ctermbg
+  if chip then
+    local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+    from.bg = code_ground(bg.bg, normal.fg or from.fg)
+  end
   from.link = nil
   -- ...and not `default`, which is what the group we copied from was
   -- defined with so that a `:hi` of your own would win over it. Carried
@@ -580,8 +599,20 @@ function M.setup_highlights()
   -- ...and a code span, which is a colour and not a weight: it is the
   -- one piece of a comment that is quoting something rather than saying
   -- it, and `String` is the colour an editor already draws quoted text
-  -- in.
-  link("NemetonCode", "String")
+  -- in. On a chip of its own where there is a colour to mix one from,
+  -- as the page draws it: the backticks are not drawn, and the chip is
+  -- what still says where the code starts and stops.
+  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  local quoted = vim.api.nvim_get_hl(0, { name = "String", link = false })
+  if vim.o.termguicolors and normal.bg and normal.fg then
+    vim.api.nvim_set_hl(0, "NemetonCode", {
+      fg = quoted.fg,
+      bg = code_ground(normal.bg, normal.fg),
+      default = true,
+    })
+  else
+    link("NemetonCode", "String")
+  end
   -- A formula, set apart from the prose round it the way the page sets
   -- it in a face of its own.
   link("NemetonMath", "Constant")
@@ -619,7 +650,6 @@ function M.setup_highlights()
   -- is a hole in the block. Normal is the one group here guaranteed to
   -- have a background, so it is the one that is copied from rather than
   -- linked to.
-  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
   vim.api.nvim_set_hl(
     0,
     "NemetonThread",

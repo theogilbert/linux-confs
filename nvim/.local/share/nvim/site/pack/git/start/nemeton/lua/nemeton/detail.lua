@@ -613,15 +613,13 @@ function M.description_chunks(mr)
     table.insert(out, { { "(no description)", "NemetonMeta" } })
     return out
   end
-  -- The description itself unpainted, and starting where the labels do
-  -- rather than where their values do: it is markdown, the window says
-  -- so, and a colour of ours over the top of that is a colour instead
-  -- of it. Sitting at the left edge is also what separates it from the
-  -- block above without a rule -- and a rule would have to know how
-  -- wide the window is, which this does not.
-  for _, l in ipairs(vim.split(body:gsub("\r\n", "\n"), "\n", { plain = true })) do
-    table.insert(out, { { l } })
-  end
+  -- The description drawn as the page draws it, as a comment is
+  -- (`threads.prose`): a link as its words, a table ruled. Starting
+  -- where the labels do rather than where their values do, which is
+  -- what separates it from the block above without a rule -- and a
+  -- rule would have to know how wide the window is, which this does
+  -- not.
+  vim.list_extend(out, require("nemeton.threads").prose((body:gsub("\r\n", "\n"))))
   return out
 end
 

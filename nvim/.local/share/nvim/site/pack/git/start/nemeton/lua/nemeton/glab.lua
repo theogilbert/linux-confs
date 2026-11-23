@@ -968,10 +968,17 @@ end
 --- is no better -- it is `updatedAt` under another name, set on every
 --- note -- but `lastEditedBy` is only there on one somebody rewrote.
 ---
---- Three calls at once, answered as one table once all three are in;
+--- And the description as each change left it, which is the half of
+--- "changed the description" a system note does not say: GraphQL's
+--- `descriptionVersion`, asked for on its own because a GitLab that
+--- does not know the field refuses the whole query, and the edits
+--- should not go with it. The last hundred changes of anything; a
+--- description changed before those is said without what it became.
+---
+--- Four calls at once, answered as one table once all four are in;
 --- a call that fails is that list empty, not the window refused.
 function M.mr_activity(root, iid, cb)
-  local out, left = { labels = {}, states = {}, edits = {} }, 3
+  local out, left = { labels = {}, states = {}, edits = {}, descriptions = {} }, 4
   local function done()
     left = left - 1
     if left == 0 then
@@ -994,8 +1001,24 @@ function M.mr_activity(root, iid, cb)
   M.project_path(root, function(path)
     if not path then
       done()
+      done()
       return
     end
+    local versions = (
+      '{ project(fullPath: "%s") { mergeRequest(iid: "%d") { notes(filter: ONLY_ACTIVITY, last: 100) '
+      .. "{ nodes { id systemNoteMetadata { descriptionVersion { description } } } } } } }"
+    ):format(path, iid)
+    json({ "api", "graphql", "--raw-field", "query=" .. versions }, { cwd = root }, function(data)
+      local notes = vim.tbl_get(data or {}, "data", "project", "mergeRequest", "notes", "nodes")
+      for _, note in ipairs(notes or {}) do
+        local text = vim.tbl_get(note, "systemNoteMetadata", "descriptionVersion", "description")
+        local id = tonumber(tostring(note.id or ""):match("(%d+)$"))
+        if id and type(text) == "string" then
+          out.descriptions[id] = text
+        end
+      end
+      done()
+    end)
     local query = (
       '{ project(fullPath: "%s") { mergeRequest(iid: "%d") { discussions { nodes { notes { nodes '
       .. "{ id lastEditedAt lastEditedBy { username } } } } } } } }"

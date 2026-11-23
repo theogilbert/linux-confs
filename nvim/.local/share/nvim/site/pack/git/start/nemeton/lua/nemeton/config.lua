@@ -587,10 +587,10 @@ return {
     follow = {
       mention = true,
       commit = true,
-      -- `mr = function(text) require("nemeton").open(text:match("%d+$")) end`
-      -- is the one worth writing: a merge request named in a review
-      -- is one to go and read in the same editor.
       issue = true,
+      -- One of this project read in a float, with the review of it a
+      -- key away; `mr = function(text) require("nemeton").open(
+      -- text:match("%d+$")) end` goes straight to the review instead.
       mr = true,
       thread = true,
       url = true,
@@ -1228,6 +1228,8 @@ return {
       edit = "e", -- its title, draft, target, labels, reviewers, description
       browser = "o",
       refresh = "r",
+      follow = "<C-]>", -- the link, sha or reference under the cursor
+      who = "K", -- where the link under the cursor goes
       quit = "q",
       help = "g?", -- every key above, in a float
     },

@@ -25,7 +25,7 @@
 -- they do with it. `config.comments.follow` is the kinds, and `true` in
 -- any of them is that.
 --
--- With three exceptions, which are the destinations that are not a
+-- With four exceptions, which are the destinations that are not a
 -- page somewhere else. A link to another comment on this merge request
 -- is a link to a conversation this editor already has open, and `true`
 -- goes to it. And a link to a file of this repository -- the
@@ -36,7 +36,9 @@
 -- who pressed the key on "see !7 (comment 1234)" or on "the check in
 -- `src/app.lua#L40`" asked for exactly this. And an issue of this
 -- project -- `#12`, or a link to it -- is a tab this editor can open
--- (`nemeton.issue`), and `true` opens it there.
+-- (`nemeton.issue`), and `true` opens it there. And a merge request of
+-- this project -- `!12` -- is a window this editor can draw, and `true`
+-- reads it in a float (`nemeton.linked`).
 --
 -- The refs themselves come from `threads.render`, which puts what a run
 -- points at beside the run: this module only remembers where they
@@ -414,6 +416,32 @@ function M.issue_of(ref, href, on)
   return nil
 end
 
+--- The number of the merge request of this project `ref` names -- `!12`,
+--- `group/proj!12` where that is this project, or a link to its page --
+--- or nil for one of another project, or a reference to something else.
+--- A link to a comment on one is a `thread`, not this.
+function M.mr_of(ref, href, on)
+  if not ref then
+    return nil
+  end
+  local _, project = forge(on)
+  local mine = project and project:match("^https?://[^/]+/(.*)$")
+  if ref.kind == "mr" then
+    local elsewhere, number = (ref.text or ""):match("^(.-)!(%d+)$")
+    if number and (elsewhere == "" or (mine and elsewhere:lower() == mine:lower())) then
+      return tonumber(number)
+    end
+    return nil
+  end
+  if (ref.kind == "url" or ref.kind == "path") and href and project then
+    local number = href:lower():match(
+      "^" .. vim.pesc(project:lower()) .. "/%-/merge_requests/(%d+)/?[?]?[^/#]*$"
+    )
+    return tonumber(number)
+  end
+  return nil
+end
+
 --- Whether `href` is a merge request of the project `on` is on (or the
 --- review's): a comment on one of them can be read with this checkout.
 function M.ours(href, on)
@@ -422,71 +450,6 @@ function M.ours(href, on)
     return false
   end
   return href:lower():find(project:lower() .. "/-/merge_requests/", 1, true) == 1
-end
-
---- The reference in a line of raw markdown at byte `col` (0-based), or
---- the next one along it: what `<C-]>` follows in a buffer that shows
---- markdown as it was typed -- an issue's description -- rather than
---- drawn, where nothing was remembered as it was drawn.
----
---- The line is cut at the links it has, and each piece asked of
---- `markdown.inline` what it is, so that a link here is read as the
---- same thing it is read as in a comment.
-function M.in_text(line, col)
-  local markdown = require("nemeton.markdown")
-  local spans = {}
-  local function add(from, to)
-    for _, s in ipairs(spans) do
-      if from <= s[2] and to >= s[1] then
-        return
-      end
-    end
-    table.insert(spans, { from, to })
-  end
-  for from, to in line:gmatch("()%b[]%b()()") do
-    add(from, to - 1)
-  end
-  for from, to in line:gmatch("()<https?://[^>%s]+>()") do
-    add(from, to - 1)
-  end
-  for from, to in line:gmatch("()https?://%S+()") do
-    add(from, to - 1)
-  end
-  for _, pattern in ipairs({ "()[%w_./%-]*[#!]%d+()", "()@[%w_.%-]+()" }) do
-    for from, to in line:gmatch(pattern) do
-      add(from, to - 1)
-    end
-  end
-  table.sort(spans, function(a, b)
-    return a[1] < b[1]
-  end)
-  local function ref_of(s)
-    local _, runs = markdown.inline(line:sub(s[1], s[2]))
-    for _, run in ipairs(runs or {}) do
-      if run.ref then
-        return run.ref
-      end
-    end
-    return nil
-  end
-  local at = col + 1
-  for _, s in ipairs(spans) do
-    if at >= s[1] and at <= s[2] then
-      local ref = ref_of(s)
-      if ref then
-        return ref
-      end
-    end
-  end
-  for _, s in ipairs(spans) do
-    if s[1] > at then
-      local ref = ref_of(s)
-      if ref then
-        return ref
-      end
-    end
-  end
-  return nil
 end
 
 --- Puts `text` where a paste will find it.
@@ -708,6 +671,24 @@ function M.go(ref, leave, on)
       leave()
     end
     require("nemeton.issue").open(issue)
+    return true
+  end
+  -- ...and a merge request of this project, which is a window this
+  -- editor can draw: its own, where it is the review open, and the same
+  -- window read in a float otherwise (`nemeton.linked`), with the review
+  -- of it a key away. One of another project is a link.
+  local other = M.mr_of(ref, href, on)
+  if other and (ref.kind == "mr" or follow.mr ~= false) then
+    if leave then
+      leave()
+    end
+    local session = require("nemeton.session")
+    local root = on and on.root or session.root()
+    if session.current and session.current.iid == other and session.current.root == root then
+      require("nemeton.overview").open()
+    else
+      require("nemeton.linked").describe(other, root)
+    end
     return true
   end
   if file then

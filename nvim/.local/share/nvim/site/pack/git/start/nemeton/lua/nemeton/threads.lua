@@ -1072,6 +1072,9 @@ end
 --- is ruled across the block -- the rule under the quotation -- runs
 --- to the window's edge rather than to the band's.
 ---
+--- `opts.bare = true` -- the words alone, without the head or the
+--- rail: markdown that is not a conversation (`M.prose`).
+---
 --- `opts.wrap_code = false` -- keep the blocks whose meaning is in
 --- their columns at the width they were written, wrapping only the
 --- prose. For the caller drawing into a real window, where a line too
@@ -1590,7 +1593,7 @@ function M.render(thread, opts)
     -- nesting happens inside it. The line the reply opens with spends
     -- that indent on the mark instead: the indent is what holds the
     -- shape, the mark is what names it.
-    local lead = i > 1 and (rail[1] .. indent) or rail[1]
+    local lead = opts.bare and "" or i > 1 and (rail[1] .. indent) or rail[1]
     if i > 1 then
       -- The rail alone, unpadded: a separator that carries a trailing
       -- space is trailing whitespace in the two windows that are real
@@ -1752,7 +1755,9 @@ function M.render(thread, opts)
         pushed = sha == note.commit and note.pushed_at or nil,
       }
     end
-    table.insert(out, head)
+    if not opts.bare then
+      table.insert(out, head)
+    end
 
     --- `blocks` drawn behind `lead`, in `hl` where a block is words.
     ---
@@ -1910,6 +1915,19 @@ function M.render(thread, opts)
     end
   end
   return out
+end
+
+--- A description -- of a merge request, of an issue -- drawn as the
+--- page draws it, the way a note is: links as their words with where
+--- they go kept for `<C-]>`, tables ruled, headings without their
+--- hashes. The same drawing and not a second one, so that what a
+--- comment can say a description says the same way. `width` as for
+--- `M.render`; the code keeps the columns it was written in.
+function M.prose(text, width)
+  return M.render(
+    { notes = { { body = text } } },
+    { bare = true, width = width, wrap_code = false }
+  )
 end
 
 --- The same lines as plain strings, plus the highlights to paint over

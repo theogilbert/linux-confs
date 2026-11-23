@@ -242,6 +242,72 @@ local function draw(t, mr, code, iid, href)
   }, k.help, " linked comment ")
 end
 
+--- Merge request `iid` of the project in `root`, read in a float: the
+--- window it would have as the review -- what it is, the state it is
+--- in, what it says it is for -- without checking it out. `!12` in a
+--- description is usually a question ("what did that one do?") and not
+--- a decision to review it; `<CR>` is that decision.
+function M.describe(iid, root)
+  root = root or session.root()
+  if not root then
+    session.notify("not inside a git repository", vim.log.levels.ERROR)
+    return
+  end
+  local said = session.working(("fetching !%d…"):format(iid))
+  glab.mr_get(root, iid, function(mr, err)
+    said()
+    if type(mr) ~= "table" then
+      session.notify(("could not read !%d: %s"):format(iid, tostring(err)), vim.log.levels.ERROR)
+      return
+    end
+    local detail = require("nemeton.detail")
+    local follow = require("nemeton.follow")
+    local lines, hls, refs = threads.flatten(detail.description_chunks(mr), 0)
+    local k = config.keys.linked
+    M.close()
+    local close
+    M.win, M.buf = detail.float(lines, (" !%d "):format(iid), {
+      hls = hls,
+      filetype = false,
+      help = k.help,
+      quit = k.quit,
+      winbar = detail.hint({
+        { k.open, "open the review" },
+        { k.browser, follow.browse_hint() },
+      }, k.help),
+      keys = {
+        {
+          k.open,
+          function()
+            close()
+            require("nemeton").open(iid)
+          end,
+          "open the review of it",
+        },
+        {
+          k.browser,
+          function()
+            if mr.web_url then
+              follow.browse(mr.web_url)
+            end
+          end,
+          "open it on GitLab",
+        },
+        { k.follow, follow.here, "follow what is under the cursor" },
+      },
+    })
+    local float = M.win
+    close = function()
+      if vim.api.nvim_win_is_valid(float) then
+        vim.api.nvim_win_close(float, true)
+      end
+    end
+    -- What its links are measured from: this merge request's page and
+    -- the branch it goes into, not the review's.
+    follow.set(M.buf, refs, close, vim.tbl_extend("force", mr, { root = root }))
+  end)
+end
+
 --- Shows comment `note` of merge request `iid`: `href` is the link it
 --- was found as, `root` the checkout to read the code out of.
 function M.show(iid, note, href, root)

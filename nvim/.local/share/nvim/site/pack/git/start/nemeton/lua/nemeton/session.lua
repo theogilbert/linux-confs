@@ -794,7 +794,7 @@ end
 
 --- What the forge answered a change of state with, kept: the merge
 --- request as it now stands, so the window that asked can say so
---- without asking again.
+--- without asking again. True when its head has moved.
 function M.took(mr, data)
   if type(data) ~= "table" then
     return
@@ -819,6 +819,18 @@ function M.took(mr, data)
   if type(data.head_pipeline) == "table" then
     mr.head_pipeline = data.head_pipeline
   end
+  -- The commits a new comment is anchored to. Taken from every answer
+  -- that names them: a position sent with the head the review opened
+  -- at, after a push, is a thread GitLab files under "an old version
+  -- of the diff" -- on lines that may not be the ones you read.
+  local refs, moved = data.diff_refs, false
+  if type(refs) == "table" and refs.head_sha then
+    moved = refs.head_sha ~= (mr.diff_refs or {}).head_sha
+    mr.diff_refs = refs
+    if mr.raw and type(mr.raw.mr) == "table" then
+      mr.raw.mr.diff_refs = refs
+    end
+  end
   -- ...and one that is not open any more is not one to open as the
   -- editor starts, nor to keep the review of |nemeton-resume|.
   if mr.root and mr.iid and mr.state ~= "opened" then
@@ -830,6 +842,7 @@ function M.took(mr, data)
     })
     require("nemeton.snapshot").drop(mr.root, mr.iid)
   end
+  return moved
 end
 
 --- That the review in front of you was seen as it is drawn: the head
@@ -876,11 +889,20 @@ function M.refresh_mr(cb)
     return
   end
   glab.mr_get(mr.root, mr.iid, function(data, err)
+    local moved = data and M.current == mr and M.took(mr, data)
     if data and M.current == mr then
-      M.took(mr, data)
       M.redraw_all()
     end
-    if cb then
+    -- A new head is a new diff, and the line map is what says which
+    -- lines of it a comment can go on: the caller is told once that
+    -- is in too, not before.
+    if moved then
+      M.refresh_changes(function()
+        if cb then
+          cb(data, err)
+        end
+      end)
+    elseif cb then
       cb(data, err)
     end
   end)
@@ -1447,8 +1469,8 @@ function M.open(iid, opts)
     if opts.on_open then
       opts.on_open()
     end
+    M.check_head(root, staged, opts.checkout == false)
     if opts.checkout ~= false then
-      M.check_head(root, mr)
       M.track(root, mr)
     end
   end
@@ -1844,10 +1866,6 @@ function M.track(root, mr)
   end)
 end
 
---- Warns when the local HEAD is not the revision the threads were
---- written against.
----
---- It happens constantly -- someone pushes while you are reviewing --
 --- The commit the checkout is at, or nil for a directory git has no
 --- answer for.
 function M.head(root, cb)
@@ -1862,29 +1880,84 @@ function M.head(root, cb)
   end)
 end
 
+--- Warns when the local HEAD is not the revision the threads were
+--- written against, and writes down which one it is (`M.caught_up`).
+---
+--- It happens constantly -- someone pushes while you are reviewing --
 --- and the consequence is specific: every line number in every thread
 --- refers to a file you are no longer looking at. Better to say so than
---- to draw markers next to the wrong code.
-function M.check_head(root, mr)
-  local head_sha = mr.diff_refs and mr.diff_refs.head_sha
-  if not head_sha then
-    return
-  end
-  local done = log.exec({ "git", "rev-parse", "HEAD" }, { cwd = root })
-  vim.system({ "git", "rev-parse", "HEAD" }, { text = true, cwd = root }, function(res)
-    done(res.code, res.stderr)
-    local head = vim.trim(res.stdout or "")
-    if res.code == 0 and head ~= "" and head ~= head_sha then
-      vim.schedule(function()
-        notify(
-          ("local HEAD (%s) is not the MR head (%s) — thread lines may be off"):format(
-            head:sub(1, 8),
-            head_sha:sub(1, 8)
-          ),
-          vim.log.levels.WARN
-        )
-      end)
+--- to draw markers next to the wrong code. `quiet` writes it down and
+--- says nothing, for a review that was not checked out.
+function M.check_head(root, mr, quiet)
+  M.head(root, function(head)
+    mr.local_head = mr.local_head or head
+    local head_sha = mr.diff_refs and mr.diff_refs.head_sha
+    if quiet or not (head and head_sha) or head == head_sha then
+      return
     end
+    notify(
+      ("local HEAD (%s) is not the MR head (%s) — thread lines may be off"):format(
+        head:sub(1, 8),
+        head_sha:sub(1, 8)
+      ),
+      vim.log.levels.WARN
+    )
+  end)
+end
+
+--- `cb()` once the review is anchored where the checkout is: called
+--- before a comment's position is worked out.
+---
+--- The diff refs are the forge's as the review opened, and the
+--- checkout moves under them -- a pull in a terminal, a `glab mr
+--- checkout` of the same branch -- without the review being told. A
+--- comment written on a line a pulled commit changed, sent with the
+--- head from before it, is a comment GitLab puts on an old version of
+--- the diff. So when HEAD is not the commit it was, the merge request
+--- is asked for again first; when it is, nothing is asked and `cb`
+--- runs at once, which is every comment but the first after a pull.
+---
+--- Synchronous on that path, which is the reason for the `wait`: a
+--- `git rev-parse` is a couple of milliseconds, and a composer that
+--- opened a round trip late on every comment would be worse than one
+--- that opens a couple of milliseconds late.
+function M.caught_up(cb)
+  local mr = M.current
+  local cmd = { "git", "rev-parse", "HEAD" }
+  local done = log.exec(cmd, { cwd = mr.root })
+  local res = vim.system(cmd, { text = true, cwd = mr.root }):wait()
+  done(res.code, res.stderr)
+  local head = res.code == 0 and vim.trim(res.stdout or "") or ""
+  if head == "" or head == mr.local_head or not mr.local_head then
+    mr.local_head = mr.local_head or (head ~= "" and head or nil)
+    return cb()
+  end
+  mr.local_head = head
+  notify("HEAD moved — asking for !" .. mr.iid .. " as it now stands")
+  M.refresh_mr(function(data, err)
+    if M.current ~= mr then
+      return
+    end
+    if not data then
+      notify(
+        "could not ask for !"
+          .. mr.iid
+          .. " again, anchoring to its head as it was: "
+          .. tostring(err),
+        vim.log.levels.WARN
+      )
+    elseif head ~= (mr.diff_refs or {}).head_sha then
+      -- Behind the forge, or ahead of it: either way the lines you are
+      -- reading are not the ones the comment will be numbered against.
+      notify(
+        ("local HEAD (%s) is not the MR head (%s) — the comment may land on another line"):format(
+          head:sub(1, 8),
+          ((mr.diff_refs or {}).head_sha or "?"):sub(1, 8)
+        ),
+        vim.log.levels.WARN
+      )
+    end
+    cb()
   end)
 end
 

@@ -74,6 +74,53 @@ local function pushed(body)
   return out
 end
 
+--- A title change, as `{ old, new }`, each a list of `{ text, changed }`
+--- pieces, or nil for a note that is not one. GitLab writes the change
+--- into the note as HTML -- `changed title from <code
+--- class="idiff">a<span class="idiff … deletion">b</span></code> to
+--- …` -- and draws the spans as the words that went and came; an older
+--- one wrote it as markdown, `**{-b-}**` and `**{+c+}**`.
+local function retitled(body)
+  body = body or ""
+  local old, new = body:match("changed title from <code[^>]*>(.-)</code> to <code[^>]*>(.-)</code>")
+  local open, close = "<span[^>]*>", "</span>"
+  if not old then
+    old, new = body:match("changed title from %*%*(.-)%*%* to %*%*(.-)%*%*%s*$")
+    open, close = "{[-+]", "[-+]}"
+  end
+  if not old then
+    return nil
+  end
+  local function pieces(text)
+    local out, at = {}, 1
+    while at <= #text do
+      local from, to = text:find(open, at)
+      local stop, last
+      if from then
+        stop, last = text:find(close, to + 1)
+      end
+      if not stop then
+        table.insert(out, { markdown.unescaped(text:sub(at)) })
+        break
+      end
+      if from > at then
+        table.insert(out, { markdown.unescaped(text:sub(at, from - 1)) })
+      end
+      table.insert(out, { markdown.unescaped(text:sub(to + 1, stop - 1)), true })
+      at = last + 1
+    end
+    return out
+  end
+  return { old = pieces(old), new = pieces(new) }
+end
+
+--- The pieces as the words they come to.
+local function worded(pieces)
+  return table.concat(vim.tbl_map(function(p)
+    return p[1]
+  end, pieces))
+end
+
 --- A system note that only repeats another one: GitLab adds one of
 --- these to every thread whose line a push touched, beside the push
 --- note that says the same thing once.
@@ -86,13 +133,15 @@ end
 ---
 --- `discussions` is the REST payload whole, system notes and all;
 --- `extra` is what `glab.mr_activity` answers -- `labels` and `states`,
---- the two lists of resource events, and `edits`, note id to
---- `{ at, by }`. Any of them missing is that much less said, not an
---- error: the discussions alone are most of it.
+--- the two lists of resource events, `edits`, note id to `{ at, by }`,
+--- and `descriptions`, note id to the description that change left.
+--- Any of them missing is that much less said, not an error: the
+--- discussions alone are most of it.
 function M.events(discussions, extra)
   extra = extra or {}
   local edits = extra.edits or {}
-  local out = {}
+  local descriptions = extra.descriptions or {}
+  local out, described = {}, {}
   for _, d in ipairs(discussions or {}) do
     local first = (d.notes or {})[1]
     local place = first and first.position
@@ -103,14 +152,23 @@ function M.events(discussions, extra)
       if note.system then
         if not echo(note.body) then
           local commits = pushed(note.body)
-          table.insert(out, {
+          local title = retitled(note.body)
+          local event = {
             at = note.created_at,
             who = who(note.author),
-            verb = gist(note.body),
+            verb = title
+                and ("changed title from %s to %s"):format(worded(title.old), worded(title.new))
+              or gist(note.body),
             body = note.body,
             commits = #commits > 0 and commits or nil,
+            title = title,
+            description = descriptions[note.id],
             note = note.id,
-          })
+          }
+          table.insert(out, event)
+          if event.description then
+            table.insert(described, event)
+          end
         end
       else
         said = said + 1
@@ -152,6 +210,16 @@ function M.events(discussions, extra)
   for _, e in ipairs(extra.states or {}) do
     table.insert(out, { at = e.created_at, who = who(e.user), verb = e.state or "?" })
   end
+  -- What each change of the description changed it from: the one
+  -- before it. The first has nothing before it to say -- the forge
+  -- keeps a version for every change and none for what the merge
+  -- request was opened with.
+  table.sort(described, function(a, b)
+    return (a.at or "") < (b.at or "")
+  end)
+  for i = 2, #described do
+    described[i].before = described[i - 1].description
+  end
   -- ISO timestamps in one zone sort as strings; a tie keeps the order
   -- they were found in, so a reply never lands above its comment.
   for i, e in ipairs(out) do
@@ -168,12 +236,12 @@ end
 
 --- The events as lines and highlights, the event on each line, and
 --- what the links, shas and references on them point at, as
---- `threads.flatten` hands them over. `now` is for the suite, as
---- `threads.age`'s is.
+--- `threads.flatten` hands them over, and the column what an event
+--- says starts at. `now` is for the suite, as `threads.age`'s is.
 function M.lines(events, now)
   local rendered, map = {}, {}
   if #events == 0 then
-    return { "nothing has happened yet" }, {}, {}, {}
+    return { "nothing has happened yet" }, {}, {}, {}, 0
   end
   local width = 0
   for _, e in ipairs(events) do
@@ -182,7 +250,10 @@ function M.lines(events, now)
   for _, e in ipairs(events) do
     local age = threads.age(e.at, now) or ""
     local head = {
-      { ("%6s  "):format(age), "NemetonMeta" },
+      -- `K` on it says when to the second, as on a note's head.
+      { (" "):rep(6 - vim.fn.strdisplaywidth(age)) },
+      { age, "NemetonMeta", ref = { kind = "stamp", written = e.at } },
+      { "  " },
       { e.who .. (" "):rep(width - vim.fn.strdisplaywidth(e.who) + 2), "NemetonAuthor" },
     }
     vim.list_extend(head, chunks_of(e.verb))
@@ -214,7 +285,7 @@ function M.lines(events, now)
     end
   end
   local lines, hls, refs = threads.flatten(rendered, 0)
-  return lines, hls, map, refs
+  return lines, hls, map, refs, 8 + width + 2
 end
 
 --- One event whole, for `K`: who and what, to the second, where, and
@@ -234,7 +305,22 @@ function M.detail(e)
     table.insert(rendered, { { ("on %s:%s"):format(e.path, e.line or "?"), "NemetonMeta" } })
   end
   local body = {}
-  if e.commits then
+  if e.title then
+    -- The words that went and the words that came, in the colours of
+    -- a diff; the rest of the title in the colour of what stayed.
+    for _, side in ipairs({
+      { "- ", e.title.old, "NemetonRemoved" },
+      { "+ ", e.title.new, "NemetonAdded" },
+    }) do
+      local row = { { side[1], side[3] } }
+      for _, p in ipairs(side[2]) do
+        table.insert(row, { p[1], p[2] and side[3] or nil })
+      end
+      table.insert(body, row)
+    end
+  elseif e.description then
+    vim.list_extend(body, M.changed(e.before, e.description))
+  elseif e.commits then
     for _, c in ipairs(e.commits) do
       table.insert(
         body,
@@ -256,6 +342,34 @@ function M.detail(e)
   return lines, hls
 end
 
+--- What a change of the description did, as rows of chunks: a diff of
+--- the source against the version before, or -- for the first change,
+--- which has none -- what it said afterwards. The source and not the
+--- page: a diff is about what was typed.
+function M.changed(before, after)
+  local out = {}
+  if not before then
+    table.insert(out, { { "it now says:", "NemetonMeta" } })
+    for _, line in ipairs(vim.split(after, "\n", { plain = true })) do
+      table.insert(out, { { line } })
+    end
+    return out
+  end
+  local diff = (vim.text and vim.text.diff or vim.diff)(before .. "\n", after .. "\n", {
+    ctxlen = 2,
+  })
+  local colour = { ["+"] = "NemetonAdded", ["-"] = "NemetonRemoved", ["@"] = "NemetonMeta" }
+  for _, line in ipairs(vim.split(vim.trim(diff or ""), "\n", { plain = true })) do
+    if line ~= "" and line ~= "\\ No newline at end of file" then
+      table.insert(out, { { line, colour[line:sub(1, 1)] } })
+    end
+  end
+  if #out == 0 then
+    table.insert(out, { { "the same words as before", "NemetonMeta" } })
+  end
+  return out
+end
+
 local function event_at()
   if not (M.win and vim.api.nvim_win_is_valid(M.win)) then
     return nil
@@ -271,8 +385,15 @@ function M.close()
 end
 
 local function draw(events)
-  local lines, hls, map, refs = M.lines(events)
+  local lines, hls, map, refs, column = M.lines(events)
   rows = map
+  -- Wrapped by the window rather than by the lines: a row stays the
+  -- one event the keys act on, and what runs past the edge goes on
+  -- under where it started -- under the verb, past the ages and the
+  -- names, which are the column the eye runs down.
+  if M.win and vim.api.nvim_win_is_valid(M.win) then
+    vim.wo[M.win].breakindentopt = "column:" .. column
+  end
   follow.set(M.buf, refs, M.close)
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
@@ -306,7 +427,9 @@ function M.open(back)
     title_pos = "center",
   })
   vim.wo[M.win].cursorline = true
-  vim.wo[M.win].wrap = false
+  vim.wo[M.win].wrap = true
+  vim.wo[M.win].linebreak = true
+  vim.wo[M.win].breakindent = true
 
   local k = config.keys.activity
   vim.wo[M.win].winbar = detail.hint({ { k.browser, "on GitLab" } }, k.help)
@@ -360,7 +483,8 @@ function M.open(back)
     },
     { k.follow, follow.here, "follow the link, sha or reference under the cursor" },
     -- The commit or the address under the cursor where there is one,
-    -- as in a comment; the event whole anywhere else on its rows.
+    -- as in a comment, and the time to the second on the age; the
+    -- event whole anywhere else on its rows.
     {
       k.who,
       function()
@@ -374,7 +498,7 @@ function M.open(back)
           hover.popup(e, lines, hls)
         end
       end,
-      "the event under the cursor whole, or the commit or link",
+      "the event under the cursor whole, or the commit, link or time",
     },
     { k.refresh, load, "refetch" },
   }

@@ -872,9 +872,9 @@ function M.toggle_preview(mode)
     vim.wo[M.preview.win].linebreak = true
   end
   M.preview.mode = mode
-  -- A description is markdown and is worth rendering as such; a
-  -- changelog is a table and markdown would only find headings in it.
-  vim.bo[M.preview.buf].filetype = mode == "description" and "markdown" or ""
+  -- Drawn already, the description as a comment is: markdown's
+  -- syntax over the top would colour the words a second time.
+  vim.bo[M.preview.buf].filetype = ""
   update_preview(true)
   return mode
 end

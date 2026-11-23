@@ -553,8 +553,7 @@ end
 ---
 --- A selection is anchored to its *last* line, which is where GitLab
 --- puts a multi-line thread and where the reviewer's cursor already is.
-M.comment = with_session(function(first, last)
-  local bufnr = vim.api.nvim_get_current_buf()
+local function comment_on(bufnr, first, last)
   local path, side, _, why = reading(bufnr)
   if not path then
     session.notify(why, vim.log.levels.WARN)
@@ -569,7 +568,6 @@ M.comment = with_session(function(first, last)
     return
   end
 
-  first = first or vim.api.nvim_win_get_cursor(0)[1]
   last = math.max(last or first, first)
   local where = span(path, first, last)
   -- Worked out before the composer opens rather than after it is
@@ -614,6 +612,17 @@ M.comment = with_session(function(first, last)
     end,
     on_draft = M.keep("kept for " .. where, position),
   })
+end
+
+-- Taken where the cursor is when the key is pressed, and anchored to
+-- the head the checkout is at (`session.caught_up`), which after a
+-- pull is a round trip later.
+M.comment = with_session(function(first, last)
+  local bufnr = vim.api.nvim_get_current_buf()
+  first = first or vim.api.nvim_win_get_cursor(0)[1]
+  session.caught_up(function()
+    comment_on(bufnr, first, last)
+  end)
 end)
 
 --- What the composer does with a comment that is kept rather than
@@ -740,8 +749,7 @@ end
 --- fence. A suggestion is an edit of what is there, and retyping four
 --- lines to change one word is how a reviewer decides not to suggest
 --- anything at all.
-M.suggest = with_session(function(first, last)
-  local bufnr = vim.api.nvim_get_current_buf()
+local function suggest_on(bufnr, first, last)
   local path, side, _, why = reading(bufnr)
   if not path then
     session.notify(why, vim.log.levels.WARN)
@@ -767,7 +775,6 @@ M.suggest = with_session(function(first, last)
     return
   end
 
-  first = first or vim.api.nvim_win_get_cursor(0)[1]
   last = math.max(last or first, first)
   local where = span(path, first, last)
   -- Anchored at the last line of the selection: that is the line the
@@ -811,6 +818,14 @@ M.suggest = with_session(function(first, last)
       end)
     end,
   })
+end
+
+M.suggest = with_session(function(first, last)
+  local bufnr = vim.api.nvim_get_current_buf()
+  first = first or vim.api.nvim_win_get_cursor(0)[1]
+  session.caught_up(function()
+    suggest_on(bufnr, first, last)
+  end)
 end)
 
 M.reply = with_session(function()

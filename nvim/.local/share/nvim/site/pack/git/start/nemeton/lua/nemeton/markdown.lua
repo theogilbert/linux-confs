@@ -418,6 +418,37 @@ local function undotted(url)
   return url:sub(1, #url - #(url:match("[%.,;:!%?%)%]]+$") or ""))
 end
 
+-- The character references the page would decode: `&#39;` and
+-- `&#x27;` by number, and the handful of names GitLab itself writes
+-- -- it escapes what it puts inside the HTML of a system note, a
+-- pushed commit's title above all, so `it's` arrives as `it&#39;s`.
+-- A name not in here is left as it was typed rather than guessed at.
+local ENTITIES = { amp = "&", lt = "<", gt = ">", quot = '"', apos = "'", nbsp = "\194\160" }
+
+--- The character `&...;` stands for, or nil for one that names none.
+local function entity(ref)
+  local n = ref:match("^#[xX](%x+)$")
+  n = n and tonumber(n, 16) or tonumber(ref:match("^#(%d+)$") or "")
+  if n then
+    -- Zero and the surrogates are not characters; the page draws a
+    -- replacement for them, and so does this.
+    if n == 0 or n > 0x10FFFF or (n >= 0xD800 and n <= 0xDFFF) then
+      return "\239\191\189"
+    end
+    return vim.fn.nr2char(n, 1)
+  end
+  return ENTITIES[ref]
+end
+
+--- `text` with its character references decoded.
+local function unescaped(text)
+  return (text:gsub("&(#?%w+);", function(ref)
+    return entity(ref)
+  end))
+end
+
+M.unescaped = unescaped
+
 --- One line of a comment as the runs it is drawn as: `{ text, hl }`,
 --- with `ref` on the ones that point somewhere.
 ---
@@ -548,6 +579,8 @@ function M.inline(text)
       end
       if spanned then
         label = (M.inline(label))
+      else
+        label = unescaped(label)
       end
       -- `![alt](src)` is a picture, which a terminal has nowhere to
       -- put: it is drawn as what its author said it was, and the `!`
@@ -647,6 +680,23 @@ function M.inline(text)
         "NemetonLink",
         { kind = where(url), text = url, href = url }
       )
+    end
+  end
+
+  -- `&#39;` as the `'` it stands for, before the references are looked
+  -- for: the `#39` in it is otherwise issue 39. After the code spans,
+  -- inside which it is what was typed, and after the links, which
+  -- decode their own words.
+  at = 1
+  while true do
+    local from, to, ref = text:find("&(#?%w+);", at)
+    if not from then
+      break
+    end
+    at = to + 1
+    local char = entity(ref)
+    if char then
+      claim(from, to, char)
     end
   end
 

@@ -398,14 +398,20 @@ is checked out and no review is opened to read it. In the float `<CR>`
 opens that review — checking it out, as `:Nemeton open` does — and lands
 on the thread beside its code, in a window with a file in it rather
 than in the issue's tab; `o` opens the comment on GitLab and `q` closes
-the float (`keys.linked`). The same key works in an issue's description,
-which is shown as the markdown it was typed as: the link is read off the
-line under the cursor (`keys.issue.follow`).
+the float (`keys.linked`). The same key works in a description — the
+merge request's, an issue's — which is drawn as a comment is.
 
 **An issue of this project is a third** — `#12`, `group/proj#12` where
 that is this project, or a link to its page (`/-/issues/12`, or
 `/-/work_items/12` as the forge now spells it): it opens in its tab.
 One of another project is copied, as before.
+
+**And a merge request of this project** — `!12`, `group/proj!12` where
+that is this project, or a link to its page — is read in a float: the
+window it would have as the review, its description and the state it is
+in, without checking it out. `<CR>` there opens the review of it, `o`
+its page. `!12` naming the review already open is its own window. One of
+another project is copied; `mr = false` copies them all.
 
 **A link to a file of this repository is the other exception**, for the
 same reason: the file is on the disk, and a key that copied a URL to it
@@ -1140,7 +1146,8 @@ Only where there is a line under it to break to: one at the end of a
 paragraph broke nothing and is a backslash its author typed.
 
 A **code span** is drawn without its backticks, in `NemetonCode`
-(`String`), and nothing inside one is markup: `` `a_b` `` is an
+(`String`'s colour on a chip a step off the page, or off the
+conversation it is in, where there is true colour), and nothing inside one is markup: `` `a_b` `` is an
 identifier, a URL in backticks is a string somebody quoted rather than a
 page to go to, and `` `@alice` `` is not somebody to notify. A run of
 backticks closes on a run of the same length, so `` ``a `b` c`` `` is

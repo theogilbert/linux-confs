@@ -614,7 +614,10 @@ THE MERGE REQUEST                                      *nemeton-detail-window*
 `<leader>md`, or `:Nemeton description`. What it is for, and the state
 it is in: CI, approvals, how big the change is, how much conversation
 there is, how many open threads somebody else spoke in last, and how
-much of it is yours and unsent.
+much of it is yours and unsent. Then the description, drawn as the
+page draws it and as a comment is: a link as its words, a code span
+without its backticks, emphasis as weight, a table ruled
+|nemeton-markdown|.
 
     x               approve it, or take the approval back
     s               send every comment kept unsent
@@ -628,6 +631,9 @@ much of it is yours and unsent.
                     reviewers or description |nemeton-create-window|
     o               open it on GitLab
     r               refetch it: its pipeline, approvals and diff
+    <C-]>           follow the link, sha or reference under the
+                    cursor in the description |nemeton-follow|
+    K               where the link under the cursor goes
     q               close
     g?              all of the above, in a float
 
@@ -858,7 +864,7 @@ At the top, what it is, whose and when; then a column of facts -- its
 state when it is closed, who it is assigned to, its labels in their own
 colours as the forge draws them, what it is reacted with, the merge
 requests about it, and how many comments are under it -- and then the
-description, as markdown. The keys are the merge request window's
+description, drawn as the merge request's is. The keys are the merge request window's
 wherever the two do the same thing:
 
     c               its comments, in a pane beside it; again to close
@@ -1218,15 +1224,19 @@ request, newest first: comments and replies -- where, and the first
 line of what was said -- comments rewritten and by whom, pushes with
 the commits each brought, the description and the title changed,
 labels added and removed, approvals, reviewers and assignees, closes,
-reopens and the merge.
+reopens and the merge. A row too long for the window wraps under
+where what it says starts, past the ages and the names.
 
     <C-]>           follow the sha of a pushed commit, or a link or a
                     reference in what was said, as in a comment
                     |nemeton-follow|
     K               the event under the cursor whole: when to the
-                    second, where, and all of what was said, or every
-                    commit of a push -- and on a sha the commit, on a
-                    link its address |nemeton-reactions|
+                    second, where, and all of what was said, every
+                    commit of a push, the title's words that went and
+                    came, or a diff of the description against the
+                    version before it -- and on a sha the commit, on a
+                    link its address, on the age the time to the
+                    second |nemeton-reactions|
     o               open the one under the cursor on GitLab
     r               refetch
     q               back to the merge request's window
@@ -1238,7 +1248,11 @@ too), where a push, a description changed and an approval are system
 notes; the label and state events, which GitLab keeps out of the notes;
 and GraphQL, for which comments were rewritten -- REST has no field
 for it, and a note's `updated_at` also moves when its thread is
-resolved or a push carries its line forward. The note GitLab adds to
+resolved or a push carries its line forward -- and for the description
+each change left, which is the half of "changed the description" the
+note does not say. The first change has no version before it to be
+compared with, and says what the description became; one older than
+the last hundred events says nothing more than the row. The note GitLab adds to
 every thread whose line a push touched is left out: the push is
 listed once, with its commits.
 
@@ -1840,8 +1854,8 @@ Only where there is a line under it to break to: one at the end of a
 paragraph broke nothing and is a backslash its author typed, and two of
 them are an escaped backslash rather than a break.
 
-A CODE SPAN is drawn without its backticks, in `NemetonCode`, and
-nothing inside one is markup: `a_b` in backticks is an identifier, a URL
+A CODE SPAN is drawn without its backticks, in `NemetonCode` -- on a
+chip a step off what it sits on, as the page draws it -- and nothing inside one is markup: `a_b` in backticks is an identifier, a URL
 in them is a string somebody quoted rather than a page to go to, and
 `@alice` in them is not somebody to notify. A run of backticks closes on
 a run of the same length. `comments.styles = false` leaves every marker
@@ -1978,10 +1992,8 @@ checked out and no review opened to read it. In the float
     q, <Esc>        close
     g?              all of the above, in a float
 
-An issue's description is shown as the markdown it was typed as, not
-drawn, so `<C-]>` there (`keys.issue.follow`) reads the link off the
-line under the cursor -- the one it is on, or the next one along -- and
-follows it the same way.
+An issue's description is drawn as a comment is, so `<C-]>` there
+(`keys.issue.follow`) follows what is under the cursor the same way.
 
 AN ISSUE OF THIS PROJECT is a third, for the same reason again: it is a
 tab this editor opens |nemeton-issue-window|. `#12`, `group/proj#12`
@@ -1989,6 +2001,16 @@ where that is this project, and a link to its page -- `/-/issues/12`,
 or `/-/work_items/12` as the forge's own pages now spell it -- open it
 there; one of another project is a page, and is copied. `issue = false`
 copies them all, and leaves a link to one to `url` and `path`.
+
+A MERGE REQUEST OF THIS PROJECT is a fourth. `!12`, `group/proj!12`
+where that is this project, and a link to its page are read in a float:
+the window it would have as the review |nemeton-detail-window|, without
+checking it out -- a merge request named in a description is usually a
+question about it rather than a decision to review it. `<CR>` there
+opens the review (`keys.linked.open`), `o` its page, `<C-]>` follows
+what it says. `!12` naming the review already open is its own window.
+One of another project is a page, and is copied; `mr = false` copies
+them all.
 
 A LINK TO A FILE OF THIS REPOSITORY is the other exception, for the
 same reason: the file is on the disk, and a key that copied a URL to
@@ -2829,7 +2851,7 @@ with `default`, and re-linked on every |ColorScheme|.
     NemetonBold           a word written `**like this**`  bold, no colour
     NemetonItalic         one written `*like this*`       italic, no colour
     NemetonStrike         one written `~~like this~~`     struck through
-    NemetonCode           one written `` `like this` ``   String
+    NemetonCode           one written `` `like this` ``   String, on a chip
     NemetonMath           a formula, `$x^2$` drawn `x²`   Constant
     NemetonCitation       what a note quotes with `>`     Comment
     NemetonThread         what they said                  Normal's fg
@@ -2909,7 +2931,10 @@ inside a link, the language's own inside a suggestion.
 
 `NemetonCode` is a code span, which is a colour and not a weight: it is
 the one piece of a comment that quotes something rather than says it,
-and `String` is the colour an editor already draws quoted text in.
+and `String` is the colour an editor already draws quoted text in. In
+true colour it is on a chip as well, a step off the page -- and inside
+a conversation a step off that conversation's ground -- since with the
+backticks gone the chip is what says where the code starts and stops.
 |nemeton-config-comments|
 
                                                          *hl-NemetonCitation*

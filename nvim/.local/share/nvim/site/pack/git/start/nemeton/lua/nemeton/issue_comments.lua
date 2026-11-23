@@ -83,6 +83,7 @@ local function render(entry)
   p.rows, p.noted = map, notes
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  require("nemeton.win").wrap(buf)
   vim.bo[buf].modifiable = false
   marks.paint(buf, hls)
   -- A split rather than a float, so nothing closes on the way to what a
@@ -93,6 +94,11 @@ local function render(entry)
       vim.cmd("normal! zx")
     end)
   end
+end
+
+--- Draws again what is already here: a label's colour has come in.
+function M.redraw(entry)
+  render(entry)
 end
 
 --- Asks the forge what has been said, and who reacted to it, and draws
@@ -334,7 +340,7 @@ function M.open(entry)
   end
   vim.api.nvim_win_set_buf(w, buf)
   vim.wo[w].winhighlight = "NormalFloat:Normal"
-  vim.wo[w].wrap = true
+  require("nemeton.win").wrap(buf)
   vim.wo[w].linebreak = true
   vim.wo[w].number = false
   vim.wo[w].relativenumber = false

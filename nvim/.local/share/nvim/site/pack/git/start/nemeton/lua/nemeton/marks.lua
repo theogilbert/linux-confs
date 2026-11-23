@@ -461,6 +461,12 @@ local function on_ground(group, base)
   -- to the words rather than to the line -- lifted off this ground as
   -- it is off the page, so it reads the same inside a conversation as
   -- out of one.
+  -- A label is a chip in its own colour, wherever it is: the colour is
+  -- what it says, and it is drawn on the ground as it is.
+  if group:match("^NemetonLabel") then
+    grounded[key] = group
+    return group
+  end
   local chip = group == "NemetonCode" and from.bg and bg.bg
   from.fg = from.fg or from.bg
   from.ctermfg = from.ctermfg or from.ctermbg

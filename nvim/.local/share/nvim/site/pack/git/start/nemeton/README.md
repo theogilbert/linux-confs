@@ -1168,7 +1168,11 @@ that the columns are named: the cells line up in the source when its
 author lined them up by hand, and what you are reading is somebody else's
 hand. Too wide for the window, the columns give up room from the widest
 first and a cell that still does not fit is cut with an ellipsis — a
-ruled table cannot wrap, because a rule that wraps is two rules.
+ruled table cannot wrap, because a rule that wraps is two rules. A
+window that is not cut to a width — a description, an issue, a
+conversation — draws the table whole and stops wrapping while it is in
+it, so it is scrolled sideways rather than broken across the margin.
+`\|` is a pipe in a cell, inside a code span too.
 `comments.tables = false` leaves the pipes.
 
 A **list** is drawn as the page draws it: `•`, `◦` and `▪` for the
@@ -1238,6 +1242,14 @@ thread as well as an open one: the rest of one is dimmed because it is
 history, and the commit it names is not history — it is what somebody
 reading a resolved argument came for. `comments.references = false` turns
 it off, and takes all of them out of what `<C-]>` can find with them.
+
+A label named in a sentence — `~bug`, `~"needs docs"` — is the chip the
+page draws, in the colour the project gave the label, and `<C-]>` on it
+copies the link to the project's issues with that label. Only a label the
+project has: `~5 minutes` is an estimate and `~nope` is what was typed,
+as on the page. The colours are the ones this editor has been sent — the
+labels of the merge request open, of the issues it has drawn, and the
+project's whole list, asked for once when an issue is opened.
 
 `:tada:` is drawn as 🎉, the way the forge would have drawn it — a
 comment read with the colons still in it has a word missing out of the

@@ -771,6 +771,7 @@ local function draw_preview(lines, hls)
   end
   vim.bo[M.preview.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.preview.buf, 0, -1, false, lines)
+  require("nemeton.win").wrap(M.preview.buf)
   vim.bo[M.preview.buf].modifiable = false
   marks.paint(M.preview.buf, hls or {})
   -- Another row is read from its top, wherever the last one was
@@ -868,7 +869,7 @@ function M.toggle_preview(mode)
       -- of before the list's keys work again.
       focusable = false,
     })
-    vim.wo[M.preview.win].wrap = true
+    require("nemeton.win").wrap(M.preview.buf)
     vim.wo[M.preview.win].linebreak = true
   end
   M.preview.mode = mode

@@ -810,6 +810,7 @@ function M.took(mr, data)
   end
   if type(data.labels) == "table" then
     mr.labels, mr.label_details = data.labels, data.label_details
+    require("nemeton.labels").know(data.label_details)
   end
   if data.draft ~= nil or data.work_in_progress ~= nil then
     mr.draft = data.draft or data.work_in_progress or false

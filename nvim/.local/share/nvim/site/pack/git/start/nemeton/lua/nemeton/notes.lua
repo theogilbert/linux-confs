@@ -240,6 +240,7 @@ local function render()
   rows, noted = map, notes
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
+  require("nemeton.win").wrap(M.buf)
   vim.bo[M.buf].modifiable = false
   marks.paint(M.buf, hls)
   follow.set(M.buf, refs, M.close)
@@ -469,7 +470,7 @@ function M.open(focus, back)
   -- difference between the two. So these windows are the editor's own
   -- background, and `comments.ground` means what it says in here.
   vim.wo[M.win].winhighlight = "NormalFloat:Normal"
-  vim.wo[M.win].wrap = true
+  require("nemeton.win").wrap(M.buf)
   vim.wo[M.win].linebreak = true
   vim.wo[M.win].cursorline = true
   -- One fold a thread, open but for the resolved ones: the window is

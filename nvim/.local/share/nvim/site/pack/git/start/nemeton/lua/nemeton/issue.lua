@@ -208,6 +208,7 @@ local function draw(entry)
   local lines, hls, refs = require("nemeton.threads").flatten(M.chunks(entry.view, entry), 0)
   vim.bo[entry.buf].modifiable = true
   vim.api.nvim_buf_set_lines(entry.buf, 0, -1, false, lines)
+  require("nemeton.win").wrap(entry.buf)
   vim.bo[entry.buf].modifiable = false
   marks.paint(entry.buf, hls)
   follow.set(entry.buf, refs, nil, entry.subject)
@@ -262,6 +263,17 @@ local function fetch(entry, cb)
     redraw(entry)
     if cb then
       cb(true)
+    end
+  end)
+  -- The colours of the project's labels, for a `~bug` in what is said
+  -- here: the issue and its comments drawn again with them as chips.
+  require("nemeton.labels").ask(root, function()
+    if valid(entry) then
+      redraw(entry)
+      local comments = require("nemeton.issue_comments")
+      if comments.is_open(entry) then
+        comments.redraw(entry)
+      end
     end
   end)
   -- Quietly, both: an issue drawn without the merge requests about it or

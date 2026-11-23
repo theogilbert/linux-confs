@@ -431,21 +431,8 @@ end
 -- Wide enough for the longest label, and every value starts after it.
 local LABEL = "%-10s"
 
---- The highlight a label is drawn in: its own colours, as a chip, the
---- way the forge draws one. Made the first time a colour is asked for
---- and again after a `:colorscheme`, which clears every group.
-function M.label_hl(l)
-  local bg = type(l.color) == "string" and l.color:match("^#%x%x%x%x%x%x$")
-  if not bg then
-    return "NemetonLabel"
-  end
-  local name = "NemetonLabel_" .. bg:sub(2)
-  if vim.tbl_isempty(vim.api.nvim_get_hl(0, { name = name })) then
-    local fg = type(l.text_color) == "string" and l.text_color:match("^#%x%x%x%x%x%x$")
-    vim.api.nvim_set_hl(0, name, { bg = bg, fg = fg or "#FFFFFF" })
-  end
-  return name
-end
+--- The highlight a label is drawn in (`nemeton.labels`).
+M.label_hl = require("nemeton.labels").hl
 
 --- The labels as chips: each in its own colour, a space either side.
 function M.label_chunks(labels)
@@ -990,7 +977,7 @@ function M.float(lines, title, opts)
     title = title,
     title_pos = "center",
   })
-  vim.wo[win].wrap = true
+  require("nemeton.win").wrap(buf)
   vim.wo[win].linebreak = true
   if opts.winbar then
     vim.wo[win].winbar = opts.winbar

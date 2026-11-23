@@ -217,6 +217,11 @@ function M.href(ref, on)
     end
     return project and number and (project .. page .. number) or nil
   end
+  if ref.kind == "label" then
+    -- The project's issues with that label on them, which is the page
+    -- the forge's own chip goes to.
+    return project and (project .. "/-/issues?label_name[]=" .. vim.uri_encode(ref.text)) or nil
+  end
   if ref.kind == "mention" then
     -- A username is a page at the root of the forge, which is the one
     -- shape of GitLab URL that has stayed the same since it had one.
@@ -552,6 +557,8 @@ local function said(ref, href)
     what = ("User %s"):format(ref.text)
   elseif ref.kind == "commit" then
     what = ("commit %s"):format(ref.text)
+  elseif ref.kind == "label" then
+    what = ("label %s"):format(ref.text)
   elseif ref.kind == "issue" then
     what = ("issue %s"):format(ref.text)
   elseif ref.kind == "mr" then

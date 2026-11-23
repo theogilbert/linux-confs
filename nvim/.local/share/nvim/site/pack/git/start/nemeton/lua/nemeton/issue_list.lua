@@ -335,6 +335,7 @@ local function update_preview()
   end
   vim.bo[M.preview.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.preview.buf, 0, -1, false, lines)
+  require("nemeton.win").wrap(M.preview.buf)
   vim.bo[M.preview.buf].modifiable = false
 end
 
@@ -637,7 +638,7 @@ function M.toggle_preview()
     border = "rounded",
     focusable = false,
   })
-  vim.wo[M.preview.win].wrap = true
+  require("nemeton.win").wrap(M.preview.buf)
   vim.wo[M.preview.win].linebreak = true
   update_preview()
 end

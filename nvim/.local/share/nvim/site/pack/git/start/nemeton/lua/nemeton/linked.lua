@@ -205,7 +205,7 @@ local function draw(t, mr, code, iid, href)
   -- The editor's own background, as every window that draws a
   -- conversation has it: see `conversation.lua`.
   vim.wo[M.win].winhighlight = "NormalFloat:Normal"
-  vim.wo[M.win].wrap = true
+  require("nemeton.win").wrap(M.buf)
   vim.wo[M.win].linebreak = true
 
   local function quit()

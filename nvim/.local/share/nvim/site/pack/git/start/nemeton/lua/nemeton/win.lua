@@ -67,4 +67,35 @@ function M.enter(float, dismiss, close)
   vim.api.nvim_set_current_win(float)
 end
 
+--- Wraps every window showing `buf`, unless what is in it holds a ruled
+--- table.
+---
+--- A window reading somebody's prose wraps, so a long sentence goes on
+--- under itself rather than off the edge. A table cannot: its rows are
+--- the width of the widest cell in the column, and a row that wraps
+--- comes back at the left margin under the rules it was supposed to sit
+--- between -- the table is gone and the cells are a jumble. So while a
+--- table is in it the window is scrolled sideways instead, which is
+--- what `wrap_code = false` asked for when it drew the table whole.
+---
+--- Called after the lines go in and again when the window opens, since
+--- either may come first; a redraw that drops the table wraps again.
+function M.wrap(buf)
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+    return
+  end
+  local tabled = false
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    -- The top rule, which is the one shape no prose and next to no code
+    -- starts a run of rules with.
+    if line:find("┌─", 1, true) then
+      tabled = true
+      break
+    end
+  end
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.wo[w].wrap = not tabled
+  end
+end
+
 return M

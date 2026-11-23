@@ -717,6 +717,42 @@ function M.inline(text)
     end
   end
 
+  -- `~bug` and `~"needs work"`, a label named in a sentence: a chip in
+  -- the label's colour, as the page draws it. Only a label the project
+  -- has (`nemeton.labels`) -- "~5 minutes" is an estimate -- and not
+  -- the opener of `~struck~`, which is GitLab's strikethrough. The one
+  -- reading here that asks something outside the text, because the
+  -- colour is the whole of what makes it a label.
+  if c.references then
+    local labels = require("nemeton.labels")
+    for _, shape in ipairs({ '~"([^"\n]+)"', "~([%w_][%w_%-%.:&]*)" }) do
+      at = 1
+      while true do
+        local from, to, name = text:find(shape, at)
+        if not from then
+          break
+        end
+        at = to + 1
+        if not shape:find('"', 1, true) then
+          local bare = name:gsub("[%.:]+$", "")
+          to = to - (#name - #bare)
+          name = bare
+        end
+        local before = from > 1 and text:sub(from - 1, from - 1) or ""
+        local colour = labels.colour(name)
+        if colour and not before:match("[%w_~]") and text:sub(to + 1, to + 1) ~= "~" then
+          claim(
+            from,
+            to,
+            " " .. name .. " ",
+            labels.hl({ title = name, color = colour.color, text_color = colour.text_color }),
+            { kind = "label", text = name }
+          )
+        end
+      end
+    end
+  end
+
   table.sort(found, function(a, b)
     return a.from < b.from
   end)
@@ -776,13 +812,37 @@ end
 --- way what is between them is the row. A cell is trimmed, because the
 --- spaces around it are how its author lined the source up and not
 --- anything they wrote.
+---
+--- `\|` is a pipe in a cell and not the end of it -- inside a code span
+--- too, which is GitLab's reading and the only way to write `a || b`
+--- in a table at all -- so the row is walked a character at a time,
+--- a backslash taking the one after it with it, and the backslash in
+--- front of a pipe is dropped once the cell is cut.
 local function cells(line)
-  if not line:find("|", 1, true) then
+  local row = vim.trim(line)
+  local out, from, split = {}, 1, false
+  local i = 1
+  while i <= #row do
+    local c = row:sub(i, i)
+    if c == "\\" then
+      i = i + 1
+    elseif c == "|" then
+      split = true
+      if i > 1 then
+        table.insert(out, row:sub(from, i - 1))
+      end
+      from = i + 1
+    end
+    i = i + 1
+  end
+  if not split then
     return nil
   end
-  local out = {}
-  for cell in (vim.trim(line):gsub("^|", ""):gsub("|%s*$", "") .. "|"):gmatch("(.-)|") do
-    table.insert(out, vim.trim(cell))
+  if from <= #row then
+    table.insert(out, row:sub(from))
+  end
+  for k, cell in ipairs(out) do
+    out[k] = vim.trim((cell:gsub("\\|", "|")))
   end
   return out
 end

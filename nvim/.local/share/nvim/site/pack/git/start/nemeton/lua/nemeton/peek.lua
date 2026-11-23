@@ -117,7 +117,7 @@ function M.show(list)
   -- difference between the two. So these windows are the editor's own
   -- background, and `comments.ground` means what it says in here.
   vim.wo[M.win].winhighlight = "NormalFloat:Normal"
-  vim.wo[M.win].wrap = true
+  require("nemeton.win").wrap(buf)
 
   -- Dismissed by moving, like a hover. Deliberately not by a keymap:
   -- there is no state to remember here, and a float that needs closing

@@ -330,7 +330,8 @@ return {
     -- by scanning rather than by reading the sentence they are in.
     -- `NemetonMention` and `NemetonCommit` are the colours, blue by
     -- default; an issue and a merge request are drawn as the link
-    -- they are, in `NemetonLink`.
+    -- they are, in `NemetonLink`, and a label the project has,
+    -- `~bug`, as a chip in its own colour.
     --
     -- In a settled thread as well as an open one. The rest of one is
     -- dimmed, because it is history; the commit it names is not history

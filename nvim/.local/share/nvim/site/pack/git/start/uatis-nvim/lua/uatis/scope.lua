@@ -1,7 +1,7 @@
 -- What a review IS, as one small panel: the revision it measures
 -- against, and how much of the tree it is about.
 --
---   <leader>gB
+--   <leader>gP
 --
 -- Two entries, each answered on its own, and neither of them applied
 -- until the panel closes. That is the whole reason it is a panel rather

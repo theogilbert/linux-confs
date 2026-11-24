@@ -22,9 +22,11 @@ return {
 
   base = {
     -- Branch names to try, in order, when `origin/HEAD` gives no answer.
-    -- Also the short list `<leader>gB` offers, minus those this repo
-    -- does not have.
     fallbacks = { "develop", "master", "main" },
+    -- The short list `<leader>gP` offers under the base in force, in
+    -- order, leaving out what this repo does not have. A row that is a
+    -- list offers the first of its names that exists.
+    offer = { "HEAD", { "main", "origin/main" }, { "develop", "origin/develop" } },
     -- How many recent commits the revision prompt completes over.
     prompt_commits = 1000,
     -- Where a chosen base and subtree are kept between sessions. `true`
@@ -38,7 +40,7 @@ return {
     -- behind them are the real interface.
     global = {
       -- What am I reviewing: base and subtree, in one panel.
-      base_branch = "<leader>gB",
+      base_branch = "<leader>gP",
       -- Start or end a review of the branch.
       toggle_diff = "<leader>gu",
       -- Open the changed-file list. Off by default; the view binds

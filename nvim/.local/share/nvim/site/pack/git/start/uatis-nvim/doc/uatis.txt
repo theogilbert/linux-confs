@@ -68,7 +68,7 @@ Then, in a file inside a git repository: >
     ]c  [c              move between changes in this file
     ]f  [f              move between changed files
     <leader>go          the old side in a window of its own
-    <leader>gB          what am I reviewing: base branch and subtree
+    <leader>gP          what am I reviewing: base branch and subtree
 <
 The review is a mode over the whole branch, not a decoration on one buffer.
 While it is running, every file the branch changed is annotated as you arrive
@@ -90,7 +90,7 @@ anything git resolves will do -- a tag, a hash, `HEAD~3`.
 
 It is detected without being asked for: `origin/HEAD` first, then the
 conventional names in `base.fallbacks` (see |uatis-config|). On almost every
-repository you never have to set it. `<leader>gB` sets it when you do.
+repository you never have to set it. `<leader>gP` sets it when you do.
 
                                                              *uatis-forkpoint*
 The comparison is always against the FORK POINT -- `merge-base(base, HEAD)`,
@@ -106,7 +106,7 @@ monorepo is not one review; naming a directory makes it one. The list then
 counts only what is under it, the review only follows you into files under it,
 and every path is drawn relative to it.
 
-Both are chosen in one panel, `<leader>gB`: `<CR>` on a row asks that row's
+Both are chosen in one panel, `<leader>gP`: `<CR>` on a row asks that row's
 question, `<C-s>` applies both answers at once, `q` or `<Esc>` closes it
 with nothing changed. Both are remembered per repository between sessions
 (`base.remember`).
@@ -178,7 +178,7 @@ Set once, wherever you are, for the things you do before there is anything to
 press a buffer-local key in. >
 
     <leader>gu      start or end a review of the branch
-    <leader>gB      what am I reviewing: base and subtree, in one panel
+    <leader>gP      what am I reviewing: base and subtree, in one panel
     <leader>gA      one commit against its parent, in a tab of its own
     <leader>gS      everything since a revision you pick
     <leader>gL      every commit that touched this file; in Visual mode,
@@ -913,6 +913,9 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       },
       base = {
         fallbacks = { "develop", "master", "main" },
+        -- what the base picker offers; a list row is "first that exists"
+        offer = { "HEAD", { "main", "origin/main" },
+                  { "develop", "origin/develop" } },
         remember = true,      -- keep the base and subtree between sessions
       },
       pane = {
@@ -951,7 +954,7 @@ comment on each saying what it controls. The commonly-changed ones: >lua
       keys = {
         global = {
           toggle_diff = "<leader>gu",
-          base_branch = "<leader>gB",
+          base_branch = "<leader>gP",
           show_commit = "<leader>gA",
           since_commit = "<leader>gS",
           history = "<leader>gL",
@@ -1092,7 +1095,7 @@ Everything reads as new after a refactor ~
     one is unavailable, `difft` is not on your PATH. See |uatis-backends|.
 
 A file I changed is not in the list ~
-    Check the subtree: `<leader>gB` shows it. A scoped review lists only what
+    Check the subtree: `<leader>gP` shows it. A scoped review lists only what
     is under it. See |uatis-subtree|.
 
 Commits from the base branch appear in my review, reversed ~

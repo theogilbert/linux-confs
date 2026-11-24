@@ -70,7 +70,8 @@ never appear as reversed changes.
   mappings instead of stacking them.
 - `base.lua` — what a view measures against. Usually a branch, but any
   revision git resolves: the `vim.ui.select` picker offers the base in
-  force and whichever of `config.base.fallbacks` this repo has, then one
+  force, then `config.base.offer` (`HEAD`, `main`|`origin/main`,
+  `develop`|`origin/develop`) where this repo has them, then one
   row — `type a revision...` — that opens `prompt.lua` over every ref and
   the last `base.prompt_commits` commits, for a hash, a tag or anything
   else. One choice per repo root, kept across sessions in
@@ -79,7 +80,7 @@ never appear as reversed changes.
   detection (`origin/HEAD`, then `config.base.fallbacks`) is redone every
   session, and `base.source(root)` says which of the three an answer is.
   `resolve()` returns `(label, sha)` for the fork point.
-- **How much of the tree.** `<leader>gB` opens `scope.lua` — a float
+- **How much of the tree.** `<leader>gP` opens `scope.lua` — a float
   with TWO entries, base and subtree, each answered by the picker or
   prompt that question already had (`base.ask`/`base.ask_dir`, which are
   `select`/`select_dir` with the deciding taken out). Neither is applied

@@ -37,7 +37,7 @@ local checked = {}  -- root -> the kept name has been verified to still exist
 --- `state`, not `data`: XDG keeps them apart, and this is state by every
 --- part of that distinction. It is per-machine (the paths in it are
 --- absolute), it is not worth backing up, and losing it costs one
---- `<leader>gB` per repository -- while `data` is where a plugin puts
+--- `<leader>gP` per repository -- while `data` is where a plugin puts
 --- what it would be sorry to lose. Neovim puts its own shada and undo
 --- history in `state` for the same reasons.
 local function store_file()
@@ -407,7 +407,7 @@ end
 --- plugin's own devising.
 ---
 --- It offers the branch a review is almost always against -- whatever is
---- in force, and the conventional default names that exist here -- and
+--- in force, then `config.base.offer` where it exists here -- and
 --- then a way to type anything else. `:Uatis <ref>` still takes any
 --- revision git resolves, on the command line, and means the same thing
 --- for one view rather than for the repository.
@@ -493,7 +493,7 @@ function M.ask(root, name, cb)
       end)
     end
 
-    -- The conventional default branches, and nothing else.
+    -- A short list of the bases almost always wanted, and nothing else.
     --
     -- The list used to be every tag and every local branch. In a
     -- repository with a hundred of either that is not a list anyone
@@ -502,10 +502,12 @@ function M.ask(root, name, cb)
     -- cannot even be searched. A picker is for the answer you almost
     -- always want, and the one row under it is for the rest.
     --
-    -- Verified before being offered, in `config.base.fallbacks` order:
-    -- most repositories have exactly one of these three, and offering
-    -- the two that are not there makes the short list wrong instead of
-    -- merely short.
+    -- `config.base.offer`, in order, each verified before being offered:
+    -- a row naming a branch that is not there makes the short list wrong
+    -- instead of merely short. A row given as a list is alternatives, the
+    -- first that exists standing for all of them -- `main` where there is
+    -- one, `origin/main` only where there is not, since the two are one
+    -- branch to the reader and two rows for it is noise.
     M.get(root, function(current)
       local items, seen = {}, {}
       local function add(name)
@@ -520,10 +522,10 @@ function M.ask(root, name, cb)
       -- `origin/HEAD` it is remote-qualified and in no other list here.
       add(current)
 
-      local names = config.base.fallbacks
-      local function try(i)
-        local name = names[i]
-        if not name then
+      local rows = config.base.offer
+      local function try(i, j)
+        local row = rows[i]
+        if not row then
           -- A repository whose branches are named nothing conventional
           -- lands here with an empty list, and that is the case the
           -- prompt is most needed in: it goes straight there rather than
@@ -551,18 +553,28 @@ function M.ask(root, name, cb)
           end)
           return
         end
+        local alternatives = type(row) == "table" and row or { row }
+        local name = alternatives[j]
+        if not name then
+          try(i + 1, 1)
+          return
+        end
+        -- Already offered (it is the base in force) counts as found: the
+        -- row is there, and a fallback under it would be a second one.
         if seen[name] then
-          try(i + 1)
+          try(i + 1, 1)
           return
         end
         git.verify_ref(root, name, function(exists)
           if exists then
             add(name)
+            try(i + 1, 1)
+          else
+            try(i, j + 1)
           end
-          try(i + 1)
         end)
       end
-      try(1)
+      try(1, 1)
     end)
   end
 end

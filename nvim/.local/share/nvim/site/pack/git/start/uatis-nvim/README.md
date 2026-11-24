@@ -19,7 +19,7 @@ difftastic — every rule about how a change is drawn, and why — is in
 
 ## Start here
 
-Nothing to configure: `<leader>gu` and `<leader>gB` are mapped when the
+Nothing to configure: `<leader>gu` and `<leader>gP` are mapped when the
 plugin loads. To move them, or anything else:
 
 ```lua
@@ -70,9 +70,9 @@ or a directory — back to the one that made it. See
 [History](#history).
 
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
-`main`. `<leader>gB` picks another through `vim.ui.select`, offering the
-one in force and whichever of those conventional names this repository
-actually has — a short list, because a picker is for the answer you
+`main`. `<leader>gP` picks another through `vim.ui.select`, offering the
+one in force, then `HEAD`, `main` (or `origin/main`) and `develop` (or
+`origin/develop`) where this repository actually has them — a short list, because a picker is for the answer you
 almost always want. Its last row, `type a revision…`, is for the rest:
 a one-line prompt whose menu comes up as you type, over every branch,
 tag and remote-tracking ref, and the last thousand commits. Each row

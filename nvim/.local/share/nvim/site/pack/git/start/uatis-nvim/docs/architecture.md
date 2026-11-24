@@ -78,7 +78,7 @@ cycles, e.g. `ui` ↔ `pane`, `view` ↔ `pane`).
 | `merge.lua` | Conflict-marker parsing and a token-level three-way merge | yes |
 | `conflict.lua` | Per-buffer annotator for a conflicted file; pick/resolve keys | no |
 | `base.lua` | What a review measures against: detection, picker, per-repo memory, fork point | no |
-| `scope.lua` | `<leader>gB` panel: base + subtree, applied together | no |
+| `scope.lua` | `<leader>gP` panel: base + subtree, applied together | no |
 | `prompt.lua` | Our own one-line floating input with completion | no |
 | `git.lua` | Every git call, async via `vim.system`; blob/patch caches | no |
 | `checkout.lua` | A review's own worktree, moved commit by commit, so LSP attaches | no |
@@ -112,7 +112,7 @@ cycles, e.g. `ui` ↔ `pane`, `view` ↔ `pane`).
 | Untracked and unsaved files in the list | — | `compose` in `pane.lua` |
 | Re-reading when git moves (commit, rebase, pull) | autocmds | `pane.recheck` and the watchers in `pane.lua` |
 | Progress bar / read marks (`x`, auto-read on `]c`) | list keymap, `view` | `read.lua` (fingerprints, persistence), `pane.toggle_read*`, `view.leave_chunk`, `ui.progress` |
-| Picking the base and subtree (`<leader>gB`) | `init.set_base_branch` | `scope.lua` → `base.ask`/`ask_dir`; persisted in `state/uatis/base.json` |
+| Picking the base and subtree (`<leader>gP`) | `init.set_base_branch` | `scope.lua` → `base.ask`/`ask_dir`; persisted in `state/uatis/base.json` |
 | Revision prompt with completion | — | `prompt.lua`; candidates from `base.items`/`candidates` |
 | Commit-by-commit walk (`<leader>gh`, `C`, `[C`/`]C`) | `view`/list keymaps | `pane.toggle_commits`, `pane.step_commit`; files read through `checkout.lua` |
 | One commit on its own (`<leader>gA`, `:UatisShow`) | `init.show_commit` | `pane.show_commit` (a `standalone` pane in its own tab) |

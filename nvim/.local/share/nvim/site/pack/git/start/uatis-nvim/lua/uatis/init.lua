@@ -342,7 +342,7 @@ end
 ---
 --- The one question two of the keys here ask -- `<leader>gA` about a
 --- commit, `<leader>gS` about everything since one -- and they ask it
---- the same way, over the same candidates `<leader>gB` types into:
+--- the same way, over the same candidates `<leader>gP` types into:
 --- every ref and the recent commits, each carrying its subject line,
 --- because nobody has a sha memorised and a commit is found by what it
 --- did.
@@ -378,7 +378,7 @@ end
 --- five commits younger would be describing neither.
 ---
 --- Without a rev it asks, through `prompt.lua` over every ref and the
---- recent commits -- the same candidates `<leader>gB` types into, which
+--- recent commits -- the same candidates `<leader>gP` types into, which
 --- carry their subject line, because nobody has a sha memorised and a
 --- commit is found by what it did.
 function M.show_commit(rev)

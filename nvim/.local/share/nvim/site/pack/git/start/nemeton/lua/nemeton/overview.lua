@@ -193,9 +193,15 @@ function M.open()
       {
         k.refresh,
         function()
-          session.refresh_mr(M.redraw)
-          session.refresh_approvals(M.redraw)
-          session.refresh_changes(M.redraw)
+          local spin = require("nemeton.spin")
+          local done = spin.after(3, spin.busy(M.buf))
+          local function redraw()
+            done()
+            M.redraw()
+          end
+          session.refresh_mr(redraw)
+          session.refresh_approvals(redraw)
+          session.refresh_changes(redraw)
         end,
         "refetch",
       },

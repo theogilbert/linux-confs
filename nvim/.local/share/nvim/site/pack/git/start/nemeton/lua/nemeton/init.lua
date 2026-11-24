@@ -346,8 +346,13 @@ end
 M.toggle = session.toggle
 M.expand = session.toggle_expanded
 M.refresh = function()
-  session.refresh()
-  session.refresh_mr()
+  if not session.current then
+    return
+  end
+  local spin = require("nemeton.spin")
+  local done = spin.after(2, spin.busy(0))
+  session.refresh(done)
+  session.refresh_mr(done)
 end
 
 M.peek = with_session(function()
@@ -886,9 +891,11 @@ end)
 --- The key asks before it approves, as `m` asks before it merges: an
 --- approval is a notification to the author and, on a project that
 --- needs one, the thing that lets it merge, and `a` is one stray
---- keypress away in a window of prose. Taking it back is not asked
---- about -- it undoes something rather than doing it -- and the typed
---- `:Nemeton approve` has been asked already, by being typed.
+--- keypress away in a window of prose. It asks before it takes one
+--- back too: that is a notification as well, and on a project that
+--- needs the approval it is a merge request that cannot merge until
+--- somebody gives it again. The typed `:Nemeton approve` and
+--- `:Nemeton unapprove` have been asked already, by being typed.
 M.approve = with_session(function(want, cb)
   local mr = session.current
   if want == nil then
@@ -897,17 +904,19 @@ M.approve = with_session(function(want, cb)
         return
       end
       local approval = require("nemeton.detail").approval(mr.approvals)
-      if approval and approval.mine then
-        M.approve(false, cb)
-        return
-      end
+      local give = not (approval and approval.mine)
       -- Nothing but the question: the key is pressed on the merge
       -- request's own window, which is already saying which one it is.
-      require("nemeton.edit").confirm("Are you sure you want to approve this MR?", function(yes)
-        if yes and session.current == mr then
-          M.approve(true, cb)
-        end
-      end, "Approve")
+      require("nemeton.edit").confirm(
+        give and "Are you sure you want to approve this MR?"
+          or "Are you sure you want to take back your approval of this MR?",
+        function(yes)
+          if yes and session.current == mr then
+            M.approve(give, cb)
+          end
+        end,
+        give and "Approve" or "Unapprove"
+      )
     end)
     return
   end

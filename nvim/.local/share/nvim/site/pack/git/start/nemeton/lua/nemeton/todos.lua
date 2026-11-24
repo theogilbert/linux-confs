@@ -218,7 +218,9 @@ end
 local function load()
   local mine = M.buf
   draw("…")
+  local done = require("nemeton.spin").busy(mine)
   glab.todos(where, function(data, err)
+    done()
     if M.buf ~= mine or not valid() then
       return
     end

@@ -703,7 +703,13 @@ function M.refresh(entry, cb)
   if not entry then
     return
   end
-  fetch(entry, cb)
+  local done = require("nemeton.spin").busy(entry.buf)
+  fetch(entry, function(ok)
+    done()
+    if cb then
+      cb(ok)
+    end
+  end)
   local comments = require("nemeton.issue_comments")
   if comments.is_open(entry) then
     comments.refresh(entry)

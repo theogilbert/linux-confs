@@ -645,8 +645,8 @@ the one that goes back to the file.
 off what this window last showed: an approval withdrawn on the web page,
 or reset by a push, is given back rather than withdrawn again.
 Approving asks first, the way `m` and `c` do, with Cancel the first
-answer; taking the approval back does not, and neither does the typed
-`:Nemeton approve`.
+answer, and so does taking the approval back; the typed
+`:Nemeton approve` and `:Nemeton unapprove` do not.
 
 `m` merges when the pipeline succeeds: a pipeline still running is
 waited for, and one that is over -- or none at all -- is no reason to
@@ -2626,6 +2626,14 @@ What turns at the front of the title of |nemeton-list-window|,
 the forge: a fetch, a page more, a sync, the checkout of the merge
 request picked. The words in the window say what it is waiting for;
 this says the call has not died. `false` for nothing turning.
+
+The same frames turn in the top right corner of a window being asked
+for again -- the window `refresh` was pressed in, the thread pane on any
+refresh of the review (a comment posted is one), |nemeton-detail-window|,
+the comments, every thread, the activity, the jobs, a job's log, the
+to-do list, an issue and its comments -- and stop when the forge has
+answered. A corner rather than the title, since some of those windows
+are splits with no title.
 
 COMPOSER                                              *nemeton-config-compose*
 >

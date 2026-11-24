@@ -103,12 +103,15 @@ function M.open(back)
   -- not answer leaves the pipeline we had, which is still a pipeline.
   local function load()
     local mine = M.buf
+    local done = require("nemeton.spin").busy(mine)
     session.refresh_mr(function()
       if M.buf ~= mine then
+        done()
         return
       end
       pipeline = detail.ci(mr) or pipeline
       glab.pipeline_jobs(mr.root, pipeline.id, function(data, err)
+        done()
         if M.buf ~= mine or not vim.api.nvim_buf_is_valid(mine) then
           return
         end

@@ -568,7 +568,11 @@ function M.open(focus, back)
     {
       k.refresh,
       function()
-        session.refresh(render)
+        local done = require("nemeton.spin").busy(M.buf)
+        session.refresh(function()
+          done()
+          render()
+        end)
       end,
       "refetch",
     },

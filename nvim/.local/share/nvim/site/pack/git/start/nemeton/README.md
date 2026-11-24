@@ -485,7 +485,7 @@ opens every thread on it, `a` its activity, `p` the pipeline's jobs, `m` merges 
 closes it (or reopens a closed one), `e` changes it, `o` opens it in a
 browser, `r` refetches, `q` closes. The threads, the jobs and the form
 `t`, `p` and `e` open take its place, and `q` in them comes back to it.
-`m`, `c` and `x` (approving, not taking back) ask first, Cancel being
+`m`, `c` and `x` (approving and taking back) ask first, Cancel being
 the first answer. A merge waits for a pipeline
 still running and happens at once otherwise; pressed again while it
 waits, `m` takes it back. It merges the head you reviewed and no other:
@@ -1448,7 +1448,11 @@ While the queue, the merge requests you are in or the issues are being
 fetched, or a merge request picked from the queue is being opened, a
 braille spinner turns at the front of that window's title —
 `config.spinner`, `{ frames = {…}, interval = 100 }`, or `false` for
-none.
+none. The same spinner turns in the top right corner of a window being
+asked for again: the code or the window `refresh` was pressed in, the
+thread pane on any refresh of the review, the overview, the comments,
+every thread, the activity, the jobs, a job's log, the to-do list, an
+issue and its comments.
 
 ## Configuration
 

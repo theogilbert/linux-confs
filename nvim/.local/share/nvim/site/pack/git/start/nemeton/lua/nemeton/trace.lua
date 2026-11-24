@@ -129,7 +129,9 @@ function M.open(job)
 
   local function load()
     draw({ "…" })
+    local done = require("nemeton.spin").busy(M.buf)
     glab.job_trace(mr.root, job.id, function(text, err)
+      done()
       if not (M.buf and vim.api.nvim_buf_is_valid(M.buf)) then
         return
       end

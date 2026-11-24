@@ -405,7 +405,12 @@ function M.refresh(cb)
   if not mr then
     return
   end
+  -- The pane is what a refresh redraws under the reader's eyes, from
+  -- wherever it was asked for -- a key, or a comment just posted.
+  local pane = require("nemeton.pane")
+  local done = pane.is_open() and require("nemeton.spin").busy(pane.buf) or function() end
   gather(mr, function(ok)
+    done()
     if M.current ~= mr then
       return
     end

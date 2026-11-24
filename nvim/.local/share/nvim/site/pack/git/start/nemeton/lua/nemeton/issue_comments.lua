@@ -106,11 +106,14 @@ end
 function M.refresh(entry, after)
   local subject = entry.subject
   local pending, discussions, facts = 2, nil, nil
+  local buf = pane_of(entry)
+  local spun = buf and require("nemeton.spin").busy(buf) or function() end
   local function done()
     pending = pending - 1
     if pending > 0 then
       return
     end
+    spun()
     if discussions then
       local parsed = threads.parse(discussions)
       -- An issue has no lines: every thread of it is on the issue.

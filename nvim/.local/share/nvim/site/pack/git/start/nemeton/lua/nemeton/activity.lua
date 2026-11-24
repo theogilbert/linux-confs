@@ -441,17 +441,17 @@ function M.open(back)
   -- top line moved under the cursor.
   local function load()
     local mine = M.buf
-    local extra, refreshed = nil, false
-    local function ready()
-      if not (extra and refreshed) or M.buf ~= mine or not vim.api.nvim_buf_is_valid(mine) then
+    local spin = require("nemeton.spin")
+    local done = spin.busy(mine)
+    local extra
+    local ready = spin.after(2, function()
+      done()
+      if not extra or M.buf ~= mine or not vim.api.nvim_buf_is_valid(mine) then
         return
       end
       draw(M.events(mr.raw.discussions, extra))
-    end
-    session.refresh(function()
-      refreshed = true
-      ready()
     end)
+    session.refresh(ready)
     glab.mr_activity(mr.root, mr.iid, function(data)
       extra = data
       ready()

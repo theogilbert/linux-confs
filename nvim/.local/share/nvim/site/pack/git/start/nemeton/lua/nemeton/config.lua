@@ -518,13 +518,13 @@ return {
     -- can join or -- if it is yours -- take back.
     reaction_names = {
       "thumbsup",
+      "heart",
       "thumbsdown",
       "tada",
       "rocket",
       "eyes",
       "thinking",
       "confused",
-      "heart",
       "clap",
       "white_check_mark",
     },

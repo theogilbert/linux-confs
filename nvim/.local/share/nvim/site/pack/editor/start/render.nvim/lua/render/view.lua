@@ -216,9 +216,11 @@ vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
 })
 
 --- The line of the reader of `src` that source line `row` is drawn on:
---- the last one drawn from that line or one before it -- the line it is
---- in, near enough, since a reader's line is a block's and a block is
---- several lines of the source. nil where `src` has no reader drawn.
+--- the first one drawn from it, so a heading or a paragraph is gone to
+--- at its top. A line drawn on no line of its own -- the middle of a
+--- paragraph, a fence's backticks -- is in the block drawn from a line
+--- before it, so it is the last line drawn from one before it, near
+--- enough. nil where `src` has no reader drawn.
 function M.to_view(src, row)
   local view = views[src]
   if not (view and view.rows) then
@@ -226,7 +228,9 @@ function M.to_view(src, row)
   end
   local best = 1
   for i, from in ipairs(view.rows) do
-    if from > row then
+    if from == row then
+      return i
+    elseif from > row then
       break
     end
     best = i

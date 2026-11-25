@@ -323,11 +323,45 @@ local function cleanup_internal_data_from_sections(sections)
     return sections
 end
 
+-- render.nvim's reader is a scratch buffer drawn from a file: its lines
+-- are not the file's (headings lose their hashes, prose is wrapped
+-- again), so nothing can be parsed out of them. Its sections are the
+-- file's, each moved to the reader's line it is drawn on.
+-- render.view is only looked for once loaded: where it is not, there is
+-- no reader.
+-- @return The source buffer `buf_id` is a reader of, or nil
+M.reader_source = function(buf_id)
+    local view = package.loaded["render.view"]
+    return view and view.source_of(buf_id) or nil
+end
+
+local function to_reader(sections, src, view)
+    for _, section in ipairs(sections) do
+        -- Columns are the file's and mean nothing on the page
+        section.position = { view.to_view(src, section.position[1]) or 1, 0 }
+        to_reader(section.children, src, view)
+    end
+    return sections
+end
+
+M.parse_reader_sections = function(buf_id, src)
+    local sections, err = M.parse_sections(src)
+    if sections == nil then
+        return nil, err
+    end
+    return to_reader(sections, src, package.loaded["render.view"]), nil
+end
+
 -- Parses TSNode objects matching queries present in queries/<filetype>/sections.scm
 -- @param buf_id The ID of the buffer from which to parse the sections
 -- @return A table containing sections parsed from the buffer if sections are successfully parsed.
 --         Otherwise, returns nil and the error message.
 M.parse_sections = function(buf_id)
+    local reader = M.reader_source(buf_id)
+    if reader ~= nil then
+        return M.parse_reader_sections(buf_id, reader)
+    end
+
     local filetype = vim.api.nvim_get_option_value("filetype", { buf = buf_id })
     if filetype == "man" then
         return man.parse_sections(buf_id), nil

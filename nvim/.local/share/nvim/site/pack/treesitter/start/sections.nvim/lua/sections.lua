@@ -34,6 +34,9 @@ local IGNORED_BUFTYPES = { "nofile", "terminal", "quickfix", "help", "prompt" }
 local SUPPORTED_SPECIAL_FILETYPES = { "man", "help" }
 
 local function supports_buf(buf)
+    if parser.reader_source(buf) ~= nil then
+        return true
+    end
     local bt = vim.api.nvim_get_option_value("buftype", { buf = buf })
     if vim.tbl_contains(IGNORED_BUFTYPES, bt) and not vim.tbl_contains(SUPPORTED_SPECIAL_FILETYPES, vim.bo[buf].filetype) then
         return false
@@ -357,6 +360,25 @@ local function setup_autocommands()
         callback = function(args)
             for _, info in pairs(states) do
                 if args.buf == info.watched_buf then
+                    refresh_pane(info)
+                end
+            end
+        end,
+    })
+
+    -- A render.nvim reader is drawn again as its file is edited and as its
+    -- window is resized, which moves its sections to other lines: refresh
+    -- every pane watching it. Also its first drawing, which comes after
+    -- the BufWinEnter that put it in the window.
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "RenderDrawn",
+        callback = function(args)
+            for _, info in pairs(states) do
+                if
+                    vim.api.nvim_win_is_valid(info.watched_win)
+                    and vim.api.nvim_win_get_buf(info.watched_win) == args.data.buf
+                then
                     refresh_pane(info)
                 end
             end

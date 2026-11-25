@@ -54,8 +54,11 @@ Code and tables are never folded: a fence means what it means by its
 columns, and a ruled table cannot wrap. The reader is 'nowrap' and
 scrolls sideways instead.
 
-Headings are told apart by weight, since a terminal has no bigger type:
-underlined and bold at the top, quiet and italic at the bottom.
+Headings are told apart by what a page has besides size, since a terminal
+has no bigger type: a title on a band across the page, a section under a
+heavy rule, a subsection under a light one, more space above the higher
+ones (|render-heading|) -- and each level in a colour of its own, the
+colourscheme's where it has one per level.
 
 What it reads: headings (`#` and underlined with `===`/`---`), emphasis,
 code spans, links inline, by reference and bare, pictures (drawn as their
@@ -147,15 +150,38 @@ markdown        Each reading on its own -- `links`, `styles`, `math`,
                 parser); and the glyphs: `bullets` `{ "•", "◦", "▪" }`,
                 `tasks` `{ "☐", "✓" }`, `citation` `"▎ "`.
 
+                                                              *render-heading*
+markdown.heading
+                How each level of heading stands out, H1 first: >lua
+                  {
+                    { above = 2, band = true },
+                    { above = 2, rule = "━" },
+                    { above = 1, rule = "─" },
+                    { above = 1 }, {}, {},
+                  }
+<               `above`: blank lines before it at the least (none at the
+                top of the page). `band`: a ground across the page under
+                it, `RenderHeadingBand` or a group of yours. `rule`: a
+                character ruled across the page under it. Each part may
+                be `false`, and a level `false` is its colour alone.
+
 ==============================================================================
 5. COLOURS                                                    *render-colours*
 
 Every group is set with `default`, so a colourscheme or a |:hi| of yours
 wins, and every one is set again after |:colorscheme|.
 
-RenderHeading1 .. 6     A heading, by level. From `RenderHeading` (linked
-                        to |hl-Title|) for the first four and `RenderMeta`
-                        for the last two.
+RenderHeading1 .. 6     A heading, by level, each in a colour of its own,
+                        bold down to H4 and H6 italic. The scheme's
+                        `@markup.heading.N.markdown` (or `markdownHN`);
+                        where it has none, or an upper level took it,
+                        the first colour no level has of |hl-Title|,
+                        `Function`, `String`, `Identifier`, `Type`,
+                        `Special`, `Constant`, `Statement`.
+RenderHeadingBand       The band under a heading: |hl-Normal|'s ground
+                        moved towards `RenderHeading1`, or
+                        |hl-CursorLine| without 'termguicolors'.
+RenderHeadingRule1 .. 6 The rule under a heading: its `RenderHeadingN`.
 RenderBold              A weight, and no colour: put on top of whatever
 RenderItalic            colour the words already have.
 RenderStrike

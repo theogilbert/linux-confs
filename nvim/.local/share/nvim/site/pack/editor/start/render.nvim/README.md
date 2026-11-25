@@ -41,8 +41,11 @@ and the file in another is a preview as you type.
 - **Code and tables** are never folded. A fence means what it means by
   its columns, and a ruled table cannot wrap, so the reader scrolls
   sideways instead (`nowrap`).
-- **Headings** are told apart by weight, since a terminal has no bigger
-  type: underlined and bold at the top, quiet and italic at the bottom.
+- **Headings** are told apart by what a page has besides size, since a
+  terminal has no bigger type: a title on a band across the page, a
+  section under a heavy rule, a subsection under a light one, more space
+  above the higher ones (`markdown.heading`) -- and each level in a
+  colour of its own, the colourscheme's where it has one per level.
 
 What it reads: headings (`#` and underlined), emphasis (`*`, `_`, `~~`),
 code spans, links inline, by reference (`[words][name]`) and bare,
@@ -115,6 +118,12 @@ require("render").setup({
     tables = true, citations = true, lists = true,
     emoji = true,          -- :tada: as 🎉
     syntax = true,         -- fences in the colours of their language
+    heading = {            -- each level, H1 first; any part can be false
+      { above = 2, band = true }, -- blank lines above, a band under it
+      { above = 2, rule = "━" },  -- a rule across the page under it
+      { above = 1, rule = "─" },
+      { above = 1 }, {}, {},
+    },
     bullets = { "•", "◦", "▪" },
     tasks = { "☐", "✓" },
     citation = "▎ ",
@@ -131,7 +140,9 @@ wins, and every group is set again after `:colorscheme`.
 
 | group | what | from |
 |---|---|---|
-| `RenderHeading1`..`6` | a heading, by level | `RenderHeading` (`Title`), `RenderMeta` |
+| `RenderHeading1`..`6` | a heading, by level, each a colour of its own | `@markup.heading.N.markdown`, else the first unused of `Title`, `Function`, `String`, `Identifier`, `Type`, `Special`, `Constant`, `Statement` |
+| `RenderHeadingBand` | the band under a heading | `Normal`'s ground towards `RenderHeading1` |
+| `RenderHeadingRule1`..`6` | the rule under a heading | `RenderHeading1`..`6` |
 | `RenderBold`, `RenderItalic`, `RenderStrike` | a weight, and no colour | |
 | `RenderCode` | a code span, on a chip | `String` on `Normal` |
 | `RenderLink` | a link | `DiagnosticInfo`, underlined |

@@ -22,6 +22,25 @@ end
 -- How far a code span's chip is lifted off the page towards the text:
 -- enough to be a chip, not so much that it is a highlighted word.
 local CODE_LIFT = 0.12
+-- ...and a heading's band towards the headings' colour: a ground the
+-- title stands on, tinted so that it is the title's and not a selection.
+local BAND_LIFT = 0.18
+
+-- Where a heading's colour is looked for once the colourscheme has none
+-- for its level: groups every scheme sets, in an order that runs from
+-- loud to quiet in most.
+local HEADING_LADDER =
+  { "Title", "Function", "String", "Identifier", "Type", "Special", "Constant", "Statement" }
+
+-- The weight of each level, on top of its colour.
+local HEADING_WEIGHTS = {
+  { bold = true },
+  { bold = true },
+  { bold = true },
+  { bold = true },
+  {},
+  { italic = true },
+}
 
 function M.setup()
   -- The reader's mark in its winbar: loud, since it is the one thing
@@ -46,28 +65,41 @@ function M.setup()
     cterm = { underline = true },
     default = true,
   })
-  -- The six levels of heading, told apart the only way a terminal can:
-  -- loud at the top and quiet at the bottom. Underlined and bold is a
-  -- title with a rule under it; bold is a section; plain is the colour
-  -- alone; and the three below that are the same fall in the quiet
-  -- colour.
-  local title = vim.api.nvim_get_hl(0, { name = "RenderHeading", link = false })
-  local quiet = vim.api.nvim_get_hl(0, { name = "RenderMeta", link = false })
-  local LEVELS = {
-    { title, { bold = true, underline = true } },
-    { title, { bold = true } },
-    { title, {} },
-    { title, { italic = true } },
-    { quiet, { bold = true } },
-    { quiet, { italic = true } },
-  }
-  for level, want in ipairs(LEVELS) do
-    local hl = { fg = want[1].fg, ctermfg = want[1].ctermfg, cterm = {}, default = true }
-    for attr in pairs(want[2]) do
-      hl[attr], hl.cterm[attr] = true, true
+  -- The six levels of heading, each in a colour of its own: bold or not
+  -- is lost at a glance, a colour is not. The colourscheme's own colour
+  -- for the level where it has one -- many give headings a colour each
+  -- -- and where it has none, or the one a level above already took,
+  -- the first colour of a ladder of groups every scheme sets that no
+  -- level has yet. A scheme with too few colours for six repeats the
+  -- title's. Bold down to H4, which with the band, the rules and the
+  -- space above is the four levels a page has sections at.
+  local used = {}
+  local function colour(names)
+    for _, name in ipairs(names) do
+      local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+      local key = hl.fg or hl.ctermfg
+      if key and not used[key] then
+        used[key] = true
+        return hl
+      end
     end
-    vim.api.nvim_set_hl(0, "RenderHeading" .. level, hl)
   end
+  local title = vim.api.nvim_get_hl(0, { name = "RenderHeading", link = false })
+  for level, attrs in ipairs(HEADING_WEIGHTS) do
+    local names = { "@markup.heading." .. level .. ".markdown", "markdownH" .. level }
+    if level == 1 then
+      table.insert(names, 1, "RenderHeading")
+    end
+    local hl = colour(vim.list_extend(names, HEADING_LADDER)) or title
+    local out = { fg = hl.fg, ctermfg = hl.ctermfg, cterm = {}, default = true }
+    for attr in pairs(attrs) do
+      out[attr], out.cterm[attr] = true, true
+    end
+    vim.api.nvim_set_hl(0, "RenderHeading" .. level, out)
+    -- The rule under a heading in its colour: the two are one mark.
+    link("RenderHeadingRule" .. level, "RenderHeading" .. level)
+  end
+  title = vim.api.nvim_get_hl(0, { name = "RenderHeading1", link = false })
   -- The weight a word was written with, and no colour: extmarks
   -- compose, so these put a weight on whatever colour the word was
   -- already drawn in -- a link's, a citation's.
@@ -90,6 +122,14 @@ function M.setup()
     })
   else
     link("RenderCode", "String")
+  end
+  if vim.o.termguicolors and normal.bg and title.fg then
+    vim.api.nvim_set_hl(0, "RenderHeadingBand", {
+      bg = mix(normal.bg, title.fg, BAND_LIFT),
+      default = true,
+    })
+  else
+    link("RenderHeadingBand", "CursorLine")
   end
 end
 

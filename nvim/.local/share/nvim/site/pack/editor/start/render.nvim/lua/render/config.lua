@@ -77,6 +77,19 @@ return {
     -- A fence in the colours of its language, where treesitter has a
     -- parser for it.
     syntax = true,
+    -- How each level of heading stands out, H1 first, since a terminal
+    -- has no bigger type: `above`, the blank lines before it at the
+    -- least; `band`, a ground across the page under it; `rule`, a
+    -- character ruled across the page under it. Each part may be
+    -- `false`, and a level `false` is its colour alone.
+    heading = {
+      { above = 2, band = true },
+      { above = 2, rule = "━" },
+      { above = 1, rule = "─" },
+      { above = 1 },
+      {},
+      {},
+    },
     bullets = { "•", "◦", "▪" },
     tasks = { "☐", "✓" },
     citation = "▎ ",

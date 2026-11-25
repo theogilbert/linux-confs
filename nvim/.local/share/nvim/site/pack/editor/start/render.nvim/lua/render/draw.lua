@@ -21,8 +21,16 @@
 --   lead         what stands in front of every line (a rail, a margin),
 --                in `lead_hl`
 --   hl           the colour of the words; nil for the window's own
---   groups       `{ meta, citation, heading, head, ok, math, rule }` --
---                `heading` is a prefix, and the level goes on the end
+--   groups       `{ meta, citation, heading, head, ok, math, rule,
+--                band, ruler }` -- `heading` and `ruler` are prefixes,
+--                and the level goes on the end; `band` is a heading's
+--   headings     how each level of heading stands out, beyond its
+--                colour: a list, by level, of `{ above, band, rule }`
+--                -- `above` blank lines before it at the least, `band`
+--                a ground across the whole width under it (`true` for
+--                `groups.band`, or a group), `rule` a character ruled
+--                across the width under it, in `groups.ruler`. nil, or
+--                `false` for a level, is the colour alone
 --   glyphs       `{ bullets, tasks, citation }`
 --   inline(text) a line as `drawn, runs` (`render.markdown.inline`)
 --   paint(lines, lang)  code, coloured, as `render.syntax.paint` gives
@@ -47,6 +55,8 @@ M.GROUPS = {
   ok = "RenderOk",
   math = "RenderMath",
   rule = "RenderMeta",
+  band = "RenderHeadingBand",
+  ruler = "RenderHeadingRule",
 }
 
 M.GLYPHS = {
@@ -185,6 +195,7 @@ function M.blocks(blocks, opts)
     code = limit
   end
   local out = {}
+  local heading
   local bar = glyphs.citation or ""
   local cited = 0
   -- The source line the block being drawn began on.
@@ -364,6 +375,70 @@ function M.blocks(blocks, opts)
     emit(rule("bottom"))
   end
 
+  --- Whether `line` is blank: nothing on it past what stands in front
+  --- of every line.
+  local function blank(line, lead)
+    local text = ""
+    for _, chunk in ipairs(line) do
+      text = text .. chunk[1]
+    end
+    return vim.trim(text) == vim.trim(lead)
+  end
+
+  --- A heading without its hashes. There is no bigger type in a
+  --- terminal, so rank is told by what a page has besides size: a
+  --- colour and a weight per level (`groups.heading`), and for the
+  --- levels `opts.headings` styles, space above, a band under the words
+  --- and a rule under the line -- which read from across the room,
+  --- whatever the colourscheme makes of the colours.
+  function heading(left, block, prose, runs)
+    local level = math.min(block.level or 1, 6)
+    local colour = groups.heading .. level
+    local style = opts.headings and opts.headings[level] or {}
+    local across = math.max((limit or 72) - vim.fn.strdisplaywidth(left), 3)
+
+    -- Space above, made up to `above` from the blank lines the source
+    -- already has -- and none at the top, where there is nothing to be
+    -- apart from. Each one is the line before's, so that a heading is
+    -- still found at its words.
+    if style.above and #out > 0 then
+      local have = 0
+      while have < #out and blank(out[#out - have], left) do
+        have = have + 1
+      end
+      for _ = have + 1, style.above do
+        local line = front(left)
+        line.row = out[#out].row
+        table.insert(out, line)
+      end
+    end
+
+    local band = style.band == true and groups.band or style.band or nil
+    local before = #out
+    if band then
+      -- A space inside either end, as a label has, and the band carried
+      -- on to the width of the page.
+      body(left, prose, colour, { " ", band }, runs or { { prose } }, limit and limit - 1, band)
+      for i = before + 1, #out do
+        local line = out[i]
+        local slack = across - (M.measure(line) - vim.fn.strdisplaywidth(left))
+        if slack > 0 then
+          table.insert(line, { (" "):rep(slack), band })
+        end
+      end
+    else
+      body(left, prose, colour, nil, runs)
+    end
+    if out[before + 1] then
+      out[before + 1].heading = prose
+    end
+    if style.rule then
+      local line = front(left)
+      table.insert(line, { style.rule:rep(across), groups.ruler .. level })
+      emit(line)
+    end
+  end
+
   local ctx = { body = body, front = front, emit = emit }
 
   local function draw(left, list, hl)
@@ -452,16 +527,10 @@ function M.blocks(blocks, opts)
         cited = cited - 1
       else
         local prose, runs = inline(block.text)
-        -- A heading without its hashes, told apart by a colour and a
-        -- weight per level: there is no bigger type in a terminal.
-        local colour = hl
         if block.kind == "heading" then
-          colour = groups.heading .. math.min(block.level or 1, 6)
-        end
-        local before = #out
-        body(left, prose, colour, nil, runs)
-        if block.kind == "heading" and out[before + 1] then
-          out[before + 1].heading = prose
+          heading(left, block, prose, runs)
+        else
+          body(left, prose, hl, nil, runs)
         end
       end
     end

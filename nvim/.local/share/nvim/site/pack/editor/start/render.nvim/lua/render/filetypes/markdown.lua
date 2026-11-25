@@ -33,6 +33,7 @@ function M.render(lines, opts)
     -- code any more.
     code = false,
     glyphs = { bullets = c.bullets, tasks = c.tasks, citation = c.citation },
+    headings = c.headings and c.heading or nil,
     inline = function(text)
       return markdown.inline(emoji(text), read)
     end,

@@ -219,6 +219,12 @@ require("grannos").setup({
     server_cmd = "grannos --log -v"
 })
 
+-- The reader: the current file as it reads (markdown today), on and off.
+-- The reader's winbar says READER while it is up.
+require("render").setup({
+    keys = { toggle = "<leader>Or" },
+})
+
 local uatis = require("uatis")
 
 require("nemeton").setup({

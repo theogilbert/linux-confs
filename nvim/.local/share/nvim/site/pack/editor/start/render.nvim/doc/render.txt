@@ -1,0 +1,208 @@
+*render.txt*  A file as it reads, a keypress away from the file as it is written
+
+==============================================================================
+CONTENTS                                                     *render-contents*
+
+  1. Introduction ............................................ |render-intro|
+  2. The reader ............................................. |render-reader|
+  3. Links ................................................... |render-links|
+  4. Setup ................................................... |render-setup|
+  5. Colours ................................................ |render-colours|
+  6. The engine .............................................. |render-engine|
+
+==============================================================================
+1. INTRODUCTION                                                 *render-intro*
+
+`<leader>rv` in a markdown buffer puts the page in the window in the
+file's place: headings without their hashes, bold as bold, links as their
+words, tables ruled, lists with bullets, `:tada:` as the picture, fences
+in the colours of their language. `<leader>rv` again and the file is
+back, with the cursor on the line you were reading.
+
+Markdown today; CSV, JSON and the rest are a reader each, behind the same
+key (|render-filetypes|).
+
+Needs Neovim 0.10 or newer.
+
+                                                                     *:Render*
+:Render                 The reader of the current window's file, on and off.
+                        The same as the key.
+
+==============================================================================
+2. THE READER                                                  *render-reader*
+
+The reader is a buffer of its own, `render://<path>`, rather than a coat
+of paint over the file's: prose wrapped again to the window, a table
+ruled, a heading without its hashes are lines the file does not have. It
+is put into the window in the file's place and taken out again, and the
+file is never touched.
+
+It says so, in a winbar of its own (|render-winbar|): `READER`, the
+file's name and the key back to it, above the page rather than over it.
+
+It is kept in step with the file: every change to the file and every
+change of the window's width draws it again, so the reader in one split
+and the file in another is a preview as you type. Shown in two windows at
+once, it is drawn for the narrower.
+
+Prose is wrapped to the window, or to |render-width| where the window is
+wider. The lines of a paragraph are put back together first, so a file
+wrapped by hand at 72 reads the same in any window; a hard break (`\` or
+two spaces at the end of a line) stays a break.
+
+Code and tables are never folded: a fence means what it means by its
+columns, and a ruled table cannot wrap. The reader is 'nowrap' and
+scrolls sideways instead.
+
+Headings are told apart by weight, since a terminal has no bigger type:
+underlined and bold at the top, quiet and italic at the bottom.
+
+What it reads: headings (`#` and underlined with `===`/`---`), emphasis,
+code spans, links inline, by reference and bare, pictures (drawn as their
+words), lists (bulleted, numbered, tasks), citations (`>`, and GitLab's
+`>>>`), pipe tables with their alignment, fences, rules, formulas (`$…$`,
+`$$…$$`, a `math` fence -- as the Unicode they would be printed with),
+character references, `:emoji:` and `[[_TOC_]]`. What it does not read is
+drawn as it was typed.
+
+==============================================================================
+3. LINKS                                                        *render-links*
+
+The page draws a link's words, not where it leads. With the cursor on one,
+its target is shown in the command line (|render-hover|); `<C-]>` on it
+copies the target, to the unnamed register and the clipboard where there
+is one (|render-keys|).
+
+                                                               *render-follow*
+`follow` replaces that. It is handed the link and the reader it was
+followed in, and does the whole of it; `ctx` carries the built-ins, for
+the links you leave to them:
+
+- `ctx.copy()`: the target to the registers. `ctx.default` for `follow`.
+- `ctx.go()`: where it points. A URL is opened with |vim.ui.open()|; a
+  path is the file it names, beside the one being read -- in the reader
+  too, where it has one, so a link from one page goes to another page;
+  `#a-heading` is that heading of this page, by the anchors GitHub and
+  GitLab make (lower case, punctuation gone, a dash for each space), and
+  `other.md#a-heading` that heading of that one.
+- `ctx.show()`: the target in the command line. `ctx.default` for
+  `hover`.
+>lua
+    require("render").setup({
+      follow = function(link, ctx)
+        -- link: { kind = "url" | "path", href = "...", text = "..." }
+        -- ctx:  { source = <buf>, view = <buf>, win = <win>,
+        --         default = fn, copy = fn, go = fn, show = fn }
+        if link.kind == "path" then
+          ctx.go()
+        else
+          ctx.default()
+        end
+      end,
+    })
+<
+                                                                *render-hover*
+`hover` replaces the showing. It is handed what `follow` is, once each
+time the cursor comes onto a link. `false` shows nothing.
+
+==============================================================================
+4. SETUP                                                        *render-setup*
+
+Nothing is needed: |:Render| and the key are there at startup, and the
+first use loads the rest. `setup{}` overlays what it is given onto the
+defaults.
+
+                                                                 *render-keys*
+keys.toggle     `"<leader>rv"`  The reader, on and off. `false` unbinds it.
+keys.follow     `"<C-]>"`       In the reader: follow the link under the
+                                cursor -- copy it, unless `follow` says
+                                otherwise. `false` unbinds it.
+
+                                                                *render-width*
+width           `80`            The widest prose is set. The window is the
+                                other half: the narrower wins. `false` for
+                                the window's width alone.
+
+                                                               *render-winbar*
+winbar          `true`          A winbar on the reader: `READER`, the
+                                file's name and the key back to it, on a
+                                row of its own above the page. `false`
+                                for none.
+
+follow          `nil`           |render-follow|.
+
+hover           `nil`           |render-hover|.
+
+                                                            *render-filetypes*
+filetypes       `{ markdown = "render.filetypes.markdown" }`
+                Which reader reads which filetype: a module with
+                `render(lines, opts)` returning lines of chunks, as
+                |render-engine| draws them. A filetype not here has no
+                reader.
+
+markdown        Each reading on its own -- `links`, `styles`, `math`,
+                `headings`, `tables`, `citations`, `lists` -- all `true`;
+                `emoji` (`:tada:` as the picture) and `syntax` (fences in
+                the colours of their language, where treesitter has a
+                parser); and the glyphs: `bullets` `{ "•", "◦", "▪" }`,
+                `tasks` `{ "☐", "✓" }`, `citation` `"▎ "`.
+
+==============================================================================
+5. COLOURS                                                    *render-colours*
+
+Every group is set with `default`, so a colourscheme or a |:hi| of yours
+wins, and every one is set again after |:colorscheme|.
+
+RenderHeading1 .. 6     A heading, by level. From `RenderHeading` (linked
+                        to |hl-Title|) for the first four and `RenderMeta`
+                        for the last two.
+RenderBold              A weight, and no colour: put on top of whatever
+RenderItalic            colour the words already have.
+RenderStrike
+RenderCode              A code span, on a chip mixed from |hl-Normal|,
+                        in the colour of `String`.
+RenderLink              A link: `DiagnosticInfo`, underlined.
+RenderMath              A formula: `Constant`.
+RenderMeta              The rules of a table, a fence's lines: `Comment`.
+RenderCitation          What was quoted, and its bar: `Comment`.
+RenderTableHead         A table's head: |hl-Title|.
+RenderOk                A ticked task: `DiagnosticOk`.
+RenderReader            `READER` in the reader's winbar: `IncSearch`.
+
+==============================================================================
+6. THE ENGINE                                                  *render-engine*
+
+The reader is built on two modules for anybody's use -- a plugin drawing
+markdown inside a window of its own wants exactly them.
+
+`render.markdown`, what each part of a text is. `blocks(lines, opts)` and
+`inline(line, opts)`, pure: strings in, tables out. Hooks for what it has
+never heard of -- `link`/`url` for a link the caller knows better than "a
+page", `claims` for references like `#12` or `@name`, `fence` for a fence
+that is something else -- and `groups` for the highlights it names.
+
+`render.draw`, what it looks like. `blocks(blocks, opts)` to lines of
+`{ text, hl }` chunks, the shape virtual text takes as it is, and
+`flatten(lines)` to plain lines, highlights and links for a real buffer.
+Groups, margin, glyphs and widths are options, and `custom` draws a block
+it does not know.
+
+The head comment of each module is its documentation.
+
+                                                                 *render-view*
+For a plugin that keeps something of its own in step with the reader --
+an outline of the file, say -- `render.view` says which buffer is which
+and where a line went:
+
+`source_of(buf)`        The file reader `buf` reads, or nil.
+`view_of(src)`          The reader of file `src`, or nil.
+`to_view(src, row)`     The reader's line that the file's line `row` is
+                        drawn on, or nil where it has no reader drawn.
+`to_source(buf, row)`   The file's line that the reader's line `row` was
+                        drawn from, or nil where `buf` is no reader.
+
+                                                         *User_RenderDrawn*
+`User RenderDrawn` is fired each time a reader is drawn again -- the file
+changed, the window was resized -- with `data = { buf, source }`.
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -103,6 +103,16 @@ function M.check()
     )
   end
 
+  -- Every comment is drawn by it, so a review without it is a review
+  -- that fails on its first note rather than one that draws less.
+  if pcall(require, "render.draw") then
+    vim.health.ok("render.nvim")
+  else
+    vim.health.error("render.nvim is not installed", {
+      "nemeton draws every comment with it: https://github.com/theogilbert/render.nvim",
+    })
+  end
+
   if vim.fn.executable("git") == 1 then
     vim.health.ok("git")
   else

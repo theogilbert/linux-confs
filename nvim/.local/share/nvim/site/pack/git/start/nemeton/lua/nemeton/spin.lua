@@ -10,7 +10,8 @@
 -- cursor of whoever is reading them.
 --
 -- The windows that are asked for again rather than filled -- a review,
--- its pane, an issue -- turn one in a corner instead (`M.busy`).
+-- its pane, an issue -- turn one at the end of their winbar, or in a
+-- corner when they have none (`M.busy`).
 
 local config = require("nemeton.config")
 
@@ -73,8 +74,15 @@ function M.on(name)
 end
 
 -- What `M.busy` turns over: buffer -> how many refreshes of it are out,
--- and window -> the float turning in its corner.
-local busy, corners = {}, {}
+-- window -> the float turning in its corner, and window -> what was
+-- added to the end of its winbar.
+local busy, corners, barred = {}, {}, {}
+
+-- Asked for by the winbar itself, of the window it is drawing: a
+-- window redraws its own winbar on a refresh, and a glyph written into
+-- the string would be gone with it or, put back once the refresh is
+-- in, put back over the new one.
+local MARK = "%{%v:lua.require'nemeton.spin'.bar()%}"
 
 -- A refresh that never reports -- a session closed under it, a window
 -- gone before its answer -- would leave a glyph turning for good, and
@@ -97,6 +105,42 @@ local function ground(win)
   return base
 end
 
+--- Takes the glyph back off the end of a winbar, if the winbar still
+--- ends in it: one drawn again since never had it.
+local function unbar(win)
+  local tail = barred[win]
+  barred[win] = nil
+  if tail and vim.api.nvim_win_is_valid(win) then
+    local wb = vim.wo[win].winbar
+    if wb:sub(-#tail) == tail then
+      vim.wo[win].winbar = wb:sub(1, -#tail - 1)
+    end
+  end
+end
+
+--- Puts the glyph at the end of `win`'s winbar, right-aligned: after
+--- what is already on the right, or pushed there when nothing is.
+local function enbar(win)
+  local wb = vim.wo[win].winbar
+  if wb:find(MARK, 1, true) then
+    return
+  end
+  local tail = (wb:find("%=", 1, true) and "" or "%=") .. MARK
+  vim.wo[win].winbar = wb .. tail
+  barred[win] = tail
+end
+
+--- The glyph, for the winbar of the window it is drawing.
+function M.bar()
+  local win = vim.g.statusline_winid
+  local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
+  if not (ok and busy[buf] and config.spinner) then
+    return ""
+  end
+  local frame = config.spinner.frames[running.busy and running.busy.step or 1]
+  return "%#NemetonKey# " .. frame .. " %*"
+end
+
 local function drop(win)
   local c = corners[win]
   corners[win] = nil
@@ -105,8 +149,38 @@ local function drop(win)
   end
 end
 
---- Every window showing a busy buffer gets a corner, and every corner
---- whose window shows none any more goes.
+--- The glyph in a float over the top right corner of `win`, for a
+--- window with no winbar to put it in.
+local function corner(win)
+  local frame = " " .. config.spinner.frames[running.busy and running.busy.step or 1]
+  local at = {
+    relative = "win",
+    win = win,
+    row = 0,
+    col = math.max(0, vim.api.nvim_win_get_width(win) - 2),
+    width = 2,
+    height = 1,
+    zindex = (vim.api.nvim_win_get_config(win).zindex or 49) + 1,
+  }
+  local c = corners[win]
+  if c and vim.api.nvim_win_is_valid(c) then
+    vim.api.nvim_win_set_config(c, at)
+  else
+    local b = vim.api.nvim_create_buf(false, true)
+    vim.bo[b].bufhidden = "wipe"
+    at.style, at.focusable, at.noautocmd = "minimal", false, true
+    c = vim.api.nvim_open_win(b, false, at)
+    vim.wo[c].winhighlight = "NormalFloat:" .. ground(win)
+    corners[win] = c
+  end
+  local b = vim.api.nvim_win_get_buf(c)
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { frame })
+  vim.api.nvim_buf_set_extmark(b, ns, 0, 0, { end_col = #frame, hl_group = "NemetonKey" })
+end
+
+--- Every window showing a busy buffer gets the glyph -- in its winbar,
+--- or in a corner when it has none -- and every window that shows none
+--- any more loses it.
 local function turn()
   local want, tab = {}, vim.api.nvim_get_current_tabpage()
   for buf in pairs(busy) do
@@ -121,41 +195,31 @@ local function turn()
       busy[buf] = nil
     end
   end
+  local function has_bar(win)
+    return vim.api.nvim_win_is_valid(win) and vim.wo[win].winbar ~= ""
+  end
   for win in pairs(corners) do
-    if not want[win] then
+    if not want[win] or has_bar(win) then
       drop(win)
     end
   end
+  for win in pairs(barred) do
+    if not want[win] then
+      unbar(win)
+    end
+  end
+  for win in pairs(want) do
+    if has_bar(win) then
+      enbar(win)
+    else
+      corner(win)
+    end
+  end
+  -- The winbars ask for their glyph as they are drawn, and a winbar is
+  -- drawn when something changes, not when a frame does.
+  vim.cmd("redrawstatus!")
   if next(want) == nil then
     M.stop("busy")
-    return
-  end
-  local frame = " " .. config.spinner.frames[running.busy and running.busy.step or 1]
-  for win in pairs(want) do
-    local zindex = (vim.api.nvim_win_get_config(win).zindex or 49) + 1
-    local at = {
-      relative = "win",
-      win = win,
-      row = 0,
-      col = math.max(0, vim.api.nvim_win_get_width(win) - 2),
-      width = 2,
-      height = 1,
-      zindex = zindex,
-    }
-    local c = corners[win]
-    if c and vim.api.nvim_win_is_valid(c) then
-      vim.api.nvim_win_set_config(c, at)
-    else
-      local b = vim.api.nvim_create_buf(false, true)
-      vim.bo[b].bufhidden = "wipe"
-      at.style, at.focusable, at.noautocmd = "minimal", false, true
-      c = vim.api.nvim_open_win(b, false, at)
-      vim.wo[c].winhighlight = "NormalFloat:" .. ground(win)
-      corners[win] = c
-    end
-    local b = vim.api.nvim_win_get_buf(c)
-    vim.api.nvim_buf_set_lines(b, 0, -1, false, { frame })
-    vim.api.nvim_buf_set_extmark(b, ns, 0, 0, { end_col = #frame, hl_group = "NemetonKey" })
   end
 end
 
@@ -170,12 +234,14 @@ function M.after(n, fn)
   end
 end
 
---- Turns a glyph in the top right corner of every window showing `buf`
---- until the function handed back is called: what a window shows while
---- it is asked for again. A corner of the window of its own rather than
---- its title or its winbar, since the windows that refresh are floats
---- with a title, splits with a winbar and a tab with neither, and each
---- of them rewrites its own chrome as it redraws.
+--- Turns a glyph at the end of the winbar of every window showing
+--- `buf` until the function handed back is called: what a window shows
+--- while it is asked for again. On the winbar's own ground, where it
+--- covers nothing of what is being read; a window with no winbar -- a
+--- tab of a merge request has none -- gets it in its top right corner
+--- instead, in a float of its own. Asked for by the winbar rather than
+--- written into it, since each of these windows rewrites its own chrome
+--- as it redraws.
 ---
 --- Counted, so two refreshes of one buffer turn one glyph until both
 --- are back; the function handed back is safe to call more than once.

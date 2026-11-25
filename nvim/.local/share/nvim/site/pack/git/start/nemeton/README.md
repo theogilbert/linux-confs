@@ -9,7 +9,9 @@ GitLab only, through the [`glab`][glab] CLI — there is no HTTP client in
 here and no token in a config file. GitHub is deliberately not here yet;
 see [What is not done](#what-is-not-done).
 
-Needs Neovim 0.10 or newer, `git`, and `glab`. `:help nemeton` is the
+Needs Neovim 0.10 or newer, `git`, `glab`, and
+[render.nvim](https://github.com/theogilbert/render.nvim), which draws
+every comment. `:help nemeton` is the
 same ground as this file, with tags.
 
 [glab]: https://gitlab.com/gitlab-org/cli
@@ -99,12 +101,15 @@ nvim
 :Nemeton                              # the list; <CR> checks one out
 ```
 
-Install it however you install plugins. Calling `setup()` is optional:
+Install it however you install plugins, with render.nvim beside it —
+with lazy.nvim, `{ "theogilbert/nemeton.nvim", dependencies = {
+"theogilbert/render.nvim" } }`. Calling `setup()` is optional:
 `:Nemeton` and `<leader>ml` are registered when Neovim starts and load
 nothing until one of them is used, and the first one used wires up the
 rest.
 
-`:checkhealth nemeton` says whether git, glab and a token are all there.
+`:checkhealth nemeton` says whether render.nvim, git, glab and a token
+are all there.
 
 ## Commands
 
@@ -1259,8 +1264,9 @@ and all, because that is what GitLab renders and what the next person to
 edit it has to see. A suggestion is left alone as well — it is code, and
 code that says `:tada:` says `:tada:`. `lua/nemeton/emoji.lua` holds the
 names, which are what a review is written with rather than the whole
-eighteen hundred of gemoji; one it does not know is left as it was
-typed, which is what a forge does with an unknown name too.
+eighteen hundred of gemoji, spelt as GitLab spells them (`:hugging:`,
+not gemoji's `:hugs:`); one it does not know is left as it was typed,
+which is what a forge does with an unknown name too.
 `comments.emoji = false` leaves all of them alone.
 
 **Reactions** are the emoji people put *on* a comment rather than in
@@ -1448,8 +1454,8 @@ While the queue, the merge requests you are in or the issues are being
 fetched, or a merge request picked from the queue is being opened, a
 braille spinner turns at the front of that window's title —
 `config.spinner`, `{ frames = {…}, interval = 100 }`, or `false` for
-none. The same spinner turns in the top right corner of a window being
-asked for again: the code or the window `refresh` was pressed in, the
+none. The same spinner turns at the end of the winbar of a window being
+asked for again (in its top right corner when it has no winbar): the code or the window `refresh` was pressed in, the
 thread pane on any refresh of the review, the overview, the comments,
 every thread, the activity, the jobs, a job's log, the to-do list, an
 issue and its comments.
@@ -1618,12 +1624,9 @@ lua/nemeton/
                  also the host/token environment and the 401 retry
   threads.lua    GitLab's discussions -> "which threads are on line 42",
                  pure, and the part the tests lean on hardest
-  markdown.lua   a comment read as the page rather than as the source:
-                 links, headings, citations, emphasis, code, tables,
-                 lists, fences -- pure, and a parser only, since the
-                 drawing is threads.lua's
-  tex.lua        a formula as the Unicode it would be printed with --
-                 a substitution, not a typesetter
+  markdown.lua   what only a GitLab comment has -- links to comments
+                 and commits, #12 and !7 and @name, labels,
+                 suggestions -- as hooks on render.nvim's reading
   follow.lua     what <C-]> goes to: where each kind of reference has a
                  page, and the one kind that is a thread in here instead
   linked.lua     a comment on another merge request of this project,

@@ -59,6 +59,9 @@ What it does:
   - Neovim 0.10 or newer. `vim.system()`, `vim.ui.open()` and the
     extmark fields this draws with are all 0.10, and none of them
     degrade: on anything older nemeton says so and does nothing.
+  - render.nvim -- https://github.com/theogilbert/render.nvim -- which
+    reads and draws every comment: the markdown is its, and what only
+    GitLab has (references, labels, suggestions) is handed to it.
   - `git`, and a repository with a GitLab remote.
   - `glab` -- https://gitlab.com/gitlab-org/cli -- authenticated, or a
     token nemeton can reach. See |nemeton-credentials|.
@@ -1606,7 +1609,8 @@ its author typed, colons and all. A suggestion is left alone too; it is
 code, and code that says `:tada:` says `:tada:`.
 
 The names are in `lua/nemeton/emoji.lua`, and they are what a review is
-written with rather than the whole of gemoji. One that is not there is
+written with rather than the whole of gemoji, spelt as GitLab spells
+them (`:hugging:`, not gemoji's `:hugs:`). One that is not there is
 left exactly as it was typed, which is what a forge does with a name it
 does not know either.
 
@@ -2627,13 +2631,15 @@ the forge: a fetch, a page more, a sync, the checkout of the merge
 request picked. The words in the window say what it is waiting for;
 this says the call has not died. `false` for nothing turning.
 
-The same frames turn in the top right corner of a window being asked
+The same frames turn at the end of the winbar of a window being asked
 for again -- the window `refresh` was pressed in, the thread pane on any
 refresh of the review (a comment posted is one), |nemeton-detail-window|,
 the comments, every thread, the activity, the jobs, a job's log, the
 to-do list, an issue and its comments -- and stop when the forge has
-answered. A corner rather than the title, since some of those windows
-are splits with no title.
+answered. The winbar rather than the title, since some of those
+windows are splits with no title, and rather than a corner of the
+window, which would cover its first line; a window with no winbar,
+such as the code, has it in its top right corner instead.
 
 COMPOSER                                              *nemeton-config-compose*
 >

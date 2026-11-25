@@ -9,6 +9,7 @@
 
 local config = require("nemeton.config")
 local markdown = require("nemeton.markdown")
+local draw = require("render.draw")
 local sha1 = require("nemeton.sha1")
 
 local M = {}
@@ -913,26 +914,6 @@ function M.age(iso, now)
   return os.date(fmt, at)
 end
 
---- The longest prefix of `s` that fits in `width` columns, whole
---- characters only.
-local function fit(s, width)
-  local out, w = "", 0
-  for i = 0, vim.fn.strchars(s) - 1 do
-    local ch = vim.fn.strcharpart(s, i, 1)
-    local cw = vim.fn.strdisplaywidth(ch)
-    if w + cw > width then
-      -- A first character wider than the room it is given goes in
-      -- anyway; otherwise nothing ever fits and the cut never ends.
-      if out == "" then
-        out = ch
-      end
-      break
-    end
-    out, w = out .. ch, w + cw
-  end
-  return out
-end
-
 -- What a line of the quoted code is drawn on, by whether the file
 -- still has it. The quotation's own ground for the line it does, which
 -- is most of them, and the colour a line taken away is read in for the
@@ -943,76 +924,18 @@ local WAS = {
 }
 local QUOTE = "NemetonQuote"
 
---- `text`, cut into lines no wider than `width` columns.
----
---- Because a comment that runs off the right-hand edge cannot be read
---- at all where it is mostly drawn: a virtual line takes no `wrap` and
---- no horizontal scroll -- `zl` moves the file underneath and leaves
---- the virtual text where it was -- so whatever is past the edge of the
---- window is simply gone. A comment is prose somebody else wrote at
---- whatever width they had, and this is the only place it can be
---- broken.
----
---- Broken at spaces, and inside a word only when the word is wider than
---- a whole line on its own -- a URL in a narrow split. Cutting one is
---- ugly; the alternative is a line that stops in the middle and does
---- not say so.
----
---- The line's own leading whitespace survives on the first piece, so an
---- indented bullet keeps the shape it was written in; the pieces after
---- it start at the rail, which is where a continuation is least likely
---- to read as a new point.
-local function wrap(text, width)
-  if not width or width < 1 or vim.fn.strdisplaywidth(text) <= width then
-    return { text }
-  end
-  local out = {}
-  local line, empty = text:match("^%s*"), true
-  for space, word in text:gmatch("(%s*)(%S+)") do
-    local candidate = empty and (line .. word) or (line .. space .. word)
-    if vim.fn.strdisplaywidth(candidate) <= width then
-      line, empty = candidate, false
-    else
-      if not empty then
-        table.insert(out, line)
-      end
-      -- A word with no line wide enough to hold it, cut into ones that
-      -- are.
-      while vim.fn.strdisplaywidth(word) > width do
-        local head = fit(word, width)
-        table.insert(out, head)
-        word = word:sub(#head + 1)
-      end
-      line, empty = word, false
-    end
-  end
-  if not empty then
-    table.insert(out, line)
-  end
-  return #out > 0 and out or { text }
-end
-
---- The chunks of `runs` covering bytes [from, to) of the line they were
---- made for, cut to fit -- which is what a wrapped line needs, since
---- the colours were worked out against the line whole.
-local function slice(runs, from, to)
-  local out, at = {}, 1
-  for _, run in ipairs(runs) do
-    local first, last = at, at + #run[1]
-    at = last
-    local a, b = math.max(first, from), math.min(last, to)
-    if b > a then
-      -- What the run points at goes with every piece of it: a link
-      -- wrapped across two lines is one link, and the key that follows
-      -- it is pressed on whichever half the cursor is on.
-      table.insert(
-        out,
-        { run[1]:sub(a - first + 1, b - first), run[2], ref = run.ref, style = run.style }
-      )
-    end
-  end
-  return out
-end
+-- What render.nvim draws a note's blocks in: this plugin's groups, so a
+-- table's head is in the colour a name is and a heading takes the
+-- weights `marks.setup_highlights` gives `NemetonHeading1`..`6`.
+local GROUPS = {
+  meta = "NemetonMeta",
+  citation = "NemetonCitation",
+  heading = "NemetonHeading",
+  head = "NemetonAuthor",
+  ok = "NemetonOk",
+  math = "NemetonMath",
+  rule = "NemetonMeta",
+}
 
 --- A thread as coloured lines, for the pane, the peek float and the two
 --- windows that list every thread. One shape for all of them, so they
@@ -1128,112 +1051,6 @@ function M.render(thread, opts)
   local indent = config.comments.reply_indent or ""
   local mark = config.comments.reply_mark or ""
 
-  -- The bar down the side of what a note quotes, and how many of them
-  -- the line being drawn is inside. A citation is drawn by putting the
-  -- bar on the end of `lead` and drawing what it quotes behind that,
-  -- so that everything measuring the lead is already right; what the
-  -- depth is for is colouring the bars back out of it, since a lead is
-  -- one chunk in the rail's colour and a bar is not the rail.
-  local bar = config.comments.citation or ""
-  local cited = 0
-
-  --- What stands at the front of a line: `lead` as chunks, the rail's
-  --- part in the rail's colour and each citation bar in its own.
-  local function front(lead)
-    local chunks = { { lead:sub(1, #lead - #bar * cited), rail[2] } }
-    for _ = 1, cited do
-      table.insert(chunks, { bar, "NemetonCitation" })
-    end
-    return chunks
-  end
-
-  -- One line of text, wrapped and put down behind `lead`. `sign` is the
-  -- "+ " or "- " a suggestion's lines carry, and the "was " on a line
-  -- of code that has changed since: it belongs to the first piece only,
-  -- and the pieces after it are indented past where it would be, so a
-  -- wrapped line stays inside the column its marker put it in rather
-  -- than reading as another line with no marker at all.
-  --- `band` is the ground the line is drawn on, for the two halves of a
-  --- suggestion: the language decides the colour of the words and the
-  --- band decides which half of the diff they are. Without one -- every
-  --- other line of a thread -- `hl` is the whole of the answer.
-  --- `cap` is the width to break at, for the callers whose lines are
-  --- not prose: absent is the prose limit, and `false` is no breaking
-  --- at all.
-  local function body(lead, text, hl, sign, runs, band, cap)
-    -- `sign` is drawn in front of the first line and its width in
-    -- spaces in front of the rest -- in the line's colour, or in its
-    -- own where it comes as `{ text, hl }`: a task's tick is green.
-    local sign_hl
-    if type(sign) == "table" then
-      sign, sign_hl = sign[1], sign[2]
-    end
-    sign = sign or ""
-    local pad = (" "):rep(vim.fn.strdisplaywidth(sign))
-    if cap == nil then
-      cap = limit
-    end
-    local room = cap and (cap - vim.fn.strdisplaywidth(lead) - #pad)
-    -- Where in `text` the piece being drawn started. A wrapped line is
-    -- pieces of the line it came from with the spaces between them
-    -- gone, and the colours were worked out against the whole of it.
-    local cursor = 1
-    for j, piece in ipairs(wrap(text, room)) do
-      local marker = j > 1 and pad or sign
-      local line = front(lead)
-      if not runs and not sign_hl then
-        table.insert(line, { marker .. piece, band or hl })
-        table.insert(out, line)
-      elseif not runs then
-        table.insert(line, { marker, sign_hl })
-        table.insert(line, { piece, band or hl })
-        table.insert(out, line)
-      else
-        local at = text:find(piece, cursor, true) or cursor
-        cursor = at + #piece
-        if marker ~= "" then
-          -- The `+` and the `-` are on the band and nothing else: they
-          -- are not code, and the band's own foreground is the colour
-          -- the whole half used to be drawn in.
-          table.insert(line, { marker, j == 1 and sign_hl or band or hl })
-        end
-        for _, run in ipairs(slice(runs, at, at + #piece)) do
-          local colour = run[2] or hl
-          table.insert(line, {
-            run[1],
-            band and { band, colour } or colour,
-            ref = run.ref,
-            style = run.style,
-          })
-        end
-        table.insert(out, line)
-      end
-    end
-  end
-
-  --- `text` wrapped to `room`, as the pieces it comes to and the
-  --- colours of each -- the same cut `body` makes, for the two things
-  --- that cannot go through `body` because they are drawn inside
-  --- something: a table's cell and a suggestion's box.
-  local function pieces(text, runs, room)
-    local cut, cursor = {}, 1
-    for _, piece in ipairs(wrap(text, room)) do
-      local at = text:find(piece, cursor, true) or cursor
-      cursor = at + #piece
-      table.insert(cut, { text = piece, runs = runs and slice(runs, at, at + #piece) or nil })
-    end
-    return cut
-  end
-
-  --- How wide `chunks` is drawn.
-  local function measure(chunks)
-    local w = 0
-    for _, chunk in ipairs(chunks) do
-      w = w + vim.fn.strdisplaywidth(chunk[1])
-    end
-    return w
-  end
-
   -- The box a suggestion is drawn in. U+256D and friends.
   local BOX = { "╭", "╮", "╰", "╯", "─", "│" }
 
@@ -1252,7 +1069,9 @@ function M.render(thread, opts)
   end
 
   --- A suggestion: the lines it would take away, then the lines it
-  --- would put there, inside a box.
+  --- would put there, inside a box. Drawn here rather than by
+  --- render.nvim, which has never heard of one: `ctx` is the pieces
+  --- `render.draw` draws with, so it sits behind the same rail and bars.
   ---
   --- The fence itself is not drawn. ```suggestion:-1+0 is not something
   --- anybody wrote to be read -- it is markup GitLab invented so that a
@@ -1263,7 +1082,7 @@ function M.render(thread, opts)
   --- edge in the middle of a paragraph is a stain rather than a block.
   --- Every line padded to the same width inside a rule, and the
   --- suggestion is a thing on the page with a shape.
-  local function suggestion(lead, block)
+  local function suggestion(ctx, lead, block)
     -- What the suggestion would take away, as the revision it was
     -- written against had it. The file as it is now is the fallback and
     -- not the answer: a suggestion posted last week against a line
@@ -1277,15 +1096,15 @@ function M.render(thread, opts)
     if not config.comments.suggest_box then
       -- What it was before there was a box: the fence as GitLab wrote
       -- it, and the two halves under it.
-      body(lead, block.fence, "NemetonMeta", nil, nil, nil, code)
+      ctx.body(lead, block.fence, "NemetonMeta", nil, nil, code)
       for j, l in ipairs(gone) do
-        body(lead, l, "NemetonRemoved", "- ", gone_colours[j], "NemetonSuggestOld", code)
+        ctx.body(lead, l, "NemetonRemoved", "- ", gone_colours[j], code, "NemetonSuggestOld")
       end
       for j, l in ipairs(block.lines) do
-        body(lead, l, "NemetonAdded", "+ ", new_colours[j], "NemetonSuggestNew", code)
+        ctx.body(lead, l, "NemetonAdded", "+ ", new_colours[j], code, "NemetonSuggestNew")
       end
       if block.close then
-        body(lead, block.close, "NemetonMeta", nil, nil, nil, code)
+        ctx.body(lead, block.close, "NemetonMeta", nil, nil, code)
       end
       return
     end
@@ -1295,7 +1114,7 @@ function M.render(thread, opts)
     local rows, inner = {}, 0
     local function half(lines, colours, sign, hl, band)
       for j, l in ipairs(lines) do
-        for k, piece in ipairs(pieces(l, colours[j], room)) do
+        for k, piece in ipairs(draw.pieces(l, colours[j], room)) do
           local marker = k > 1 and "  " or sign
           table.insert(rows, { piece = piece, marker = marker, hl = hl, band = band })
           inner = math.max(inner, vim.fn.strdisplaywidth(marker .. piece.text))
@@ -1317,9 +1136,9 @@ function M.render(thread, opts)
     local wide = vim.fn.strdisplaywidth(said)
     local top = inner >= wide + 1 and (BOX[5] .. said .. BOX[5]:rep(inner - wide - 1))
       or BOX[5]:rep(inner)
-    local top_rule = front(lead)
+    local top_rule = ctx.front(lead)
     table.insert(top_rule, { BOX[1] .. top .. BOX[2], "NemetonMeta" })
-    table.insert(out, top_rule)
+    ctx.emit(top_rule)
     for _, row in ipairs(rows) do
       -- The rules are not on the band. Everywhere else in a
       -- conversation a band is the line, edge to edge, because there is
@@ -1331,7 +1150,7 @@ function M.render(thread, opts)
       -- between them -- which is what `line.contained` tells the two
       -- shading passes, since both of them would otherwise take a band
       -- on a line to be the ground of the whole line.
-      local line = front(lead)
+      local line = ctx.front(lead)
       table.insert(line, { BOX[6], "NemetonMeta" })
       -- The `+` and the `-` are on the band and nothing else: they are
       -- not code, and the band's own foreground is the colour the whole
@@ -1345,128 +1164,17 @@ function M.render(thread, opts)
       end
       -- The band reaches the closing rule: padded, so it is a rectangle
       -- inside the box rather than a strip with a ragged end in it.
-      local pad = inner - measure(line) + vim.fn.strdisplaywidth(lead) + 1
+      local pad = inner - draw.measure(line) + vim.fn.strdisplaywidth(lead) + 1
       if pad > 0 then
         table.insert(line, { (" "):rep(pad), row.band })
       end
       table.insert(line, { BOX[6], "NemetonMeta" })
       line.contained = true
-      table.insert(out, line)
+      ctx.emit(line)
     end
-    local bottom_rule = front(lead)
+    local bottom_rule = ctx.front(lead)
     table.insert(bottom_rule, { BOX[3] .. BOX[5]:rep(inner) .. BOX[4], "NemetonMeta" })
-    table.insert(out, bottom_rule)
-  end
-
-  -- The rules of a table: the corners, the tees and the cross.
-  local RULE = {
-    top = { "┌", "┬", "┐" },
-    head = { "├", "┼", "┤" },
-    bottom = { "└", "┴", "┘" },
-  }
-
-  --- A pipe table, drawn as a table.
-  ---
-  --- Markdown's own is a table only in the sense that the columns are
-  --- named: the cells line up in the source when its author lined them
-  --- up by hand and not otherwise, and what is read here is somebody
-  --- else's hand. Ruled and padded, the columns line up because they
-  --- are columns, which is the whole reason the author reached for a
-  --- table instead of a list.
-  ---
-  --- Too wide for the window, the columns give up room from the widest
-  --- first -- a table of shas and sentences is nearly all sentence --
-  --- and a cell that then does not fit is cut with an ellipsis. A
-  --- ruled table cannot wrap: a rule that wraps is two rules.
-  local function tabled(lead, block)
-    local grid, widths, columns = {}, {}, 0
-    for r, row in ipairs(block.rows) do
-      grid[r] = {}
-      for c, cell in ipairs(row) do
-        local text, runs = markdown.inline(M.emoji(cell))
-        grid[r][c] = { text = text, runs = runs }
-        widths[c] = math.max(widths[c] or 0, vim.fn.strdisplaywidth(text))
-        columns = math.max(columns, c)
-      end
-    end
-    if columns == 0 then
-      return
-    end
-    for c = 1, columns do
-      widths[c] = widths[c] or 0
-    end
-
-    -- Three columns per cell that are not the cell: a rule and the
-    -- space on either side of the words, plus the rule that closes the
-    -- last one.
-    local room = code and (code - vim.fn.strdisplaywidth(lead))
-    if room then
-      local total = 1
-      for c = 1, columns do
-        total = total + widths[c] + 3
-      end
-      while total > room do
-        local widest, at = 0, nil
-        for c = 1, columns do
-          if widths[c] > widest then
-            widest, at = widths[c], c
-          end
-        end
-        -- Nothing left to give: a window this narrow gets a table that
-        -- runs past its edge, which is at least a table.
-        if not at or widest <= 3 then
-          break
-        end
-        widths[at], total = widths[at] - 1, total - 1
-      end
-    end
-
-    local function rule(kind)
-      local parts = { RULE[kind][1] }
-      for c = 1, columns do
-        table.insert(parts, ("─"):rep(widths[c] + 2))
-        table.insert(parts, c < columns and RULE[kind][2] or RULE[kind][3])
-      end
-      local line = front(lead)
-      table.insert(line, { table.concat(parts), "NemetonMeta" })
-      return line
-    end
-
-    table.insert(out, rule("top"))
-    for r, row in ipairs(grid) do
-      -- The head in the colour a name is drawn in: it is what the
-      -- columns are called and not one of the values in them.
-      local hl = r == 1 and "NemetonAuthor" or body_hl
-      local line = front(lead)
-      for c = 1, columns do
-        local cell = row[c] or { text = "" }
-        local text, runs = cell.text, cell.runs
-        if vim.fn.strdisplaywidth(text) > widths[c] then
-          local kept = fit(text, math.max(widths[c] - 1, 0))
-          runs = runs and slice(runs, 1, #kept + 1) or nil
-          text = kept .. "…"
-          if runs then
-            table.insert(runs, { "…" })
-          end
-        end
-        local slack = widths[c] - vim.fn.strdisplaywidth(text)
-        local left = (block.align[c] == "right" and slack)
-          or (block.align[c] == "center" and math.floor(slack / 2))
-          or 0
-        table.insert(line, { "│", "NemetonMeta" })
-        table.insert(line, { (" "):rep(left + 1), hl })
-        for _, run in ipairs(runs or { { text } }) do
-          table.insert(line, { run[1], run[2] or hl, ref = run.ref, style = run.style })
-        end
-        table.insert(line, { (" "):rep(slack - left + 1), hl })
-      end
-      table.insert(line, { "│", "NemetonMeta" })
-      table.insert(out, line)
-      if r == 1 then
-        table.insert(out, rule("head"))
-      end
-    end
-    table.insert(out, rule("bottom"))
+    ctx.emit(bottom_rule)
   end
 
   -- What the thread is *about*. Drawn above the first word anybody
@@ -1529,7 +1237,7 @@ function M.render(thread, opts)
     local band, widest = {}, 0
     for i, text in ipairs(texts) do
       local hl = WAS[states[i]] or QUOTE
-      for j, piece in ipairs(pieces(text, colours[i], room)) do
+      for j, piece in ipairs(draw.pieces(text, colours[i], room)) do
         piece.band = hl
         piece.number = j == 1 and numbers[i] or nil
         table.insert(band, piece)
@@ -1736,7 +1444,7 @@ function M.render(thread, opts)
       local over = measured() - limit
       if over > 0 then
         local room = vim.fn.strdisplaywidth(head[2][1]) - over
-        head[2][1] = room > 0 and fit(head[2][1], room) or ""
+        head[2][1] = room > 0 and draw.fit(head[2][1], room) or ""
       end
     end
     -- What the head says in a word -- "2d", eight digits of a sha -- is
@@ -1759,113 +1467,34 @@ function M.render(thread, opts)
       table.insert(out, head)
     end
 
-    --- `blocks` drawn behind `lead`, in `hl` where a block is words.
-    ---
-    --- What was said, as the markdown it was written in rather than as
-    --- the characters it was typed with: `nemeton.markdown` decides
-    --- what each block is, and each is drawn as the thing it is. A
-    --- function rather than a loop because a citation is these same
-    --- blocks again, behind a bar.
-    local function draw(left, blocks, hl)
-      for _, block in ipairs(blocks) do
-        if block.kind == "suggestion" then
-          -- A GitLab suggestion is a fenced block that the forge can
-          -- apply with a button, and it is the one part of a comment
-          -- that is not prose: it is the code that would replace what
-          -- you are looking at. Drawn as a diff, in the colours the
-          -- editor already uses for one, so it reads as a change
-          -- rather than as more sentences.
-          suggestion(left, block)
-        elseif block.kind == "code" then
-          -- Somebody else's fence, drawn as they typed it -- the fence
-          -- lines included, because they are the only thing saying
-          -- where their code starts and stops. Nothing rendered inside
-          -- it: code that says `:tada:` says `:tada:`, and code that
-          -- says `[a](b)` says `[a](b)`.
-          body(left, block.fence, "NemetonMeta", nil, nil, nil, code)
-          for _, l in ipairs(block.lines) do
-            body(left, l, hl, nil, nil, nil, code)
+    -- What was said, as the markdown it was written in rather than as
+    -- the characters it was typed with: `nemeton.markdown` decides what
+    -- each block is and render.nvim draws it as the thing it is --
+    -- behind the rail, in the thread's colour and this plugin's groups,
+    -- with a suggestion the one block drawn here.
+    local c = config.comments
+    vim.list_extend(
+      out,
+      draw.blocks(markdown.blocks(vim.split(note.body or "", "\n", { plain = true })), {
+        width = limit,
+        code = code,
+        lead = lead,
+        lead_hl = rail[2],
+        hl = body_hl,
+        groups = GROUPS,
+        glyphs = { bullets = c.bullets, tasks = c.tasks, citation = c.citation or "" },
+        inline = function(text)
+          return markdown.inline(M.emoji(text))
+        end,
+        custom = function(block, ctx, left)
+          if block.kind ~= "suggestion" then
+            return false
           end
-          if block.close then
-            body(left, block.close, "NemetonMeta", nil, nil, nil, code)
-          end
-        elseif block.kind == "table" then
-          tabled(left, block)
-        elseif block.kind == "math" then
-          -- A displayed formula on lines of its own, one per row of it,
-          -- set in from the prose as the page centres one. Measured
-          -- like code: a formula broken at a space is not the formula.
-          local tex = require("nemeton.tex")
-          for _, row in ipairs(tex.lines(table.concat(block.lines, " "))) do
-            body(left, row, "NemetonMath", "  ", nil, nil, code)
-          end
-        elseif block.kind == "item" then
-          -- A list item, as the page draws one: a bullet for the
-          -- level it is at, or its number, then its box if it is a
-          -- task -- and every line it wraps to, and every line that
-          -- carries it on, hanging under the words rather than under
-          -- the bullet.
-          local c = config.comments
-          local prose, runs = markdown.inline(M.emoji(block.text))
-          local inset = ("  "):rep(block.depth)
-          local sign
-          if block.of then
-            sign = inset .. (" "):rep(block.of.width or 2)
-          else
-            local glyph = block.marker
-            if glyph == "-" then
-              glyph = c.bullets[block.depth % #c.bullets + 1]
-            end
-            glyph = glyph .. " "
-            -- A task is its box and not a bullet as well, as on the
-            -- page: the box already says "this is an item".
-            local tick = ""
-            if block.task ~= nil then
-              tick = (block.task and c.tasks[2] or c.tasks[1]) .. " "
-              if block.marker == "-" then
-                glyph = ""
-              end
-            end
-            block.width = vim.fn.strdisplaywidth(glyph .. tick)
-            sign = {
-              inset .. glyph .. tick,
-              block.task and "NemetonOk" or block.task == false and "NemetonMeta" or hl,
-            }
-          end
-          body(left, prose, hl, sign, runs)
-        elseif block.kind == "citation" then
-          -- What somebody quoted before answering it, behind a bar and
-          -- in the quiet colour: it is the one part of a note that is
-          -- not the note's author speaking, and the page draws it set
-          -- off and greyed for the same reason. The bar goes on the
-          -- left, so that a wrapped line keeps it and a table or a box
-          -- inside the citation is measured against what is left.
-          cited = cited + 1
-          draw(left .. bar, block.blocks, "NemetonCitation")
-          cited = cited - 1
-        else
-          -- The picture a forge would have drawn, and the link as the
-          -- words it was given: what this line points at is kept
-          -- beside the run it is drawn in, for the key that follows
-          -- it.
-          local prose, runs = markdown.inline(M.emoji(block.text))
-          -- A heading in the colour a name is drawn in and without its
-          -- hashes. There is no bigger type in a terminal, so what
-          -- says "this is a heading" is what says it everywhere else
-          -- here: a colour, and the words on their own line.
-          -- ...and which level of one: there is no bigger type in a
-          -- terminal, so the six are told apart by weight instead --
-          -- underlined and bold at the top, quiet and italic at the
-          -- bottom. See `marks.setup_highlights`.
-          local colour = hl
-          if block.kind == "heading" then
-            colour = "NemetonHeading" .. math.min(block.level or 1, 6)
-          end
-          body(left, prose, colour, nil, runs)
-        end
-      end
-    end
-    draw(lead, markdown.blocks(vim.split(note.body or "", "\n", { plain = true })), body_hl)
+          suggestion(ctx, left, block)
+          return true
+        end,
+      })
+    )
     -- ...and what people said back without saying anything, under it.
     --
     -- A row of pictures with a count beside each, in the order they
@@ -1879,7 +1508,7 @@ function M.render(thread, opts)
     -- chunk, the way a link carries where it goes, and a review is
     -- read for what people wrote, not for who thumbed it.
     if config.comments.reactions and note.reactions and #note.reactions > 0 then
-      local row = front(lead)
+      local row = { { lead, rail[2] } }
       for n, given in ipairs(note.reactions) do
         local picture = M.emoji(":" .. given.name .. ":")
         if n > 1 then

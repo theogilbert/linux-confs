@@ -11,6 +11,16 @@ return {
     toggle = "<leader>rv",
     -- In the reader: what the cursor is on, followed (`follow`).
     follow = "<C-]>",
+    -- In the reader: every key it answers, in a float. Needs
+    -- common.nvim on the runtime path.
+    help = "g?",
+    -- In a table reader (csv, tsv): the next column whole into view,
+    -- the previous one, hide the column under the cursor, and the
+    -- picker that shows, hides and orders them all.
+    column_next = "L",
+    column_prev = "H",
+    column_hide = "x",
+    columns = "c",
   },
 
   -- The widest a line of prose is set. The window is the other half of
@@ -30,7 +40,7 @@ return {
   -- What a link does when it is followed. nil is the built-in: its
   -- target is copied, to the unnamed register and the clipboard -- a
   -- page read in a terminal is as often read to be pasted from as
-  -- clicked through.
+  -- clicked through -- and a `#heading` of this page is gone to.
   --
   -- A function is handed the link and the reader it was followed in,
   -- and does the whole of it:
@@ -38,7 +48,7 @@ return {
   --   follow = function(link, ctx)
   --     -- link: { kind = "url" | "path", href = "...", text = "..." }
   --     -- ctx:  { source = <buf>, view = <buf>, win = <win>,
-  --     --         default = fn,  -- the built-in: copy
+  --     --         default = fn,  -- the built-in: copy, or go to `#a-heading`
   --     --         copy = fn,     -- the target to the registers
   --     --         go = fn,       -- the target opened: a URL with
   --     --                        -- `vim.ui.open`, a path its file (in
@@ -60,6 +70,22 @@ return {
   -- `render.draw.blocks` does. A filetype not here has no reader.
   filetypes = {
     markdown = "render.filetypes.markdown",
+    csv = "render.filetypes.csv",
+    tsv = "render.filetypes.tsv",
+  },
+
+  -- The table readers. Both need common.nvim on the runtime path.
+  csv = {
+    -- What a csv file's fields are separated by. nil guesses it from
+    -- the first lines, out of `,`, tab, `;` and `|`: a file saved by a
+    -- spreadsheet in a comma-decimal locale is `;`-separated and still
+    -- called .csv. A tsv file is always tab-separated.
+    delimiter = nil,
+    -- Whether the first record names the columns. `false` numbers them.
+    header = true,
+    -- A column wider than this is left-aligned rather than centred, so
+    -- a short value does not float in the middle of a long one.
+    left_align = 40,
   },
 
   markdown = {

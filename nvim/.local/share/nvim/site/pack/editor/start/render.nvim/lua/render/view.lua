@@ -18,7 +18,8 @@ local M = {}
 
 M.ns = vim.api.nvim_create_namespace("render")
 
--- source buffer -> { buf, tick, width, rows, refs, headings, hovered }
+-- source buffer -> { buf, tick, width, rows, refs, headings, hovered,
+-- state }, `state` being the reader's own (`ctx.state`)
 local views = {}
 -- reader buffer -> source buffer
 local sources = {}
@@ -47,6 +48,22 @@ function M.readable(buf)
   return reader_for(buf) ~= nil
 end
 
+--- What a reader is handed besides the lines: the buffers, a table of
+--- its own that lives as long as the reader buffer (a table's hidden
+--- columns, say), and `redraw`, which draws it again after a change to
+--- that state rather than to the file.
+local function context(src)
+  local view = views[src]
+  return {
+    source = src,
+    buf = view.buf,
+    state = view.state,
+    redraw = function()
+      M.redraw(src)
+    end,
+  }
+end
+
 --- How many columns of `win` text has: its width less the number, sign
 --- and fold columns.
 local function room(win)
@@ -68,6 +85,7 @@ local function paint(src, width)
   local rendered = reader.render(vim.api.nvim_buf_get_lines(src, 0, -1, false), {
     width = limit,
     path = vim.api.nvim_buf_get_name(src),
+    state = view.state,
   })
   local lines, hls, refs = draw.flatten(rendered)
   local rows, headings = {}, {}
@@ -98,6 +116,9 @@ local function paint(src, width)
       hl_group = h.hl,
     })
   end
+  if reader.drawn then
+    reader.drawn(context(src))
+  end
   -- For whoever keeps something of their own in step with the page --
   -- an outline, marks -- whose rows have just moved under them.
   vim.api.nvim_exec_autocmds("User", {
@@ -124,15 +145,56 @@ local function repaint(src)
   end
 end
 
---- The anchor a heading is gone to by: lower case, the punctuation
---- gone, a dash for each space -- what GitHub and GitLab both make of
---- one, which is what a `[see](#the-part)` in a README was written
---- against.
-function M.slug(text)
-  local s = vim.fn.tolower(vim.trim(text))
-  s = s:gsub("[^%w%s_%-\128-\255]", "")
-  return (s:gsub("%s", "-"))
+--- Draws the reader of `src` again even where neither the file nor the
+--- window has changed: for a reader whose own state has.
+function M.redraw(src)
+  local view = views[src]
+  if view then
+    view.tick = nil
+    repaint(src)
+  end
 end
+
+--- The keys of reader `buf`: the view's, then its reader's
+--- (`reader.keys(ctx)`), and the help that lists them all. The help is
+--- common.nvim's float; without common.nvim the keys are bound and
+--- there is no help.
+local function bind(src)
+  local keys = config.keys
+  local bindings = {
+    {
+      keys.follow,
+      function()
+        M.follow()
+      end,
+      "follow the link under the cursor",
+    },
+  }
+  local reader = reader_for(src)
+  if reader and reader.keys then
+    vim.list_extend(bindings, reader.keys(context(src)))
+  end
+  local buf = views[src].buf
+  local ok, help = pcall(require, "common.help")
+  if ok then
+    local toggle = vim.g.render_toggle_key or keys.toggle
+    help.bind(buf, bindings, {
+      help = keys.help,
+      title = " render ",
+      prefix = "render: ",
+      extra = toggle and { { key = toggle, desc = "back to the file" } } or nil,
+    })
+    return
+  end
+  for _, b in ipairs(bindings) do
+    if b[1] and b[1] ~= "" then
+      vim.keymap.set(b.mode or "n", b[1], b[2], { buffer = buf, desc = "render: " .. b[3] })
+    end
+  end
+end
+
+--- The anchor a heading is gone to by (`render.markdown.slug`).
+M.slug = require("render.markdown").slug
 
 --- The reader of `src`, made where there is none.
 local function ensure(src)
@@ -144,15 +206,10 @@ local function ensure(src)
   vim.bo[buf].modifiable = false
   local name = vim.api.nvim_buf_get_name(src)
   pcall(vim.api.nvim_buf_set_name, buf, "render://" .. (name ~= "" and name or tostring(src)))
-  views[src] = { buf = buf }
+  views[src] = { buf = buf, state = {} }
   sources[buf] = src
 
-  local keys = config.keys
-  if keys.follow then
-    vim.keymap.set("n", keys.follow, function()
-      M.follow()
-    end, { buffer = buf, desc = "render: follow the link under the cursor" })
-  end
+  bind(src)
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = group,
     buffer = buf,
@@ -363,11 +420,17 @@ local function to_heading(win, anchor)
 end
 
 --- Puts a link's target where `p` puts it: the unnamed register, and
---- the clipboard where there is one.
+--- the clipboard where there is one -- and, with common.nvim, the
+--- terminal's own by OSC 52 where there is none (an editor over ssh).
 function M.copy(link)
-  vim.fn.setreg('"', link.href)
-  if vim.fn.has("clipboard") == 1 then
-    pcall(vim.fn.setreg, "+", link.href)
+  local ok, yank = pcall(require, "common.yank")
+  if ok then
+    yank.copy(link.href)
+  else
+    vim.fn.setreg('"', link.href)
+    if vim.fn.has("clipboard") == 1 then
+      pcall(vim.fn.setreg, "+", link.href)
+    end
   end
   vim.notify(("render: copied %s"):format(link.href), vim.log.levels.INFO)
 end
@@ -442,7 +505,14 @@ local function handed(win, what)
   ctx.show = function()
     M.show(link)
   end
-  ctx.default = what == "hover" and ctx.show or ctx.copy
+  -- A heading of this page has nothing worth copying -- `#install`
+  -- pasted anywhere else leads nowhere -- so it is gone to: what a
+  -- table of contents is for.
+  if what == "hover" then
+    ctx.default = ctx.show
+  else
+    ctx.default = link.href:sub(1, 1) == "#" and ctx.go or ctx.copy
+  end
   return link, ctx, ref
 end
 

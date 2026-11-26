@@ -59,6 +59,16 @@ local function where(url)
   return url:match("^%a[%w+.-]*://") and "url" or "path"
 end
 
+--- The anchor a heading is gone to by: lower case, the punctuation
+--- gone, a dash for each space -- what GitHub and GitLab both make of
+--- one, which is what a `[see](#the-part)` in a README was written
+--- against.
+function M.slug(text)
+  local s = vim.fn.tolower(vim.trim(text))
+  s = s:gsub("[^%w%s_%-\128-\255]", "")
+  return (s:gsub("%s", "-"))
+end
+
 -- The markers a comment is emphasised with, longest first: `***` is one
 -- marker and not a `*` beside a `**`, and a scan that took the short one
 -- first would leave a lone asterisk in the middle of somebody's
@@ -450,13 +460,30 @@ function M.inline(text, opts)
   -- goes -- in `ref`, for the key that follows it -- and gives up the
   -- room.
   if on(opts, "links") then
-    local at = 1
-    while true do
-      local from, to, label, url = text:find("%[([^%]\n]*)%]%((%S-)%)", at)
-      if not from then
-        break
+    -- The address runs to the `)` that balances the `(` it opened
+    -- with, as CommonMark has it: a Grafana or Kibana URL carries
+    -- `(filters:!())` in its query, and the first `)` in it is not the
+    -- end of the link.
+    local function address(open)
+      local depth, i = 0, open + 1
+      while i <= #text do
+        local c = text:sub(i, i)
+        if c:match("%s") then
+          return nil
+        elseif c == "\\" then
+          i = i + 1
+        elseif c == "(" then
+          depth = depth + 1
+        elseif c == ")" then
+          if depth == 0 then
+            return i, text:sub(open + 1, i - 1)
+          end
+          depth = depth - 1
+        end
+        i = i + 1
       end
-      at = to + 1
+    end
+    local function link(from, to, label, url)
       label = worded(from, label)
       -- `![alt](src)` is a picture, which a terminal has nowhere to
       -- put: it is drawn as what its author said it was, and the `!`
@@ -475,6 +502,21 @@ function M.inline(text, opts)
           text = label,
           href = url,
         })
+      end
+    end
+    local at = 1
+    while true do
+      local from, open, label = text:find("%[([^%]\n]*)%]%(", at)
+      if not from then
+        break
+      end
+      local to, url = address(open)
+      if to then
+        -- `\_` in an address is the `_` it escapes, as in prose.
+        link(from, to, label, (url:gsub("\\(%p)", "%1")))
+        at = to + 1
+      else
+        at = open + 1
       end
     end
   end
@@ -795,7 +837,8 @@ end
 --- `opts.join` puts the lines of a paragraph back together (`joined`).
 ---
 --- `[[_TOC_]]` (or `[TOC]`) on a line of its own is the text's own
---- headings, as the nested list a page draws them as.
+--- headings, as the nested list a page draws them as, each a link to
+--- its heading.
 ---
 --- A citation is the lines that start with `>`, with the `>` taken off
 --- and the rest read again by this same function: what somebody quoted
@@ -863,8 +906,19 @@ function M.blocks(lines, opts, base)
           end
         end
       end
+      -- Each a link to its heading, slugged as the reader slugs them:
+      -- the second of a name is `-1`. A title with a `]` in it would
+      -- close the label early, and is left as words.
+      local seen = {}
       for _, h in ipairs(found) do
-        add({ kind = "item", depth = h.level - top, marker = "-", text = h.text })
+        local text = h.text:gsub("%s+#+%s*$", "")
+        local slug = M.slug(text)
+        local name = seen[slug] and ("%s-%d"):format(slug, seen[slug]) or slug
+        seen[slug] = (seen[slug] or 0) + 1
+        if not text:find("]", 1, true) then
+          text = ("[%s](#%s)"):format(text, name)
+        end
+        add({ kind = "item", depth = h.level - top, marker = "-", text = text })
       end
       i = i + 1
     elseif display then

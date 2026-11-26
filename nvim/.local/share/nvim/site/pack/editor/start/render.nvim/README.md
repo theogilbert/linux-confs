@@ -8,8 +8,8 @@ as their words, tables ruled, lists with bullets, `:tada:` as 🎉, fences
 in the colours of their language. `<leader>rv` again and the file is
 back, with the cursor on the line you were reading.
 
-Markdown today. CSV, JSON and the rest are a reader each, behind the
-same key (`filetypes`).
+Markdown and delimited tables (CSV, TSV) today. JSON and the rest are a
+reader each, behind the same key (`filetypes`).
 
 Needs Neovim 0.10 or newer. `:help render` is the same ground as this
 file, with tags.
@@ -53,21 +53,46 @@ pictures (drawn as their words), lists (bulleted, numbered, tasks),
 citations (`>`, and GitLab's `>>>`), pipe tables with their alignment,
 fences, rules, formulas (`$…$`, `$$…$$`, ```` ```math ````, drawn as
 the Unicode they would be printed with), character references
-(`&amp;`), `:emoji:` and `[[_TOC_]]`. What it does not read is drawn as
-it was typed.
+(`&amp;`), `:emoji:` and `[[_TOC_]]` (a list of links to the headings).
+What it does not read is drawn as it was typed.
+
+## Tables: CSV and TSV
+
+A `csv` or `tsv` file reads as the table it is: ruled, its columns
+lined up, the header set apart, under a count of its rows and columns.
+Quoted fields, quoted line breaks (drawn as `\n`, the row still one
+row) and `\r\n` endings are read; a csv file's delimiter is guessed
+from its first lines out of `,`, tab, `;` and `|` (`csv.delimiter` to
+say it).
+
+A table wider than the window scrolls sideways a column at a time:
+`L` brings the next column whole into view, `H` the previous one, and
+`◂`/`▸` at the edges say there is more. `x` hides the column under the
+cursor and `c` opens a picker to show, hide and order them all. Which
+columns are shown is the reader's, not the file's: an edit to the file
+keeps the choice, and a column the file grows is shown. `g?` lists the
+keys.
+
+These readers are drawn with [common.nvim](../common.nvim), the UI
+library the author's plugins share; without it on the runtime path they
+say so instead.
 
 ## Links
 
 The page draws a link's words, not where it leads. With the cursor on
 one, its target is shown in the command line; `<C-]>` on it copies the
-target, to the unnamed register and the clipboard where there is one.
+target, to the unnamed register and the clipboard where there is one
+-- and, with common.nvim installed, by OSC 52 to the terminal's clipboard
+where Neovim has none (`vim.g.common_yank_osc52 = true` to always send it).
+A link to a heading of this page (`#install`, a `[[_TOC_]]` entry) is
+gone to instead: an anchor pasted elsewhere leads nowhere.
 
 Both are yours to replace. `follow` is handed the link and the reader
 it was followed in, and does the whole of it; `ctx` carries the
 built-ins, for the links you do not want to handle yourself:
 
 - `ctx.copy()` -- the target to the registers (`ctx.default` for
-  `follow`);
+  `follow`, but for `#a-heading`, where it is `ctx.go`);
 - `ctx.go()` -- where it points: a URL opened with `vim.ui.open`, a path
   the file it names, beside the one being read and in the reader too
   where it has one, `#a-heading` that heading of this page (GitHub's and
@@ -105,6 +130,11 @@ require("render").setup({
   keys = {
     toggle = "<leader>rv", -- the reader, on and off; false unbinds it
     follow = "<C-]>",      -- in the reader: follow (copy) the link
+    help = "g?",           -- in the reader: its keys, in a float (common.nvim)
+    column_next = "L",     -- in a table: the next column into view
+    column_prev = "H",     -- ... the previous one
+    column_hide = "x",     -- ... hide the column under the cursor
+    columns = "c",         -- ... pick, hide and order the columns
   },
   width = 80,              -- the widest prose is set; false for the window's
   winbar = true,           -- "READER", the file and the key back, above the page
@@ -112,6 +142,13 @@ require("render").setup({
   hover = nil,             -- function(link, ctx), or false; see Links
   filetypes = {            -- which reader reads which filetype
     markdown = "render.filetypes.markdown",
+    csv = "render.filetypes.csv",
+    tsv = "render.filetypes.tsv",
+  },
+  csv = {
+    delimiter = nil,       -- nil guesses: , tab ; |
+    header = true,         -- the first record names the columns
+    left_align = 40,       -- a column wider than this is left-aligned
   },
   markdown = {
     links = true, styles = true, math = true, headings = true,

@@ -65,8 +65,18 @@ code spans, links inline, by reference and bare, pictures (drawn as their
 words), lists (bulleted, numbered, tasks), citations (`>`, and GitLab's
 `>>>`), pipe tables with their alignment, fences, rules, formulas (`$…$`,
 `$$…$$`, a `math` fence -- as the Unicode they would be printed with),
-character references, `:emoji:` and `[[_TOC_]]`. What it does not read is
-drawn as it was typed.
+character references, `:emoji:` and `[[_TOC_]]` (a list of links to the
+headings). What it does not read is drawn as it was typed.
+
+                                                               *render-tables*
+A `csv` or `tsv` file reads as the table it is: ruled, its columns lined
+up, the header set apart, under a count of its rows and columns. Quoted
+fields and quoted line breaks (drawn as `\n`) are read, and a csv file's
+delimiter is guessed (|render-csv|). Wider than the window, it scrolls a
+column at a time: `L` and `H`, with `◂`/`▸` at the edges where there is
+more. `x` hides the column under the cursor, `c` picks, hides and orders
+them all; the choice is the reader's, kept across edits to the file.
+These readers need common.nvim on the runtime path.
 
 ==============================================================================
 3. LINKS                                                        *render-links*
@@ -74,14 +84,19 @@ drawn as it was typed.
 The page draws a link's words, not where it leads. With the cursor on one,
 its target is shown in the command line (|render-hover|); `<C-]>` on it
 copies the target, to the unnamed register and the clipboard where there
-is one (|render-keys|).
+is one (|render-keys|) -- and, with common.nvim installed, by OSC 52 to the
+terminal's clipboard where Neovim has none (`vim.g.common_yank_osc52 = true`
+to always send it). A link to a heading of this page (`#install`, a
+`[[_TOC_]]` entry) is gone to instead: an anchor pasted elsewhere leads
+nowhere.
 
                                                                *render-follow*
 `follow` replaces that. It is handed the link and the reader it was
 followed in, and does the whole of it; `ctx` carries the built-ins, for
 the links you leave to them:
 
-- `ctx.copy()`: the target to the registers. `ctx.default` for `follow`.
+- `ctx.copy()`: the target to the registers. `ctx.default` for `follow`,
+  but for `#a-heading`, where `ctx.go()` is.
 - `ctx.go()`: where it points. A URL is opened with |vim.ui.open()|; a
   path is the file it names, beside the one being read -- in the reader
   too, where it has one, so a link from one page goes to another page;
@@ -118,8 +133,20 @@ defaults.
                                                                  *render-keys*
 keys.toggle     `"<leader>rv"`  The reader, on and off. `false` unbinds it.
 keys.follow     `"<C-]>"`       In the reader: follow the link under the
-                                cursor -- copy it, unless `follow` says
-                                otherwise. `false` unbinds it.
+                                cursor -- copy it, or go to `#a-heading`,
+                                unless `follow` says otherwise. `false`
+                                unbinds it.
+keys.help       `"g?"`          In the reader: every key it answers, in a
+                                float. Drawn by common.nvim, which has to
+                                be on the runtime path; without it there
+                                is no help. `false` unbinds it.
+keys.column_next `"L"`          In a table reader: the next column whole
+                                into view.
+keys.column_prev `"H"`          In a table reader: the previous column.
+keys.column_hide `"x"`          In a table reader: hide the column under
+                                the cursor.
+keys.columns    `"c"`           In a table reader: the picker that shows,
+                                hides and orders the columns.
 
                                                                 *render-width*
 width           `80`            The widest prose is set. The window is the
@@ -137,11 +164,17 @@ follow          `nil`           |render-follow|.
 hover           `nil`           |render-hover|.
 
                                                             *render-filetypes*
-filetypes       `{ markdown = "render.filetypes.markdown" }`
+filetypes       `{ markdown = ..., csv = ..., tsv = ... }`
                 Which reader reads which filetype: a module with
                 `render(lines, opts)` returning lines of chunks, as
                 |render-engine| draws them. A filetype not here has no
-                reader.
+                reader. `opts.state` is a table of the reader's own that
+                lasts as long as the reader buffer. A module may also
+                have `keys(ctx)`, returning `{ lhs, fn, desc }` to bind
+                in the reader (and list under |render-keys| `help`), and
+                `drawn(ctx)`, called after each drawing. `ctx` is
+                `{ source, buf, state, redraw }`, `redraw()` drawing it
+                again after a change to `state`.
 
 markdown        Each reading on its own -- `links`, `styles`, `math`,
                 `headings`, `tables`, `citations`, `lists` -- all `true`;
@@ -149,6 +182,13 @@ markdown        Each reading on its own -- `links`, `styles`, `math`,
                 the colours of their language, where treesitter has a
                 parser); and the glyphs: `bullets` `{ "•", "◦", "▪" }`,
                 `tasks` `{ "☐", "✓" }`, `citation` `"▎ "`.
+
+                                                                  *render-csv*
+csv             The table readers (|render-tables|): `delimiter` `nil`
+                guesses a csv file's out of `,`, tab, `;` and `|` (a tsv
+                is always tab); `header` `true`, the first record names
+                the columns, `false` numbers them; `left_align` `40`, a
+                column wider than this is left-aligned.
 
                                                               *render-heading*
 markdown.heading
@@ -226,6 +266,8 @@ and where a line went:
                         drawn on, or nil where it has no reader drawn.
 `to_source(buf, row)`   The file's line that the reader's line `row` was
                         drawn from, or nil where `buf` is no reader.
+`redraw(src)`           The reader of `src` drawn again, though neither
+                        the file nor the window changed.
 
                                                          *User_RenderDrawn*
 `User RenderDrawn` is fired each time a reader is drawn again -- the file

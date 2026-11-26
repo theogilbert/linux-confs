@@ -22,11 +22,19 @@ hidden: prose is wrapped again to the width of the window, a table is
 ruled, a heading loses its hashes. Those are lines the file does not
 have, so they are drawn into a scratch buffer, `render://<path>`, that
 is put into the window and taken out again. The file is never touched.
+`:e` in the reader reads the file again from disk and stays in the
+reader (`:e!` drops the file's unsaved changes), and a `render://`
+buffer met again -- in a buffer list, a session -- is drawn from its
+file.
 
 It says so: a winbar on the reader reads `READER`, the file's name and
 the key back to it, on a row of its own above the page so nothing on
 the page is covered (`winbar = false` for none). A plain README looks
 much the same either way, and only one of the two takes an edit.
+
+The file's sign column comes with it: gitsigns' added, changed and
+deleted lines, diagnostics and any other sign, each on the reader lines
+drawn from the line it marks (`signs = false` for none).
 
 It is kept in step with the file. Every change to the file and every
 change of the window's width draws it again, so the reader in one split
@@ -129,15 +137,18 @@ the defaults:
 require("render").setup({
   keys = {
     toggle = "<leader>rv", -- the reader, on and off; false unbinds it
+    close = "q",           -- in the reader: back to the file
     follow = "<C-]>",      -- in the reader: follow (copy) the link
     help = "g?",           -- in the reader: its keys, in a float (common.nvim)
-    column_next = "L",     -- in a table: the next column into view
+    column_next = "L",     -- in a table: the next column into view; in a
+                           -- markdown table, the cursor to the next cell
     column_prev = "H",     -- ... the previous one
     column_hide = "x",     -- ... hide the column under the cursor
     columns = "c",         -- ... pick, hide and order the columns
   },
   width = 80,              -- the widest prose is set; false for the window's
   winbar = true,           -- "READER", the file and the key back, above the page
+  signs = true,            -- the file's signs (gitsigns, diagnostics) in the reader
   follow = nil,            -- function(link, ctx); see Links
   hover = nil,             -- function(link, ctx), or false; see Links
   filetypes = {            -- which reader reads which filetype

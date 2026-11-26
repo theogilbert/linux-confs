@@ -17,6 +17,9 @@ local draw = require("render.draw")
 local M = {}
 
 M.ns = vim.api.nvim_create_namespace("render")
+-- The file's signs, put on the reader lines drawn from the lines they
+-- mark (`config.signs`).
+M.signs_ns = vim.api.nvim_create_namespace("render_signs")
 
 -- source buffer -> { buf, tick, width, rows, refs, headings, hovered,
 -- state }, `state` being the reader's own (`ctx.state`)
@@ -76,7 +79,11 @@ end
 local function paint(src, width)
   local view = views[src]
   local tick = vim.api.nvim_buf_get_changedtick(src)
-  if view.tick == tick and view.width == width then
+  -- An empty reader is drawn whatever the tick says: something other
+  -- than this -- `:e`, a session -- has emptied it.
+  local empty = vim.api.nvim_buf_line_count(view.buf) == 1
+    and vim.api.nvim_buf_get_lines(view.buf, 0, 1, false)[1] == ""
+  if view.tick == tick and view.width == width and not empty then
     return
   end
   view.tick, view.width = tick, width
@@ -116,6 +123,7 @@ local function paint(src, width)
       hl_group = h.hl,
     })
   end
+  M.signs(src)
   if reader.drawn then
     reader.drawn(context(src))
   end
@@ -127,6 +135,127 @@ local function paint(src, width)
     data = { buf = buf, source = src },
   })
 end
+
+-- What gitsigns marks each kind of hunk with, where its own config
+-- cannot be read.
+local git_text = {
+  add = "┃",
+  change = "┃",
+  delete = "▁",
+  topdelete = "▔",
+  changedelete = "~",
+}
+
+--- gitsigns' signs for `src`, as `{ row, text, hl }`, worked out from
+--- its hunks: it places its own only on the lines a window has shown,
+--- and a file put away behind its reader has shown none of them.
+local function git_signs(src)
+  local ok, gitsigns = pcall(require, "gitsigns")
+  local hunks = ok and gitsigns.get_hunks and gitsigns.get_hunks(src)
+  if not hunks then
+    return {}
+  end
+  local has_config, gs_config = pcall(require, "gitsigns.config")
+  local signs = has_config and gs_config.config and gs_config.config.signs or {}
+  local function sign(row, kind)
+    local text = (signs[kind] or {}).text or git_text[kind]
+    return { row = row, text = text, hl = "GitSigns" .. kind:sub(1, 1):upper() .. kind:sub(2) }
+  end
+  local out = {}
+  for _, h in ipairs(hunks) do
+    local start, count = h.added.start, h.added.count
+    if h.type == "delete" then
+      table.insert(out, sign(math.max(start, 1), start == 0 and "topdelete" or "delete"))
+    else
+      for row = start, start + count - 1 do
+        local kind = h.type
+        if kind == "change" and row == start + count - 1 and h.removed.count > count then
+          kind = "changedelete"
+        end
+        table.insert(out, sign(row, kind))
+      end
+    end
+  end
+  return out
+end
+
+--- Copies the sign column of `src` onto its reader -- gitsigns' added,
+--- changed and deleted lines, diagnostics, anything else with a sign:
+--- each on every reader line drawn from the line it marks, or, where
+--- that line was drawn into another (a paragraph joined up), on the
+--- line it went into.
+function M.signs(src)
+  local view = views[src]
+  if not (view and view.rows and vim.api.nvim_buf_is_valid(view.buf)) then
+    return
+  end
+  local buf = view.buf
+  vim.api.nvim_buf_clear_namespace(buf, M.signs_ns, 0, -1)
+  if not config.signs or not vim.api.nvim_buf_is_valid(src) then
+    return
+  end
+  local found = git_signs(src)
+  -- Everyone else's, as placed: gitsigns' own are left to the above.
+  local skip = {}
+  for name, id in pairs(vim.api.nvim_get_namespaces()) do
+    if name:match("^gitsigns") then
+      skip[id] = true
+    end
+  end
+  local marks = vim.api.nvim_buf_get_extmarks(src, -1, 0, -1, { details = true, type = "sign" })
+  for _, mark in ipairs(marks) do
+    local d = mark[4]
+    if d.sign_text and not skip[d.ns_id] then
+      table.insert(found, {
+        row = mark[2] + 1,
+        text = d.sign_text,
+        hl = d.sign_hl_group,
+        priority = d.priority,
+      })
+    end
+  end
+
+  local into = {}
+  for i, from in ipairs(view.rows) do
+    into[from] = into[from] or {}
+    table.insert(into[from], i)
+  end
+  local seen = {}
+  for _, f in ipairs(found) do
+    for _, i in ipairs(into[f.row] or { M.to_view(src, f.row) }) do
+      local key = ("%d %s %s"):format(i, f.text, f.hl or "")
+      if not seen[key] then
+        seen[key] = true
+        vim.api.nvim_buf_set_extmark(buf, M.signs_ns, i - 1, 0, {
+          sign_text = f.text,
+          sign_hl_group = f.hl,
+          priority = f.priority,
+        })
+      end
+    end
+  end
+end
+
+-- gitsigns works its signs out after the file changes, and diagnostics
+-- come when they come: either way, after the reader was drawn.
+vim.api.nvim_create_autocmd("User", {
+  group = group,
+  pattern = "GitSignsUpdate",
+  callback = function(args)
+    local src = (args.data or {}).buffer
+    if src and views[src] then
+      M.signs(src)
+    end
+  end,
+})
+vim.api.nvim_create_autocmd("DiagnosticChanged", {
+  group = group,
+  callback = function(args)
+    if views[args.buf] then
+      M.signs(args.buf)
+    end
+  end,
+})
 
 --- Draws the reader of `src` again, if it is in a window. One buffer
 --- in two windows is one set of lines, so it is drawn for the narrower
@@ -162,6 +291,13 @@ end
 local function bind(src)
   local keys = config.keys
   local bindings = {
+    {
+      keys.close,
+      function()
+        M.close(vim.api.nvim_get_current_win())
+      end,
+      "back to the file",
+    },
     {
       keys.follow,
       function()
@@ -367,6 +503,49 @@ function M.close(win)
   end
   local last = vim.api.nvim_buf_line_count(src)
   vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(row, last)), 0 })
+end
+
+--- `:e` of a `render://` buffer (`BufReadCmd`). In a reader it is `:e`
+--- of the file -- read again from disk and drawn again, `:e!` throwing
+--- away what the file had unsaved -- rather than the reader's name read
+--- as a file that is not there. Anything else of that name -- a
+--- session's, a reader whose file has gone -- becomes the reader of
+--- the file it names, in the windows it is in.
+function M.read(buf)
+  local src = sources[buf]
+  if src then
+    if vim.bo[src].modified and vim.v.cmdbang ~= 1 then
+      vim.notify("E37: No write since last change (add ! to override)", vim.log.levels.ERROR)
+    else
+      vim.api.nvim_buf_call(src, function()
+        vim.cmd("silent edit!")
+      end)
+    end
+    M.redraw(src)
+    return
+  end
+  local path = vim.api.nvim_buf_get_name(buf):gsub("^render://", "")
+  if path == "" or vim.fn.filereadable(path) == 0 then
+    return
+  end
+  -- After the read is done with it: the stray is wiped, and its name is
+  -- free for the reader.
+  vim.schedule(function()
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local wins = vim.fn.win_findbuf(buf)
+    src = vim.fn.bufadd(path)
+    vim.fn.bufload(src)
+    vim.bo[src].buflisted = true
+    for _, win in ipairs(wins) do
+      vim.api.nvim_win_set_buf(win, src)
+    end
+    vim.api.nvim_buf_delete(buf, { force = true })
+    for _, win in ipairs(wins) do
+      M.open(win, src)
+    end
+  end)
 end
 
 --- The file and the reader of it, one for the other, in `win`.

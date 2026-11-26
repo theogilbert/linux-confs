@@ -815,7 +815,8 @@ end
 ---   prose       `text`
 ---   heading     `text`, `level`
 ---   citation    `blocks` -- what was quoted, read the same way
----   table       `rows` (the head first), `align`
+---   table       `rows` (the head first), `align`; indented under an
+---               item, `depth` and `of` as for a line carrying one on
 ---   math        `lines`, the TeX between the `$$`s or in the fence
 ---   item        `text`, `depth` (0 at the top), `marker` -- "-" or
 ---               the number it is drawn with, "3." -- and `task`, nil
@@ -985,6 +986,17 @@ function M.blocks(lines, opts, base)
       top.last = item
       add(item)
       i = i + 1
+    elseif #lists > 0 and line:match("^%s+%S") and align and cells(line) then
+      -- A table indented under an item: the item's, drawn hanging under
+      -- its words as the lines that carry it on are.
+      local top = lists[#lists]
+      local rows, j = { cells(line) }, i + 2
+      while j <= #lines and cells(lines[j]) do
+        table.insert(rows, cells(lines[j]))
+        j = j + 1
+      end
+      add({ kind = "table", rows = rows, align = align, depth = top.last.depth, of = top.last })
+      i = j
     elseif #lists > 0 and line:match("^%s+%S") and not fence then
       -- Indented under an item and not one itself: the item, carried
       -- on, and drawn hanging under its words.

@@ -15,6 +15,17 @@ vim.api.nvim_create_user_command("Render", function()
   require("render").toggle()
 end, { desc = "render: read this file / edit it" })
 
+-- `:e` of a reader, and a reader's name met again -- in a session, a
+-- buffer list -- is the reader drawn from its file, never an empty
+-- buffer of that name.
+vim.api.nvim_create_autocmd("BufReadCmd", {
+  group = vim.api.nvim_create_augroup("RenderRead", { clear = true }),
+  pattern = "render://*",
+  callback = function(args)
+    require("render.view").read(args.buf)
+  end,
+})
+
 local key = require("render.config").keys.toggle
 if key and key ~= "" then
   vim.keymap.set("n", key, function()

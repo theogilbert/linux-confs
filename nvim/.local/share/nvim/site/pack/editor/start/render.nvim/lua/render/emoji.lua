@@ -16,10 +16,13 @@
 --
 -- None of them carry U+FE0F, the variation selector that asks for the
 -- coloured picture rather than the black-and-white glyph -- `❤️` is
--- written here as `❤`. Not a matter of taste: with it, Neovim counts
--- the heart as two columns and a terminal drawing it as one leaves a
--- cell nobody wrote, so a window that sizes itself to its own text
--- comes out a column wrong.
+-- written here as `❤`. It is put on when drawn, where Neovim counts the
+-- pair as two columns (0.11 on): a terminal with a colour emoji font
+-- draws `⚠` two columns wide whatever it is asked, and where Neovim
+-- and the terminal between (tmux) count it as one, it covers the
+-- character after it. Asked for the picture, all three agree on two.
+-- Where Neovim counts one either way, the bare glyph is the one all of
+-- them can agree on.
 
 local M = {}
 
@@ -293,15 +296,33 @@ M.by_name = {
   school = "🏫",
 }
 
+local FE0F = "\239\184\143"
+
+-- Whether this Neovim counts a glyph with U+FE0F after it as two
+-- columns, once, the first time it matters.
+local wide
+local function picture(char)
+  if wide == nil then
+    wide = vim.fn.strdisplaywidth("⚠" .. FE0F) == 2
+  end
+  if wide and vim.fn.strdisplaywidth(char) == 1 then
+    return char .. FE0F
+  end
+  return char
+end
+
 --- `text` with every `:name:` this knows drawn as the character it
 --- names, and every one it does not left exactly as it was written.
 function M.render(text)
   if type(text) ~= "string" or not text:find(":", 1, true) then
     return text
   end
-  return (text:gsub(":([%w_+%-]+):", function(name)
-    return M.by_name[name]
-  end))
+  return (
+    text:gsub(":([%w_+%-]+):", function(name)
+      local char = M.by_name[name]
+      return char and picture(char)
+    end)
+  )
 end
 
 return M

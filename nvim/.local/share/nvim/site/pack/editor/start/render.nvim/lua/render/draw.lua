@@ -471,7 +471,10 @@ function M.blocks(blocks, opts)
         -- read on its own.
         row = block.row
       elseif block.kind == "table" then
-        tabled(left, block, hl)
+        -- Under an item, hanging where the item's words do.
+        local under = block.of and ("  "):rep(block.depth or 0) .. (" "):rep(block.of.width or 2)
+          or ""
+        tabled(left .. under, block, hl)
       elseif block.kind == "math" then
         -- A displayed formula on lines of its own, one per row of it,
         -- set in from the prose as a page centres one. Measured like

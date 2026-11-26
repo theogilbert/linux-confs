@@ -35,7 +35,10 @@ The reader is a buffer of its own, `render://<path>`, rather than a coat
 of paint over the file's: prose wrapped again to the window, a table
 ruled, a heading without its hashes are lines the file does not have. It
 is put into the window in the file's place and taken out again, and the
-file is never touched.
+file is never touched. `:e` in the reader reads the file again from disk
+and stays in the reader (`:e!` drops the file's unsaved changes), and a
+`render://` buffer met again -- in a buffer list, a session -- is drawn
+from its file.
 
 It says so, in a winbar of its own (|render-winbar|): `READER`, the
 file's name and the key back to it, above the page rather than over it.
@@ -132,6 +135,8 @@ defaults.
 
                                                                  *render-keys*
 keys.toggle     `"<leader>rv"`  The reader, on and off. `false` unbinds it.
+keys.close      `"q"`           In the reader: back to the file, as the
+                                toggle does. `false` unbinds it.
 keys.follow     `"<C-]>"`       In the reader: follow the link under the
                                 cursor -- copy it, or go to `#a-heading`,
                                 unless `follow` says otherwise. `false`
@@ -141,8 +146,12 @@ keys.help       `"g?"`          In the reader: every key it answers, in a
                                 be on the runtime path; without it there
                                 is no help. `false` unbinds it.
 keys.column_next `"L"`          In a table reader: the next column whole
-                                into view.
-keys.column_prev `"H"`          In a table reader: the previous column.
+                                into view. On a markdown table: the
+                                cursor to the next cell, scrolled whole
+                                into view; off one, the key as it always
+                                was.
+keys.column_prev `"H"`          In a table reader: the previous column. On
+                                a markdown table: the previous cell.
 keys.column_hide `"x"`          In a table reader: hide the column under
                                 the cursor.
 keys.columns    `"c"`           In a table reader: the picker that shows,
@@ -158,6 +167,14 @@ winbar          `true`          A winbar on the reader: `READER`, the
                                 file's name and the key back to it, on a
                                 row of its own above the page. `false`
                                 for none.
+
+                                                                *render-signs*
+signs           `true`          The file's sign column in the reader:
+                                gitsigns' added, changed and deleted
+                                lines (from its hunks) and every other
+                                sign the file has, such as diagnostics,
+                                each on the reader lines drawn from the
+                                line it marks. `false` for none.
 
 follow          `nil`           |render-follow|.
 

@@ -9,6 +9,10 @@ return {
     -- filetype is in `filetypes`, and from the reader itself. `false`
     -- unbinds it; `:Render` does the same thing.
     toggle = "<leader>rv",
+    -- In the reader: back to the file, as the toggle does. A page that
+    -- only reads has no use for a macro, and `q` is how a pager or a
+    -- help window is left.
+    close = "q",
     -- In the reader: what the cursor is on, followed (`follow`).
     follow = "<C-]>",
     -- In the reader: every key it answers, in a float. Needs
@@ -16,7 +20,9 @@ return {
     help = "g?",
     -- In a table reader (csv, tsv): the next column whole into view,
     -- the previous one, hide the column under the cursor, and the
-    -- picker that shows, hides and orders them all.
+    -- picker that shows, hides and orders them all. On a markdown
+    -- table, `column_next`/`column_prev` move the cursor to the next or
+    -- previous cell instead, and off a table are what they always were.
     column_next = "L",
     column_prev = "H",
     column_hide = "x",
@@ -36,6 +42,11 @@ return {
   -- is nearly the same either way -- and only one of them takes an
   -- edit. `false` for none.
   winbar = true,
+
+  -- The file's sign column in the reader: gitsigns' added, changed and
+  -- deleted lines, diagnostics -- each sign on the reader lines drawn
+  -- from the line it marks. `false` for none.
+  signs = true,
 
   -- What a link does when it is followed. nil is the built-in: its
   -- target is copied, to the unnamed register and the clipboard -- a

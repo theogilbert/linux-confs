@@ -461,16 +461,16 @@ end
 ---
 --- `config.clipboard` where there is one: the reader whose paste is on
 --- another machine knows how to reach it and this does not. Otherwise
---- the `+` register: the system clipboard, which is where "copied"
---- means what a reader outside this editor thinks it means. An editor
---- built without one leaves it in the unnamed register, which is still
---- a paste away.
+--- common.yank: the unnamed register, the `+` register where the editor
+--- has a clipboard -- which is where "copied" means what a reader outside
+--- this editor thinks it means -- and the terminal's own by OSC 52 where
+--- it has none, or always with `vim.g.common_yank_osc52 = true`.
 function M.copy(text)
   if type(config.clipboard) == "function" then
     config.clipboard(text)
     return
   end
-  pcall(vim.fn.setreg, vim.fn.has("clipboard") == 1 and "+" or '"', text)
+  require("common.yank").copy(text)
 end
 
 --- What the `o` keys do with a page on the forge: `config.browser`.

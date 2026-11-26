@@ -33,23 +33,23 @@ local config = require("nemeton.config")
 local log = require("nemeton.log")
 local follow = require("nemeton.follow")
 local threads = require("nemeton.threads")
-local win = require("nemeton.win")
 
 local M = {}
 
-M.win = nil
--- Where the float was opened for, so that the hold that fires after
--- `K` on the same reaction does not take it down to put it back up.
-local shown = nil
--- The autocmd that takes it down on the next move, which going into it
--- has to take away first.
-local dismiss = nil
+-- The float (common.hover), and what it was opened for -- its key -- so
+-- that the hold that fires after `K` on the same reaction does not take
+-- it down to put it back up. `M.win` is its window while it is up.
+local hover = require("common.hover").new()
+setmetatable(M, {
+  __index = function(_, k)
+    if k == "win" then
+      return hover.win
+    end
+  end,
+})
 
 function M.close()
-  if M.win and vim.api.nvim_win_is_valid(M.win) then
-    vim.api.nvim_win_close(M.win, true)
-  end
-  M.win, shown, dismiss = nil, nil, nil
+  hover:close()
 end
 
 --- Where a link goes, whole: the address it was written with where that
@@ -196,47 +196,21 @@ end
 --- The float itself, under the cursor, `lines` painted with `hls`,
 --- at most `most` columns wide, and gone on the next move in `buf`.
 local function float(buf, ref, lines, hls, most)
-  most = math.max(math.min(vim.o.columns - 10, most), 20)
-  local widest, height = 1, 0
-  for _, l in ipairs(lines) do
-    widest = math.max(widest, vim.fn.strdisplaywidth(l))
-  end
-  local width = math.min(widest, most)
-  for _, l in ipairs(lines) do
-    height = height + math.max(1, math.ceil(vim.fn.strdisplaywidth(l) / width))
-  end
-  -- A commit's message can be a page; half the screen of it, and `K`
-  -- again goes in to read the rest.
-  height = math.max(1, math.min(height, math.floor(vim.o.lines / 2)))
-  local fbuf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, lines)
-  require("nemeton.marks").paint(fbuf, hls)
-  vim.bo[fbuf].modifiable = false
-  vim.bo[fbuf].bufhidden = "wipe"
-  M.win = vim.api.nvim_open_win(fbuf, false, {
-    relative = "cursor",
-    row = 1,
-    col = 0,
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-    -- Not until the second `K` (`win.enter`), which is the way in: a
-    -- hover that `<C-w>w` stopped in on the way past is one in the way.
-    focusable = false,
+  -- Sized to the text, wrapped: half the screen at most of a commit's
+  -- message, and `K` again goes in to read the rest. Dismissed by moving,
+  -- like the hover it is, on this buffer: a float over a window that has
+  -- just been left is a float over nothing.
+  hover:open(lines, {
+    key = ref,
+    buf = buf,
+    max_width = math.max(math.min(vim.o.columns - 10, most), 20),
+    paint = function(fbuf)
+      require("nemeton.marks").paint(fbuf, hls)
+    end,
+    winhighlight = "NormalFloat:Normal",
+    events = { "CursorMoved", "InsertEnter", "BufLeave" },
   })
-  vim.wo[M.win].winhighlight = "NormalFloat:Normal"
-  vim.wo[M.win].wrap = true
-  shown = ref
-  -- Dismissed by moving, like the hover it is. Once, and on this
-  -- buffer: a float over a window that has just been left is a float
-  -- over nothing.
-  dismiss = vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
-    buffer = buf,
-    once = true,
-    callback = M.close,
-  })
-  return M.win
+  return hover.win
 end
 
 --- Says who gave the reaction under the cursor, when the note under it
@@ -249,12 +223,12 @@ function M.show(resting)
   local buf = vim.api.nvim_get_current_buf()
   local pos = vim.api.nvim_win_get_cursor(0)
   local ref = follow.under(buf, pos[1] - 1, pos[2])
-  if resting and ref and ref.kind == "stamp" and shown == ref then
-    return M.win
+  if resting and ref and ref.kind == "stamp" and hover.key == ref then
+    return hover.win
   end
   local link = ref and ref.href ~= nil
-  if resting and link and shown == ref then
-    return M.win
+  if resting and link and hover.key == ref then
+    return hover.win
   end
   -- A sha the caller already knows to be a commit -- a push listed in
   -- the activity -- is the float the head of a note has.
@@ -265,12 +239,11 @@ function M.show(resting)
     M.close()
     return nil
   end
-  if M.win and vim.api.nvim_win_is_valid(M.win) and shown == ref then
+  if hover:is_open() and hover.key == ref then
     if not resting then
-      win.enter(M.win, dismiss, M.close)
-      dismiss = nil
+      hover:enter(ref)
     end
-    return M.win
+    return hover.win
   end
   M.close()
 
@@ -308,10 +281,9 @@ end
 --- about, so that the same `K` again on the same thing goes into it
 --- rather than putting it back up. `most` is how wide it may get.
 function M.popup(key, lines, hls, most)
-  if M.win and vim.api.nvim_win_is_valid(M.win) and shown == key then
-    win.enter(M.win, dismiss, M.close)
-    dismiss = nil
-    return M.win
+  if hover:is_open() and hover.key == key then
+    hover:enter(key)
+    return hover.win
   end
   M.close()
   return float(vim.api.nvim_get_current_buf(), key, lines, hls, most or 80)

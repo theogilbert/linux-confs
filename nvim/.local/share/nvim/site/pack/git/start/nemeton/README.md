@@ -11,7 +11,8 @@ see [What is not done](#what-is-not-done).
 
 Needs Neovim 0.10 or newer, `git`, `glab`, and
 [render.nvim](https://github.com/theogilbert/render.nvim), which draws
-every comment. `:help nemeton` is the
+every comment, and [common.nvim](../common.nvim), the UI library the
+author's plugins share (the `g?` floats). `:help nemeton` is the
 same ground as this file, with tags.
 
 [glab]: https://gitlab.com/gitlab-org/cli
@@ -101,14 +102,15 @@ nvim
 :Nemeton                              # the list; <CR> checks one out
 ```
 
-Install it however you install plugins, with render.nvim beside it —
+Install it however you install plugins, with render.nvim and
+common.nvim beside it —
 with lazy.nvim, `{ "theogilbert/nemeton.nvim", dependencies = {
 "theogilbert/render.nvim" } }`. Calling `setup()` is optional:
 `:Nemeton` and `<leader>ml` are registered when Neovim starts and load
 nothing until one of them is used, and the first one used wires up the
 rest.
 
-`:checkhealth nemeton` says whether render.nvim, git, glab and a token
+`:checkhealth nemeton` says whether render.nvim, common.nvim, git, glab and a token
 are all there.
 
 ## Commands
@@ -188,12 +190,13 @@ that; in the other two, on a line that is nobody's comment, it is the
 thread's opening one. A comment kept unsent has no page yet and says
 so.
 
-Where "copied" puts it is `clipboard` in the config: `nil` is the `+`
-register, and a function is called with the link instead — for the
-editor at the far end of an ssh session, whose `+` is a clipboard on
-the wrong machine, `clipboard = function(text) ... end` is where OSC 52
-goes, once, and every link this plugin copies (this key, and what
-`<C-]>` falls back to) goes through it.
+Where "copied" puts it is `clipboard` in the config: `nil` is the
+unnamed register, the `+` register where Neovim has a clipboard, and
+the terminal's own by OSC 52 where it has none (common.nvim's yank;
+`vim.g.common_yank_osc52 = true` sends OSC 52 always, for an ssh session
+whose `+` is a clipboard on the wrong machine). A function is called
+with the link instead, and every link this plugin copies (this key, and
+what `<C-]>` falls back to) goes through it.
 
 The `o` that opens a page on GitLab in a window here — the merge
 request in the queue and in its description, a job, a commit — is
@@ -565,8 +568,11 @@ it shows in a float: which ways in, and whether the open ones, the
 closed ones or both — closed is unticked when it opens, and asked of
 the forge the first time it is ticked; a closed row says so beside its
 title, and the title says what is left out. `<CR>` opens one of the
-repository you are in here and anything else on GitLab; `o` opens it on
-GitLab; `r` asks again; `q` closes. A call that fails says so under the
+repository you are in here and anything else on GitLab; `i` narrows the
+rows as you type — a number (`12` or `!12`) is the merge request's own,
+any other word is looked for in its `group/proj`, title, author, state
+(`open`, `closed`, `draft`) and why it is there, every word matching;
+`o` opens it on GitLab; `r` asks again; `q` closes. A call that fails says so under the
 rows rather than instead of them.
 
 `:Nemeton issue 12` opens an issue of the project — no review

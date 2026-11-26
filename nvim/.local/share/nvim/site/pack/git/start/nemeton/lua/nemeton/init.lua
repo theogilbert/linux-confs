@@ -1479,12 +1479,8 @@ function M.setup(opts)
     return
   end
 
-  marks.setup_highlights()
+  require("common.hl").watch("nemeton", marks.setup_highlights)
   local group = vim.api.nvim_create_augroup("Nemeton", { clear = true })
-  vim.api.nvim_create_autocmd("ColorScheme", {
-    group = group,
-    callback = marks.setup_highlights,
-  })
   -- Every file opened while a review is on gets its markers and its
   -- keys, whether it was opened before the session or three minutes
   -- into it -- which is the whole point of a session being a mode the

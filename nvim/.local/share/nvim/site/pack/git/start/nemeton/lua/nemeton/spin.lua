@@ -17,7 +17,9 @@ local config = require("nemeton.config")
 
 local M = {}
 
--- name -> { timer, step, redraw }
+local spinner = require("common.spinner")
+
+-- name -> { spinner, redraw }
 local running = {}
 
 --- Starts turning `name`, calling `redraw` each step; a second start
@@ -32,19 +34,16 @@ function M.start(name, redraw)
     running[name].redraw = redraw
     return
   end
-  local r = { timer = vim.uv.new_timer(), step = 1, redraw = redraw }
-  running[name] = r
-  r.timer:start(
-    s.interval or 100,
-    s.interval or 100,
-    vim.schedule_wrap(function()
-      if running[name] ~= r then
-        return
-      end
-      r.step = r.step % #s.frames + 1
+  local r = { redraw = redraw }
+  -- The first frame a whole interval in: a wait shorter than that never
+  -- turns at all (common.spinner).
+  r.spinner = spinner.new(function()
+    if running[name] == r then
       r.redraw()
-    end)
-  )
+    end
+  end, { frames = s.frames, interval = s.interval or 100, delay = s.interval or 100 })
+  running[name] = r
+  r.spinner:start()
 end
 
 --- Stops turning `name`. Safe on one that is not turning.
@@ -54,18 +53,20 @@ function M.stop(name)
     return
   end
   running[name] = nil
-  r.timer:stop()
-  r.timer:close()
+  r.spinner:reset()
+end
+
+--- The frame `name` is on, or nil while it is not turning.
+local function frame(name)
+  local r = running[name]
+  return r and r.spinner:glyph() or nil
 end
 
 --- The glyph `name` is on with a space after it, or "" while it is not
 --- turning -- so a title can put it in front of itself either way.
 function M.glyph(name)
-  local r = running[name]
-  if not r then
-    return ""
-  end
-  return config.spinner.frames[r.step] .. " "
+  local f = frame(name)
+  return f and (f .. " ") or ""
 end
 
 --- Whether `name` is turning.
@@ -137,8 +138,7 @@ function M.bar()
   if not (ok and busy[buf] and config.spinner) then
     return ""
   end
-  local frame = config.spinner.frames[running.busy and running.busy.step or 1]
-  return "%#NemetonKey# " .. frame .. " %*"
+  return "%#NemetonKey# " .. (frame("busy") or config.spinner.frames[1]) .. " %*"
 end
 
 local function drop(win)
@@ -152,7 +152,7 @@ end
 --- The glyph in a float over the top right corner of `win`, for a
 --- window with no winbar to put it in.
 local function corner(win)
-  local frame = " " .. config.spinner.frames[running.busy and running.busy.step or 1]
+  local glyph = " " .. (frame("busy") or config.spinner.frames[1])
   local at = {
     relative = "win",
     win = win,
@@ -174,8 +174,8 @@ local function corner(win)
     corners[win] = c
   end
   local b = vim.api.nvim_win_get_buf(c)
-  vim.api.nvim_buf_set_lines(b, 0, -1, false, { frame })
-  vim.api.nvim_buf_set_extmark(b, ns, 0, 0, { end_col = #frame, hl_group = "NemetonKey" })
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { glyph })
+  vim.api.nvim_buf_set_extmark(b, ns, 0, 0, { end_col = #glyph, hl_group = "NemetonKey" })
 end
 
 --- Every window showing a busy buffer gets the glyph -- in its winbar,

@@ -40,6 +40,9 @@ local rows = {}
 -- `M.REASONS` and `M.STATES`; nil is `M.SHOWN`. Back to that on every
 -- opening, like any filter: the next look is a fresh one.
 local filter = nil
+-- What `i` narrowed the rows to, "" for nothing. Back to that on every
+-- opening, like the filter.
+local query = ""
 -- Whether the closed ones have been asked for since the last load.
 local asked_closed = false
 -- How many calls have yet to land, and what the ones that failed said.
@@ -245,6 +248,43 @@ function M.only(all, shown, order, known)
   return out
 end
 
+--- Whether `e` is what the search `q` asks for: every word of it, a
+--- number being the merge request's own -- `12` and `!12` both, and
+--- not the `!123` that has those digits in it -- and anything else
+--- found, smartcase, in its `group/proj!12`, its title, its author,
+--- the words for its state (`open`, `closed`, `draft`), or a way in.
+function M.matches(e, q)
+  local mr = e.mr
+  local said = {
+    M.reference(mr),
+    mr.title or "",
+    mr.author and mr.author.username or "",
+    mr.state == "closed" and "closed" or "open",
+    mr.draft and "draft" or "",
+  }
+  for _, r in ipairs(M.REASONS) do
+    if e.why[r.name] then
+      table.insert(said, r.word)
+    end
+  end
+  local hay = table.concat(said, " ")
+  for word in (q or ""):gmatch("%S+") do
+    local n = word:match("^!?(%d+)$")
+    if n then
+      if tostring(mr.iid) ~= n then
+        return false
+      end
+    elseif word:find("%u") then
+      if not hay:find(word, 1, true) then
+        return false
+      end
+    elseif not hay:lower():find(word, 1, true) then
+      return false
+    end
+  end
+  return true
+end
+
 --- What `shown` narrows the list to, in words for the title: the ways
 --- in ticked where not all of them are, and the states where they are
 --- not the open ones alone. Nil where it is `M.SHOWN`.
@@ -334,6 +374,7 @@ function M.close()
     vim.api.nvim_win_close(M.win, true)
   end
   M.win, M.buf, found, rows, filter, asked_closed = nil, nil, {}, {}, nil, false
+  query = ""
   checklist.close()
   spin.stop("involved")
 end
@@ -349,8 +390,15 @@ local function set_title()
   if not valid() then
     return
   end
-  local said = filter and M.describe(filter)
-  local title = said and (" merge requests · %s %d/%d "):format(said, #rows, vim.tbl_count(found))
+  local said = {}
+  table.insert(said, filter and M.describe(filter) or nil)
+  table.insert(said, query ~= "" and "/" .. query or nil)
+  local title = #said > 0
+      and (" merge requests · %s %d/%d "):format(
+        table.concat(said, " · "),
+        #rows,
+        vim.tbl_count(found)
+      )
     or (" merge requests · %d "):format(#rows)
   -- The order, where it is not the one the window opens in.
   if sort.by ~= "moved" or not sort.newest then
@@ -375,6 +423,11 @@ local function draw()
     return
   end
   rows = M.only(found, filter, sort, dates)
+  if query ~= "" then
+    rows = vim.tbl_filter(function(e)
+      return M.matches(e, query)
+    end, rows)
+  end
   local lines, hls = {}, {}
   if #rows > 0 then
     local widths = { 0, 0 }
@@ -397,7 +450,11 @@ local function draw()
     table.insert(lines, "  " .. said)
   end
   if #lines == 0 then
-    lines = { pending > 0 and "  …" or "  nothing open that you are in" }
+    lines = {
+      pending > 0 and "  …"
+        or query ~= "" and "  nothing that matches /" .. query
+        or "  nothing open that you are in",
+    }
   end
   vim.bo[M.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.buf, 0, -1, false, lines)
@@ -570,9 +627,38 @@ local function choose_filter()
   })
 end
 
+--- `i`: a box over the list, narrowing it as it is typed. `<CR>` keeps
+--- what was typed; `<Esc>` puts back what the list showed before, the
+--- way vim's own `/` does with `incsearch`.
+function M.search()
+  if not valid() then
+    return
+  end
+  local before = query
+  local g = vim.api.nvim_win_get_config(M.win)
+  local row = type(g.row) == "table" and g.row[false] or g.row
+  local function narrow(text)
+    query = vim.trim(text or "")
+    draw()
+    if valid() then
+      vim.api.nvim_win_set_cursor(M.win, { 1, 0 })
+    end
+  end
+  require("nemeton.prompt").open({
+    title = "search merge requests",
+    text = query,
+    menu = false,
+    at = { row = math.max(row - 3, 0), col = g.col, width = g.width },
+    on_change = narrow,
+    on_cancel = function()
+      narrow(before)
+    end,
+  }, narrow)
+end
+
 local function show()
   back = win.came_from()
-  filter = nil
+  filter, query = nil, ""
 
   local width = math.min(vim.o.columns - 4, 140)
   local height = math.max(4, math.floor(vim.o.lines * 0.6))
@@ -595,6 +681,7 @@ local function show()
   local k = config.keys.involved
   vim.wo[M.win].winbar = detail.hint({
     { k.open, "open" },
+    { k.search, "search" },
     { k.filter, "filter" },
     { k.sort, "sort" },
     { k.browser, follow.browse_hint() },
@@ -610,6 +697,11 @@ local function show()
         end
       end,
       "open it: here if it is of this repository, on GitLab if not",
+    },
+    {
+      k.search,
+      M.search,
+      "search: its number, group/proj, title, author, open closed draft, why",
     },
     {
       k.filter,

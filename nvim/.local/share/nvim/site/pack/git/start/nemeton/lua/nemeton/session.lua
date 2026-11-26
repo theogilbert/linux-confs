@@ -66,9 +66,8 @@ function M.locate(cb)
   end)
 end
 
-local function notify(msg, level)
-  vim.notify("nemeton: " .. msg, level or vim.log.levels.INFO)
-end
+--- `notify(msg, level)`, "nemeton: " in front (common.notify).
+local notify = require("common.notify").new("nemeton")
 
 M.notify = notify
 

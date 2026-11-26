@@ -10,27 +10,27 @@ local config = require("nemeton.config")
 local marks = require("nemeton.marks")
 local session = require("nemeton.session")
 local threads = require("nemeton.threads")
-local win = require("nemeton.win")
-
 local M = {}
 
-M.win = nil
-local dismiss = nil
+-- The float (common.hover). `M.win` is its window while it is up.
+local hover = require("common.hover").new()
+setmetatable(M, {
+  __index = function(_, k)
+    if k == "win" then
+      return hover.win
+    end
+  end,
+})
 
 function M.close()
-  if M.win and vim.api.nvim_win_is_valid(M.win) then
-    vim.api.nvim_win_close(M.win, true)
-  end
-  M.win, dismiss = nil, nil
+  hover:close()
 end
 
 function M.show(list)
   -- Still up is still over the line it was opened on: the first move
   -- takes it down. So this is the second press, and it goes in.
-  if M.win and vim.api.nvim_win_is_valid(M.win) and vim.api.nvim_get_current_win() ~= M.win then
-    win.enter(M.win, dismiss, M.close)
-    dismiss = nil
-    return M.win
+  if hover:enter() then
+    return hover.win
   end
   M.close()
   if not list or #list == 0 then
@@ -88,45 +88,32 @@ function M.show(list)
     end
   end
 
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  -- Not markdown: the rail in front of every line is not markdown, and
-  -- a syntax that reads "▎ # nope" as a heading fights the highlights
-  -- this buffer paints for itself.
-  marks.paint(buf, hls)
-  vim.bo[buf].modifiable = false
-
-  M.win = vim.api.nvim_open_win(buf, false, {
-    relative = "cursor",
-    row = 1,
-    col = 0,
+  -- Dismissed by moving, like a hover (common.hover). Deliberately not by
+  -- a keymap: there is no state to remember here, and a float that needs
+  -- closing is a float that gets left open over the code. Not focusable
+  -- until the second press: a hover is not somewhere `<C-w>w` should stop
+  -- on the way past.
+  local _, buf = hover:open(lines, {
     width = math.min(math.max(width + 1, 30), most),
-    height = math.min(#lines, config.comments.peek_height),
-    style = "minimal",
-    border = "rounded",
-    -- Until the second press (`win.enter`): a hover is not somewhere
-    -- `<C-w>w` should stop on the way past.
-    focusable = false,
+    max_height = config.comments.peek_height,
+    -- Wrapped or not by `win.wrap`, once the lines are in.
+    wrap = false,
+    -- Not markdown: the rail in front of every line is not markdown, and
+    -- a syntax that reads "▎ # nope" as a heading fights the highlights
+    -- this buffer paints for itself.
+    paint = function(b)
+      marks.paint(b, hls)
+    end,
+    -- The ground a conversation is drawn on is mixed out of `Normal`, and
+    -- so is every band inside it. Drawn on `NormalFloat` instead, they
+    -- are lifted off a background that is not the one they were measured
+    -- against. So these windows are the editor's own background, and
+    -- `comments.ground` means what it says in here.
+    winhighlight = "NormalFloat:Normal",
+    events = { "CursorMoved", "InsertEnter", "BufLeave" },
   })
-  -- The ground a conversation is drawn on is mixed out of `Normal`, and
-  -- so is every band inside it -- the head of a note, the code it was
-  -- written against, the two halves of a suggestion. Drawn on
-  -- `NormalFloat` instead, all five are lifted off a background that is
-  -- not the one they were measured against, and how far the box stands
-  -- off the page becomes whatever the colourscheme happened to make the
-  -- difference between the two. So these windows are the editor's own
-  -- background, and `comments.ground` means what it says in here.
-  vim.wo[M.win].winhighlight = "NormalFloat:Normal"
   require("nemeton.win").wrap(buf)
-
-  -- Dismissed by moving, like a hover. Deliberately not by a keymap:
-  -- there is no state to remember here, and a float that needs closing
-  -- is a float that gets left open over the code.
-  dismiss = vim.api.nvim_create_autocmd({ "CursorMoved", "InsertEnter", "BufLeave" }, {
-    once = true,
-    callback = M.close,
-  })
-  return M.win
+  return hover.win
 end
 
 return M

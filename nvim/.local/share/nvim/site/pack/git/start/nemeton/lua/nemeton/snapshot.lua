@@ -20,6 +20,7 @@
 -- it is a credential.
 
 local config = require("nemeton.config")
+local jsonfile = require("common.store")
 
 local M = {}
 
@@ -46,18 +47,6 @@ local function file(root, iid)
   return dir and ("%s/%d.json"):format(dir, iid), dir
 end
 
-local function mkdir_p(dir)
-  if vim.uv.fs_stat(dir) then
-    return true
-  end
-  local parent = dir:match("^(.*)/[^/]+$")
-  if parent and parent ~= "" and not mkdir_p(parent) then
-    return false
-  end
-  vim.uv.fs_mkdir(dir, tonumber("700", 8))
-  return vim.uv.fs_stat(dir) ~= nil
-end
-
 --- `review` is the open review (`session.current`): what is kept is the
 --- payloads it was built from (`review.raw`) and the facts that came
 --- with them, which is everything `session.open` needs to build it again.
@@ -65,8 +54,8 @@ function M.write(review)
   if not (enabled() and type(review) == "table" and review.raw and review.raw.mr) then
     return
   end
-  local path, dir = file(review.root, review.iid)
-  if not (path and mkdir_p(dir)) then
+  local path = file(review.root, review.iid)
+  if not path then
     return
   end
   -- The reactions are keyed by note id, which JSON would have to make
@@ -75,7 +64,7 @@ function M.write(review)
   for id, list in pairs(review.reactions or {}) do
     table.insert(reactions, { id = id, list = list })
   end
-  local ok, text = pcall(vim.json.encode, {
+  local data = {
     version = VERSION,
     root = review.root,
     mr = review.raw.mr,
@@ -86,21 +75,13 @@ function M.write(review)
     me = review.me,
     reactions = reactions,
     approvals = review.approvals,
-  })
-  if not ok then
-    -- A payload JSON cannot hold is a review opened the slow way next
-    -- time, which is what it was before there was a file.
-    require("nemeton.log").note("review not kept: " .. tostring(text))
-    return
+  }
+  -- Written aside and moved into place (common.store). A payload JSON
+  -- cannot hold is a review opened the slow way next time, which is what
+  -- it was before there was a file.
+  if not jsonfile.write(path, data) then
+    require("nemeton.log").note("review not kept: " .. path)
   end
-  local tmp = path .. ".new"
-  local fd = vim.uv.fs_open(tmp, "w", tonumber("600", 8))
-  if not fd then
-    return
-  end
-  vim.uv.fs_write(fd, text, 0)
-  vim.uv.fs_close(fd)
-  vim.uv.fs_rename(tmp, path)
 end
 
 --- What `M.write` kept of `iid` in `root`, or nil. Only one that is
@@ -111,21 +92,9 @@ function M.read(root, iid, branch)
     return nil
   end
   local path = file(root, iid)
-  local stat = path and vim.uv.fs_stat(path)
-  if not stat then
-    return nil
-  end
-  local fd = vim.uv.fs_open(path, "r", tonumber("600", 8))
-  if not fd then
-    return nil
-  end
-  local text = vim.uv.fs_read(fd, stat.size, 0)
-  vim.uv.fs_close(fd)
-  local ok, snap = pcall(vim.json.decode, text or "", {
-    luanil = { object = true, array = true },
-  })
+  local snap = jsonfile.read(path, { luanil = true })
   if
-    not (ok and type(snap) == "table" and snap.version == VERSION and snap.root == root)
+    not (snap.version == VERSION and snap.root == root)
     or type(snap.mr) ~= "table"
     or snap.mr.iid ~= iid
     or (branch and snap.mr.source_branch ~= branch)

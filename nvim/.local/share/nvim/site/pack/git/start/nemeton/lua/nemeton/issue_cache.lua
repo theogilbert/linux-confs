@@ -34,6 +34,7 @@
 local config = require("nemeton.config")
 local glab = require("nemeton.glab")
 local issues = require("nemeton.issues")
+local jsonfile = require("common.store")
 
 local M = {}
 
@@ -45,20 +46,6 @@ local VERSION = 1
 -- and not per project because a root is what every caller has; two
 -- checkouts of one project read one file.
 local state = {}
-
-local function mkdir_p(dir)
-  if vim.uv.fs_stat(dir) then
-    return true
-  end
-  local parent = dir:match("^(.*)/[^/]+$")
-  if parent and parent ~= "" and not mkdir_p(parent) then
-    return false
-  end
-  -- 0700, like the rest of what this plugin writes: what is in here is
-  -- every issue of the project, confidential ones included.
-  vim.uv.fs_mkdir(dir, tonumber("700", 8))
-  return vim.uv.fs_stat(dir) ~= nil
-end
 
 --- The directory the files are in.
 function M.dir()
@@ -94,20 +81,8 @@ end
 
 local function read(project)
   local path = M.file(project)
-  local stat = path and vim.uv.fs_stat(path)
-  if not stat then
-    return nil
-  end
-  local fd = vim.uv.fs_open(path, "r", tonumber("600", 8))
-  if not fd then
-    return nil
-  end
-  local text = vim.uv.fs_read(fd, stat.size, 0)
-  vim.uv.fs_close(fd)
-  local ok, decoded = pcall(vim.json.decode, text or "", {
-    luanil = { object = true, array = true },
-  })
-  if not (ok and type(decoded) == "table" and decoded.version == VERSION) then
+  local decoded = jsonfile.read(path, { luanil = true })
+  if decoded.version ~= VERSION then
     return nil
   end
   local store = decoded.store
@@ -135,10 +110,6 @@ local function write(project, store)
   if not path then
     return
   end
-  local dir = path:match("^(.*)/[^/]+$")
-  if dir and not mkdir_p(dir) then
-    return
-  end
   -- A list and not the table as it is kept: an issue's number as a key
   -- is a sparse array to the encoder, which writes it as one.
   local list = {}
@@ -146,14 +117,7 @@ local function write(project, store)
     table.insert(list, r)
   end
   local out = vim.tbl_extend("force", {}, store, { issues = list })
-  local tmp = path .. ".new"
-  local fd = vim.uv.fs_open(tmp, "w", tonumber("600", 8))
-  if not fd then
-    return
-  end
-  vim.uv.fs_write(fd, vim.json.encode({ version = VERSION, project = project, store = out }), 0)
-  vim.uv.fs_close(fd)
-  vim.uv.fs_rename(tmp, path)
+  jsonfile.write(path, { version = VERSION, project = project, store = out })
 end
 
 --- What is kept for `root`, read off the disk the first time: `cb(store,

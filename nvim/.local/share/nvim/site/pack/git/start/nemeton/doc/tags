@@ -9,6 +9,8 @@ hl-NemetonChanged	nemeton.txt	/*hl-NemetonChanged*
 hl-NemetonCitation	nemeton.txt	/*hl-NemetonCitation*
 hl-NemetonCode	nemeton.txt	/*hl-NemetonCode*
 hl-NemetonCommit	nemeton.txt	/*hl-NemetonCommit*
+hl-NemetonFilter	nemeton.txt	/*hl-NemetonFilter*
+hl-NemetonFilterValue	nemeton.txt	/*hl-NemetonFilterValue*
 hl-NemetonHead	nemeton.txt	/*hl-NemetonHead*
 hl-NemetonHeadSettled	nemeton.txt	/*hl-NemetonHeadSettled*
 hl-NemetonHeading	nemeton.txt	/*hl-NemetonHeading*
@@ -31,9 +33,12 @@ hl-NemetonSuggestOld	nemeton.txt	/*hl-NemetonSuggestOld*
 hl-NemetonWas	nemeton.txt	/*hl-NemetonWas*
 last	nemeton.txt	/*last*
 nemeton	nemeton.txt	/*nemeton*
+nemeton-activity-window	nemeton.txt	/*nemeton-activity-window*
+nemeton-checklist-window	nemeton.txt	/*nemeton-checklist-window*
 nemeton-commands	nemeton.txt	/*nemeton-commands*
 nemeton-config-backup-host	nemeton.txt	/*nemeton-config-backup-host*
 nemeton-config-browser	nemeton.txt	/*nemeton-config-browser*
+nemeton-config-checklist	nemeton.txt	/*nemeton-config-checklist*
 nemeton-config-ci	nemeton.txt	/*nemeton-config-ci*
 nemeton-config-clipboard	nemeton.txt	/*nemeton-config-clipboard*
 nemeton-config-comments	nemeton.txt	/*nemeton-config-comments*
@@ -45,6 +50,7 @@ nemeton-config-keys	nemeton.txt	/*nemeton-config-keys*
 nemeton-config-list	nemeton.txt	/*nemeton-config-list*
 nemeton-config-log	nemeton.txt	/*nemeton-config-log*
 nemeton-config-prompt	nemeton.txt	/*nemeton-config-prompt*
+nemeton-config-spinner	nemeton.txt	/*nemeton-config-spinner*
 nemeton-config-token	nemeton.txt	/*nemeton-config-token*
 nemeton-configuration	nemeton.txt	/*nemeton-configuration*
 nemeton-contents	nemeton.txt	/*nemeton-contents*
@@ -61,6 +67,7 @@ nemeton-health	nemeton.txt	/*nemeton-health*
 nemeton-highlights	nemeton.txt	/*nemeton-highlights*
 nemeton-history-window	nemeton.txt	/*nemeton-history-window*
 nemeton-introduction	nemeton.txt	/*nemeton-introduction*
+nemeton-involved-window	nemeton.txt	/*nemeton-involved-window*
 nemeton-issue-create-window	nemeton.txt	/*nemeton-issue-create-window*
 nemeton-issue-window	nemeton.txt	/*nemeton-issue-window*
 nemeton-issues-cache	nemeton.txt	/*nemeton-issues-cache*
@@ -69,6 +76,7 @@ nemeton-issues-window	nemeton.txt	/*nemeton-issues-window*
 nemeton-jobs-window	nemeton.txt	/*nemeton-jobs-window*
 nemeton-license	nemeton.txt	/*nemeton-license*
 nemeton-limitations	nemeton.txt	/*nemeton-limitations*
+nemeton-linked-window	nemeton.txt	/*nemeton-linked-window*
 nemeton-list-window	nemeton.txt	/*nemeton-list-window*
 nemeton-log	nemeton.txt	/*nemeton-log*
 nemeton-log-window	nemeton.txt	/*nemeton-log-window*
@@ -77,6 +85,7 @@ nemeton-mappings-global	nemeton.txt	/*nemeton-mappings-global*
 nemeton-mappings-session	nemeton.txt	/*nemeton-mappings-session*
 nemeton-markdown	nemeton.txt	/*nemeton-markdown*
 nemeton-mentions	nemeton.txt	/*nemeton-mentions*
+nemeton-names-prompt	nemeton.txt	/*nemeton-names-prompt*
 nemeton-notes-window	nemeton.txt	/*nemeton-notes-window*
 nemeton-numbers	nemeton.txt	/*nemeton-numbers*
 nemeton-old-side	nemeton.txt	/*nemeton-old-side*
@@ -89,6 +98,7 @@ nemeton-reading	nemeton.txt	/*nemeton-reading*
 nemeton-refused	nemeton.txt	/*nemeton-refused*
 nemeton-replies	nemeton.txt	/*nemeton-replies*
 nemeton-requirements	nemeton.txt	/*nemeton-requirements*
+nemeton-resume	nemeton.txt	/*nemeton-resume*
 nemeton-seen	nemeton.txt	/*nemeton-seen*
 nemeton-sending	nemeton.txt	/*nemeton-sending*
 nemeton-suggest-box	nemeton.txt	/*nemeton-suggest-box*

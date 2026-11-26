@@ -1006,13 +1006,12 @@ return {
   -- one `<C-]>` falls back to for a reference that is a page somewhere
   -- (`comments.follow`).
   --
-  -- Nil is the `+` register -- the system clipboard, which is where
-  -- "copied" means what a reader outside this editor thinks it means
-  -- -- or the unnamed one in an editor built without a clipboard,
-  -- which is still a paste away. A function is yours, called with the
-  -- string: for the editor on the far end of an ssh session, whose
-  -- `+` is a clipboard on the wrong machine, this is where OSC 52
-  -- goes, once, rather than once per kind of link.
+  -- Nil is common.yank: the unnamed register, the `+` register where
+  -- the editor has a clipboard -- which is where "copied" means what a
+  -- reader outside this editor thinks it means -- and the terminal's own
+  -- by OSC 52 where it has none (`vim.g.common_yank_osc52 = true` sends
+  -- it always: an ssh session whose `+` is a clipboard on the wrong
+  -- machine). A function is yours, called with the string.
   clipboard = nil,
 
   -- What `o` does with the page it is on -- the merge request in the
@@ -1450,6 +1449,12 @@ return {
     -- The merge requests you are in, across the forge.
     involved = {
       open = "<CR>", -- open it: here if it is of this repository, on GitLab if not
+      -- Narrow the rows as you type: `12` or `!12` is its number, any
+      -- other word is looked for in its project, title, author, state
+      -- and the words for why it is there. Not `/`, which stays vim's
+      -- own search of the buffer; `i` is typing, and a list cannot be
+      -- typed into otherwise.
+      search = "i",
       filter = "f", -- which ways in and which states, ticked in a float
       sort = "s", -- what the rows are in order of, and which way round
       browser = "o", -- open it on GitLab

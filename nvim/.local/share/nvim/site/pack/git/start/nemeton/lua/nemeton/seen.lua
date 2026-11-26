@@ -26,6 +26,7 @@
 -- opened whether or not this file has ever heard of it.
 
 local config = require("nemeton.config")
+local jsonfile = require("common.store")
 
 local M = {}
 
@@ -55,21 +56,6 @@ function M.path()
   return base .. "/nemeton/merge-requests.json"
 end
 
-local function mkdir_p(dir)
-  if vim.uv.fs_stat(dir) then
-    return true
-  end
-  local parent = dir:match("^(.*)/[^/]+$")
-  if parent and parent ~= "" and not mkdir_p(parent) then
-    return false
-  end
-  -- 0700, like the log's and the composer's: this names projects and the
-  -- things people are reviewing on them, and that is nobody else's on a
-  -- shared machine.
-  vim.uv.fs_mkdir(dir, tonumber("700", 8))
-  return vim.uv.fs_stat(dir) ~= nil
-end
-
 --- Everything on disk, with the repositories that have gone dropped.
 ---
 --- Pruned by whether the checkout is still there rather than by age: a
@@ -84,20 +70,8 @@ local function load()
   end
   all = {}
   local path = M.path()
-  local stat = path and vim.uv.fs_stat(path)
-  if not stat then
-    return all
-  end
-  local fd = vim.uv.fs_open(path, "r", tonumber("600", 8))
-  if not fd then
-    return all
-  end
-  local text = vim.uv.fs_read(fd, stat.size, 0)
-  vim.uv.fs_close(fd)
-  local ok, decoded = pcall(vim.json.decode, text or "", {
-    luanil = { object = true, array = true },
-  })
-  if not (ok and type(decoded) == "table") then
+  local decoded = jsonfile.read(path, { luanil = true })
+  if next(decoded) == nil then
     -- A file this plugin cannot read is a file it overwrites. This one
     -- is a cache: there is nothing in it to recover and nothing lost by
     -- starting again.
@@ -169,21 +143,10 @@ local function save()
   if not path then
     return
   end
-  local dir = path:match("^(.*)/[^/]+$")
-  if dir and not mkdir_p(dir) then
-    return
-  end
   -- Written aside and moved into place, like the composer's: half a
   -- JSON object is a file that loses every repository in it rather than
   -- the one being written.
-  local tmp = path .. ".new"
-  local fd = vim.uv.fs_open(tmp, "w", tonumber("600", 8))
-  if not fd then
-    return
-  end
-  vim.uv.fs_write(fd, vim.json.encode(all or {}), 0)
-  vim.uv.fs_close(fd)
-  vim.uv.fs_rename(tmp, path)
+  jsonfile.write(path, all or {})
 end
 
 --- What was open in `root` the last time anybody looked: a list of

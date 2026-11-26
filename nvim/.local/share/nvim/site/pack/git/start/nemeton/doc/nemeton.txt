@@ -62,6 +62,8 @@ What it does:
   - render.nvim -- https://github.com/theogilbert/render.nvim -- which
     reads and draws every comment: the markdown is its, and what only
     GitLab has (references, labels, suggestions) is handed to it.
+  - common.nvim, the UI library the author's plugins share, which draws
+    the `g?` floats that list each window's keys.
   - `git`, and a repository with a GitLab remote.
   - `glab` -- https://gitlab.com/gitlab-org/cli -- authenticated, or a
     token nemeton can reach. See |nemeton-credentials|.
@@ -781,6 +783,7 @@ title, its author, and when it last moved, the most recent first.
 
     <CR>            open it: one of the repository you are in opens
                     here, anything else on GitLab
+    i               narrow the rows as you type, see below
     f               what it shows, ticked in a float: which ways in,
                     and open, closed or both |nemeton-checklist-window|
     s               sort it: by when it last moved, when it was last
@@ -802,6 +805,16 @@ look, and the two calls it takes are made the first time it is ticked,
 not on every opening. A closed row says `closed` before its title. The
 title says what is left out and how many rows of how many found, and
 the next opening starts from every way in and open again.
+
+`i` opens a box over the list, and every key typed in it narrows the
+rows under it -- `/` is left to vim, to search the buffer as ever; `<CR>` keeps the search, `<Esc>` puts the rows back as
+they were. Every word must match: a number -- `12` or `!12` -- is the
+merge request's own, whole, so `1` does not find `!12`; any other word
+is looked for in its `group/proj!12`, its title, its author, the words
+for its state -- `open`, `closed`, `draft` -- and the words for why it
+is there. Smartcase, as vim's own. It searches what `f` shows, so a
+closed one is found once closed is ticked. The title says what was
+searched, and the search is gone on the next opening.
 
 "Last pointed at you" is the newest to-do about it -- a review asked
 of you, an assignment, a comment that named you, pending or done -- or
@@ -2683,21 +2696,19 @@ the omnifunc reads.
 
 CLIPBOARD                                           *nemeton-config-clipboard*
 >
-    clipboard = nil,         -- nil: the `+` register | fun(text)
+    clipboard = nil,         -- nil: registers, and OSC 52 | fun(text)
 <
 Where "copied" puts a link: the one `<leader>mL` makes, and the one
 `<C-]>` falls back to for a reference that is a page somewhere
-|nemeton-follow|. `nil` is the `+` register -- the system clipboard,
-or the unnamed register in an editor built without one, which is still
-a paste away. A function is yours, called with the string: for the
-editor at the far end of an ssh session, whose `+` is a clipboard on
-the wrong machine, this is where OSC 52 goes, once, rather than once
-per kind of link. >lua
+|nemeton-follow|. `nil` is common.nvim's yank: the unnamed register,
+the `+` register where the editor has a clipboard, and the terminal's
+own by OSC 52 where it has none. For the editor at the far end of an
+ssh session, whose `+` is a clipboard on the wrong machine, OSC 52 is
+sent always with >lua
 
-    clipboard = function(text)
-      require("vim.ui.clipboard.osc52").copy("+")({ text })
-    end
+    vim.g.common_yank_osc52 = true
 <
+A function is yours, called with the string.
 BROWSER                                               *nemeton-config-browser*
 >
     browser = nil,           -- nil: open, or copy | "copy" | fun(url)

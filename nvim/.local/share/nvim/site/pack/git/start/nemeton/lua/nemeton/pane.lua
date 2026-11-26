@@ -126,15 +126,13 @@ end
 --- columns is a comfortable width for prose and most of an eighty
 --- column terminal, and a pane that leaves nineteen columns of code is
 --- a pane opened once.
-local function split_cmd()
+local function placement()
   local c = config.comments
-  local edge = c.expand_anchor == "editor" and "botright" or "belowright"
+  local edge = c.expand_anchor == "editor" and "editor" or "window"
   if c.expand == "right" then
-    local width = math.min(c.pane_width or 60, math.floor(vim.o.columns / 2))
-    return ("%s vertical %dsplit"):format(edge, math.max(width, 10))
+    return { side = "right", size = c.pane_width or 60, edge = edge }
   end
-  local height = math.min(c.pane_height or 15, math.floor(vim.o.lines / 2))
-  return ("%s %dsplit"):format(edge, math.max(height, 3))
+  return { side = "below", size = c.pane_height or 15, edge = edge }
 end
 
 --- Where each thread's line has got to since the markers were drawn.
@@ -731,48 +729,27 @@ function M.open(at)
   -- the key is bound everywhere, and "everywhere" includes this
   -- plugin's own floats. Any ordinary window of this tab will do --
   -- what the pane shows is decided by the cursor, not by the split.
-  local source = vim.api.nvim_get_current_win()
-  if vim.api.nvim_win_get_config(source).relative ~= "" then
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if vim.api.nvim_win_get_config(w).relative == "" then
-        source = w
-        break
-      end
-    end
-  end
+  local pane = require("common.pane")
+  local source = pane.splittable(vim.api.nvim_get_current_win())
   drawn_at = nil
   M.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[M.buf].bufhidden = "wipe"
   who.attach(M.buf)
 
-  -- Split from the window the code is in, and back to it afterwards:
+  -- Split from the window the code is in, and the cursor left there:
   -- the pane is opened to be read beside the file, not to be typed in,
   -- and a key that takes the cursor out of the code is a key pressed
-  -- once.
-  local win
-  vim.api.nvim_win_call(source, function()
-    vim.cmd(split_cmd())
-    win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(win, M.buf)
-  end)
-  M.win, M.source = win, source
-
-  -- `wrap` is not here: the render sets it, off, every time -- the
-  -- lines arrive already broken where they should break.
-  vim.wo[M.win].linebreak = true
-  vim.wo[M.win].cursorline = true
-  vim.wo[M.win].number = false
-  vim.wo[M.win].relativenumber = false
-  vim.wo[M.win].signcolumn = "no"
-  vim.wo[M.win].foldcolumn = "0"
-  vim.wo[M.win].list = false
-  vim.wo[M.win].spell = false
-  -- The pane keeps the size it was given while the rest of the screen
-  -- is split and closed around it: it is sized for prose, and prose
-  -- resized by whatever happened to the window next door is prose at
-  -- the wrong width.
-  vim.wo[M.win].winfixwidth = true
-  vim.wo[M.win].winfixheight = true
+  -- once. Its size is fixed while the rest of the screen is split and
+  -- closed around it: it is sized for prose, and prose resized by
+  -- whatever happened to the window next door is prose at the wrong
+  -- width. `wrap` is the render's, off every time -- the lines arrive
+  -- already broken where they should break.
+  M.win = pane.open(vim.tbl_extend("force", placement(), {
+    buf = M.buf,
+    from = source,
+    wo = { linebreak = true, cursorline = true },
+  }))
+  M.source = source
 
   local k = config.keys.pane
   local function on_thread(fn)

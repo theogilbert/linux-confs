@@ -113,6 +113,15 @@ function M.check()
     })
   end
 
+  -- Every window's `g?` is drawn by it.
+  if pcall(require, "common.help") then
+    vim.health.ok("common.nvim")
+  else
+    vim.health.error("common.nvim is not installed", {
+      "nemeton draws the g? key lists with it",
+    })
+  end
+
   if vim.fn.executable("git") == 1 then
     vim.health.ok("git")
   else

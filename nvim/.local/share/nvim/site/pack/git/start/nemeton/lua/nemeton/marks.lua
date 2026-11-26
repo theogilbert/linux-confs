@@ -39,19 +39,9 @@ local reading = nil
 M.line_of_mark = {}
 
 --- Two colours mixed: `amount` of the way from `a` to `b`, both
---- 0xRRGGBB.
-local function mix(a, b, amount)
-  local out = 0
-  for _, shift in ipairs({ 65536, 256, 1 }) do
-    local x = math.floor(a / shift) % 256
-    local y = math.floor(b / shift) % 256
-    out = out + math.floor(x + (y - x) * amount + 0.5) * shift
-  end
-  return out
-end
+--- 0xRRGGBB (common.hl).
+local mix = require("common.hl").mix
 
---- How light a colour is, on the scale everything that has to be read
---- against it cares about.
 -- How far off what it sits on a code span's ground is: enough to be
 -- seen as a chip, as the page draws one, and not so far that the words
 -- on it have to be worked at.
@@ -62,11 +52,9 @@ local function code_ground(bg, fg)
   return mix(bg, fg, CODE_LIFT)
 end
 
-local function lum(c)
-  return 0.2126 * (math.floor(c / 65536) % 256)
-    + 0.7152 * (math.floor(c / 256) % 256)
-    + 0.0722 * (c % 256)
-end
+--- How light a colour is, on the scale everything that has to be read
+--- against it cares about (common.hl).
+local lum = require("common.hl").lum
 
 --- `c`, put back at the lightness `want` -- its channels scaled, so the
 --- colour is the colour it was and only its brightness moves.

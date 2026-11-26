@@ -857,22 +857,18 @@ end
 --- first: the bar names the few keys reached for every time, and the
 --- one that names the rest is the one a narrow window must not cut.
 function M.hint(pairs_, help)
-  local out = {}
-  if help and help ~= "" then
-    pairs_ = vim.list_extend({ { help, "help" } }, pairs_)
-  end
-  for _, h in ipairs(pairs_) do
-    if h[1] and h[1] ~= "" then
-      table.insert(
-        out,
-        ("%%#NemetonKey#%s%%#NemetonHint# %s"):format((h[1]:gsub("%%", "%%%%")), h[2])
-      )
-    end
-  end
-  return "%#NemetonHint#" .. table.concat(out, "  ") .. "%<%*"
+  return require("common.bar").hints(pairs_, {
+    help = help,
+    key = "NemetonKey",
+    desc = "NemetonHint",
+  })
 end
 
---- What can be done in a window, in a float over it.
+-- The help float in nemeton's colours: the keys as `NemetonKey`, what
+-- they do in the colour of a thread's prose.
+local HELP_HL = { key = "NemetonKey", desc = "NemetonThread" }
+
+--- What can be done in a window, in a float over it (common.help).
 ---
 --- Out of the bindings themselves rather than out of a list written
 --- beside them: a help that is a second copy of the keymaps is a help
@@ -884,33 +880,10 @@ end
 --- naming them all there was a row cut off at the edge, with the keys
 --- that end a merge request the ones that fell off it.
 function M.help(bindings, title)
-  local chunks, widest = {}, 0
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      widest = math.max(widest, vim.fn.strdisplaywidth(b[1]))
-    end
-  end
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      local pad = widest - vim.fn.strdisplaywidth(b[1])
-      table.insert(chunks, {
-        { " " .. b[1] .. (" "):rep(pad), "NemetonKey" },
-        { "  " .. b[3], "NemetonThread" },
-      })
-    end
-  end
-  local lines, hls = require("nemeton.threads").flatten(chunks, 0)
-  local width = 0
-  for _, l in ipairs(lines) do
-    width = math.max(width, vim.fn.strdisplaywidth(l))
-  end
-  -- Not markdown, and no wider than the keys: this is a table of two
-  -- columns that this module has coloured itself, and a syntax with an
-  -- opinion about the `*` in somebody's keymap is not wanted over it.
-  return M.float(lines, title or " keys ", {
-    hls = hls,
-    width = width + 2,
-    filetype = false,
+  return require("common.help").show(bindings, {
+    title = title or " keys ",
+    hl = HELP_HL,
+    help = false,
   })
 end
 
@@ -918,20 +891,12 @@ end
 --- on a longer mapping -- and `help`, which lists them (`M.help`).
 --- Skips the keys a user has set to `false`.
 function M.bind(buf, bindings, help, title)
-  if help and help ~= "" then
-    table.insert(bindings, {
-      help,
-      function()
-        M.help(bindings, title)
-      end,
-      "these keys",
-    })
-  end
-  for _, b in ipairs(bindings) do
-    if b[1] and b[1] ~= "" then
-      vim.keymap.set("n", b[1], b[2], { buffer = buf, nowait = true, desc = "nemeton: " .. b[3] })
-    end
-  end
+  require("common.help").bind(buf, bindings, {
+    help = help or false,
+    title = title or " keys ",
+    hl = HELP_HL,
+    prefix = "nemeton: ",
+  })
 end
 
 --- A float in the middle of the editor, for reading one of these on its

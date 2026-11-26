@@ -19,6 +19,7 @@
 
 local config = require("uatis.config")
 local git = require("uatis.git")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -209,8 +210,7 @@ function M.open(rev, opts)
   git.commit(root, rev, function(commit, _, err)
     if not commit then
       local why = err and err:match("^[^\r\n]*") or ""
-      vim.notify("uatis: no commit at " .. rev .. (why ~= "" and (": " .. why) or ""),
-        vim.log.levels.ERROR)
+      notify.error("no commit at " .. rev .. (why ~= "" and (": " .. why) or ""))
       return
     end
     local dir = dir_for(root, commit.sha)
@@ -245,8 +245,7 @@ function M.open(rev, opts)
       end
       label(vim.api.nvim_get_current_win())
       if file and not vim.uv.fs_stat(file) then
-        vim.notify("uatis: " .. opts.path .. " did not exist at " .. commit.short,
-          vim.log.levels.INFO)
+        notify.info(opts.path .. " did not exist at " .. commit.short)
       end
       if opts.on_ready then
         opts.on_ready(tab)
@@ -268,8 +267,8 @@ function M.open(rev, opts)
       git.run(root, { "-c", "core.hooksPath=/dev/null", "worktree", "add",
         "--detach", dir, commit.sha }, function(ok, _, why)
         if not ok then
-          vim.notify("uatis: could not check out " .. commit.short .. ": "
-            .. (vim.trim(why or ""):match("^[^\r\n]*") or ""), vim.log.levels.ERROR)
+          notify.error("could not check out " .. commit.short .. ": "
+            .. (vim.trim(why or ""):match("^[^\r\n]*") or ""))
           return
         end
         up()

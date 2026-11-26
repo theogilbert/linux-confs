@@ -27,6 +27,7 @@ local config = require("uatis.config")
 local overlay = require("uatis.overlay")
 local pane = require("uatis.pane")
 local view = require("uatis.view")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -176,7 +177,7 @@ end
 local function reapply()
   local ok, err = pcall(overlay.setup_highlights)
   if not ok then
-    vim.notify("uatis: " .. tostring(err), vim.log.levels.ERROR)
+    notify.error(tostring(err))
   end
   draw()
   vim.cmd("redraw")
@@ -277,9 +278,8 @@ function M.open()
     return dial
   end
   if not (view.get(vim.api.nvim_get_current_buf()) or next(pane.all())) then
-    vim.notify("uatis: nothing is being compared -- the dial shows its own swatches; "
-      .. config.keys.global.toggle_diff .. " puts them under real code",
-      vim.log.levels.WARN)
+    notify.warn("nothing is being compared -- the dial shows its own swatches; "
+      .. config.keys.global.toggle_diff .. " puts them under real code")
   end
 
   -- What the numbers were before any of this, so `r` has somewhere to
@@ -345,14 +345,17 @@ function M.open()
     p = function()
       local out = snippet()
       local text = table.concat(out, "\n")
-      vim.fn.setreg('"', text)
-      pcall(vim.fn.setreg, "+", text)
+      local went = require("common.yank").copy(text)
       M.close()
       vim.schedule(function()
         for _, l in ipairs(out) do
           vim.api.nvim_echo({ { l, "Normal" } }, true, {})
         end
-        vim.api.nvim_echo({ { '(also yanked to " and +)', "Comment" } }, true, {})
+        -- Where it went: `"` always, `+` with a clipboard, the terminal's
+        -- by OSC 52 over ssh (common.yank).
+        local names = vim.tbl_map(function(w) return w == "osc52" and "the terminal" or w end, went)
+        vim.api.nvim_echo({ { "(also yanked to " .. table.concat(names, " and ") .. ")", "Comment" } },
+          true, {})
       end)
     end,
   }

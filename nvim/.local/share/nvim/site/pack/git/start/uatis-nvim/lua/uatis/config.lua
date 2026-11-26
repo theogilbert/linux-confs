@@ -23,7 +23,7 @@ return {
   base = {
     -- Branch names to try, in order, when `origin/HEAD` gives no answer.
     fallbacks = { "develop", "master", "main" },
-    -- The short list `<leader>gP` offers under the base in force, in
+    -- The short list `<leader>gp` offers under the base in force, in
     -- order, leaving out what this repo does not have. A row that is a
     -- list offers the first of its names that exists.
     offer = { "HEAD", { "main", "origin/main" }, { "develop", "origin/develop" } },
@@ -40,7 +40,7 @@ return {
     -- behind them are the real interface.
     global = {
       -- What am I reviewing: base and subtree, in one panel.
-      base_branch = "<leader>gP",
+      base_branch = "<leader>gp",
       -- Start or end a review of the branch.
       toggle_diff = "<leader>gu",
       -- Open the changed-file list. Off by default; the view binds
@@ -48,7 +48,7 @@ return {
       open_pane = false,
       -- Pick a file of the review in this tab by name: fzf-lua where it
       -- is installed, `vim.ui.select` otherwise.
-      pick_file = "<leader>gp",
+      pick_file = "<leader>gf",
       -- One commit against its parent, in a tab of its own.
       show_commit = "<leader>gA",
       -- Everything since a revision you pick, in your own buffers.
@@ -86,7 +86,7 @@ return {
       fold_close_all = "zM",
       fold_open_all = "zR",
       -- Hide the window, from inside it.
-      files = "<leader>gf",
+      files = "<leader>ge",
       -- Move within the commit on show.
       commit_prev = "[C",
       commit_next = "]C",
@@ -111,7 +111,7 @@ return {
       -- Switch between the structural and line backends.
       diff_mode = "<leader>gm",
       -- Toggle the changed-file list.
-      files = "<leader>gf",
+      files = "<leader>ge",
       -- Read the branch one commit at a time.
       commit_view = "<leader>gh",
       commit_prev = "[C",

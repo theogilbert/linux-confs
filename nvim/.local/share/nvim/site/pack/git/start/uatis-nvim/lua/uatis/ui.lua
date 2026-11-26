@@ -12,10 +12,8 @@ local M = {}
 
 --- Escapes text destined for a statusline/winbar expression. A bare `%`
 --- in a commit subject or a filename is an item specifier there and will
---- corrupt everything after it.
-function M.escape(s)
-  return (tostring(s):gsub("%%", "%%%%"))
-end
+--- corrupt everything after it (common.bar).
+M.escape = require("common.bar").escape
 
 --- Greedy word wrap. Falls back to a hard break for a single word longer
 --- than the whole width.

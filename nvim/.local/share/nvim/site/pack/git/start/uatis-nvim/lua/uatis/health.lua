@@ -178,7 +178,7 @@ function M.report(f)
   else
     vim.health.warn("no base branch here", {
       "no origin/HEAD, and none of " .. table.concat(config.base.fallbacks, ", "),
-      "set one with <leader>gP, or :Uatis <ref> for a single view",
+      "set one with <leader>gp, or :Uatis <ref> for a single view",
     })
   end
 

@@ -285,16 +285,7 @@ local function read_store()
   if not path then
     return {}
   end
-  local ok, lines = pcall(vim.fn.readfile, path)
-  if not ok or type(lines) ~= "table" or #lines == 0 then
-    return {}
-  end
-  local decoded
-  ok, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
-  if not ok or type(decoded) ~= "table" then
-    return {}
-  end
-  return decoded
+  return require("common.store").read(path)
 end
 
 --- The marks kept for `root`, as a fresh table the list may write to.
@@ -368,11 +359,10 @@ function M.save(root, marks, files)
     end
   end
   all[root] = next(entry) ~= nil and entry or nil
-  vim.fn.mkdir(vim.fs.dirname(path), "p")
   -- Silent on failure, as the base choice is: the mark is already in
   -- force for this session, and not being able to keep it for the next
   -- is no reason to interrupt the one it was made in.
-  pcall(vim.fn.writefile, { vim.json.encode(all) }, path)
+  require("common.store").write(path, all)
 end
 
 return M

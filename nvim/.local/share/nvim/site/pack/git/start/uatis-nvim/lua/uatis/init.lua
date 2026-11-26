@@ -31,6 +31,7 @@ local pane = require("uatis.pane")
 local prompt = require("uatis.prompt")
 local read = require("uatis.read")
 local view = require("uatis.view")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -136,7 +137,7 @@ end
 function M.run(opts)
   local args = opts.fargs or {}
   if #args > 1 then
-    vim.notify("uatis: :Uatis [<gitref>]", vim.log.levels.ERROR)
+    notify.error(":Uatis [<gitref>]")
     return
   end
   if #args == 0 then
@@ -296,8 +297,7 @@ function M.conflicts()
     return false
   end
   if list then
-    vim.notify("uatis: ending the review of " .. tostring(list.ref) .. " for the conflicts",
-      vim.log.levels.INFO)
+    notify.info("ending the review of " .. tostring(list.ref) .. " for the conflicts")
     view.close_all(list.root, list.rev, list.standalone)
     pane.close(list)
   end
@@ -342,15 +342,14 @@ end
 ---
 --- The one question two of the keys here ask -- `<leader>gA` about a
 --- commit, `<leader>gS` about everything since one -- and they ask it
---- the same way, over the same candidates `<leader>gP` types into:
+--- the same way, over the same candidates `<leader>gp` types into:
 --- every ref and the recent commits, each carrying its subject line,
 --- because nobody has a sha memorised and a commit is found by what it
 --- did.
 local function ask_revision(label, cb)
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     base.candidates(root, function(items)
@@ -378,7 +377,7 @@ end
 --- five commits younger would be describing neither.
 ---
 --- Without a rev it asks, through `prompt.lua` over every ref and the
---- recent commits -- the same candidates `<leader>gP` types into, which
+--- recent commits -- the same candidates `<leader>gp` types into, which
 --- carry their subject line, because nobody has a sha memorised and a
 --- commit is found by what it did.
 function M.show_commit(rev)
@@ -458,13 +457,12 @@ function M.history(opts)
     local dir = vim.fn.isdirectory(full) == 1
     git.root(full, function(root)
       if not root then
-        vim.notify("uatis: " .. opts.path .. " is not inside a git repository",
-          vim.log.levels.ERROR)
+        notify.error(opts.path .. " is not inside a git repository")
         return
       end
       local rel = full == vim.fs.normalize(root) and "" or view.relpath(root, full)
       if not rel then
-        vim.notify("uatis: " .. opts.path .. " is not inside " .. root, vim.log.levels.ERROR)
+        notify.error(opts.path .. " is not inside " .. root)
         return
       end
       pane.show_history({ root = root, path = rel, dir = dir })
@@ -492,14 +490,14 @@ function M.history(opts)
     -- HEAD is the one spelling that moves.
     git.run(root, { "show", "HEAD:" .. rel }, function(ok, out)
       if not ok then
-        vim.notify("uatis: " .. rel .. " has not been committed", vim.log.levels.INFO)
+        notify.info(rel .. " has not been committed")
         return
       end
       local new = vim.api.nvim_buf_is_valid(bufnr)
         and table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n") or ""
       local a, b = committed_rows((out:gsub("\n$", "")), new, subject.from, subject.to)
       if not a then
-        vim.notify("uatis: those lines have not been committed", vim.log.levels.INFO)
+        notify.info("those lines have not been committed")
         return
       end
       subject.from, subject.to = a, b
@@ -517,14 +515,13 @@ function M.history(opts)
     return go(old.root, old.old_path or old.relpath, old.rev)
   end
   if vim.bo[bufnr].buftype ~= "" or vim.api.nvim_buf_get_name(bufnr) == "" then
-    vim.notify("uatis: not a file buffer", vim.log.levels.ERROR)
+    notify.error("not a file buffer")
     return
   end
   local file = vim.api.nvim_buf_get_name(bufnr)
   git.root(file, function(root)
     if not root then
-      vim.notify("uatis: " .. file .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(file .. " is not inside a git repository")
       return
     end
     local rel = view.relpath(root, file)
@@ -587,8 +584,7 @@ function M.at(rev)
   if vim.bo[bufnr].buftype == "" and name ~= "" then
     return git.root(name, function(root)
       if not root then
-        vim.notify("uatis: " .. name .. " is not inside a git repository",
-          vim.log.levels.ERROR)
+        notify.error(name .. " is not inside a git repository")
         return
       end
       go(root, view.relpath(root, name))
@@ -596,8 +592,7 @@ function M.at(rev)
   end
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     go(root, nil)
@@ -898,7 +893,7 @@ local mapped = {}
 local function outside_cmdwin(fn)
   return function()
     if vim.fn.getcmdwintype() ~= "" then
-      vim.notify("uatis: not from the command-line window", vim.log.levels.WARN)
+      notify.warn("not from the command-line window")
       return
     end
     fn()
@@ -973,7 +968,7 @@ local function merge(into, from, path)
   for key, v in pairs(from) do
     local at = path and (path .. "." .. tostring(key)) or tostring(key)
     if into[key] == nil then
-      vim.notify("uatis: unknown option '" .. at .. "'", vim.log.levels.WARN)
+      notify.warn("unknown option '" .. at .. "'")
     elseif type(v) == "table" and type(into[key]) == "table"
       and not vim.islist(into[key]) then
       merge(into[key], v, at)
@@ -1002,30 +997,24 @@ end
 function M.setup(opts)
   if opts ~= nil then
     if type(opts) ~= "table" then
-      vim.notify("uatis: setup() takes a table of options", vim.log.levels.ERROR)
+      notify.error("setup() takes a table of options")
       return
     end
     merge(config, opts)
   end
 
   if not supported() then
-    vim.notify(
-      ("uatis: needs Neovim %d.%d or newer"):format(FLOOR[1], FLOOR[2]),
-      vim.log.levels.ERROR)
+    notify.error(
+      ("needs Neovim %d.%d or newer"):format(FLOOR[1], FLOOR[2]))
     return
   end
 
   local group = vim.api.nvim_create_augroup("Uatis", { clear = true })
   setup_keymaps()
-  overlay.setup_highlights()
-  require("uatis.blame").setup_highlights()
-  vim.api.nvim_create_autocmd("ColorScheme", {
-    group = group,
-    callback = function()
-      overlay.setup_highlights()
-      require("uatis.blame").setup_highlights()
-    end,
-  })
+  require("common.hl").watch("uatis", function()
+    overlay.setup_highlights()
+    require("uatis.blame").setup_highlights()
+  end)
   -- The tabs this plugin opened for itself go before the editor does.
   -- `ExitPre` and not `VimLeavePre`: a session is saved on
   -- `VimLeavePre`, and whoever registered theirs first runs first --

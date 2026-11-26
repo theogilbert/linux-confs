@@ -20,6 +20,7 @@
 local config = require("uatis.config")
 local git = require("uatis.git")
 local prompt = require("uatis.prompt")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -37,7 +38,7 @@ local checked = {}  -- root -> the kept name has been verified to still exist
 --- `state`, not `data`: XDG keeps them apart, and this is state by every
 --- part of that distinction. It is per-machine (the paths in it are
 --- absolute), it is not worth backing up, and losing it costs one
---- `<leader>gP` per repository -- while `data` is where a plugin puts
+--- `<leader>gp` per repository -- while `data` is where a plugin puts
 --- what it would be sorry to lose. Neovim puts its own shada and undo
 --- history in `state` for the same reasons.
 local function store_file()
@@ -77,16 +78,7 @@ local function read_store()
   if not path then
     return {}
   end
-  local ok, lines = pcall(vim.fn.readfile, path)
-  if not ok or type(lines) ~= "table" or #lines == 0 then
-    return {}
-  end
-  local decoded
-  ok, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
-  if not ok or type(decoded) ~= "table" then
-    return {}
-  end
-  return decoded
+  return require("common.store").read(path)
 end
 
 --- Folds `fields` into the entry for `root`, leaving the other half of
@@ -111,11 +103,10 @@ local function write_store(root, fields)
   end
   all[root] = next(entry) ~= nil and entry or nil
   kept = all
-  vim.fn.mkdir(vim.fs.dirname(path), "p")
   -- Failures are silent on purpose: not being able to remember a base
   -- branch is not a reason to interrupt someone who has just chosen one,
   -- and the choice itself is already in force for this session.
-  pcall(vim.fn.writefile, { vim.json.encode(all) }, path)
+  require("common.store").write(path, all)
 end
 
 local function kept_entry(root)
@@ -314,16 +305,14 @@ end
 function M.resolve(root, cb)
   M.get(root, function(name)
     if not name then
-      vim.notify(
-        "uatis: no base branch — set one with require('uatis').set_base_branch()",
-        vim.log.levels.ERROR)
+      notify.error(
+        "no base branch — set one with require('uatis').set_base_branch()")
       cb(nil)
       return
     end
     git.merge_base(root, name, "HEAD", function(sha)
       if not sha then
-        vim.notify("uatis: no common ancestor between '" .. name .. "' and HEAD",
-          vim.log.levels.ERROR)
+        notify.error("no common ancestor between '" .. name .. "' and HEAD")
         cb(nil)
         return
       end
@@ -392,7 +381,7 @@ end
 local function verify(root, name, commit)
   git.verify_ref(root, name, function(exists)
     if not exists then
-      vim.notify("uatis: unknown revision '" .. name .. "'", vim.log.levels.ERROR)
+      notify.error("unknown revision '" .. name .. "'")
       commit(nil)
       return
     end
@@ -433,8 +422,7 @@ end
 function M.select(name, cb)
   M.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       if cb then cb(nil) end
       return
     end
@@ -444,7 +432,7 @@ function M.select(name, cb)
         return
       end
       M.set(root, picked)
-      vim.notify("uatis: base " .. picked)
+      notify.info("base " .. picked)
       if cb then cb(picked, root) end
     end)
   end)
@@ -603,7 +591,7 @@ function M.select_dir(root, cb)
       return
     end
     M.set_dir(root, dir)
-    vim.notify("uatis: " .. (dir == "" and "the whole repository" or (dir .. "/")))
+    notify.info((dir == "" and "the whole repository" or (dir .. "/")))
     if cb then cb(dir, root) end
   end)
 end
@@ -632,8 +620,7 @@ function M.ask_dir(root, cb)
       if dir ~= "" then
         local stat = vim.uv.fs_stat(root .. "/" .. dir)
         if not stat or stat.type ~= "directory" then
-          vim.notify("uatis: no directory " .. dir .. " in " .. root,
-            vim.log.levels.ERROR)
+          notify.error("no directory " .. dir .. " in " .. root)
           cb(nil)
           return
         end

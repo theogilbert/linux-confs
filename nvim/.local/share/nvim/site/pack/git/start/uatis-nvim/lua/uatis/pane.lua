@@ -23,6 +23,7 @@ local checkout = require("uatis.checkout")
 local conflict_mod = require("uatis.conflict")
 local base = require("uatis.base")
 local keys = require("uatis.keys")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -468,10 +469,9 @@ local function refresh(pane, keep_path)
     -- write re-reads the list and a broken read stays broken.
     if not pane.complained and (text == nil or (text ~= "" and #pane.tracked == 0)) then
       pane.complained = true
-      vim.notify("uatis: could not read `git diff " .. (pane.ref or pane.rev) .. "`: "
+      notify.error("could not read `git diff " .. (pane.ref or pane.rev) .. "`: "
         .. (err ~= nil and err ~= "" and err
-          or "git printed something that is not a unified diff"),
-        vim.log.levels.ERROR)
+          or "git printed something that is not a unified diff"))
     end
     local function drawn()
       if not pane.commit then
@@ -764,70 +764,15 @@ function M.peek_keys(pane)
   if not pane then
     return
   end
-  local rows = keys_of(pane)
-  local wide = 0
-  for _, r in ipairs(rows) do
-    if r.key then
-      wide = math.max(wide, vim.fn.strdisplaywidth(r.key))
-    end
+  local rows = {}
+  for _, r in ipairs(keys_of(pane)) do
+    rows[#rows + 1] = r.head and { head = r.head } or { key = r.key, desc = r.what }
   end
-
-  local lines, marks = {}, {}
-  for _, r in ipairs(rows) do
-    if r.head then
-      if #lines > 0 then
-        table.insert(lines, "")
-      end
-      table.insert(lines, "  " .. r.head)
-      marks[#lines] = { from = 0, to = -1, hl = "UatisMeta" }
-    else
-      local key = r.key .. string.rep(" ", wide - vim.fn.strdisplaywidth(r.key))
-      table.insert(lines, "  " .. key .. "   " .. r.what)
-      marks[#lines] = { from = 2, to = 2 + #key, hl = "UatisHeader" }
-    end
-  end
-
-  local width = 0
-  for _, l in ipairs(lines) do
-    width = math.max(width, vim.fn.strdisplaywidth(l))
-  end
-  width = math.min(width + 3, math.max(vim.o.columns - 8, 24))
-  local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
-
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].modifiable = false
-  for line, m in pairs(marks) do
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, line - 1, m.from, {
-      end_row = m.to < 0 and line or nil,
-      end_col = m.to >= 0 and m.to or 0,
-      hl_group = m.hl,
-    })
-  end
-
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
-    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-    style = "minimal",
-    border = "rounded",
+  return require("common.help").float(rows, {
     title = " uatis keys ",
-    title_pos = "center",
+    close = config.keys.pane.help,
+    hl = { key = "UatisHeader", head = "UatisMeta", desc = false },
   })
-  vim.wo[win].wrap = false
-  for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.help }) do
-    if lhs and lhs ~= "" then
-      vim.keymap.set("n", lhs, function()
-        if vim.api.nvim_win_is_valid(win) then
-          vim.api.nvim_win_close(win, true)
-        end
-      end, { buffer = buf, nowait = true, silent = true })
-    end
-  end
-  return win
 end
 
 --- The whole message of the commit on show, in a float.
@@ -851,6 +796,8 @@ end
 --- colours the subject as an overlong-line warning past 50 characters
 --- and greys everything under a `#` -- and none of that is a statement
 --- about a message already written.
+local commit_hover = require("common.hover").new()
+
 function M.commit_float(commit, text, opts)
   opts = opts or {}
   local said = commit.date or ""
@@ -897,33 +844,43 @@ function M.commit_float(commit, text, opts)
   width = math.min(math.max(width + 2, 40), math.max(vim.o.columns - 8, 20))
   local height = math.min(#lines, math.max(vim.o.lines - 6, 5))
 
+  local function paint(buf)
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
+      end_row = 1,
+      end_col = 0,
+      hl_group = "UatisMeta",
+      hl_eol = true,
+    })
+    for _, st in ipairs(stats) do
+      vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.a[1],
+        { end_col = st.a[2], hl_group = "UatisStatAdd" })
+      vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.r[1],
+        { end_col = st.r[2], hl_group = "UatisStatDel" })
+    end
+  end
+  if opts.at_cursor then
+    -- Transient (common.hover): the next thing the reader does takes it
+    -- away.
+    return (commit_hover:open(lines, {
+      buf = opts.from,
+      title = opts.title or " commit message ",
+      width = width,
+      max_height = height,
+      paint = paint,
+      events = { "CursorMoved", "CursorMovedI", "BufLeave", "WinScrolled", "InsertEnter" },
+    }))
+  end
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  paint(buf)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].modifiable = false
-  vim.api.nvim_buf_set_extmark(buf, ns, 0, 0, {
-    end_row = 1,
-    end_col = 0,
-    hl_group = "UatisMeta",
-    hl_eol = true,
-  })
-  for _, st in ipairs(stats) do
-    vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.a[1],
-      { end_col = st.a[2], hl_group = "UatisStatAdd" })
-    vim.api.nvim_buf_set_extmark(buf, ns, st.line - 1, st.r[1],
-      { end_col = st.r[2], hl_group = "UatisStatDel" })
-  end
-  local place
-  if opts.at_cursor then
-    place = { relative = "cursor", row = 1, col = 0, focusable = false }
-  else
-    place = {
-      relative = "editor",
-      row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
-      col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-    }
-  end
-  local win = vim.api.nvim_open_win(buf, not opts.at_cursor, vim.tbl_extend("force", place, {
+  local place = {
+    relative = "editor",
+    row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+  }
+  local win = vim.api.nvim_open_win(buf, true, vim.tbl_extend("force", place, {
     width = width,
     height = height,
     style = "minimal",
@@ -937,25 +894,9 @@ function M.commit_float(commit, text, opts)
       vim.api.nvim_win_close(win, true)
     end
   end
-  if opts.at_cursor then
-    -- Transient: the next thing the reader does takes it away. The
-    -- autocmds are one group, cleared with the window, so a float
-    -- closed by the cursor does not leave them waiting on nothing.
-    local group = vim.api.nvim_create_augroup("UatisPeek" .. win, { clear = true })
-    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufLeave", "WinScrolled", "InsertEnter" }, {
-      group = group,
-      buffer = opts.from or vim.api.nvim_get_current_buf(),
-      once = true,
-      callback = function()
-        close()
-        pcall(vim.api.nvim_del_augroup_by_id, group)
-      end,
-    })
-  else
-    for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.commit_message }) do
-      if lhs and lhs ~= "" then
-        vim.keymap.set("n", lhs, close, { buffer = buf, nowait = true, silent = true })
-      end
+  for _, lhs in ipairs({ "q", "<Esc>", config.keys.pane.commit_message }) do
+    if lhs and lhs ~= "" then
+      vim.keymap.set("n", lhs, close, { buffer = buf, nowait = true, silent = true })
     end
   end
   return win
@@ -968,7 +909,7 @@ function M.peek_commit(pane, commit)
   pane = pane or M.get()
   commit = commit or (pane and pane.commit)
   if not pane or not commit then
-    vim.notify("uatis: no commit on show", vim.log.levels.WARN)
+    notify.warn("no commit on show")
     return
   end
   -- What it did to each file, under the message: the whole commit, not
@@ -1169,15 +1110,15 @@ function M.toggle_commits(pane)
     return false
   end
   if pane.conflicts then
-    vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
+    notify.info("this is a conflict review, with no commits to walk")
     return true
   end
   -- A history is commit by commit already, and there is no whole to go
   -- back out to: what the commits did together is not what was asked.
   if pane.history then
-    vim.notify("uatis: a history is read one commit at a time · "
+    notify.info("a history is read one commit at a time · "
       .. config.keys.pane.commit_prev .. " " .. config.keys.pane.commit_next
-      .. " to step it", vim.log.levels.INFO)
+      .. " to step it")
     return true
   end
   -- Nowhere to go from a review that is one commit. Off, this key means
@@ -1186,7 +1127,7 @@ function M.toggle_commits(pane)
   -- asked for, arrived at by a key that says it is turning something
   -- off. `:Uatis` is how you ask for a review of your own branch.
   if pane.standalone then
-    vim.notify("uatis: this review is one commit", vim.log.levels.INFO)
+    notify.info("this review is one commit")
     return true
   end
   if pane.commit then
@@ -1195,8 +1136,7 @@ function M.toggle_commits(pane)
   end
   with_commits(pane, function(p)
     if #p.commits == 0 then
-      vim.notify("uatis: no commits between " .. tostring(p.tree_ref) .. " and HEAD",
-        vim.log.levels.INFO)
+      notify.info("no commits between " .. tostring(p.tree_ref) .. " and HEAD")
       return
     end
     show(p, 1, current_path(p))
@@ -1218,19 +1158,19 @@ function M.step_commit(pane, dir)
     return
   end
   if pane.conflicts then
-    vim.notify("uatis: this is a conflict review, with no commits to walk", vim.log.levels.INFO)
+    notify.info("this is a conflict review, with no commits to walk")
     return
   end
   if pane.standalone and not pane.history then
-    vim.notify("uatis: this review is one commit", vim.log.levels.INFO)
+    notify.info("this review is one commit")
     return
   end
   if not pane.commit then
     -- The view's key, not the list's: this is pressed in a file as often
     -- as in the list, and the list's own toggle is a bare letter that
     -- means something else there.
-    vim.notify("uatis: not reading commit by commit · "
-      .. config.keys.view.commit_view .. " to start", vim.log.levels.INFO)
+    notify.info("not reading commit by commit · "
+      .. config.keys.view.commit_view .. " to start")
     return
   end
   local n = #(pane.commits or {})
@@ -1604,7 +1544,7 @@ local function set_read(pane, files, on)
   -- A conflict is not read, it is settled, and the row says so by
   -- itself when it is.
   if pane.conflicts then
-    vim.notify("uatis: a conflicted file is done when its blocks are, not when it is marked", vim.log.levels.INFO)
+    notify.info("a conflicted file is done when its blocks are, not when it is marked")
     return
   end
   if on == nil then
@@ -2312,7 +2252,7 @@ function M.step_file(pane, dir)
   end
   local next_idx = pane.file_idx + dir
   if next_idx < 1 or next_idx > #pane.files then
-    vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " file", vim.log.levels.INFO)
+    notify.info((dir > 0 and "last" or "first") .. " file")
     return false
   end
   M.goto_file(pane, next_idx)
@@ -2412,7 +2352,7 @@ end
 --- `q` in the list means "this window is in my way", not "stop
 --- reviewing": the comparison in the file beside it is still open, `]f`
 --- still steps the list, files you open are still annotated, and
---- `<leader>gf` puts a window back on the SAME list rather than reading a
+--- `<leader>ge` puts a window back on the SAME list rather than reading a
 --- new one. Ending the review is `<leader>gu`, which closes it for real.
 function M.hide(pane)
   pane = pane or M.get()
@@ -2952,7 +2892,7 @@ end
 ---
 --- The list and the window onto it are separate things. `]f` wants the
 --- list -- which file comes next, and where it is -- and putting a window
---- up for that is answering a question nobody asked; `<leader>gf` wants
+--- up for that is answering a question nobody asked; `<leader>ge` wants
 --- the window. So this builds the list, `M.open` gives it a window, and
 --- either can come first.
 ---
@@ -3154,8 +3094,7 @@ local function with_list(opts, cb)
   -- repository" from inside one.
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     local resolve = opts.resolve or base.resolve
@@ -3175,7 +3114,7 @@ end
 ---
 --- The list and the window onto it are separate things. `]f` wants the
 --- list -- which file comes next, and where it is -- and putting a window
---- up for that is answering a question nobody asked; `<leader>gf` wants
+--- up for that is answering a question nobody asked; `<leader>ge` wants
 --- the window.
 ---
 --- `opts.on_ready(pane)` runs once the list has been read, which is a
@@ -3270,8 +3209,7 @@ function M.show_commit(rev, opts)
   opts = opts or {}
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     git.commit(root, rev, function(commit, parent, err)
@@ -3284,8 +3222,8 @@ function M.show_commit(rev, opts)
         -- sha that exists in the repository the reader has in mind is
         -- otherwise reported as not existing at all.
         local why = err and err:match("^[^\r\n]*") or ""
-        vim.notify("uatis: no commit at " .. rev .. " in " .. vim.fn.fnamemodify(root, ":~")
-          .. (why ~= "" and (": " .. why) or ""), vim.log.levels.ERROR)
+        notify.error("no commit at " .. rev .. " in " .. vim.fn.fnamemodify(root, ":~")
+          .. (why ~= "" and (": " .. why) or ""))
         return
       end
       local own_tab = opts.tab
@@ -3345,12 +3283,11 @@ function M.show_history(subject, opts)
       what = string.format("%s:%d-%d", what, subject.from, subject.to)
     end
     if not commits then
-      vim.notify("uatis: no history of " .. what .. ": " .. (err or ""):match("^[^\r\n]*"),
-        vim.log.levels.ERROR)
+      notify.error("no history of " .. what .. ": " .. (err or ""):match("^[^\r\n]*"))
       return
     end
     if #commits == 0 then
-      vim.notify("uatis: no commit has touched " .. what, vim.log.levels.INFO)
+      notify.info("no commit has touched " .. what)
       return
     end
     local own_tab = opts.tab
@@ -3400,13 +3337,12 @@ function M.review_conflicts(opts)
   opts = opts or {}
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     git.unmerged(root, function(paths)
       if #paths == 0 then
-        vim.notify("uatis: no conflicts", vim.log.levels.INFO)
+        notify.info("no conflicts")
         return
       end
       local tab = vim.api.nvim_get_current_tabpage()

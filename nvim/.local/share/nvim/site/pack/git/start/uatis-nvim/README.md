@@ -10,7 +10,8 @@ was and not as a rewrite.
 
 [difftastic]: https://difftastic.wilfred.me.uk/
 
-Neovim 0.12+. `git` on your `PATH`. `difft` too, for structural diffing —
+Neovim 0.12+, and [common.nvim](../common.nvim) (the UI library the
+author's plugins share) on the runtimepath. `git` on your `PATH`. `difft` too, for structural diffing —
 without it you get Neovim's line diff and the header says so.
 
 Full documentation is in the help: `:help uatis`. What this adds on top of
@@ -19,7 +20,7 @@ difftastic — every rule about how a change is drawn, and why — is in
 
 ## Start here
 
-Nothing to configure: `<leader>gu` and `<leader>gP` are mapped when the
+Nothing to configure: `<leader>gu` and `<leader>gp` are mapped when the
 plugin loads. To move them, or anything else:
 
 ```lua
@@ -70,7 +71,7 @@ or a directory — back to the one that made it. See
 [History](#history).
 
 **The base** is detected: `origin/HEAD`, then `develop`, `master`,
-`main`. `<leader>gP` picks another through `vim.ui.select`, offering the
+`main`. `<leader>gp` picks another through `vim.ui.select`, offering the
 one in force, then `HEAD`, `main` (or `origin/main`) and `develop` (or
 `origin/develop`) where this repository actually has them — a short list, because a picker is for the answer you
 almost always want. Its last row, `type a revision…`, is for the rest:
@@ -102,8 +103,8 @@ move to the new fork point together. Views you named a revision for with
 | `]f` / `[f` | next / previous changed file |
 | `<leader>go` | side by side / in place |
 | `<leader>gm` | structural / line diff |
-| `<leader>gf` | the changed-file list, on and off |
-| `<leader>gp` | pick a file of the review by name (fzf-lua, else `vim.ui.select`) |
+| `<leader>ge` | the changed-file list, on and off |
+| `<leader>gf` | pick a file of the review by name (fzf-lua, else `vim.ui.select`) |
 | `<leader>gh` | read the review one commit at a time, on / off |
 | `]C` / `[C` | within that, the next / previous commit |
 
@@ -244,8 +245,8 @@ picks the variable your tabline reads.
 `q` in the list closes that window and nothing else — in a tab you
 opened yourself. (In one `:UatisShow` opened it ends the commit, above.)
 The review goes on,
-`]f` still steps it, and `<leader>gf` brings the window back to the same
-list. From the file beside it, `<leader>gf` puts the cursor in the list;
+`]f` still steps it, and `<leader>ge` brings the window back to the same
+list. From the file beside it, `<leader>ge` puts the cursor in the list;
 from inside the list it puts the window away, which is the same thing `q`
 does there. Ending a review is `<leader>gu` again, from anywhere.
 

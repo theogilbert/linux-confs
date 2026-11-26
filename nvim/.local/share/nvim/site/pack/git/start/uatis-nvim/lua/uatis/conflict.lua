@@ -22,6 +22,7 @@ local keys = require("uatis.keys")
 local merge = require("uatis.merge")
 local git = require("uatis.git")
 local ui = require("uatis.ui")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -449,7 +450,7 @@ local function replace(c, b, lines)
   render(c)
   if #c.blocks == 0 then
     local rest = require("uatis.pane").conflicts_left(c)
-    vim.notify("uatis: " .. c.relpath .. " resolved" .. (rest or ""), vim.log.levels.INFO)
+    notify.info(c.relpath .. " resolved" .. (rest or ""))
   end
 end
 
@@ -459,7 +460,7 @@ local function current_block(c)
   end
   local i = block_at(c, vim.api.nvim_win_get_cursor(c.win)[1])
   if not i then
-    vim.notify("uatis: not inside a conflict", vim.log.levels.INFO)
+    notify.info("not inside a conflict")
   end
   return i
 end
@@ -484,7 +485,7 @@ local function pick(c, side)
       end
       local base = base_of(c, b)
       if not base then
-        vim.notify("uatis: no base for this conflict", vim.log.levels.INFO)
+        notify.info("no base for this conflict")
         return
       end
       replace(c, b, base)
@@ -514,7 +515,7 @@ local function resolve(c)
       return
     end
     if not base_of(c, b) then
-      vim.notify("uatis: no base for this conflict, nothing to merge against", vim.log.levels.INFO)
+      notify.info("no base for this conflict, nothing to merge against")
       return
     end
     if not resolve_block(c, b) then
@@ -533,7 +534,7 @@ local function resolve_all(c)
     end
     local total = #c.blocks
     if total == 0 then
-      vim.notify("uatis: no conflicts in this file", vim.log.levels.INFO)
+      notify.info("no conflicts in this file")
       return
     end
     local done = 0
@@ -617,8 +618,8 @@ local function peek(c, fallback)
       return
     end
     if not commit then
-      vim.notify("uatis: no commit at " .. tostring(rev)
-        .. (err and err ~= "" and (": " .. err:match("^[^\r\n]*")) or ""), vim.log.levels.INFO)
+      notify.info("no commit at " .. tostring(rev)
+        .. (err and err ~= "" and (": " .. err:match("^[^\r\n]*")) or ""))
       return
     end
     git.commit_message(c.root, commit.sha, function(text)
@@ -700,12 +701,12 @@ local function spill(c, dir)
   local pane = require("uatis.pane")
   local list = pane.get()
   if not (list and list.conflicts and (list.renders or 0) > 0) then
-    vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " conflict", vim.log.levels.INFO)
+    notify.info((dir > 0 and "last" or "first") .. " conflict")
     return
   end
   local idx = (list.file_idx or 0) + dir
   if idx < 1 or idx > #list.files then
-    vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " conflict", vim.log.levels.INFO)
+    notify.info((dir > 0 and "last" or "first") .. " conflict")
     return
   end
   landing = { dir = dir, from = c.bufnr }

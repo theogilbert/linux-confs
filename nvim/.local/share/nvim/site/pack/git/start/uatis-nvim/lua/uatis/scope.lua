@@ -1,7 +1,7 @@
 -- What a review IS, as one small panel: the revision it measures
 -- against, and how much of the tree it is about.
 --
---   <leader>gP
+--   <leader>gp
 --
 -- Two entries, each answered on its own, and neither of them applied
 -- until the panel closes. That is the whole reason it is a panel rather
@@ -28,6 +28,7 @@
 -- rather than where they are asked for.
 
 local base = require("uatis.base")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -192,7 +193,7 @@ local function save()
   if not moved then
     return
   end
-  vim.notify("uatis: " .. (pending.base or "?") .. " · "
+  notify.info((pending.base or "?") .. " · "
     .. (pending.dir ~= "" and (pending.dir .. "/") or "the whole repository"))
   if on_save then
     on_save(root)
@@ -222,8 +223,7 @@ function M.open(opts)
 
   base.root(function(root, path)
     if not root then
-      vim.notify("uatis: " .. path .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(path .. " is not inside a git repository")
       return
     end
     -- The base is asked for rather than read, because a repository that

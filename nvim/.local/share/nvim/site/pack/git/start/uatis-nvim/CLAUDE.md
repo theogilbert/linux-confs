@@ -80,7 +80,7 @@ never appear as reversed changes.
   detection (`origin/HEAD`, then `config.base.fallbacks`) is redone every
   session, and `base.source(root)` says which of the three an answer is.
   `resolve()` returns `(label, sha)` for the fork point.
-- **How much of the tree.** `<leader>gP` opens `scope.lua` — a float
+- **How much of the tree.** `<leader>gp` opens `scope.lua` — a float
   with TWO entries, base and subtree, each answered by the picker or
   prompt that question already had (`base.ask`/`base.ask_dir`, which are
   `select`/`select_dir` with the deciding taken out). Neither is applied

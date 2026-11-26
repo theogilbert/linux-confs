@@ -24,6 +24,7 @@
 
 local config = require("uatis.config")
 local git = require("uatis.git")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -214,8 +215,8 @@ local function pump(co)
       return
     end
     if not ok then
-      vim.notify("uatis: could not check out " .. target:sub(1, 12) .. ": "
-        .. (vim.trim(why or ""):match("^[^\r\n]*") or ""), vim.log.levels.ERROR)
+      notify.error("could not check out " .. target:sub(1, 12) .. ": "
+        .. (vim.trim(why or ""):match("^[^\r\n]*") or ""))
       local waiting = co.waiting
       co.waiting, co.want = {}, co.sha
       for _, w in ipairs(waiting) do

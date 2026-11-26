@@ -18,6 +18,7 @@ local overlay = require("uatis.overlay")
 local oldside = require("uatis.oldside")
 local ui = require("uatis.ui")
 local keys = require("uatis.keys")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -807,8 +808,7 @@ step_into = function(view, list, dir)
     -- Said in the reader's own words rather than the list's: what ran
     -- out was the changes, and that there are no more files is the
     -- reason and not the answer.
-    vim.notify("uatis: " .. (dir > 0 and "last" or "first") .. " change",
-      vim.log.levels.INFO)
+    notify.info((dir > 0 and "last" or "first") .. " change")
     return false
   end
   landing = { dir = dir, from = view.bufnr }
@@ -919,7 +919,7 @@ end
 ---
 --- Reads the list if there is not one yet, and does NOT put a window up
 --- for it: the key asked which file comes next, not for somewhere to
---- stand and look at a list. `<leader>gf` is the window, on and off
+--- stand and look at a list. `<leader>ge` is the window, on and off
 --- again.
 ---
 --- True when another file is being opened, false when there is none,
@@ -1035,7 +1035,7 @@ function M.open_at(view, path, row, mv)
         return
       end
     end
-    vim.notify("uatis: " .. path .. " is not in this review", vim.log.levels.INFO)
+    notify.info(path .. " is not in this review")
   end
   local list = pane.get()
   if list and (list.renders or 0) > 0 then
@@ -1405,7 +1405,7 @@ function M.ref_resolver(ref)
   return function(root, cb)
     git.rev_parse(root, ref, function(sha)
       if not sha then
-        vim.notify("uatis: unknown revision '" .. ref .. "'", vim.log.levels.ERROR)
+        notify.error("unknown revision '" .. ref .. "'")
         cb(nil)
         return
       end
@@ -1443,12 +1443,12 @@ function M.open(ref, opts)
   -- Otherwise it has to be a real file inside a repository: a scratch,
   -- terminal or help buffer has no path to compare against.
   if vim.bo[bufnr].buftype ~= "" then
-    vim.notify("uatis: not a file buffer", vim.log.levels.ERROR)
+    notify.error("not a file buffer")
     return
   end
   local file = vim.api.nvim_buf_get_name(bufnr)
   if file == "" then
-    vim.notify("uatis: this buffer has no file", vim.log.levels.ERROR)
+    notify.error("this buffer has no file")
     return
   end
 
@@ -1459,8 +1459,7 @@ function M.open(ref, opts)
       -- the editor in are different questions with different answers,
       -- and a bare "not inside a git repository" says which of the two
       -- was asked about only to whoever wrote it.
-      vim.notify("uatis: " .. file .. " is not inside a git repository",
-        vim.log.levels.ERROR)
+      notify.error(file .. " is not inside a git repository")
       return
     end
     if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -1469,7 +1468,7 @@ function M.open(ref, opts)
 
     local relpath = M.relpath(root, file)
     if not relpath then
-      vim.notify("uatis: " .. file .. " is not inside " .. root, vim.log.levels.ERROR)
+      notify.error(file .. " is not inside " .. root)
       return
     end
     M.attach(bufnr, win, root, relpath, opts)

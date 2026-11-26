@@ -33,6 +33,7 @@ local git = require("uatis.git")
 local keys = require("uatis.keys")
 local syntax = require("uatis.syntax")
 local ui = require("uatis.ui")
+local notify = require("uatis.notify")
 
 local M = {}
 
@@ -647,8 +648,7 @@ local function refresh(b)
       -- Said once and the blame taken off: a file git has never seen
       -- has nobody to name, and a column left from an older answer would
       -- be naming somebody wrongly.
-      vim.notify("uatis: no blame for " .. b.path .. ": " .. (err or ""):match("^[^\r\n]*"),
-        vim.log.levels.INFO)
+      notify.info("no blame for " .. b.path .. ": " .. (err or ""):match("^[^\r\n]*"))
       return M.close(b.bufnr)
     end
     b.runs = runs
@@ -678,11 +678,11 @@ local function cursor_run(b)
   local row = vim.api.nvim_win_get_cursor(0)[1]
   local _, r = run_at(b, row)
   if not r then
-    vim.notify("uatis: git has not answered for this line yet", vim.log.levels.INFO)
+    notify.info("git has not answered for this line yet")
     return
   end
   if r.commit.uncommitted then
-    vim.notify("uatis: this line has not been committed", vim.log.levels.INFO)
+    notify.info("this line has not been committed")
     return
   end
   return r, row
@@ -846,8 +846,8 @@ end
 --- asked to answer and the one the gutter has no room for. Gone when the
 --- cursor moves; the key again goes into it, as a hover does.
 local function details(b)
-  if b.float and vim.api.nvim_win_is_valid(b.float) then
-    return vim.api.nvim_set_current_win(b.float)
+  if b.hover and b.hover:enter() then
+    return
   end
   local r, row = cursor_run(b)
   if not r then
@@ -889,46 +889,28 @@ local function details(b)
       width = math.max(width, vim.fn.strdisplaywidth(l))
     end
     width = math.min(math.max(width + 2, 40), math.max(vim.o.columns - 8, 20))
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].modifiable = false
-    for at, hl in pairs(marks) do
-      vim.api.nvim_buf_set_extmark(buf, M.ns, at - 1, 0, {
-        end_row = at - 1, end_col = #lines[at], hl_group = hl })
-    end
-    for _, m in ipairs(painted) do
-      vim.api.nvim_buf_set_extmark(buf, M.ns, m.row - 1, m.col or 0, m.col
-        and { end_col = m.end_col, hl_group = m.hl, priority = 200 }
-        or { line_hl_group = m.hl, priority = 100 })
-    end
-    local win = vim.api.nvim_open_win(buf, false, {
-      relative = "cursor", row = 1, col = 0,
-      width = width, height = math.min(#lines, math.max(vim.o.lines - 6, 5)),
-      style = "minimal", border = "rounded", title = " blame ", title_pos = "center",
+    -- A hover (common.hover): gone when the cursor moves in the file, and
+    -- the key again goes into it. Not `BufLeave`: going INTO the float
+    -- leaves the buffer too.
+    b.hover = b.hover or require("common.hover").new()
+    b.hover:open(lines, {
+      buf = b.bufnr,
+      title = " blame ",
+      width = width,
+      max_height = math.max(vim.o.lines - 6, 5),
+      events = { "CursorMoved", "CursorMovedI", "InsertEnter", "BufHidden" },
+      paint = function(buf)
+        for at, hl in pairs(marks) do
+          vim.api.nvim_buf_set_extmark(buf, M.ns, at - 1, 0, {
+            end_row = at - 1, end_col = #lines[at], hl_group = hl })
+        end
+        for _, m in ipairs(painted) do
+          vim.api.nvim_buf_set_extmark(buf, M.ns, m.row - 1, m.col or 0, m.col
+            and { end_col = m.end_col, hl_group = m.hl, priority = 200 }
+            or { line_hl_group = m.hl, priority = 100 })
+        end
+      end,
     })
-    vim.wo[win].wrap = true
-    b.float = win
-    local group = vim.api.nvim_create_augroup("UatisBlameFloat" .. win, { clear = true })
-    local function close()
-      pcall(vim.api.nvim_del_augroup_by_id, group)
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
-      end
-      if b.float == win then
-        b.float = nil
-      end
-    end
-    -- Not `BufLeave`: going INTO the float leaves the buffer too.
-    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "InsertEnter", "BufHidden" }, {
-      group = group, buffer = b.bufnr, callback = close,
-    })
-    vim.api.nvim_create_autocmd("WinLeave", {
-      group = group, buffer = buf, callback = close,
-    })
-    for _, lhs in ipairs({ "q", "<Esc>" }) do
-      vim.keymap.set("n", lhs, close, { buffer = buf, nowait = true, silent = true })
-    end
   end
   facts(b, c.sha, function(t, message)
     got.times, got.message = t, message
@@ -1090,7 +1072,7 @@ function M.attach(bufnr)
     end
     if not root then
       blames[bufnr] = nil
-      vim.notify("uatis: " .. path, vim.log.levels.ERROR)
+      notify.error(path)
       return
     end
     b.root, b.path, b.rev = root, path, rev
@@ -1125,8 +1107,8 @@ function M.close(bufnr)
       sync(win)
     end
   end
-  if b.float and vim.api.nvim_win_is_valid(b.float) then
-    vim.api.nvim_win_close(b.float, true)
+  if b.hover then
+    b.hover:close()
   end
   pane.close(b)
 end

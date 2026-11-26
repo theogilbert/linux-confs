@@ -9,16 +9,17 @@
 --
 -- fzf-lua where it is installed, since a long list wants filtering as
 -- you type and colour is how a read file is told from one that is not;
--- `vim.ui.select` otherwise, plain text, whatever it is replaced with.
+-- `vim.ui.select` otherwise, plain text, whatever it is replaced with
+-- (common.pick).
 
 local ui = require("uatis.ui")
 local read = require("uatis.read")
+local notify = require("uatis.notify")
 
 local M = {}
 
--- The fzf-lua float besides its entries: borders, prompt and separator
--- lines; borders, gutter and scrollbar columns.
-local CHROME_LINES, CHROME_COLUMNS = 4, 6
+-- The fzf-lua float's borders, gutter and scrollbar columns.
+local CHROME_COLUMNS = 6
 
 --- Whether a row is finished with -- read through, or in a conflict
 --- review settled -- as the list draws it receded.
@@ -52,10 +53,6 @@ local function width_of(segments)
     w = w + vim.fn.strdisplaywidth(s.text)
   end
   return w
-end
-
-local function plain(segments)
-  return table.concat(vim.tbl_map(function(s) return s.text end, segments))
 end
 
 --- One row per file of `pane`, as segments of `{ text, hl? }`: the
@@ -99,57 +96,17 @@ local function prompt_of(pane)
   return pane.conflicts and "Conflicted files" or "Changed files"
 end
 
-local function fzf_pick(pane, open)
-  local ok, fzf = pcall(require, "fzf-lua")
-  if not ok then
-    return false
-  end
-  local prompt = prompt_of(pane)
-  local rows, widest = M.rows(pane, math.floor(vim.o.columns * 0.9) - CHROME_COLUMNS)
-  -- Each entry leads with its file's index, hidden by --with-nth, so a
-  -- path that two rows share -- or that `…` cut short -- still names one.
-  local entries = {}
-  for i, r in ipairs(rows) do
-    local text = vim.tbl_map(function(s)
-      return (s.hl and s.text ~= "") and fzf.utils.ansi_from_hl(s.hl, s.text) or s.text
-    end, r.segments)
-    entries[i] = r.idx .. "\t" .. table.concat(text)
-  end
-  fzf.fzf_exec(entries, {
-    prompt = prompt .. "> ",
-    previewer = false,
-    -- Near the top, and only as large as the entries need.
-    winopts = {
-      height = math.min(#entries + CHROME_LINES, math.floor(vim.o.lines * 0.4)),
-      width = math.min(math.max(widest, #prompt + 20) + CHROME_COLUMNS,
-        math.floor(vim.o.columns * 0.9)),
-      row = 0.1,
-    },
-    fzf_opts = { ["--ansi"] = true, ["--delimiter"] = "\t", ["--with-nth"] = "2.." },
-    actions = {
-      ["enter"] = function(selected)
-        local idx = selected and selected[1] and tonumber(selected[1]:match("^%d+"))
-        if idx then
-          open(idx)
-        end
-      end,
-    },
-  })
-  return true
-end
-
 --- Picks a file of the review in this tab and opens it as the list
 --- would. Says so, rather than opening an empty picker, where there is
 --- no review here or nothing in it.
 function M.files(pane)
   pane = pane or require("uatis.pane").get()
   if not pane then
-    vim.notify("uatis: no review in this tab", vim.log.levels.INFO)
+    notify.info("no review in this tab")
     return
   end
   if #pane.files == 0 then
-    vim.notify("uatis: " .. (pane.conflicts and "no conflicts" or "no changes"),
-      vim.log.levels.INFO)
+    notify.info((pane.conflicts and "no conflicts" or "no changes"))
     return
   end
   local files = pane.files
@@ -168,18 +125,12 @@ function M.files(pane)
       end
     end
   end
-  if fzf_pick(pane, open) then
-    return
-  end
-  local rows = M.rows(pane, math.floor(vim.o.columns * 0.9) - CHROME_COLUMNS)
-  vim.ui.select(rows, {
+  require("common.pick").select(M.rows(pane, math.floor(vim.o.columns * 0.9) - CHROME_COLUMNS), {
     prompt = prompt_of(pane),
     kind = "uatis.file",
-    format_item = function(r) return plain(r.segments) end,
-  }, function(choice)
-    if choice then
-      open(choice.idx)
-    end
+    format = function(r) return r.segments end,
+  }, function(r)
+    open(r.idx)
   end)
 end
 

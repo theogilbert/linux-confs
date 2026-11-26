@@ -9,21 +9,21 @@ was derived from. Nodes expand lazily, so deep or branching chains stay cheap.
 
 The chain reads top to bottom, in the order the value travels: where it starts
 at the top, the traced symbol (`╋`) at the bottom, joined by one unbroken line. Above each step, a line says
-how the value got there.
+which variable holds the value there and how it got there.
 
 ```
-╷ defined
-╪ base = 10                      main.py:10
-│ maybe defined (in a branch)
-╪ base = 20                      main.py:12
-│ copied from another variable
-┿ offset = base                  main.py:13
-│ passed as argument
-┿ result = compute(offset, b=5)  main.py:14
-│ function parameter
-┿ def compute(a, b):             main.py:4
-│ traced
-╋ a                              main.py:5
+╷ base: defined
+╪ main.py:10
+│ base: maybe defined (in a branch)
+╪ main.py:12
+│ offset: copied from another variable
+┿ main.py:13
+│ offset: passed as argument
+┿ main.py:14
+│ a: function parameter
+┿ main.py:4
+│ a: traced
+╋ main.py:5
 ```
 
 Markers: `╪` end of the chain (nothing further upstream), `┼` more upstream
@@ -39,21 +39,21 @@ and is the one `[s` follows; the others go further up, the furthest on the left
 line. Here `offset` is an extra input of `count`:
 
 ```
-╷ defined
-╪ count = 0        main.py:18
-│ ╷ defined
-│ ╪ base = 10      main.py:10
-│ │ maybe defined (in a branch)
-│ ╪ base = 20      main.py:12
-│ │ copied from another variable
-│ ┿ offset = base  main.py:13
-│ │ uses variable
-│ ┿ offset         main.py:19
+╷ count: defined
+╪ main.py:18
+│ ╷ base: defined
+│ ╪ main.py:10
+│ │ base: maybe defined (in a branch)
+│ ╪ main.py:12
+│ │ offset: copied from another variable
+│ ┿ main.py:13
+│ │ offset: uses variable
+│ ┿ main.py:19
 ├─╯
-│ updated from its previous value
-┿ count += offset  main.py:19
-│ traced
-╋ count            main.py:20
+│ count: updated from its previous value
+┿ main.py:19
+│ count: traced
+╋ main.py:20
 ```
 
 The pane closes with the source window it was opened from.
@@ -75,6 +75,7 @@ hover (`K`) and help (`g?`):
 | `RD`  | read on the way to the traced use (`f(x)` says "passed to a function", `y = x + 1` says "read"); end of chain. Hidden with `reads = false` (`r`) |
 | `PRM` | function parameter; expands to the call sites |
 | `ARG` | argument passed for that parameter at a call site |
+| `DFT` | default value of that parameter (`def f(x=1)`), for a call site that does not pass it; expands to the default's own sources |
 | `FOR` | loop variable; expands to the iterated value |
 | `IMP` | import line (`from m import x`, `import { x }`, `x = require("m")`); expands to the definition in the other module |
 | `SRC` | a variable a derived expression depends on (derive mode) |
@@ -87,20 +88,20 @@ the side. Under `UPD`/`MUT` nodes, the variable itself and the methods called
 on it are hidden; only the other inputs are shown.
 
 ```
-╷ defined
-╪ df = pd.read_csv(path)           frames.py:5
-│ updated from its previous value
-╪ df = df.dropna()                 frames.py:6
-│ updated from its previous value
-╪ df = df.rename(columns=mapping)  frames.py:7
-│ mutated in place
-╪ df["total"] = df.a + df.b        frames.py:8
-│ maybe updated from its previous value (in a branch)
-╪ df = pd.concat([df, extra])      frames.py:10
-│ passed to a function
-╪ items.append(len(df))            frames.py:12
-│ traced
-╋ df                               frames.py:14
+╷ df: defined
+╪ frames.py:5
+│ df: updated from its previous value
+╪ frames.py:6
+│ df: updated from its previous value
+╪ frames.py:7
+│ df: mutated in place
+╪ frames.py:8
+│ df: maybe updated from its previous value (in a branch)
+╪ frames.py:10
+│ df: passed to a function
+╪ frames.py:12
+│ df: traced
+╋ frames.py:14
 ```
 
 Rule of thumb: a bare identifier flowing into something (`a = b`, `f(b)`,
@@ -118,6 +119,7 @@ the method's callers, where `self` is the object the method is called on
 ## Requirements
 
 - Neovim 0.11+ (tested on 0.12)
+- [common.nvim](../common.nvim), the UI library shared by the author's plugins (help float, side pane)
 - A tree-sitter parser for the language (required)
 - An LSP server (optional but recommended). Used for `documentHighlight`
   (precise read/write occurrences), `definition` (imports, cross-file
@@ -192,7 +194,7 @@ require("salmon").setup({
   fold_depth = 6,      -- depth limit for zO, zA, zR, zn
   width = 60,
   position = "left",  -- or "right"
-  max_text = 60,       -- truncate source snippets
+  scroll_duration = 360, -- animate in-file jump scrolls (ms, 0 = off)
   icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪", loading = "╂" },
   keymaps = { jump = { "<CR>" }, preview = { "p" }, toggle = { "o", "<Tab>", "l" },
               collapse = { "h" }, track = { "t" }, derive = { "d" },
@@ -202,7 +204,7 @@ require("salmon").setup({
 })
 ```
 
-Highlight groups (`SalmonDEF`, `SalmonCND`, …, `SalmonLocation`, `SalmonGraph`) are linked to
+Highlight groups (`SalmonDEF`, `SalmonCND`, …, `SalmonLocation`, `SalmonGraph`; `SalmonName`, the variable named above each step, is bold) are linked to
 standard groups by default and can be overridden.
 
 While the pane is open, the traced symbol's line gets a dim background
@@ -211,7 +213,8 @@ variable is highlighted (`SalmonSymbol`, linked to `Search`), and the one you
 traced from stands out (`SalmonSymbolOrigin`, linked to `IncSearch`). The
 occurrences of the selected step's variable, in another function or file, are
 highlighted the same way. The node selected in the pane is
-highlighted in its source buffer (`SalmonSelected`, linked to `Visual`). When
+highlighted in its source buffer (`SalmonSelected`: the `CurSearch` colours,
+else `IncSearch`'s, bold and underlined). When
 it is a derivation source (`SRC`) or upstream of one, every occurrence of that
 source's variable is highlighted too (`SalmonSource`, linked to `DiffText`).
 

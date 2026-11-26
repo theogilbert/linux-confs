@@ -1,4 +1,5 @@
 local M = {}
+local notify = require("salmon.notify")
 
 M.config = {
   -- Follow derivations (`c = f(a, b)` -> a, b, f) instead of stopping at them.
@@ -12,7 +13,8 @@ M.config = {
   fold_depth = 6,
   width = 60,
   position = "left", -- "left" | "right"
-  max_text = 60,
+  -- Animate the scroll of jumps within a file over this many ms (0: off).
+  scroll_duration = 360,
   -- Step markers. Box-drawing junctions keep the chain one unbroken line and
   -- render aligned in any font with box drawing (unlike ●/◆, often missing
   -- from coding fonts and drawn from a fallback font).
@@ -55,6 +57,7 @@ local HL = {
   SalmonRD = "Comment",
   SalmonPRM = "Special",
   SalmonARG = "Constant",
+  SalmonDFT = "Constant",
   SalmonFOR = "Repeat",
   SalmonIMP = "Include",
   SalmonSRC = "Identifier",
@@ -65,7 +68,6 @@ local HL = {
   SalmonSymbol = "Search",
   SalmonSymbolOrigin = "IncSearch",
   SalmonSource = "DiffText",
-  SalmonSelected = "Visual",
   SalmonGraph = "Comment",
   SalmonFlow = "Special",
   SalmonFlowStep = "Title",
@@ -79,6 +81,19 @@ local function set_highlights()
   for group, link in pairs(HL) do
     vim.api.nvim_set_hl(0, group, { link = link, default = true })
   end
+  -- The variable named above each step: plain bold, unlike any label colour.
+  vim.api.nvim_set_hl(0, "SalmonName", { bold = true, cterm = { bold = true }, default = true })
+  -- The selected step's occurrence: the current-match colours, bold and
+  -- underlined to stand out among the `Search` occurrences and from the origin.
+  local cur = vim.api.nvim_get_hl(0, { name = "CurSearch", link = false })
+  if not cur.bg then
+    cur = vim.api.nvim_get_hl(0, { name = "IncSearch", link = false })
+  end
+  vim.api.nvim_set_hl(0, "SalmonSelected", {
+    fg = cur.fg, bg = cur.bg, ctermfg = cur.ctermfg, ctermbg = cur.ctermbg,
+    reverse = cur.reverse, cterm = { bold = true, underline = true, reverse = cur.reverse },
+    bold = true, underline = true, default = true,
+  })
 end
 
 function M.setup(opts)
@@ -86,11 +101,8 @@ function M.setup(opts)
   set_highlights()
 end
 
-set_highlights()
-vim.api.nvim_create_autocmd("ColorScheme", {
-  group = vim.api.nvim_create_augroup("salmon_hl", { clear = true }),
-  callback = set_highlights,
-})
+-- Now and after every colorscheme (common.hl).
+require("common.hl").watch("salmon", set_highlights)
 
 local function ui()
   return require("salmon.ui")
@@ -126,7 +138,7 @@ function M.trace_at(buf, row, col, opts)
   opts = apply(opts)
   local root = require("salmon.trace").root(buf, row, col)
   if not root then
-    vim.notify("salmon: no identifier under cursor (or no tree-sitter parser)", vim.log.levels.WARN)
+    notify.warn("no identifier under cursor (or no tree-sitter parser)")
     return
   end
   ui().open(root, opts.win, opts.focus ~= false)
@@ -201,7 +213,7 @@ end
 
 local function set_mode(name, enabled)
   M.config[name] = enabled and true or false
-  vim.notify(("salmon: %s %s"):format(name, M.config[name] and "on" or "off"))
+  notify.info(("%s %s"):format(name, M.config[name] and "on" or "off"))
   ui().update_winbar()
   M.refresh()
 end

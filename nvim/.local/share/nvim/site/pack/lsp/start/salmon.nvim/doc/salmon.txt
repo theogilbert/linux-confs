@@ -36,20 +36,21 @@ automatically (see |salmon-config| `auto_expand`).
                                                                 *salmon-chain*
 The chain reads top to bottom, in the order the value travels: where it
 starts at the top, the traced symbol at the bottom. Above each step, a line
-says in words how the value got there (see |salmon-labels|).
+names the variable holding the value there and says in words how it got there
+(see |salmon-labels|).
 >
-  ╷ defined
-  ╪ base = 10                      main.py:10
-  │ maybe defined (in a branch)
-  ╪ base = 20                      main.py:12
-  │ copied from another variable
-  ┿ offset = base                  main.py:13
-  │ passed as argument
-  ┿ result = compute(offset, b=5)  main.py:14
-  │ function parameter
-  ┿ def compute(a, b):             main.py:4
-  │ traced
-  ╋ a                              main.py:5
+  ╷ base: defined
+  ╪ main.py:10
+  │ base: maybe defined (in a branch)
+  ╪ main.py:12
+  │ offset: copied from another variable
+  ┿ main.py:13
+  │ offset: passed as argument
+  ┿ main.py:14
+  │ a: function parameter
+  ┿ main.py:4
+  │ a: traced
+  ╋ main.py:5
 <
 Markers (box-drawing junctions, so the chain stays one unbroken line and
 lines up in any font with box drawing; see `icons` in |salmon-config|):
@@ -69,7 +70,7 @@ files, non-test before test files (a `test` or `tests` word in the path
 below the directory shared with the traced file), nearest directory first.
 The closest one is drawn right above the step it feeds into, and is the one
 `[s` follows; the others go further up, the furthest on the left line (`]r`
-cycles through them from closest to furthest).
+cycles through them from the furthest to the closest).
 
 A variable's history reads as a timeline on one line: its base DEF, then
 each UPD and MUT, and each place it is read (RD), in source order. A pandas-style chain such as
@@ -127,6 +128,8 @@ and field names (`left`/`right`, `name`/`value`, `function`, `arguments`,
         expression (says "read"). End of chain.
   PRM   Function parameter. Expands to the call sites.
   ARG   Argument passed for that parameter at a call site.
+  DFT   Default value of that parameter (`def f(x=1)`), for a call site
+        that does not pass it. Expands to the default's own sources.
   FOR   Loop variable. Expands to the iterated value.
   IMP   Import line (`from m import x`, `import { x }`,
         `x = require("m")`). Expands to the definition in the other module.
@@ -228,7 +231,6 @@ Calling `setup()` is optional. Defaults: >lua
     fold_depth = 6,      -- depth limit for zO, zA, zR, zn
     width = 60,
     position = "left",  -- or "right"
-    max_text = 60,       -- truncate source snippets
     -- step markers in the chain
     icons = { traced = "╋", expanded = "┿", collapsed = "┼", done = "╪",
               loading = "╂" },
@@ -248,8 +250,9 @@ See |salmon-api| for mapping it.
 7. HIGHLIGHTS                                              *salmon-highlights*
 
 One group per label, `SalmonDEF`, `SalmonCND`, ... `SalmonRET`, plus
-`SalmonLocation` for the file:line suffix and `SalmonGraph` for the chain's
-lines (links to `Comment`).
+`SalmonLocation` for each step's file:line, `SalmonName` for the variable
+named above each step (bold) and `SalmonGraph` for the
+chain's lines (links to `Comment`).
 
 In source buffers, while the pane is open:
   `SalmonOrigin`    Line of the traced symbol (dim background, links to
@@ -262,7 +265,8 @@ In source buffers, while the pane is open:
   `SalmonSource`    With a node selected in a derivation source's upstream
                   (derive mode), every occurrence of that source's
                   variable (links to `DiffText`).
-  `SalmonSelected`  The node selected in the pane (links to `Visual`).
+  `SalmonSelected`  The node selected in the pane (the `CurSearch` colours,
+                  else `IncSearch`'s, bold and underlined).
   `SalmonFlowStep`  Step numbers in the sign column (links to `Title`).
   `SalmonFlow`      Lines between steps (links to `Special`).
   `SalmonOffPath`   In the pane, steps off the path shown in the sign column

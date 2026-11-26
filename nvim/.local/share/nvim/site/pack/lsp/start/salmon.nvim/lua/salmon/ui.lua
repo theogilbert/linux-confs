@@ -19,6 +19,7 @@ local LEGEND = {
   RD = "read on the way (passed to a function, used in an expression)",
   PRM = "function parameter",
   ARG = "argument passed at a call site",
+  DFT = "default value of a parameter a call site does not pass",
   FOR = "loop variable",
   IMP = "imported",
   SRC = "variable an expression depends on",
@@ -41,6 +42,7 @@ local SAYS = {
   RD = "read",
   PRM = "function parameter",
   ARG = "passed as argument",
+  DFT = "default value (not passed)",
   FOR = "loop variable",
   IMP = "imported",
   SRC = "uses variable",
@@ -65,6 +67,10 @@ end
 local function says_line(n, ch)
   local words = n.passed and "passed to a function" or SAYS[main_tag(n)] or main_tag(n)
   local segs = { { ch .. " ", "SalmonGraph" } }
+  if n.symbol then
+    segs[#segs + 1] = { n.symbol, "SalmonName" }
+    segs[#segs + 1] = { ": ", "SalmonGraph" }
+  end
   if is_cond(n) then
     segs[#segs + 1] = { "maybe ", "SalmonCND" }
     segs[#segs + 1] = { words, "Salmon" .. main_tag(n) }
@@ -91,10 +97,7 @@ local function step_line(n, is_root)
   else
     marker = icons.done
   end
-  local text = n.text
-  if #text > config().max_text then
-    text = text:sub(1, config().max_text - 1) .. "…"
-  end
+  -- The step's place, not its code: the line above says what happens there.
   local fname = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(n.buf), ":t")
   local loc = ("%s:%d"):format(fname, n.row + 1)
   if n.note then
@@ -103,8 +106,7 @@ local function step_line(n, is_root)
   return {
     node = n,
     step = true,
-    segs = { { marker .. " ", "Salmon" .. main_tag(n) }, { text, nil } },
-    loc = loc,
+    segs = { { marker .. " ", "Salmon" .. main_tag(n) }, { loc, "SalmonLocation" } },
   }
 end
 
@@ -263,6 +265,8 @@ local marked = {}
 -- would otherwise paint their background over the traced symbol while the
 -- cursor sits on it.
 local PRIO = vim.hl.priorities.user
+-- Timer of the jump scroll animation in progress, if any.
+local scroll_timer
 local function clear_positions()
   for buf in pairs(marked) do
     if vim.api.nvim_buf_is_valid(buf) then
@@ -556,7 +560,8 @@ function M.update_positions()
   local path = M.current_path()
   draw_flow(path)
   number_pane(path)
-  if sel and sel ~= root then
+  -- Not mid-scroll: the selected step lights up once the view lands on it.
+  if sel and sel ~= root and not scroll_timer then
     mark(sel, { hl_group = "SalmonSelected", priority = PRIO + 30 })
   end
 end
@@ -606,16 +611,104 @@ local function target_win()
   end
 end
 
+local function stop_scroll()
+  if scroll_timer then
+    scroll_timer:stop()
+    scroll_timer:close()
+    scroll_timer = nil
+  end
+end
+
+-- One line per frame: bigger steps of look-alike code lines read as motion
+-- either way (like a wagon wheel). The pace comes from the frame lengths.
+local SCROLL_FRAME_MS = 20
+-- The first and last few lines take longer: a short speed-up and slow-down
+-- around a steady middle.
+local SCROLL_RAMP = { 1.75, 1.5, 1.25 }
+
+--- Delay before each line of an `n`-line scroll.
+local function scroll_delays(n)
+  local delays = {}
+  for k = 1, n do
+    local from_end = math.min(k, n + 1 - k)
+    delays[k] = SCROLL_FRAME_MS * (SCROLL_RAMP[from_end] or 1)
+  end
+  return delays
+end
+
+--- Scroll `win` from view `from` to its current view, one line per frame for
+--- up to `scroll_duration` ms, so the direction of a jump within the file is
+--- visible.
+local function animate_scroll(win, from)
+  local ms = config().scroll_duration
+  local to = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+  local dist = to.topline - from.topline
+  if not ms or ms <= 0 or dist == 0 then
+    return
+  end
+  -- Animate only the last lines of a longer jump (as many as fit in `ms`):
+  -- show its start at once.
+  local lines, delays = 1, scroll_delays(1)
+  while lines < math.abs(dist) do
+    local more = scroll_delays(lines + 1)
+    local total = 0
+    for _, d in ipairs(more) do
+      total = total + d
+    end
+    if total > ms then
+      break
+    end
+    lines, delays = lines + 1, more
+  end
+  local dir = dist > 0 and 1 or -1
+  local top = to.topline - dir * lines
+  -- Neovim scrolls back to the cursor on redraw: keep it in each frame's view.
+  local so = math.min(vim.wo[win].scrolloff, math.floor((vim.api.nvim_win_get_height(win) - 1) / 2))
+  local function show()
+    vim.fn.winrestview({ topline = top, lnum = top + so, col = 0 })
+  end
+  vim.api.nvim_win_call(win, show)
+  local step = 1
+  local timer = (vim.uv or vim.loop).new_timer()
+  scroll_timer = timer
+  local tick
+  tick = vim.schedule_wrap(function()
+    if scroll_timer ~= timer then
+      return -- stopped while this frame was queued
+    end
+    if not vim.api.nvim_win_is_valid(win) then
+      return stop_scroll()
+    end
+    top = top + dir
+    vim.api.nvim_win_call(win, function()
+      if top == to.topline then
+        vim.fn.winrestview(to)
+      else
+        show()
+      end
+    end)
+    if top == to.topline then
+      stop_scroll()
+      return M.update_positions()
+    end
+    step = step + 1
+    timer:start(delays[step], 0, tick)
+  end)
+  timer:start(delays[1], 0, tick)
+end
+
 local function jump(node, keep_focus)
   local win = target_win()
   if not win then
     return
   end
+  stop_scroll()
   vim.bo[node.buf].buflisted = true
   vim.api.nvim_win_call(win, function()
     vim.cmd("normal! m'")
   end)
   local other_file = vim.api.nvim_win_get_buf(win) ~= node.buf
+  local from = not other_file and vim.api.nvim_win_call(win, vim.fn.winsaveview)
   vim.api.nvim_win_set_buf(win, node.buf)
   vim.api.nvim_win_set_cursor(win, { node.row + 1, node.col })
   vim.api.nvim_win_call(win, function()
@@ -630,6 +723,9 @@ local function jump(node, keep_focus)
       vim.cmd("normal! zz")
     end
   end)
+  if from then
+    animate_scroll(win, from)
+  end
   -- The step's buffer may only be loaded now: draw its highlights.
   M.update_positions()
   if not keep_focus then
@@ -720,7 +816,9 @@ function M.cycle_path(delta)
     vim.api.nvim_echo({ { "salmon: only one path leads here" } }, false, {})
     return
   end
-  local i = ((index_in(tops, state.top) or 1) - 1 + delta) % #tops + 1
+  -- `tops` runs from the closest path out: "next" walks it backwards, from
+  -- the furthest path in.
+  local i = ((index_in(tops, state.top) or 1) - 1 - delta) % #tops + 1
   state.top = tops[i]
   M.update_positions()
   reveal(node)
@@ -1080,92 +1178,67 @@ local function hover(node)
   })
 end
 
+-- The keys out of `config().keymaps`, so the help says what is bound
+-- rather than what was bound when it was written, and the legend under
+-- them in the colours of the pane.
 local function help()
   local icons = config().icons
-  local msg = {
-    "The value flows top to bottom; the traced symbol is at the bottom.",
+  local km = config().keymaps
+  local function both(a, b)
+    return vim.list_extend(vim.deepcopy(a or {}), b or {})
+  end
+  local rows = {
+    { text = "The value flows top to bottom; the traced symbol is at the bottom." },
     "",
-    ("%s traced  %s end of chain  %s more upstream (expand)  %s expanded"):format(
-      icons.traced, icons.done, icons.collapsed, icons.expanded),
+    {
+      chunks = {
+        { icons.traced, "SalmonHelpKey" },
+        { " traced  " },
+        { icons.done, "SalmonHelpKey" },
+        { " end of chain  " },
+        { icons.collapsed, "SalmonHelpKey" },
+        { " more upstream (expand)  " },
+        { icons.expanded, "SalmonHelpKey" },
+        { " expanded" },
+      },
+    },
     "",
-    "[s ]s      step back / forward",
-    "[r ]r      other path",
-    "<CR>       jump",
-    "p          preview",
-    "o <Tab> l  expand",
-    "h          collapse",
-    "z*         folds",
-    "K          hover",
-    "t          track symbol under cursor",
-    "d          toggle derive",
-    "r          toggle reads",
-    "R          refresh",
-    "q          close",
+    { both(km.prev, km.next), "step back / forward" },
+    { both(km.prev_path, km.next_path), "other path" },
+    { km.jump, "jump" },
+    { km.preview, "preview" },
+    { km.toggle, "expand" },
+    { km.collapse, "collapse" },
+    { "z*", "folds" },
+    { km.hover, "hover" },
+    { km.track, "track symbol under cursor" },
+    { km.derive, "toggle derive" },
+    { km.reads, "toggle reads" },
+    { km.refresh, "refresh" },
+    { km.close, "close" },
     "",
   }
-  for _, t in ipairs({ "SYM", "DEF", "CND", "ALS", "DRV", "UPD", "MUT", "RD", "PRM", "ARG", "FOR", "IMP", "SRC", "FN", "RET" }) do
-    msg[#msg + 1] = ("%-3s  %s"):format(t, LEGEND[t])
+  for _, t in ipairs({ "SYM", "DEF", "CND", "ALS", "DRV", "UPD", "MUT", "RD", "PRM", "ARG", "DFT", "FOR", "IMP", "SRC", "FN", "RET" }) do
+    table.insert(rows, { chunks = { { ("%-3s"):format(t), "Salmon" .. t }, { "  " .. LEGEND[t] } } })
   end
-
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, msg)
-  local function hl(row, s, e, group)
-    vim.api.nvim_buf_set_extmark(buf, ns, row, s, { end_col = e, hl_group = group })
-  end
-  -- Markers in the legend line.
-  for _, icon in ipairs({ icons.traced, icons.done, icons.collapsed, icons.expanded }) do
-    local s = msg[3]:find(icon, 1, true)
-    if s then
-      hl(2, s - 1, s - 1 + #icon, "SalmonHelpKey")
-    end
-  end
-  for i, l in ipairs(msg) do
-    local code = l:match("^(%u+)  ")
-    if code and LEGEND[code] then
-      -- Label codes, in the color of their marker in the pane.
-      hl(i - 1, 0, #code, "Salmon" .. code)
-    elseif l:match("^%S.-  ") and i > 4 then
-      -- Keys: everything before the description column.
-      local keys = l:match("^(.-)%s%s+%S")
-      hl(i - 1, 0, #keys, "SalmonHelpKey")
-    end
-  end
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].bufhidden = "wipe"
-
-  local width = 0
-  for _, l in ipairs(msg) do
-    width = math.max(width, vim.fn.strdisplaywidth(l))
-  end
-  -- Leave room for the border; a shorter screen scrolls instead.
-  width = math.min(width, vim.o.columns - 2)
-  local height = math.min(#msg, vim.o.lines - vim.o.cmdheight - 2)
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    row = math.floor((vim.o.lines - vim.o.cmdheight - height) / 2) - 1,
-    col = math.floor((vim.o.columns - width) / 2) - 1,
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
+  local win = require("common.help").float(rows, {
     title = " salmon ",
-    title_pos = "center",
+    close = km.help,
+    hl = { key = "SalmonHelpKey", text = false, desc = false },
   })
-
-  local function close()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
-    end
+  if not win then
+    return
   end
-  local keys = vim.list_extend({ "q", "<Esc>" }, vim.deepcopy(config().keymaps.help))
-  for _, k in ipairs(keys) do
-    vim.keymap.set("n", k, close, { buffer = buf, nowait = true, silent = true })
-  end
+  -- A help left for another window goes with it.
   vim.api.nvim_create_autocmd("WinLeave", {
-    buffer = buf,
+    buffer = vim.api.nvim_win_get_buf(win),
     once = true,
     callback = function()
-      vim.schedule(close)
+      vim.schedule(function()
+        if vim.api.nvim_win_is_valid(win) then
+          vim.api.nvim_win_close(win, true)
+        end
+      end)
     end,
   })
 end
@@ -1271,7 +1344,7 @@ vim.api.nvim_create_autocmd("WinClosed", {
       vim.api.nvim_set_current_win(state.win)
       local ok, err = pcall(vim.cmd, "quit")
       if not ok then
-        vim.notify("salmon: " .. tostring(err), vim.log.levels.WARN)
+        require("salmon.notify").warn(err)
       end
     end)
   end,
@@ -1282,21 +1355,14 @@ local function ensure_win()
     return
   end
   local cfg = config()
-  state.win = vim.api.nvim_open_win(state.buf, false, {
-    split = cfg.position == "left" and "left" or "right",
-    win = -1,
-    width = cfg.width,
+  -- Full height against the editor's edge, sized and kept that size.
+  state.win = require("common.pane").open({
+    buf = state.buf,
+    side = cfg.position == "left" and "left" or "right",
+    size = cfg.width,
+    edge = "editor",
+    wo = { signcolumn = "auto", cursorline = true, winfixheight = false },
   })
-  local wo = vim.wo[state.win]
-  wo.number = false
-  wo.relativenumber = false
-  wo.signcolumn = "auto"
-  wo.foldcolumn = "0"
-  wo.wrap = false
-  wo.list = false
-  wo.spell = false
-  wo.cursorline = true
-  wo.winfixwidth = true
   local win = state.win
   vim.api.nvim_create_autocmd("WinClosed", {
     pattern = tostring(win),

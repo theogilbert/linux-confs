@@ -16,6 +16,7 @@ end
 ---@field col integer
 ---@field text string
 ---@field note string|nil
+---@field symbol string|nil the variable at this step, named in the pane
 ---@field parent salmon.Node|nil
 ---@field children salmon.Node[]|nil
 ---@field expanded boolean
@@ -35,6 +36,7 @@ local function new(tags, buf, tsnode, resolve, text)
     end_row = end_row,
     end_col = end_col,
     text = text or vim.trim(line),
+    symbol = ts.is_identifier(tsnode) and ts.text(tsnode, buf) or nil,
     resolve = resolve,
     expanded = false,
     loading = false,
@@ -184,6 +186,7 @@ member_resolver = function(buf, prop)
     local receiver = new({ "SRC" }, buf, obj, function(_, rcb)
       trace(buf, obj, {}, rcb)
     end, ts.text(obj, buf))
+    receiver.symbol = ts.text(obj, buf)
     receiver.last = true
     local out = {}
     for _, w in ipairs(ts.member_writes(prop, buf)) do
@@ -213,11 +216,13 @@ expr_children = function(buf, exprs, exclude)
   for _, s in ipairs(wanted_sources(buf, exprs, exclude)) do
     if s.kind == "fn" then
       out[#out + 1] = new({ "FN" }, buf, s.node, fn_resolver(buf, s.node), s.name)
+      out[#out].symbol = s.name
     else
       local node = s.node
       out[#out + 1] = new({ "SRC" }, buf, node, function(_, cb)
         trace(buf, node, {}, cb)
       end, s.name)
+      out[#out].symbol = s.name
     end
   end
   return out
@@ -233,6 +238,7 @@ local function callers_resolver(buf, cls)
       return cb({}, "anonymous function")
     end
     local info = ts.param_info(cls.params, cls.param, buf)
+    local default = not info.splat and ts.param_default(cls.param)
     local row, col = name:start()
     lsp.references(buf, row, col, function(locs)
       locs = locs or ts.find_calls(buf, ts.text(name, buf))
@@ -243,10 +249,19 @@ local function callers_resolver(buf, cls)
         if call then
           local arg = ts.match_arg(call, loc.buf, info)
           if arg then
-            out[#out + 1] = new({ "ARG" }, loc.buf, arg, expr_resolver(loc.buf, { arg }))
+            local node = new({ "ARG" }, loc.buf, arg, expr_resolver(loc.buf, { arg }))
+            local tx = ts.text(arg, loc.buf)
+            node.symbol = #tx <= 30 and not tx:find("\n") and tx or nil
+            out[#out + 1] = node
+          elseif default then
+            -- Not passed: the value comes from the default in the definition.
+            local node = new({ "DFT" }, buf, default, expr_resolver(buf, { default }), ts.text(cls.param, buf))
+            node.symbol = info.name
+            node.note = ("not passed at %s:%d"):format(vim.fn.fnamemodify(vim.api.nvim_buf_get_name(loc.buf), ":t"), loc.row + 1)
+            out[#out + 1] = node
           else
             local node = new({ "ARG" }, loc.buf, call)
-            node.note = info.splat and "variadic" or "not passed (default?)"
+            node.note = info.splat and "variadic" or "not passed"
             out[#out + 1] = node
           end
         end
@@ -316,12 +331,16 @@ write_node = function(buf, w, cls, cond)
   if cond then
     table.insert(tags, 1, "CND")
   end
-  return new(tags, buf, w, resolve)
+  local node = new(tags, buf, w, resolve)
+  node.symbol = var_name(buf, w)
+  return node
 end
 
 local function mut_node(buf, o, m, cond)
   local tags = cond and { "CND", "MUT" } or { "MUT" }
-  return new(tags, buf, o, expr_resolver(buf, m.exprs, ts.text(o, buf)))
+  local node = new(tags, buf, o, expr_resolver(buf, m.exprs, ts.text(o, buf)))
+  node.symbol = ts.text(o, buf)
+  return node
 end
 
 --- Timeline of the value of `occ`: the reaching writes, walking back through
@@ -446,6 +465,7 @@ trace = function(buf, occ, opts, cb)
     for _, it in ipairs(items) do
       if it.read then
         local n = new(it.cond and { "CND", "RD" } or { "RD" }, buf, it.node)
+        n.symbol = var_name(buf, it.node)
         n.passed = it.call ~= nil
         out[#out + 1] = n
       else
@@ -620,6 +640,7 @@ function M.root(buf, row, col)
   local node = new({ "SYM" }, buf, occ, function(_, cb)
     trace(buf, occ, {}, cb)
   end, var_name(buf, occ))
+  node.symbol = node.text
   node.origin = { row = row, col = col }
   return node
 end

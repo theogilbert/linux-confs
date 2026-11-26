@@ -2,6 +2,7 @@
 salmon-[s	salmon.txt	/*salmon-[s*
 salmon-]s	salmon.txt	/*salmon-]s*
 salmon-api	salmon.txt	/*salmon-api*
+salmon-chain	salmon.txt	/*salmon-chain*
 salmon-commands	salmon.txt	/*salmon-commands*
 salmon-config	salmon.txt	/*salmon-config*
 salmon-contents	salmon.txt	/*salmon-contents*
@@ -18,12 +19,17 @@ salmon.close()	salmon.txt	/*salmon.close()*
 salmon.derive()	salmon.txt	/*salmon.derive()*
 salmon.is_open()	salmon.txt	/*salmon.is_open()*
 salmon.next()	salmon.txt	/*salmon.next()*
+salmon.next_path()	salmon.txt	/*salmon.next_path()*
 salmon.prev()	salmon.txt	/*salmon.prev()*
+salmon.prev_path()	salmon.txt	/*salmon.prev_path()*
+salmon.reads()	salmon.txt	/*salmon.reads()*
 salmon.refresh()	salmon.txt	/*salmon.refresh()*
 salmon.set_derive()	salmon.txt	/*salmon.set_derive()*
+salmon.set_reads()	salmon.txt	/*salmon.set_reads()*
 salmon.setup()	salmon.txt	/*salmon.setup()*
 salmon.toggle()	salmon.txt	/*salmon.toggle()*
 salmon.toggle_derive()	salmon.txt	/*salmon.toggle_derive()*
+salmon.toggle_reads()	salmon.txt	/*salmon.toggle_reads()*
 salmon.trace()	salmon.txt	/*salmon.trace()*
 salmon.trace_at()	salmon.txt	/*salmon.trace_at()*
 salmon.txt	salmon.txt	/*salmon.txt*

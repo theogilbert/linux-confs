@@ -533,6 +533,11 @@ function M.param_info(params, param, buf)
   }
 end
 
+--- Default value of a parameter (`x=1`, `x: int = 1`, JS/TS `x = 1`).
+function M.param_default(param)
+  return param:field("value")[1] or (param:type() == "assignment_pattern" and param:field("right")[1]) or nil
+end
+
 --- The argument expression bound to a parameter at a call site.
 function M.match_arg(call, buf, info)
   if info.receiver then

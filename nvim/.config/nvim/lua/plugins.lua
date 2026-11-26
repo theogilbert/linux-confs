@@ -226,6 +226,13 @@ require("grannos").setup({
 -- The reader's winbar says READER while it is up.
 require("render").setup({
     keys = { toggle = "<leader>Or" },
+    follow = function(link, ctx)
+        if link.href:sub(1, 1) == "#" then
+            ctx.go()
+        else
+            require("utilities.clipboard").osc52_send({ link.href })
+        end
+    end,
 })
 
 local uatis = require("uatis")
